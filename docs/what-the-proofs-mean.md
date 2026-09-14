@@ -63,3 +63,7 @@ git clone https://github.com/ship-armada/armada-lean && cd armada-lean
 lake build        # needs an elan-managed Lean toolchain (see lean-toolchain)
 grep -rn sorry ArmadaLean/   # → nothing
 ```
+
+Full walkthrough, including how to audit the assumptions with `#print axioms`
+and how to check the model against the real Circom/Solidity:
+**[docs/how-to-verify.md](how-to-verify.md)**.
