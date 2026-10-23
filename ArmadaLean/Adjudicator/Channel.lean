@@ -90,16 +90,17 @@ accepting an arbitrary number of states and signatures and returning the
 latest single state which is deemed to be supported by those inputs."
 
 A state is "signed by participant p" iff p produced an authorization over
-its hash — assumption 2, `SignatureAssumptions.AuthorizedBy`
-(`Assumptions.lean`), taken as an explicit argument so the dependency is
-visible on `SignedByAll`'s own type. -/
-
-/-- `candidate` is signed by every participant of `fp` (used by `conclude`,
-    below — S3 §2.2's `signedByEveryone`; S4 `0020-execution-rules.md`,
-    `ConsensusApp`, "a state must be unanimously countersigned — that is,
-    signed by all of the channel participants"). -/
-def SignedByAll (sig : SignatureAssumptions) (fp : FixedPart) (vp : VariablePart) : Prop :=
-  ∀ p ∈ fp.participants, sig.AuthorizedBy p (stateHash fp vp)
+its hash — assumption 2 (`Assumptions.lean`'s `SignatureAssumptions.
+contractAuthorizes`, for a contract participant, combined with the
+EXECUTION-tracked `signedBy` relation, for an EOA participant). The
+combined notion, `AuthorizedBy`, and `SignedByAll` (used by `conclude`,
+below — S3 §2.2's `signedByEveryone`; S4 `0020-execution-rules.md`,
+`ConsensusApp`, "a state must be unanimously countersigned — that is,
+signed by all of the channel participants") are defined in `State.lean`,
+not here: both need `AdjudicatorState` (for its `signedBy` field), which
+is not defined until that file (coordinator correction, this session: "an
+honest participant adds a digest by choice... AuthorizedBy p d holds
+exactly when p's set contains d"). -/
 
 /-!
 ## Application rules and state support
@@ -241,10 +242,10 @@ owned data supplies — matching §4.3 assumption 1 (anyone can apply any
 operation) and assumption 2 (no one can block another's operation), which
 together are exactly the premise "unbeatable strategy" needs: a
 participant's strategy is a fixed sequence of calls they can always append,
-regardless of what any other caller does first. `Safety.lean`'s
-`Finalizable`/`unbeatable_pays` state this concretely for this
-adjudicator's two concrete unbeatable cases: the "concluded" point (S2
-§4.4 point 2, unanimous signatures reached — `SignedByAll` above) and the
+  `Finalizable`/`unbeatable_pays` state this concretely for this
+  adjudicator's two concrete unbeatable cases: the "concluded" point (S2
+  §4.4 point 2, unanimous signatures reached — `SignedByAll`,
+  `State.lean`) and the
 "timeout" point (ForceMove-2018.pdf §1.2: "the adjudicator releases funds
 according to the resolution specified by the most recently known state at
 the time of the dispute", after `challengeDuration` with no higher-turn
