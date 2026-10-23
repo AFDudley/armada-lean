@@ -13,3 +13,4 @@ import ArmadaLean.TransactOwned
 import ArmadaLean.PoolOwned
 import ArmadaLean.Vault
 import ArmadaLean.Fee
+import ArmadaLean.Adjudicator

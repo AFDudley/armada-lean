@@ -1,0 +1,147 @@
+/-
+  ArmadaLean.Adjudicator.Outcome — the outcome: allocations, guarantees, and
+  the priority payout rule.
+
+  This file holds the state and math for "what an outcome pays, and to
+  whom". Each definition below carries the exact source quote it translates.
+  Sources: S1 ForceMove (Close, Stewart, 2018), S2 Nitro Protocol (Close,
+  2019), S3 SATP (Stewart et al., 2022), S4 docs.statechannels.org protocol
+  tutorial pages (live site, retrieved 2026-10-18; local copies under
+  `armada-nitro/docs/references/nitro/sources/`). This module holds the
+  OUTCOME pieces; `Channel.lean` holds the state, signature and
+  finalizability pieces that use them.
+-/
+
+namespace ArmadaLean.Adjudicator
+
+/-!
+## Allocation type
+
+S4 `0030-outcomes.md` ("Allocations"): "An `allocation` is a `destination`
+and an `amount`... an `allocationType` identifier... The `allocationType`
+identifier is usually set to 0, meaning 'simple'." And ("Guarantees"):
+"When `allocationType` is set to `guarantee`, funds cannot be transferred
+in the usual way. Instead, they may be moved to another channel on chain
+using the `reclaim` method."
+
+S2 §6.1 calls the same two shapes `A(a)` (an allocation of amount `a`) and
+`G(x, [A, B])` (a guarantee of amount `x` reprioritizing `[A, B]`).
+
+The Armada layer adds a third tag, `shield`: a payout that mints a fresh
+pool note instead of paying an external account directly
+(`ArmadaNitroAdjudicator.sol:18`, `SHIELD_ALLOCATION_TYPE`; N2b brief). No
+paper names this tag; it exists only because this adjudicator's money is
+pool notes, not a raw balance (see `Notes.lean`).
+-/
+inductive AllocationType where
+  | simple
+  | guarantee
+  | shield
+  deriving DecidableEq
+
+/-- An allocation (S4 `0030-outcomes.md`, "Allocations"; S2 §6.1's `A(a)`).
+    `destination` and `amount` are the quoted fields; `allocationType`
+    distinguishes `simple` from `guarantee`; `metadata` is the quoted
+    "optional `metadata`" field, read by a guarantee allocation
+    (`decodeGuarantee` below) and otherwise unused. -/
+structure Allocation where
+  destination : Nat
+  amount : Nat
+  allocationType : AllocationType
+  metadata : Nat
+  deriving DecidableEq
+
+/-- The default allocation, used only to discharge an index lookup already
+    proven in range; its fields are never read in that case. Not a paper
+    concept — a Lean bookkeeping device. -/
+def Allocation.default : Allocation := ⟨0, 0, .simple, 0⟩
+
+/-- A single asset's exit (S4 `0030-outcomes.md`: "An `Outcome` is an array
+    of `SingleAssetExits`, each specifying: an `asset`; optional
+    `assetMetadata`; an ordered list of `allocations`."). `assetMetadata` is
+    elided: the quote itself says it "is used only by more exotic asset
+    types, and is zero-ed out for native and ERC20 assets" — the only two
+    kinds this adjudicator and its pool handle (`TokenType.ERC20`,
+    `IArmadaPool.sol:8-12`), so it carries no case this model needs to
+    distinguish. -/
+structure SingleAssetExit where
+  asset : Nat
+  allocations : List Allocation
+
+/-- A channel's outcome (S4 `0010-states-channels.md`, `VariablePart.outcome
+: Outcome.SingleAssetExit[]`; S2 §3.2, "An outcome dictates how assets...
+will be redistributed"). S2 §3.2 also states the outcome is "an ordered
+dictionary, mapping a destination to either an allocation or a guarantee" —
+S4's array-of-`SingleAssetExit`s is the asset-indexed version of the same
+idea; S2 itself predates multi-asset outcomes (S2 §3.1 restricts to "a
+single asset, which we will refer to as coins"). -/
+abbrev Outcome := List SingleAssetExit
+
+/-- A destination is external when its top 96 bits are zero (S4
+    `0030-outcomes.md`, "Destinations": "A `destination` is [a] 32 byte
+    identifier which may either denote a channel ID or a so-called
+    'external destination' (a 20 byte Ethereum address left-padded with
+    zeros)."). Modeled as a numeric bound: the slicing itself carries no
+    content beyond "fits in 160 bits". -/
+def isExternal (destination : Nat) : Prop := destination < 2 ^ 160
+
+/-- The priority payout rule (S2 §5.1, "Allocations and Transfer": "The
+    allocation is in priority order, so that if the channel does not hold
+    enough funds to pay all the coins that are due, then the addresses at
+    the beginning of the allocation will receive funds first. We say that
+    'A can afford x for B', if B would receive at least x coins, were the
+    coins currently held by A to be paid out in priority order." — and the
+    Turbo Value Algorithm, S2 §5.2, step 3(b)(i): "Let x = min(payout,
+    remainingFunds)."). `afford allocs surplus` returns the amount actually
+    paid to each entry of `allocs`, in order, out of `surplus`. -/
+def afford : List Allocation → Nat → List Nat
+  | [], _ => []
+  | a :: as, surplus =>
+    let paid := min a.amount surplus
+    paid :: afford as (surplus - paid)
+
+/-!
+## Guarantees
+
+S4 `0030-outcomes.md`, "Guarantees": "The `metadata` is an encoding of the
+following struct: `struct Guarantee { bytes32 left; bytes32 right; }` where
+`left` and `right` correspond to channel participants." S2 §6.1 is the same
+shape under a different name: "A guarantee is a data structure G(x,[A,B])
+representing an amount x and an ordered list of destinations A and B."
+
+A gap between S2 and S4/the code: S2 §6.1 generalizes a guarantee's target
+list to any length ("the guarantee provides a list of addresses"), ranked
+by priority, matching the outcome they target. S4 and the vendored code fix
+the list at exactly two entries, `{left, right}`
+(`MultiAssetHolder.sol:538-545`). `clauses.md` records the same gap as
+Sil6: "S3 Listing 2 and S4 `0080` describe reclaim for a two-party target.
+The code credits only `targetAllocations[0]` and `[1]`." This model follows
+S4/S3/the code (two destinations), not S2's general list, because the code
+this model checks (`PoolSpend.settleReclaim`, see `Notes.lean`) only ever
+reclaims a two-party guarantee.
+-/
+
+/-- A guarantee's metadata decodes to its two reprioritized destinations
+    (S4 `0030-outcomes.md`, quoted above). Modeled as an abstract decoder:
+    the encode/decode round trip carries no content this model needs beyond
+    "it recovers the two addresses the guarantee's creator encoded". -/
+axiom decodeGuarantee : Nat → Nat × Nat
+
+/-- `reclaim`'s effect on the source (ledger) channel's own outcome (S3
+    §2.4, Listing 2, "Reclaim": `o_ledger[left] += o_target[0]`;
+    `o_ledger[right] += o_target[1]`; `delete o_ledger[targetChannelId]` —
+    i.e. drop the guarantee and credit its two reprioritized destinations by
+    the target's first two allocation amounts). Every other asset's exit,
+    and every other allocation of the named asset, is unchanged. -/
+def reallocateGuarantee (outcome : Outcome) (assetIndex allocIndex : Nat)
+    (left right amtLeft amtRight : Nat) : Outcome :=
+  outcome.mapIdx fun i exit =>
+    if i ≠ assetIndex then exit
+    else { exit with
+      allocations :=
+        (exit.allocations.eraseIdx allocIndex).map fun a =>
+          if a.destination = left then { a with amount := a.amount + amtLeft }
+          else if a.destination = right then { a with amount := a.amount + amtRight }
+          else a }
+
+end ArmadaLean.Adjudicator
