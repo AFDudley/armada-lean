@@ -251,15 +251,55 @@ Phase 1 brief: "Also state, for each thing the adjudicator is for (a
 deposit, a payout, a top-up, a reclaim, a conclude, a challenge that times
 out), that it can actually happen. A model in which nothing can happen
 satisfies every safety statement, and proves nothing." Each statement
-below starts from a state `s` that is itself `Reachable` from deployment
-(`genesis assets self pool0`), so an unreachable, impossible state cannot
-satisfy it (coordinator correction, this session): the action is shown
-possible for a real caller starting from somewhere the protocol could
-actually be, not from an arbitrarily chosen state.
+below that IS restated quantifies the three safety assumptions and the
+two liveness assumptions UNIVERSALLY ("for all `HashAssumptions`,
+`SignatureAssumptions`, `ProofAssumptions`, `SignatureLiveness`,
+`ProofLiveness`"), with only the EXECUTION (the deployment parameters and
+the call sequence) existentially chosen (coordinator correction, this
+session): a prior form put the assumptions inside the existential, so a
+proof could choose, for example, an `AuthorizedBy` that accepts
+everything, and the statement said nothing about the real system. The
+execution starts from a state `s` that is itself `Reachable` from
+deployment (`genesis assets self pool0`), so an unreachable, impossible
+state cannot satisfy it either.
+
+Two of the seven — `conclude_can_happen`, `reclaim_can_happen` — restate
+cleanly this way: both go through only `SignedByAll`/`AuthorizedBy`, which
+`SignatureLiveness` makes satisfiable for any `fp`/`candidate`.
+
+The other five — `deposit_can_happen`, `topup_can_happen`,
+`challenge_can_happen`, `challenge_timeout_can_happen`, `payout_can_happen`
+— each need a THIRD kind of liveness fact the coordinator's two named
+assumptions do not cover (the pool layer's `EdDSAVerify`, or the
+app-layer's `AppSupports`, being satisfiable for some input). Per
+instruction: "If a 'can happen' theorem cannot be stated this way without
+a further assumption, stop and report which one and why. Do not add it."
+Each keeps its PRE-correction statement below (assumptions still inside
+the existential — the ORIGINAL defect, not fixed), with a comment naming
+exactly which further assumption would be needed and why adding it was
+out of scope for this correction.
 -/
 
-/-- A deposit can happen: from SOME reachable state with no collateral
-    yet, SOME deposit call succeeds (N2a brief, "Goal"). -/
+/-- BLOCKED — not restated. Instruction: "If a 'can happen' theorem cannot
+    be stated this way without a further assumption, stop and report which
+    one and why. Do not add it." A deposit spends the depositor's note
+    through the pool's BASE `Transact` circuit (`DepositTransacted`,
+    `Notes.lean`), whose signature check is `ArmadaLean.EdDSAVerify`
+    (root pool layer, `Transact.lean:29`) — a bare global axiom this phase
+    does not touch (`Assumptions.lean`'s module comment: "this file does
+    not change [the pool layer's axioms]... outside this phase's scope").
+    `EdDSAVerify` carries no completeness assumption anywhere in the
+    model: in the model's weakest admissible interpretation it is always
+    `False`, which no witness can satisfy, making `DepositTransacted`
+    unsatisfiable no matter what `HashAssumptions`/`SignatureAssumptions`/
+    `ProofAssumptions`/`SignatureLiveness`/`ProofLiveness` hold (none
+    mention `EdDSAVerify`). Restating this theorem with those five
+    quantified universally would therefore assert a FALSE claim. The
+    further assumption needed — EdDSA completeness for the pool's own
+    `Transact` circuit, "an honest depositor can produce a valid signature
+    over any message they choose" — is not one of the two the coordinator
+    named, so it is not added; this theorem is reported as blocked
+    instead. -/
 theorem deposit_can_happen :
     ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
@@ -268,11 +308,8 @@ theorem deposit_can_happen :
       Step sig proofA s (.deposit channelId expectedHeld asset amount) s' := by
   sorry
 
-/-- A top-up can happen: a SECOND deposit against a channel that already
-    holds collateral succeeds and increases `heldValue`
-    (`depositBinding`'s own purpose, `ArmadaNitroAdjudicator.sol:60-72`:
-    binds the proof to `(channelId, expectedHeld)` so a deposit always adds
-    to, never replaces, the prior holding). -/
+/-- BLOCKED — not restated, same gap as `deposit_can_happen`: a top-up is
+    two deposits, so it needs `EdDSAVerify` completeness twice over. -/
 theorem topup_can_happen :
     ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
@@ -283,9 +320,19 @@ theorem topup_can_happen :
       heldValue s' asset cid = heldValue mid asset cid + amt2 := by
   sorry
 
-/-- A challenge can happen: from SOME reachable state, SOME challenge call
-    succeeds and advances the channel to `.challenge` mode
-    (ForceMove.sol:39-81; clause 13). -/
+/-- BLOCKED — not restated. `.challenge`'s `Step` case requires
+    `AppSupports fp proof candidate` (`Operations.lean`) — a bare global
+    axiom (`Channel.lean`: "Modeled as an opaque relation rather than one
+    of the three cryptographic assumptions, because it is not independent
+    of the channel's own setup"). `AppSupports` carries no completeness
+    assumption anywhere in the model: in the weakest admissible
+    interpretation it is always `False`, which no `fp`/`proof`/`candidate`
+    triple can satisfy, making every `.challenge` call impossible no
+    matter what the five stated assumptions hold (none mention
+    `AppSupports`). The further assumption needed — that some application
+    rule is satisfiable for some input — is not one of the two the
+    coordinator named, so it is not added; this theorem is reported as
+    blocked instead. -/
 theorem challenge_can_happen :
     ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
@@ -296,10 +343,13 @@ theorem challenge_can_happen :
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
   sorry
 
-/-- A challenge can time out: from a reachable state with a registered,
-    unanswered challenge, a `tick` to `finalizesAt` reaches `.finalized`
-    mode with no further call (clause 18, S4
-    `0040-lifecycle-of-a-channel.md`: "timeout is a passive transition"). -/
+/-- BLOCKED — not restated, same gap as `challenge_can_happen`: a genuine
+    "challenge that times out" must first reach `.challenge` mode, which
+    needs `AppSupports` satisfiable. (Reaching `finalizesAt > 0` via
+    `.conclude` instead would not demonstrate a timeout — `conclude`
+    finalizes instantly, with no challenge and no waiting — so it would
+    answer a different question than the one this theorem is named for,
+    not a legitimate workaround.) -/
 theorem challenge_timeout_can_happen :
     ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
@@ -310,23 +360,36 @@ theorem challenge_timeout_can_happen :
       (s'.channels cid).mode s'.now = .finalized := by
   sorry
 
-/-- A conclude can happen: from SOME reachable state, SOME unanimous final
-    state finalizes a channel instantly (clause 17, S4
+/-- A conclude can happen: for ALL `HashAssumptions`, `SignatureAssumptions`,
+    `ProofAssumptions`, `SignatureLiveness`, `ProofLiveness`, SOME unanimous
+    final state finalizes a channel instantly (clause 17, S4
     `0070-finalizing-a-channel.md`: "the `conclude` method allows anyone...
     to immediately finalize an outcome... without having to wait for a
-    challenge to expire"). -/
-theorem conclude_can_happen :
-    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    challenge to expire"). `.conclude`'s `Step` case needs only
+    `SignedByAll sig fp candidate`, and `sigLive.can_authorize` gives
+    `sig.AuthorizedBy p d` for every `p`/`d`, hence `SignedByAll` for any
+    `fp`/`candidate` — no further assumption needed. -/
+theorem conclude_can_happen
+    (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (sigLive : SignatureLiveness sig) (proofLive : ProofLiveness proofA) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart),
       Reachable sig proofA (genesis assets self pool0) s ∧
       Step sig proofA s (.conclude fp candidate) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
   sorry
 
-/-- A payout can happen: from SOME reachable, finalized channel, SOME
-    `transfer` call pays a nonzero amount to some destination (N1b/N2b
-    briefs). -/
+/-- BLOCKED — not restated. A payout demonstrating `0 < dest.amount`
+    actually minted needs `heldValue s asset cid > 0` before the call
+    (`afford`/`transferEffects` pay `0` out of a `0` surplus no matter what
+    the outcome records). The ONLY `Step` case that ever sets `holdings` to
+    `some _` is `.deposit` — `transfer`'s own remainder output needs an
+    EXISTING holding to begin with, so it cannot bootstrap one, and
+    `genesis`'s `holdings` starts at `fun _ _ => none` unconditionally. So
+    a funded, reachable `s` requires a prior successful `.deposit`, which
+    needs `EdDSAVerify` completeness — `deposit_can_happen`'s exact gap,
+    not one of the two assumptions the coordinator named. Reported as
+    blocked, not restated. -/
 theorem payout_can_happen :
     ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
@@ -341,12 +404,18 @@ theorem payout_can_happen :
         (commitment dest.destination (outcome.get ⟨assetIndex, h⟩).asset dest.amount) := by
   sorry
 
-/-- A reclaim can happen: from SOME reachable state, SOME guarantee
-    allocation can be reclaimed, reallocating the source channel's own
-    outcome (S3 §2.4, Listing 2). -/
-theorem reclaim_can_happen :
-    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+/-- A reclaim can happen: for ALL `HashAssumptions`, `SignatureAssumptions`,
+    `ProofAssumptions`, `SignatureLiveness`, `ProofLiveness`, SOME
+    guarantee allocation can be reclaimed, reallocating the source
+    channel's own outcome (S3 §2.4, Listing 2). `.reclaim`'s `Step` case
+    never calls `AppSupports` or `PoolOwnedSpendStep` — it only needs both
+    channels `.finalized` (via `.conclude`, using `SignatureLiveness` as
+    in `conclude_can_happen`) and arithmetic on the chosen outcome data
+    (`a0 + a1 = guarantee.amount`), so no further assumption is needed. -/
+theorem reclaim_can_happen
+    (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (sigLive : SignatureLiveness sig) (proofLive : ProofLiveness proofA) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (sourceChannelId : Nat) (sourceOutcome : Outcome)
       (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
       (targetAssetIndex claimedTargetStateHash : Nat),
