@@ -15,3 +15,4 @@ import ArmadaLean.Pool
 import ArmadaLean.PoolSafety
 import ArmadaLean.Vault
 import ArmadaLean.Fee
+import ArmadaLean.Adjudicator
