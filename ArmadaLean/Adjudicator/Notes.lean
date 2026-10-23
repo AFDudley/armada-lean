@@ -58,10 +58,20 @@ structure NotePreimage where
     the creating transaction"; `IArmadaPool.preimageOf`). `usedNullifiers`
     is the pool's separate double-spend record — a nullifier is a function
     of the spender's key and the leaf index (`ArmadaLean.nullifier`), not
-    of the commitment, so it is tracked apart from `liveNotes`. -/
+    of the commitment, so it is tracked apart from `liveNotes`.
+    `poolSignedBy` is the pool layer's own EOA signing record (the SAME
+    kind of execution-tracked fact `AdjudicatorState.signedBy` is for the
+    Nitro layer, `State.lean`): which `(babyjubjubPublicKey, msgHash)`
+    pairs this execution has recorded a genuine EdDSA signature for.
+    Grows only through `Operations.lean`'s `.signNote` `Call`, which only
+    ever adds to the signing key's OWN row (coordinator correction, this
+    session: "Do the same for the pool layer's EdDSA authorization of a
+    deposit spend: the depositor's signed messages are part of the
+    execution"). -/
 structure PoolState where
   liveNotes : List (Nat × NotePreimage)
   usedNullifiers : List Nat
+  poolSignedBy : (Nat × Nat) → Nat → Prop
 
 /-- `c` is currently a live (unspent, preimage-known) note. -/
 def PoolState.isLive (s : PoolState) (c : Nat) : Prop :=
@@ -240,11 +250,12 @@ owned circuit (`TransactOwned.circom`) is compiled for, the same way
     `OwnedConstrained` has SOME accepted proof under `proofA`'s
     `OwnedProofAccepted` relation — the same relation `ProofAssumptions`
     already constrains from the other side (assumed sound; here, assumed
-    completable by an honest prover holding a real witness). A theorem
-    claiming a `transactOwned`-backed action can succeed takes a
-    `ProofLiveness proofA` argument for the specific `proofA` it reasons
-    about, so the dependency is visible on the theorem's own type, the
-    same discipline `SignatureLiveness` follows (`Assumptions.lean`). -/
+    completable by an honest prover holding a real witness).
+    A theorem claiming a `transactOwned`-backed action can succeed takes
+    a `ProofLiveness proofA` argument for the specific `proofA` it
+    reasons about, so the dependency is visible on the theorem's own
+    type — the same discipline `eddsaCompleteness` below follows for the
+    pool layer's signature check. -/
 structure ProofLiveness (proofA : ProofAssumptions) : Prop where
   completeness : ∀ {N M : Nat} (w : OwnedWitness N M) (pub : OwnedPublic N M),
     OwnedConstrained w pub → proofA.OwnedProofAccepted pub
@@ -304,7 +315,8 @@ def PoolOwnedSpendStep (proofA : ProofAssumptions) (before : PoolState) (self to
       ∃ i : Fin N, ∃ w : OwnedWitness N outputPreimages.length, OwnedConstrained w pub ∧
         commitment (npk self (w.randomIn i)) token (w.valueIn i) = nullifiedCommitment.getD 0)) ∧
   after.liveNotes = (before.liveNotes.filter (fun p => nullifiedCommitment ≠ some p.1)) ++
-    (outputPreimages.map (fun pre => (commitment pre.npk token pre.value, pre)))
+    (outputPreimages.map (fun pre => (commitment pre.npk token pre.value, pre))) ∧
+  after.poolSignedBy = before.poolSignedBy
 
 /-!
 ## Deposit: a plain, EdDSA-signed spend with one contract-owned output
@@ -319,7 +331,34 @@ Only the output is contract-owned." This is the BASE `Transact` circuit
 (`ArmadaLean.Transact`, already proven in the root model), not
 `TransactOwned` — deposit's signer is the depositing user, not the
 adjudicator, so it cannot fit `PoolOwnedSpendStep` above (which requires
-`ownerField = self` on every input). -/
+`ownerField = self` on every input).
+
+`Constrained w pub`'s `sig` field (`Transact.lean:119`) requires
+`EdDSAVerify w.publicKey w.signature (msgHashOf pub)` — the root pool
+layer's own signature check, a bare `axiom` this phase does not touch
+(`Assumptions.lean`'s module comment). `EdDSAVerify` alone says nothing
+about when a witness exists; `eddsaCompleteness` below supplies the
+missing half, GATED on the SAME execution-tracked fact `PoolState.
+poolSignedBy` records (coordinator instruction, this session: "Do the
+same for the pool layer's EdDSA authorization of a deposit spend: the
+depositor's signed messages are part of the execution"). Unlike the
+removed `SignatureLiveness`, this is not "any key can sign any message":
+it only fires once the depositor has actually recorded, via
+`Operations.lean`'s `.signNote` `Call`, that THIS key signed THIS
+message — the same unforgeability-by-construction `.sign` uses for the
+Nitro layer (`State.lean`'s module comment). -/
+
+/-- EdDSA completeness, gated on the execution's own signing record: if
+    THIS execution has recorded (`PoolState.poolSignedBy`) that the
+    holder of `pk` signed `msgHash`, some signature verifying under
+    `EdDSAVerify` exists. Standard EdDSA completeness (any held private
+    key can sign any message it is asked to) made SAFE by the gate: a
+    caller cannot make the hypothesis true for a key they do not hold,
+    because `poolSignedBy` only grows through `.signNote`, which (like
+    `.sign`, `State.lean`) only ever adds to the signing key's OWN row. -/
+axiom eddsaCompleteness (s : PoolState) (pk : Nat × Nat) (msgHash : Nat) :
+    s.poolSignedBy pk msgHash →
+    ∃ signature : Nat × Nat × Nat, EdDSAVerify pk signature msgHash
 
 /-- N2a (intended design — see the departures report for how the CURRENT
     `depositFromNote` differs): a deposit is a `Transact.Constrained`
@@ -356,6 +395,7 @@ def DepositPoolStep {N M : Nat} (before : PoolState) (self token amount : Nat)
   after.liveNotes =
     (before.liveNotes.filter (fun p => ∀ i, p.1 ≠ nullifier w.nullifyingKey (w.leavesIndices i))) ++
     List.ofFn (fun j : Fin M =>
-      (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : NotePreimage)))
+      (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : NotePreimage))) ∧
+  after.poolSignedBy = before.poolSignedBy
 
 end ArmadaLean.Adjudicator
