@@ -10,6 +10,13 @@
   is no restriction on who can trigger the operations" — so `Step` below
   carries no caller-identity check beyond what a call's own signed or
   owned data supplies.
+
+  `Step` takes `SignatureAssumptions` and `ProofAssumptions`
+  (`Assumptions.lean`, `Notes.lean`) as its first two arguments, because
+  `.challenge`/`.conclude` need to ask whether a digest was authorized and
+  `.deposit`/`.transfer` need to ask whether an owned proof was accepted —
+  both are explicit structure arguments, never a bare global axiom
+  (coordinator correction, this session).
 -/
 import ArmadaLean.Adjudicator.State
 
@@ -21,7 +28,9 @@ namespace ArmadaLean.Adjudicator
     `bulkConcludeAndTransferAllAssets` are included and always fail — see
     their `Step` case — to state N3's "revert" behavior as a positive fact
     about the call, not an omission a reader might mistake for an
-    oversight. -/
+    oversight. `transfer` carries `indices` (clause 24: `transfer(
+    assetIndex, fromChannelId, outcomeBytes, stateHash, indices)`), since a
+    caller chooses which destinations to pay out now. -/
 inductive Call where
   | deposit (channelId expectedHeld asset amount : Nat)
   | challenge (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
@@ -29,6 +38,7 @@ inductive Call where
   | checkpoint (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
   | conclude (fp : FixedPart) (candidate : VariablePart)
   | transfer (assetIndex channelId claimedStateHash : Nat) (outcome : Outcome)
+      (indices : List Nat)
   | reclaim (sourceChannelId : Nat) (sourceOutcome : Outcome)
       (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
       (targetAssetIndex claimedTargetStateHash : Nat)
@@ -36,11 +46,13 @@ inductive Call where
   | bulkConcludeAndTransferAllAssets (fp : FixedPart) (candidate : VariablePart)
   | tick (newNow : Nat)
 
-/-- One call's effect: `s` steps to `s'` under `call`. Each case is a
-    conjunction of the call's checks (citing its source) and its effect on
-    `s'`'s fields, stated as equations rather than a record update so every
-    untouched field is named explicitly. -/
-def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
+/-- One call's effect: `s` steps to `s'` under `call`, given the signature
+    and proof assumptions (`sig`, `proofA`) the call's checks may need.
+    Each case is a conjunction of the call's checks (citing its source)
+    and its effect on `s'`'s fields, stated as equations rather than a
+    record update so every untouched field is named explicitly. -/
+def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   /-
   ### `deposit` — N2a brief, intended design
 
@@ -53,7 +65,10 @@ def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   1, "Deposit leaves the pool"): the current `depositFromNote` still
   requires `UnshieldType.NORMAL` and pays real ERC-20 out via
   `TransactModule._transferTokenOut`; this model follows N2a's stated
-  intent, not the current code.
+  intent, not the current code. Deposit is authorized by the depositor's
+  own EdDSA signature on the spent note (the pool layer's `EdDSAVerify`,
+  reused via `Constrained`/`DepositTransacted`, `Notes.lean`), not by
+  `sig`/`proofA`, so this case does not use either assumption.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
@@ -88,9 +103,9 @@ def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   candidate` directly, folding in the `'forceMove'` domain-separation
   string the quote names — the string distinguishes a challenge
   authorization from a plain state signature, which this model does not
-  need to distinguish because it only ever checks `AuthorizedBy challenger
-  (stateHash fp candidate)` for the challenge call, never for both uses
-  at once.
+  need to distinguish because it only ever checks `sig.AuthorizedBy
+  challenger (stateHash fp candidate)` for the challenge call, never for
+  both uses at once.
   -/
   | .challenge fp proof candidate challenger => fun s' =>
       let cid := channelId fp
@@ -100,7 +115,7 @@ def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
         | .finalized => False) ∧
       AppSupports fp proof candidate ∧
       challenger ∈ fp.participants ∧
-      AuthorizedBy challenger (stateHash fp candidate) ∧
+      sig.AuthorizedBy challenger (stateHash fp candidate) ∧
       s'.channels = update s.channels cid
         { turnNumRecord := candidate.turnNum
           finalizesAt := s.now + fp.challengeDuration
@@ -121,7 +136,8 @@ def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   bytes32(0))`): checkpoint records only that a higher turn number is now
   known, not a finalizable outcome — `transfer`/`reclaim` require a
   `.finalized` channel, so the cleared hashes are never read as a payout
-  outcome.
+  outcome. No signature or proof check beyond `AppSupports`, so this case
+  does not use `sig`/`proofA`.
   -/
   | .checkpoint fp proof candidate => fun s' =>
       let cid := channelId fp
@@ -153,64 +169,65 @@ def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
       let cid := channelId fp
       (s.channels cid).mode s.now ≠ .finalized ∧
       candidate.isFinal = true ∧
-      SignedByAll fp candidate ∧
+      SignedByAll sig fp candidate ∧
       s'.channels = update s.channels cid
         { turnNumRecord := 0, finalizesAt := s.now, stateHash := 0
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
   /-
-  ### `transfer` — MultiAssetHolder.sol:59-109,135-191 (trusted, vendored
+  ### `transfer` — MultiAssetHolder.sol:135-191 (trusted, vendored
   `src/nitro`), settled via N1b/N2b's owned-spend (Armada layer)
 
   S2 §5.1, "Allocations and Transfer": priority-order payout, `afford`
   (`Outcome.lean`). Clause 24: `transfer(assetIndex, fromChannelId,
-  outcomeBytes, stateHash, indices)`. Clause 25: "`transfer` must refuse a
+  outcomeBytes, stateHash, indices)`. `_requireIncreasingIndices`
+  (`:528-535`): indices strictly increasing. `compute_transfer_effects_
+  and_interactions` (`:135-191`, `Outcome.lean`'s `transferEffects`):
+  surplus is consumed in priority order for every allocation, but only a
+  SELECTED index (`indices`, or all when `indices = []`) is paid now and
+  has its recorded amount reduced. Clause 25: "`transfer` must refuse a
   guarantee allocation" (`MultiAssetHolder.sol:169-170`, `revert 'cannot
-  transfer a guarantee'`). N1b brief S1/S2: the exit becomes one `
-  transactOwned` spend — nullify the channel's old collateral commitment,
-  mint one fresh owned note per non-zero payout (npk = the allocation's own
+  transfer a guarantee'`) — checked only for SELECTED allocations, matching
+  the code (the `revert` sits inside the `if (selected)` branch,
+  `:168-171`). N1b brief S1/S2: the exit becomes one `transactOwned` spend
+  — nullify the channel's old collateral commitment, mint one fresh owned
+  note per non-zero SELECTED payout (npk = the allocation's own
   destination, N2b: "the recipient's own note key, not contract-owned"),
-  plus a remainder note owned by `self` when the payout is partial. N2b
-  brief, "Goal": "There is no protocol fee on a payout... a payout is a
-  plain output, with no fee tag and no `cumulativeFees` coupling" — no fee
-  field appears anywhere in this case, which is the Lean statement of "no
-  fee".
-
-  Simplification: this model pays the FULL allocation list in priority
-  order (the `indices == []`, "pay out to all" case,
-  `MultiAssetHolder.sol:149`), not an arbitrary caller-chosen subset —
-  the general `indices` feature is established by clause 24 and not
-  re-derived bit-for-bit here, since the safety theorems this phase states
-  do not depend on which subset a caller names.
+  plus a remainder note owned by `self` for whatever is left of
+  `heldValue` after the selected payouts (`:228`, `holdings[asset][
+  channelId] = ... - totalPayouts`, where `totalPayouts` sums only the
+  selected amounts). N2b brief, "Goal": "There is no protocol fee on a
+  payout... a payout is a plain output, with no fee tag and no
+  `cumulativeFees` coupling" — no fee field appears anywhere in this case,
+  which is the Lean statement of "no fee".
   -/
-  | .transfer assetIndex cid claimedStateHash outcome => fun s' =>
+  | .transfer assetIndex cid claimedStateHash outcome indices => fun s' =>
       ∃ h : assetIndex < outcome.length,
       let assetOutcome := outcome.get ⟨assetIndex, h⟩
       (s.channels cid).mode s.now = .finalized ∧
       (s.channels cid).stateHash = claimedStateHash ∧
       (s.channels cid).outcomeHash = outcomeHashOf outcome ∧
-      (∀ a ∈ assetOutcome.allocations, a.allocationType ≠ .guarantee) ∧
-      (let paid := afford assetOutcome.allocations (heldValue s assetOutcome.asset cid)
-       let remainder := heldValue s assetOutcome.asset cid - listSum paid
-       let payouts := (assetOutcome.allocations.zip paid).filterMap
-         (fun (a, amt) => if amt = 0 then none
-           else some (⟨a.destination, assetOutcome.asset, amt⟩ : NotePreimage))
-       let outputs := payouts ++
-         (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : NotePreimage)])
-       PoolOwnedSpendStep s.pool s.self assetOutcome.asset (s.holdings assetOutcome.asset cid)
-         outputs s'.pool ∧
-       s'.holdings = update s.holdings assetOutcome.asset
-         (update (s.holdings assetOutcome.asset) cid
-           (if remainder = 0 then none
-            else some (commitment s.self assetOutcome.asset remainder))) ∧
-       s'.channels = update s.channels cid
-         { s.channels cid with
-           outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
-             if i ≠ assetIndex then exit
-             else { exit with
-               allocations := (exit.allocations.zip paid).map
-                 fun (a, amt) => { a with amount := a.amount - amt } }) }) ∧
+      StrictlyIncreasing indices ∧
+      (let (newAllocs, exitAllocs, totalPayouts) :=
+         transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices
+       (∀ a ∈ exitAllocs, a.allocationType ≠ .guarantee) ∧
+       (let remainder := heldValue s assetOutcome.asset cid - totalPayouts
+        let payoutOutputs := exitAllocs.filterMap (fun a =>
+          if a.amount = 0 then none
+          else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : NotePreimage))
+        let outputs := payoutOutputs ++
+          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : NotePreimage)])
+        PoolOwnedSpendStep proofA s.pool s.self assetOutcome.asset
+          (s.holdings assetOutcome.asset cid) outputs s'.pool ∧
+        s'.holdings = update s.holdings assetOutcome.asset
+          (update (s.holdings assetOutcome.asset) cid
+            (if remainder = 0 then none
+             else some (commitment s.self assetOutcome.asset remainder))) ∧
+        s'.channels = update s.channels cid
+          { s.channels cid with
+            outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
+              if i ≠ assetIndex then exit else { exit with allocations := newAllocs }) })) ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
   /-
   ### `reclaim` — MultiAssetHolder.sol:237-390 (trusted, vendored
@@ -231,7 +248,8 @@ def Step (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   (`departures-found.md` item 2, "Reclaim creates value"): the current
   `ArmadaNitroAdjudicator._settleReclaimExit` instead mints a brand-new
   commitment worth `priorHeld + guaranteeAmount` to the target with
-  nothing debited anywhere, which this model does not follow.
+  nothing debited anywhere, which this model does not follow. No
+  signature or proof check, so this case does not use `sig`/`proofA`.
   -/
   | .reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
       targetOutcome targetAssetIndex claimedTargetStateHash => fun s' =>

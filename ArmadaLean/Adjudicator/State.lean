@@ -67,4 +67,28 @@ def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
     `Operations.lean` never mutates it). -/
 abbrev isAsset (s : AdjudicatorState) (asset : Nat) : Prop := s.configuredAssets asset
 
+/-- The state at deployment: no channel ever touched, no collateral, the
+    deploy-time asset list and the adjudicator's own identity, clock at
+    `0`. Phase 1 brief: "A safety statement holds at every state reachable
+    from deployment by any sequence of calls by any caller" — `genesis` is
+    THE deployment state every reachability claim anchors to
+    (`Reachability.lean`'s `Reachable`), not an arbitrary starting state a
+    theorem could otherwise leave unconstrained (coordinator correction,
+    this session). `assets`/`self` stay parameters: the deploy-time asset
+    list and the adjudicator's own address are themselves constructor
+    arguments (`ArmadaNitroAdjudicator`'s constructor), fixed once per
+    deployment. `pool` is ALSO a parameter, not empty: the Armada pool
+    (`Notes.lean`) is a shared, already-running contract this adjudicator
+    is deployed alongside, not created by it — a depositor's note
+    (`DepositTransacted`, `Notes.lean`) must already be live in the pool
+    before this adjudicator ever sees a call, so the pool's state at
+    deployment is whatever it already was, not `[]`. -/
+def genesis (assets : Nat → Prop) (self : Nat) (pool : PoolState) : AdjudicatorState where
+  pool := pool
+  channels := fun _ => emptyStatus
+  holdings := fun _ _ => none
+  configuredAssets := assets
+  self := self
+  now := 0
+
 end ArmadaLean.Adjudicator
