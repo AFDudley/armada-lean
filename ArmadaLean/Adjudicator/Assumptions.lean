@@ -150,4 +150,45 @@ global `axiom` — any `def` or theorem that needs to ask "did `p` authorize
 structure SignatureAssumptions where
   AuthorizedBy : Nat → Nat → Prop
 
+/-!
+## Liveness assumption: signature correctness (Nitro layer)
+
+The three structures above (`HashAssumptions`, `SignatureAssumptions`,
+and `ProofAssumptions` in `Notes.lean`) are SAFETY assumptions: each
+states only what a caller CANNOT do (invert a hash, forge a signature,
+fake a proof). None of them states that an HONEST participant CAN
+actually produce an authorization or a proof — a `SignatureAssumptions`
+instance whose `AuthorizedBy` relation is always `False` satisfies every
+safety field vacuously, yet makes `conclude` and `challenge` impossible
+for anyone, honest or not. A theorem claiming an action CAN happen
+therefore needs a LIVENESS assumption on top of the safety ones
+(coordinator correction, this session): "an honest participant can
+authorize any state they choose."
+
+For an EOA participant this is ECDSA completeness: any private key can
+sign any digest (S4 `0010-states-channels.md`, "State commitments": "a
+dedicated Ethereum private key" signs the state hash — nothing in the
+signing algorithm restricts which digest it can sign). For a contract
+participant this is the EIP-1271 self-authorization path
+(`NitroUtils.isAuthorizedBy`, `NitroUtils.sol:101-126`, `signer ==
+participant` branch): an honestly-coded contract accepts its own
+authorization. This model folds both into the one `AuthorizedBy` relation
+(see `SignatureAssumptions` above), so the liveness assumption is stated
+for that same relation, for every participant and every digest — the
+model has no predicate distinguishing an "honest" participant from any
+other, so the assumption must hold uniformly for it to be usable by a
+`Call` whose signer is just a `Nat`. -/
+
+/-- LIVENESS ASSUMPTION (signature correctness) — assumed, not proven.
+    `sig.can_authorize` says every participant can authorize every digest
+    under `sig`'s `AuthorizedBy` relation — the same relation
+    `SignatureAssumptions` already constrains from the other side (assumed
+    unforgeable; here, assumed available to an honest signer). A theorem
+    claiming `conclude` or `challenge` can succeed takes a
+    `SignatureLiveness sig` argument for the specific `sig` it reasons
+    about, so the dependency is visible on the theorem's own type, the
+    same discipline the three safety assumptions already follow. -/
+structure SignatureLiveness (sig : SignatureAssumptions) : Prop where
+  can_authorize : ∀ p d : Nat, sig.AuthorizedBy p d
+
 end ArmadaLean.Adjudicator

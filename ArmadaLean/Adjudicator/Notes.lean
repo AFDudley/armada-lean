@@ -215,6 +215,41 @@ structure ProofAssumptions where
     OwnedProofAccepted pub → ∃ w : OwnedWitness N M, OwnedConstrained w pub
 
 /-!
+## Liveness assumption: proof completeness (owned circuit)
+
+`ProofAssumptions` is a SAFETY assumption: it states only that an
+accepted proof could not have been faked (`ownedProof_sound`). It does
+not state that an honest spender, holding a real `OwnedConstrained`
+witness, can actually GET a proof accepted — a `ProofAssumptions`
+instance whose `OwnedProofAccepted` relation is always `False` satisfies
+`ownedProof_sound` vacuously (its hypothesis is never met), yet makes
+every `transactOwned` call impossible. A theorem claiming a deposit,
+transfer or reclaim-adjacent spend CAN happen therefore needs the
+converse: Groth16 COMPLETENESS for the `TransactOwned` verifying-key set
+(coordinator correction, this session) — "for an `OwnedConstrained`
+witness that satisfies the circuit, an accepted proof exists." This is
+the standard completeness property of a Groth16 proof system (every
+satisfying witness has SOME accepted proof), the converse of the
+soundness property `ownedProof_sound` already states; it is not claimed
+or cited by any S1-S4 paper — it is a property of the Groth16 system the
+owned circuit (`TransactOwned.circom`) is compiled for, the same way
+`ownedProof_sound` is. -/
+
+/-- LIVENESS ASSUMPTION (proof completeness, `TransactOwned`) — assumed,
+    not proven. `proofA.completeness` says every witness satisfying
+    `OwnedConstrained` has SOME accepted proof under `proofA`'s
+    `OwnedProofAccepted` relation — the same relation `ProofAssumptions`
+    already constrains from the other side (assumed sound; here, assumed
+    completable by an honest prover holding a real witness). A theorem
+    claiming a `transactOwned`-backed action can succeed takes a
+    `ProofLiveness proofA` argument for the specific `proofA` it reasons
+    about, so the dependency is visible on the theorem's own type, the
+    same discipline `SignatureLiveness` follows (`Assumptions.lean`). -/
+structure ProofLiveness (proofA : ProofAssumptions) : Prop where
+  completeness : ∀ {N M : Nat} (w : OwnedWitness N M) (pub : OwnedPublic N M),
+    OwnedConstrained w pub → proofA.OwnedProofAccepted pub
+
+/-!
 DEPARTURE (`departures-found.md` item 6, "Zero proof"): the current
 `PoolSpend.mintOwnedCommitments` (`src/armada/libraries/PoolSpend.sol:
 38-76`) passes a hard-coded zero `SnarkProof` to `pool.transactOwned`
