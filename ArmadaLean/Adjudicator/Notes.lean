@@ -191,35 +191,39 @@ validity." The adjudicator never inspects a proof itself — the same
 abstraction `ArmadaLean.EdDSAVerify` already uses for a signature
 (`Transact.lean:29`), one level further removed (a Groth16 verifier accepts
 or rejects; this model does not model the verifier's arithmetic, only that
-accepting implies a satisfying witness existed). -/
-
-/-- An opaque fact: "some Groth16 proof the caller supplied verifies
-    against this public-input vector under the pool's owned verifying key"
-    (`PrivacyPool.verifyOwned`, quoted above). -/
-axiom OwnedProofAccepted : {N M : Nat} → OwnedPublic N M → Prop
+accepting implies a satisfying witness existed). Bundled as a structure,
+not a bare `axiom`, for the same reason `SignatureAssumptions` is
+(`Assumptions.lean`): whether a proof counts as accepted is itself the
+non-trivial content "an accepted proof means its constraints hold"
+asserts, so any `def` or theorem that needs to ask "was this proof
+accepted?" must take a `ProofAssumptions` argument to do so. -/
 
 /-- CRYPTOGRAPHIC ASSUMPTION 3 (an accepted proof means its constraints
-    hold) — assumed, not proven. Groth16 soundness for the owned
-    verifying-key set: a caller cannot make `verifyOwned` accept a
-    public-input vector no witness satisfies (`PrivacyPool.sol:562-601`;
-    `TransactOwned.circom`, full file). Every theorem about a `pool.
-    transactOwned` call takes this as a hypothesis on the call's
-    `OwnedProofAccepted` fact, never on a witness a caller merely asserts. -/
-axiom ownedProof_sound {N M : Nat} (pub : OwnedPublic N M) :
+    hold) — assumed, not proven. `proofA.OwnedProofAccepted pub` holds iff
+    some Groth16 proof the caller supplied verifies against public-input
+    vector `pub` under the pool's owned verifying key (`PrivacyPool.
+    verifyOwned`, quoted above). `proofA.ownedProof_sound` is Groth16
+    soundness for the owned verifying-key set: a caller cannot make
+    `verifyOwned` accept a public-input vector no witness satisfies
+    (`PrivacyPool.sol:562-601`; `TransactOwned.circom`, full file). Every
+    theorem about a `pool.transactOwned` call takes this structure as an
+    explicit argument, never relying on a witness a caller merely
+    asserts. -/
+structure ProofAssumptions where
+  OwnedProofAccepted : {N M : Nat} → OwnedPublic N M → Prop
+  ownedProof_sound : ∀ {N M : Nat} (pub : OwnedPublic N M),
     OwnedProofAccepted pub → ∃ w : OwnedWitness N M, OwnedConstrained w pub
 
 /-!
 DEPARTURE (`departures-found.md` item 6, "Zero proof"): the current
 `PoolSpend.mintOwnedCommitments` (`src/armada/libraries/PoolSpend.sol:
 38-76`) passes a hard-coded zero `SnarkProof` to `pool.transactOwned`
-instead of a real proof, so `OwnedProofAccepted` never genuinely holds for
-the current code's calls outside `testingMode`. This model requires
-`OwnedProofAccepted` for every mint (`PoolOwnedSpendStep` below) because
-that is what the CORRECT design must do; the current code's zero-proof
-shortcut is exactly the bug the departures report, not a rule this model
-follows. This note has no Lean binding: it records why `ownedProof_sound`
-above is still the right axiom to state, not a weaker one that would
-excuse the current code's shortcut.
+instead of a real proof, so no `ProofAssumptions.OwnedProofAccepted`
+instance genuinely holds for the current code's calls outside
+`testingMode`. This model requires an `OwnedProofAccepted` witness for
+every mint (`PoolOwnedSpendStep` below) because that is what the CORRECT
+design must do; the current code's zero-proof shortcut is exactly the bug
+the departures report, not a rule this model follows.
 -/
 
 /-!
@@ -246,9 +250,9 @@ so the current code's remainder and reclaim notes are stuck. This model's
     fresh commitment per `outputPreimages` entry, with each output's
     commitment computed by the pool's own hash (`PoolSpend.hashCommitment`,
     `PoolSpend.sol:48-57`: "mirrors `TransactModule._hashCommitment`").
-    Requires an accepted owned proof (assumption 3) binding exactly this
-    nullifier/output shape under `ownerField = self`. -/
-def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
+    Requires an accepted owned proof (`proofA`, assumption 3) binding
+    exactly this nullifier/output shape under `ownerField = self`. -/
+def PoolOwnedSpendStep (proofA : ProofAssumptions) (before : PoolState) (self token : Nat)
     (nullifiedCommitment : Option Nat) (outputPreimages : List NotePreimage)
     (after : PoolState) : Prop :=
   (∀ pre ∈ outputPreimages, pre.token = token) ∧
@@ -257,7 +261,7 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
     | some c => before.isLive c) ∧
   (∃ N : Nat, ∃ pub : OwnedPublic N outputPreimages.length,
     pub.ownerField = self ∧
-    OwnedProofAccepted pub ∧
+    proofA.OwnedProofAccepted pub ∧
     (∀ j : Fin outputPreimages.length,
       pub.commitmentsOut j = commitment (outputPreimages.get j).npk token (outputPreimages.get j).value) ∧
     N = (if nullifiedCommitment.isSome then 1 else 0) ∧

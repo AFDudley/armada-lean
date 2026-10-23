@@ -90,14 +90,16 @@ accepting an arbitrary number of states and signatures and returning the
 latest single state which is deemed to be supported by those inputs."
 
 A state is "signed by participant p" iff p produced an authorization over
-its hash — assumption 2, `AuthorizedBy` (`Assumptions.lean`). -/
+its hash — assumption 2, `SignatureAssumptions.AuthorizedBy`
+(`Assumptions.lean`), taken as an explicit argument so the dependency is
+visible on `SignedByAll`'s own type. -/
 
 /-- `candidate` is signed by every participant of `fp` (used by `conclude`,
     below — S3 §2.2's `signedByEveryone`; S4 `0020-execution-rules.md`,
     `ConsensusApp`, "a state must be unanimously countersigned — that is,
     signed by all of the channel participants"). -/
-def SignedByAll (fp : FixedPart) (vp : VariablePart) : Prop :=
-  ∀ p ∈ fp.participants, AuthorizedBy p (stateHash fp vp)
+def SignedByAll (sig : SignatureAssumptions) (fp : FixedPart) (vp : VariablePart) : Prop :=
+  ∀ p ∈ fp.participants, sig.AuthorizedBy p (stateHash fp vp)
 
 /-!
 ## Application rules and state support

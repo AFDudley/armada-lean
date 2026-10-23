@@ -12,12 +12,24 @@
   chosen state, per the brief: "A safety statement holds at every state
   reachable from deployment by any sequence of calls by any caller."
 
-  Operator addition (coordinator message, this session): "every finalizable
-  outcome is paid out as notes, with no fee, with pool value conserved; and
-  no caller can make the adjudicator pay an outcome that is not
-  finalizable", using Nitro-2019-219.pdf §4.4's own definitions of
+  Operator addition (coordinator message, prior session): "every
+  finalizable outcome is paid out as notes, with no fee, with pool value
+  conserved; and no caller can make the adjudicator pay an outcome that is
+  not finalizable", using Nitro-2019-219.pdf §4.4's own definitions of
   "finalizable" and "enabled" outcome, not an invented rule. Sections A and
   B below are the two halves of that sentence.
+
+  Every theorem that reasons about a call sequence takes `SignatureAssumptions`
+  and `ProofAssumptions` (`Assumptions.lean`, `Notes.lean`) as explicit
+  arguments — `Step`/`AppliesAll`/`Reachable` are themselves parameterized
+  by them, so a reader sees on the theorem's own type which cryptographic
+  facts it relies on, never a hidden global axiom (coordinator correction,
+  this session). Every theorem that reasons about the reachable set takes
+  the deploy-time asset list (`assets`), the adjudicator's own identity
+  (`self`), and the pool's state at deployment (`pool0`) as explicit
+  arguments and anchors `Reachable` at `genesis assets self pool0`
+  (`State.lean`) — the one true deployment state, not an arbitrary
+  unconstrained starting state (same correction).
 -/
 import ArmadaLean.Adjudicator.Reachability
 
@@ -39,10 +51,10 @@ Nitro-2019-219.pdf §4.4: "we say an outcome, ω, is finalizable for
 participant A, if A has an unbeatable strategy for finalizing this outcome
 in the adjudicator"; a channel is finalized "(i) through a challenge that
 times out before anyone responds, and (ii) through the registration of a
-conclusion proof" (§3.2, Figure 4). `payout_traces_to_a_finalization_path`
-is the converse fact "no caller can take money they are not owed" needs:
-a payout always traces back to one of those two protocol-recognized paths,
-never to a bare caller assertion.
+conclusion proof" (§3.2, Figure 4). `finalized_outcome_was_concluded_or_
+challenged` is the converse fact "no caller can take money they are not
+owed" needs: a payout always traces back to one of those two
+protocol-recognized paths, never to a bare caller assertion.
 -/
 
 /-- Which harm this rules out: a caller cannot invent a finalized outcome
@@ -56,37 +68,42 @@ never to a bare caller assertion.
     checkpoint overwrote it before the timeout — that refinement belongs to
     the proof stage, not to this statement. -/
 theorem finalized_outcome_was_concluded_or_challenged
-    (s0 s : AdjudicatorState) (cid stateH outcomeH : Nat)
-    (hreach : Reachable s0 s) (hfin : ChannelFinalizedWith s cid stateH outcomeH) :
-    (∃ fp candidate, channelId fp = cid ∧ SignedByAll fp candidate ∧
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (cid stateH outcomeH : Nat)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s)
+    (hfin : ChannelFinalizedWith s cid stateH outcomeH) :
+    (∃ fp candidate, channelId fp = cid ∧ SignedByAll sig fp candidate ∧
       outcomeHashOf candidate.outcome = outcomeH) ∨
     (∃ fp proof candidate challenger, channelId fp = cid ∧
       AppSupports fp proof candidate ∧ challenger ∈ fp.participants ∧
-      AuthorizedBy challenger (stateHash fp candidate) ∧
+      sig.AuthorizedBy challenger (stateHash fp candidate) ∧
       stateHash fp candidate = stateH ∧
       outcomeHashOf candidate.outcome = outcomeH) := by
   sorry
 
-/-- Which harm this rules out: a caller cannot name an `outcome` to
-    `transfer` other than the one actually stored for the channel, and so
-    cannot divert a payout to a destination the finalized outcome did not
-    name, nor inflate an amount the finalized outcome did not allocate.
-    This is `Step`'s `transfer` case made explicit as a theorem: the
-    `outcome`/`claimedStateHash` a `transfer` call supplies must already
-    equal the channel's stored `(stateHash, outcomeHash)`
-    (`Operations.lean`'s `.transfer` case, mirroring
-    `MultiAssetHolder._requireMatchingFingerprint`, `MultiAssetHolder.sol:
-    506-516`), and the amount paid to each destination is bounded by
-    `afford`'s priority-order rule (S2 §5.1), never a caller-chosen
-    larger number. -/
+/-- Which harm this rules out: a caller cannot name an `outcome`/`indices`
+    to `transfer` that pays a destination the finalized outcome did not
+    name, or more than the finalized outcome allocated. This is `Step`'s
+    `transfer` case made explicit as a theorem: the `outcome`/
+    `claimedStateHash` a `transfer` call supplies must already equal the
+    channel's stored `(stateHash, outcomeHash)` (`Operations.lean`'s
+    `.transfer` case, mirroring `MultiAssetHolder._requireMatchingFingerprint`,
+    `MultiAssetHolder.sol:506-516`), and every allocation this call actually
+    pays now (`transferEffects`'s `exitAllocations`, clause 24,
+    `MultiAssetHolder.sol:135-191`) shares its destination with, and is paid
+    no more than, some allocation already recorded in that outcome. -/
 theorem transfer_pays_only_the_finalized_outcome
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat) (outcome : Outcome)
-    (hstep : Step s (.transfer assetIndex cid claimedStateHash outcome) s') :
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (h : assetIndex < outcome.length) :
     ChannelFinalizedWith s cid claimedStateHash (outcomeHashOf outcome) ∧
-    ∀ h : assetIndex < outcome.length,
-      ∀ dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations,
-        ∃ paid ≤ dest.amount, paid ∈ afford (outcome.get ⟨assetIndex, h⟩).allocations
-          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) := by
+    ∀ paid ∈ (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.1,
+      ∃ original ∈ (outcome.get ⟨assetIndex, h⟩).allocations,
+        paid.destination = original.destination ∧ paid.amount ≤ original.amount := by
   sorry
 
 /-!
@@ -116,17 +133,19 @@ caller can BLOCK another caller's operation, only interleave with it.
     which is the Armada-layer meaning of "paid" (lab book decision 9: the
     collateral "never leaves the pool"). -/
 theorem unbeatable_pays
-    (s0 s : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
     (p assetIndex : Nat) (hAssetIdx : assetIndex < candidate.outcome.length)
     (owed : Nat) (dest : Allocation)
-    (hreach : Reachable s0 s) (hp : p ∈ fp.participants)
-    (hsigned : SignedByAll fp candidate)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s) (hp : p ∈ fp.participants)
+    (hsigned : SignedByAll sig fp candidate)
     (hdest : dest ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations)
     (hp_dest : dest.destination = p) (howed : dest.amount = owed) :
     ∀ (interleaved : List Call) (mid : AdjudicatorState),
-      AppliesAll s interleaved mid →
+      AppliesAll sig proofA s interleaved mid →
       ∃ (payCalls : List Call) (final : AdjudicatorState),
-        AppliesAll mid payCalls final ∧
+        AppliesAll sig proofA mid payCalls final ∧
         ∃ pre : NotePreimage, pre.npk = p ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
@@ -145,22 +164,26 @@ theorem unbeatable_pays
     point and S4 `0040-lifecycle-of-a-channel.md`'s `Challenge --timeout-->
     Finalized'`). -/
 theorem unbeatable_pays_after_timeout
-    (s0 s : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
     (candidate : VariablePart) (challenger p assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length) (owed : Nat) (dest : Allocation)
-    (hreach : Reachable s0 s) (hp : p ∈ fp.participants)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s) (hp : p ∈ fp.participants)
     (hsupported : AppSupports fp proof candidate)
     (hchallenger : challenger ∈ fp.participants)
-    (hauth : AuthorizedBy challenger (stateHash fp candidate))
+    (hauth : sig.AuthorizedBy challenger (stateHash fp candidate))
     (hfinalizing : (s.channels (channelId fp)).finalizesAt > 0)
     (hdest : dest ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations)
     (hp_dest : dest.destination = p) (howed : dest.amount = owed) :
     ∀ (interleaved : List Call) (mid : AdjudicatorState),
-      AppliesAll s interleaved mid →
+      AppliesAll sig proofA s interleaved mid →
       (∀ highTurn, highTurn ≤ candidate.turnNum ∨
-        ¬ ∃ s'', Step mid (.challenge fp proof ⟨candidate.outcome, candidate.appData, highTurn, candidate.isFinal⟩ challenger) s'') →
+        ¬ ∃ s'', Step sig proofA mid
+          (.challenge fp proof ⟨candidate.outcome, candidate.appData, highTurn, candidate.isFinal⟩
+            challenger) s'') →
       ∃ (payCalls : List Call) (final : AdjudicatorState),
-        AppliesAll mid payCalls final ∧
+        AppliesAll sig proofA mid payCalls final ∧
         ∃ pre : NotePreimage, pre.npk = p ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
@@ -183,16 +206,25 @@ specializes to pure conservation for every call this adjudicator accepts.
     given token's value, never how much. One-step form; `Reachability.lean`
     lifts it to the full reachable set in `notedValue_conserved_reachable`
     below. -/
-theorem notedValue_conserved (s s' : AdjudicatorState) (call : Call) (token : Nat)
-    (hstep : Step s call s') :
+theorem notedValue_conserved
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s s' : AdjudicatorState) (call : Call) (token : Nat)
+    (hstep : Step sig proofA s call s') :
     s'.pool.notedValue token = s.pool.notedValue token := by
   sorry
 
 /-- The reachable-set form of `notedValue_conserved` (Phase 1 brief: "state
-    it over that reachable set, not over one step from a chosen state"). -/
-theorem notedValue_conserved_reachable (s0 s : AdjudicatorState) (token : Nat)
-    (hreach : Reachable s0 s) :
-    s.pool.notedValue token = s0.pool.notedValue token := by
+    it over that reachable set, not over one step from a chosen state"):
+    every reachable state's `notedValue` per token equals the DEPLOYED
+    pool's — the adjudicator only ever reassigns which note backs a
+    token's value, starting from whatever the shared Armada pool already
+    held when this adjudicator was deployed (`State.lean`'s `genesis`). -/
+theorem notedValue_conserved_reachable
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (token : Nat)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s) :
+    s.pool.notedValue token = pool0.notedValue token := by
   sorry
 
 /-- Which harm this rules out: `holdings` can never point to a commitment
@@ -204,8 +236,11 @@ theorem notedValue_conserved_reachable (s0 s : AdjudicatorState) (token : Nat)
     9's "value in the pool exists only as notes" at the adjudicator's own
     storage layer, not only the pool's. -/
 theorem holdings_point_to_live_notes
-    (s0 s : AdjudicatorState) (asset cid c : Nat)
-    (hreach : Reachable s0 s) (hholds : s.holdings asset cid = some c) :
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (asset cid c : Nat)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s)
+    (hholds : s.holdings asset cid = some c) :
     s.pool.isLive c := by
   sorry
 
@@ -215,14 +250,22 @@ theorem holdings_point_to_live_notes
 Phase 1 brief: "Also state, for each thing the adjudicator is for (a
 deposit, a payout, a top-up, a reclaim, a conclude, a challenge that times
 out), that it can actually happen. A model in which nothing can happen
-satisfies every safety statement, and proves nothing."
+satisfies every safety statement, and proves nothing." Each statement
+below starts from a state `s` that is itself `Reachable` from deployment
+(`genesis assets self pool0`), so an unreachable, impossible state cannot
+satisfy it (coordinator correction, this session): the action is shown
+possible for a real caller starting from somewhere the protocol could
+actually be, not from an arbitrarily chosen state.
 -/
 
-/-- A deposit can happen: from a channel with no collateral yet, SOME
-    deposit call succeeds (N2a brief, "Goal"). -/
+/-- A deposit can happen: from SOME reachable state with no collateral
+    yet, SOME deposit call succeeds (N2a brief, "Goal"). -/
 theorem deposit_can_happen :
-    ∃ (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat),
-      Step s (.deposit channelId expectedHeld asset amount) s' := by
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat),
+      Reachable sig proofA (genesis assets self pool0) s ∧
+      Step sig proofA s (.deposit channelId expectedHeld asset amount) s' := by
   sorry
 
 /-- A top-up can happen: a SECOND deposit against a channel that already
@@ -231,62 +274,85 @@ theorem deposit_can_happen :
     binds the proof to `(channelId, expectedHeld)` so a deposit always adds
     to, never replaces, the prior holding). -/
 theorem topup_can_happen :
-    ∃ (s mid s' : AdjudicatorState) (cid a1 a2 asset amt1 amt2 : Nat),
-      Step s (.deposit cid a1 asset amt1) mid ∧
-      Step mid (.deposit cid a2 asset amt2) s' ∧
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s mid s' : AdjudicatorState) (cid a1 a2 asset amt1 amt2 : Nat),
+      Reachable sig proofA (genesis assets self pool0) s ∧
+      Step sig proofA s (.deposit cid a1 asset amt1) mid ∧
+      Step sig proofA mid (.deposit cid a2 asset amt2) s' ∧
       heldValue s' asset cid = heldValue mid asset cid + amt2 := by
   sorry
 
-/-- A challenge can happen: SOME challenge call succeeds and advances the
-    channel to `.challenge` mode (ForceMove.sol:39-81; clause 13). -/
+/-- A challenge can happen: from SOME reachable state, SOME challenge call
+    succeeds and advances the channel to `.challenge` mode
+    (ForceMove.sol:39-81; clause 13). -/
 theorem challenge_can_happen :
-    ∃ (s s' : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
       (candidate : VariablePart) (challenger : Nat),
-      Step s (.challenge fp proof candidate challenger) s' ∧
+      Reachable sig proofA (genesis assets self pool0) s ∧
+      Step sig proofA s (.challenge fp proof candidate challenger) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
   sorry
 
-/-- A challenge can time out: from a registered, unanswered challenge, a
-    `tick` to `finalizesAt` reaches `.finalized` mode with no further call
-    (clause 18, S4 `0040-lifecycle-of-a-channel.md`: "timeout is a passive
-    transition"). -/
+/-- A challenge can time out: from a reachable state with a registered,
+    unanswered challenge, a `tick` to `finalizesAt` reaches `.finalized`
+    mode with no further call (clause 18, S4
+    `0040-lifecycle-of-a-channel.md`: "timeout is a passive transition"). -/
 theorem challenge_timeout_can_happen :
-    ∃ (s s' : AdjudicatorState) (cid : Nat),
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (cid : Nat),
+      Reachable sig proofA (genesis assets self pool0) s ∧
       (s.channels cid).finalizesAt > 0 ∧
-      Step s (.tick (s.channels cid).finalizesAt) s' ∧
+      Step sig proofA s (.tick (s.channels cid).finalizesAt) s' ∧
       (s'.channels cid).mode s'.now = .finalized := by
   sorry
 
-/-- A conclude can happen: SOME unanimous final state finalizes a channel
-    instantly (clause 17, S4 `0070-finalizing-a-channel.md`: "the `conclude`
-    method allows anyone... to immediately finalize an outcome... without
-    having to wait for a challenge to expire"). -/
+/-- A conclude can happen: from SOME reachable state, SOME unanimous final
+    state finalizes a channel instantly (clause 17, S4
+    `0070-finalizing-a-channel.md`: "the `conclude` method allows anyone...
+    to immediately finalize an outcome... without having to wait for a
+    challenge to expire"). -/
 theorem conclude_can_happen :
-    ∃ (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart),
-      Step s (.conclude fp candidate) s' ∧
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart),
+      Reachable sig proofA (genesis assets self pool0) s ∧
+      Step sig proofA s (.conclude fp candidate) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
   sorry
 
-/-- A payout can happen: SOME `transfer` call on a finalized channel pays a
-    nonzero amount to some destination (N1b/N2b briefs). -/
+/-- A payout can happen: from SOME reachable, finalized channel, SOME
+    `transfer` call pays a nonzero amount to some destination (N1b/N2b
+    briefs). -/
 theorem payout_can_happen :
-    ∃ (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
-      (outcome : Outcome) (h : assetIndex < outcome.length) (dest : Allocation),
-      Step s (.transfer assetIndex cid claimedStateHash outcome) s' ∧
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+      (outcome : Outcome) (indices : List Nat) (h : assetIndex < outcome.length)
+      (dest : Allocation),
+      Reachable sig proofA (genesis assets self pool0) s ∧
+      Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s' ∧
       dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations ∧
       0 < dest.amount ∧
       s'.pool.isLive
         (commitment dest.destination (outcome.get ⟨assetIndex, h⟩).asset dest.amount) := by
   sorry
 
-/-- A reclaim can happen: SOME guarantee allocation can be reclaimed,
-    reallocating the source channel's own outcome (S3 §2.4, Listing 2). -/
+/-- A reclaim can happen: from SOME reachable state, SOME guarantee
+    allocation can be reclaimed, reallocating the source channel's own
+    outcome (S3 §2.4, Listing 2). -/
 theorem reclaim_can_happen :
-    ∃ (s s' : AdjudicatorState) (sourceChannelId : Nat) (sourceOutcome : Outcome)
+    ∃ (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+      (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (sourceChannelId : Nat) (sourceOutcome : Outcome)
       (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
       (targetAssetIndex claimedTargetStateHash : Nat),
-      Step s (.reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
-        targetOutcome targetAssetIndex claimedTargetStateHash) s' ∧
+      Reachable sig proofA (genesis assets self pool0) s ∧
+      Step sig proofA s (.reclaim sourceChannelId sourceOutcome sourceAssetIndex
+        indexOfTargetInSource targetOutcome targetAssetIndex claimedTargetStateHash) s' ∧
       s'.channels sourceChannelId ≠ s.channels sourceChannelId := by
   sorry
 
@@ -300,26 +366,26 @@ paths `transferAllAssets` and `concludeAndTransferAllAssets` revert (N3);
 value in the pool exists only as notes."
 -/
 
-/-- A payout takes no fee: `transfer` mints exactly `heldValue` worth of
-    notes in total (the paid allocations plus the remainder), with no
-    amount withheld anywhere (N2b brief, "Goal": "There is no protocol fee
-    on a payout... a payout is a plain output, with no fee tag and no
-    `cumulativeFees` coupling. There is no protocol fee on a payout."). The
-    only fee ANYWHERE in the Armada design is the shield-in fee, charged by
-    the pool's `ShieldModule` on a DIFFERENT entry point this adjudicator
+/-- A payout takes no fee: `transfer` mints exactly as much as it debits —
+    the paid allocations' total plus the remainder equals the pre-call
+    `heldValue`, with no amount withheld anywhere (N2b brief, "Goal":
+    "There is no protocol fee on a payout... a payout is a plain output,
+    with no fee tag and no `cumulativeFees` coupling."). The only fee
+    ANYWHERE in the Armada design is the shield-in fee, charged by the
+    pool's `ShieldModule` on a DIFFERENT entry point this adjudicator
     never calls (`ArmadaLean.Fee`, the root pool model's `fee_conservation`
     theorem, which this model does not restate — it belongs to the pool,
     not the adjudicator). -/
 theorem payout_takes_no_fee
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat) (outcome : Outcome)
-    (hstep : Step s (.transfer assetIndex cid claimedStateHash outcome) s') :
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s') :
     ∀ h : assetIndex < outcome.length,
-      listSum (afford (outcome.get ⟨assetIndex, h⟩).allocations
-        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid)) +
-      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
-        listSum (afford (outcome.get ⟨assetIndex, h⟩).allocations
-          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid)))
-      = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
+      let (_, _, totalPayouts) := transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
+      totalPayouts + (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid - totalPayouts)
+        = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
   sorry
 
 /-- `conclude` finalizes without moving value: `conclude`'s `Step` case
@@ -327,8 +393,9 @@ theorem payout_takes_no_fee
     unchanged (N3/R1 briefs, "Behavior (unchanged)": "`conclude` finalizes
     a channel... without the inherited... bulk payout path"). -/
 theorem conclude_moves_no_value
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
-    (hstep : Step s (.conclude fp candidate) s') :
+    (hstep : Step sig proofA s (.conclude fp candidate) s') :
     s'.pool = s.pool ∧ s'.holdings = s.holdings := by
   sorry
 
@@ -341,10 +408,11 @@ theorem conclude_moves_no_value
     override and both calls succeed, which is the bug this statement rules
     out of the model. -/
 theorem bulk_paths_never_succeed
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (cid : Nat) (outcome : Outcome) (claimedStateHash : Nat)
     (fp : FixedPart) (candidate : VariablePart) :
-    (∀ s s', ¬ Step s (.bulkTransferAllAssets cid outcome claimedStateHash) s') ∧
-    (∀ s s', ¬ Step s (.bulkConcludeAndTransferAllAssets fp candidate) s') := by
+    (∀ s s', ¬ Step sig proofA s (.bulkTransferAllAssets cid outcome claimedStateHash) s') ∧
+    (∀ s s', ¬ Step sig proofA s (.bulkConcludeAndTransferAllAssets fp candidate) s') := by
   sorry
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
@@ -356,7 +424,10 @@ theorem bulk_paths_never_succeed
     `notedValue_conserved_reachable` (C) as the single "value is notes"
     claim the brief names separately from plain conservation. -/
 theorem value_exists_only_as_notes
-    (s0 s : AdjudicatorState) (asset cid : Nat) (hreach : Reachable s0 s)
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (asset cid : Nat)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s)
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
     ∃ c, s.holdings asset cid = some c ∧ s.pool.isLive c ∧
       (s.pool.preimageOf c).map NotePreimage.value = some held := by
@@ -387,18 +458,26 @@ theorem heldValue_zero_iff_no_collateral (s : AdjudicatorState) (asset cid : Nat
     every `Step` case leaves `s'.configuredAssets = s.configuredAssets`
     (`Operations.lean`), so it is exactly the deploy-time list for every
     reachable state. -/
-theorem configuredAssets_invariant (s0 s : AdjudicatorState) (hreach : Reachable s0 s) :
-    s.configuredAssets = s0.configuredAssets := by
+theorem configuredAssets_invariant
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState)
+    (hreach : Reachable sig proofA (genesis assets self pool0) s) :
+    s.configuredAssets = assets := by
   sorry
 
 /-- Closes two of the five `_mintTransferPayout` misses (old offsets
     11666, 11738): an allocation paid exactly `0` mints no note at all —
-    `transfer`'s output list (`Operations.lean`'s `.transfer` case,
-    `payouts`) is built by `filterMap`, which drops a `0`-amount entry
-    outright, not a `≤ 0`/`< 1` check a mutant could weaken unnoticed. -/
+    `transferEffects`'s `exitAllocations` (`Outcome.lean`) carries a
+    position's allocation through `afford` regardless of selection, but
+    `.transfer`'s output list (`Operations.lean`, `payoutOutputs`) is built
+    by `filterMap`, which drops a `0`-amount entry outright, not a `≤ 0`/
+    `< 1` check a mutant could weaken unnoticed. -/
 theorem zero_payout_mints_nothing
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat) (outcome : Outcome)
-    (hstep : Step s (.transfer assetIndex cid claimedStateHash outcome) s')
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) (dest : Allocation)
     (hdest : dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations) (hzero : dest.amount = 0) :
     ¬ ∃ pre : NotePreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
@@ -408,17 +487,21 @@ theorem zero_payout_mints_nothing
 
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
-    strictly positive — a full payout (`listSum paid = heldValue`) leaves
-    `holdings[asset][cid] = none`, never a dangling `0`-value commitment
-    (N1b husband review: "`totalPayouts == initialAssetHoldings` (full
-    payout) mints no remainder output, so `holdings[asset][channelId]`
-    cannot be left pointing at a `0`-value commitment"). -/
+    strictly positive — a full payout (every index selected, or
+    `indices = []`, and `totalPayouts = heldValue`) leaves `holdings[
+    asset][cid] = none`, never a dangling `0`-value commitment (N1b
+    husband review: "`totalPayouts == initialAssetHoldings` (full payout)
+    mints no remainder output, so `holdings[asset][channelId]` cannot be
+    left pointing at a `0`-value commitment"). -/
 theorem full_payout_leaves_no_remainder
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat) (outcome : Outcome)
-    (hstep : Step s (.transfer assetIndex cid claimedStateHash outcome) s')
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length)
-    (hfull : listSum (afford (outcome.get ⟨assetIndex, h⟩).allocations
-        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid)) =
+    (hfull :
+      (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 =
       heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) :
     s'.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
   sorry
@@ -429,8 +512,10 @@ theorem full_payout_leaves_no_remainder
     (`PoolOwnedSpendStep`'s `N = (if nullifiedCommitment.isSome then 1 else
     0)` field, `Notes.lean`). -/
 theorem nullify_iff_commitment_was_some
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat) (outcome : Outcome)
-    (hstep : Step s (.transfer assetIndex cid claimedStateHash outcome) s')
+    (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
       s'.pool.usedNullifiers = s.pool.usedNullifiers := by

@@ -11,6 +11,7 @@
   OUTCOME pieces; `Channel.lean` holds the state, signature and
   finalizability pieces that use them.
 -/
+import ArmadaLean.ValueConservation
 
 namespace ArmadaLean.Adjudicator
 
@@ -99,6 +100,48 @@ def afford : List Allocation → Nat → List Nat
   | a :: as, surplus =>
     let paid := min a.amount surplus
     paid :: afford as (surplus - paid)
+
+/-!
+## Selecting which indices `transfer` pays now
+
+`MultiAssetHolder.sol:135-191`, `compute_transfer_effects_and_interactions`:
+surplus is consumed in priority order for EVERY allocation, whether or not
+its index is selected (`affordsForDestination = min(allocations[i].amount,
+surplus)` runs unconditionally inside the loop, `:167`; `surplus -=
+affordsForDestination` at `:189` runs every iteration too). Only a
+SELECTED allocation (`indices[k] == i`, or every index when `indices` is
+empty, `:149,168`) is actually paid now and has its recorded amount
+reduced (`:173-181`); an unselected allocation keeps its full recorded
+amount (`:185`) even though the priority pass already "spent" surplus
+computing what it would have received. `indices == []` means "pay out to
+all" (`:149`, the exact words of the code comment).
+-/
+
+/-- `MultiAssetHolder._requireIncreasingIndices` (`:528-535`): "Checks that
+    the supplied indices are strictly increasing. This allows us... to
+    write a more efficient claim function." -/
+def StrictlyIncreasing : List Nat → Prop
+  | [] => True
+  | [_] => True
+  | a :: b :: rest => a < b ∧ StrictlyIncreasing (b :: rest)
+
+/-- `compute_transfer_effects_and_interactions` (`MultiAssetHolder.sol:
+    135-191`, quoted above): `transferEffects allocations surplus indices`
+    returns `(newAllocations, exitAllocations, totalPayouts)`. Every
+    position's priority-order affordable amount (`afford`) is computed
+    first; a selected position's allocation is reduced by that amount and
+    its paid amount goes to `exitAllocations` (`:173-181`); an unselected
+    position's allocation is left at its full recorded amount (`:185`). -/
+def transferEffects (allocations : List Allocation) (surplus : Nat) (indices : List Nat) :
+    List Allocation × List Allocation × Nat :=
+  let paidAt := afford allocations surplus
+  let selected (i : Nat) : Bool := indices.isEmpty || i ∈ indices
+  let indexed := (List.range allocations.length).zip (allocations.zip paidAt)
+  let newAllocations := indexed.map fun (i, a, paid) =>
+    if selected i then { a with amount := a.amount - paid } else a
+  let exitAllocations := indexed.filterMap fun (i, a, paid) =>
+    if selected i then some { a with amount := paid } else none
+  (newAllocations, exitAllocations, listSum (exitAllocations.map Allocation.amount))
 
 /-!
 ## Guarantees
