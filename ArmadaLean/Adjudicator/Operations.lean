@@ -16,7 +16,12 @@
   `.challenge`/`.conclude` need to ask whether a digest was authorized and
   `.deposit`/`.transfer` need to ask whether an owned proof was accepted —
   both are explicit structure arguments, never a bare global axiom
-  (coordinator correction, this session).
+  (coordinator correction, prior session). Two new `Call`s, `.sign` and
+  `.signNote`, are how an EOA participant's half of assumption 2 enters the
+  execution (coordinator correction, this session, `State.lean`'s module
+  comment): every OTHER case that touches `s'.signedBy` leaves it equal to
+  `s.signedBy`, so only `.sign` ever grows it, and only in the signing
+  participant's own row.
 -/
 import ArmadaLean.Adjudicator.State
 
@@ -30,7 +35,13 @@ namespace ArmadaLean.Adjudicator
     about the call, not an omission a reader might mistake for an
     oversight. `transfer` carries `indices` (clause 24: `transfer(
     assetIndex, fromChannelId, outcomeBytes, stateHash, indices)`), since a
-    caller chooses which destinations to pay out now. -/
+    caller chooses which destinations to pay out now. `sign`/`signNote`
+    are not go-nitro/Armada entry points — they model the OFF-CHAIN act of
+    producing a signature, which the real system also treats as
+    submittable by anyone once produced (`NitroUtils.sol:101-126`'s
+    `signer == participant` branch recovers a signer from signature bytes
+    ANY caller could relay; this model just names the act instead of
+    carrying the bytes). -/
 inductive Call where
   | deposit (channelId expectedHeld asset amount : Nat)
   | challenge (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
@@ -45,6 +56,8 @@ inductive Call where
   | bulkTransferAllAssets (channelId : Nat) (outcome : Outcome) (claimedStateHash : Nat)
   | bulkConcludeAndTransferAllAssets (fp : FixedPart) (candidate : VariablePart)
   | tick (newNow : Nat)
+  | sign (p d : Nat)
+  | signNote (pk : Nat × Nat) (msgHash : Nat)
 
 /-- One call's effect: `s` steps to `s'` under `call`, given the signature
     and proof assumptions (`sig`, `proofA`) the call's checks may need.
@@ -82,7 +95,8 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
       s'.self = s.self ∧
-      s'.now = s.now
+      s'.now = s.now ∧
+      s'.signedBy = s.signedBy
   /-
   ### `challenge` — ForceMove.sol:39-81; S4 `0070-finalizing-a-channel.md`
 
@@ -103,7 +117,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   candidate` directly, folding in the `'forceMove'` domain-separation
   string the quote names — the string distinguishes a challenge
   authorization from a plain state signature, which this model does not
-  need to distinguish because it only ever checks `sig.AuthorizedBy
+  need to distinguish because it only ever checks `AuthorizedBy sig s
   challenger (stateHash fp candidate)` for the challenge call, never for
   both uses at once.
   -/
@@ -115,14 +129,15 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
         | .finalized => False) ∧
       AppSupports fp proof candidate ∧
       challenger ∈ fp.participants ∧
-      sig.AuthorizedBy challenger (stateHash fp candidate) ∧
+      AuthorizedBy sig s challenger (stateHash fp candidate) ∧
       s'.channels = update s.channels cid
         { turnNumRecord := candidate.turnNum
           finalizesAt := s.now + fp.challengeDuration
           stateHash := stateHash fp candidate
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.signedBy = s.signedBy
   /-
   ### `checkpoint` — ForceMove.sol:90-119; S4 `0070-finalizing-a-channel.md`
 
@@ -147,7 +162,8 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       s'.channels = update s.channels cid
         { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := 0, outcomeHash := 0 } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.signedBy = s.signedBy
   /-
   ### `conclude` — ForceMove.sol:127-170; S4 `0070-finalizing-a-channel.md`
 
@@ -169,12 +185,13 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       let cid := channelId fp
       (s.channels cid).mode s.now ≠ .finalized ∧
       candidate.isFinal = true ∧
-      SignedByAll sig fp candidate ∧
+      SignedByAll sig s fp candidate ∧
       s'.channels = update s.channels cid
         { turnNumRecord := 0, finalizesAt := s.now, stateHash := 0
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.signedBy = s.signedBy
   /-
   ### `transfer` — MultiAssetHolder.sol:135-191 (trusted, vendored
   `src/nitro`), settled via N1b/N2b's owned-spend (Armada layer)
@@ -228,7 +245,8 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
           { s.channels cid with
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
               if i ≠ assetIndex then exit else { exit with allocations := newAllocs }) })) ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.signedBy = s.signedBy
   /-
   ### `reclaim` — MultiAssetHolder.sol:237-390 (trusted, vendored
   `src/nitro`); S3 §2.4 Listing 2; clause 28
@@ -276,7 +294,8 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
              outcomeHash := outcomeHashOf
                (reallocateGuarantee sourceOutcome sourceAssetIndex indexOfTargetInSource left right a0 a1) }) ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.signedBy = s.signedBy
   /-
   ### `bulkTransferAllAssets`, `bulkConcludeAndTransferAllAssets` — N3
   brief, "revert"
@@ -313,6 +332,43 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       newNow ≥ s.now ∧
       s'.now = newNow ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧ s'.channels = s.channels ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧
+      s'.signedBy = s.signedBy
+  /-
+  ### `sign` — the EOA half of assumption 2 (`Assumptions.lean`, `State.
+  lean`'s module comments)
+
+  Not a go-nitro or Armada entry point: it names the OFF-CHAIN act of a
+  participant producing a signature, the fact `NitroUtils.isAuthorizedBy`'s
+  `signer == participant` branch checks (`NitroUtils.sol:101-126`). Any
+  caller may submit it (matching Nitro-2019-219.pdf §3.3, "no restriction
+  on who can trigger the operations" — once produced, a signature's bytes
+  can be relayed by anyone), but the effect only ever adds `d` to `p`'s OWN
+  row of `signedBy`: no `Call` exists that adds a digest to a DIFFERENT
+  participant's row, which is where unforgeability of this half of
+  assumption 2 lives (coordinator correction, this session: "no caller can
+  add a digest for another participant's key").
+  -/
+  | .sign p d => fun s' =>
+      s'.signedBy = (fun p' d' => (p' = p ∧ d' = d) ∨ s.signedBy p' d') ∧
+      s'.pool = s.pool ∧ s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+  /-
+  ### `signNote` — the pool layer's own EdDSA signing action
+  (`Notes.lean`'s `eddsaCompleteness`)
+
+  The exact same idea as `.sign`, for the root pool layer's EdDSA check
+  `Constrained.sig` relies on (`Transact.lean:119`): names the off-chain
+  act of the holder of babyjubjub key `pk` signing `msgHash`. Only ever
+  adds `(pk, msgHash)` to `pk`'s OWN row of `PoolState.poolSignedBy`
+  (coordinator instruction, this session: "the depositor's signed messages
+  are part of the execution").
+  -/
+  | .signNote pk msgHash => fun s' =>
+      s'.pool.poolSignedBy = (fun pk' m' => (pk' = pk ∧ m' = msgHash) ∨ s.pool.poolSignedBy pk' m') ∧
+      s'.pool.liveNotes = s.pool.liveNotes ∧ s'.pool.usedNullifiers = s.pool.usedNullifiers ∧
+      s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.signedBy = s.signedBy
 
 end ArmadaLean.Adjudicator

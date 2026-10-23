@@ -31,9 +31,15 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
     hub's configured asset list (`ArmadaNitroAdjudicator.configuredAssets`),
     the adjudicator contract's own note-owner identity (`self` — the
     `address(this)` every self-owned `npk` derivation in `Notes.lean`
-    reads), and the current time (`block.timestamp`, read by
-    `ChannelStatus.mode` and advanced by passing calls —
-    `Operations.lean`'s `tick`). -/
+    reads), the current time (`block.timestamp`, read by `ChannelStatus.
+    mode` and advanced by passing calls — `Operations.lean`'s `tick`), and
+    `signedBy` — the EOA half of assumption 2 (`Assumptions.lean`'s module
+    comment): which `(participant, digest)` pairs this EXECUTION has
+    recorded a genuine signature for. Grows only through
+    `Operations.lean`'s `.sign` `Call`, which only ever adds to the
+    signing participant's OWN row (coordinator correction, this session:
+    "Each execution carries the set of digests each participant signed...
+    no caller can add a digest for another participant's key"). -/
 structure AdjudicatorState where
   pool : PoolState
   channels : Nat → ChannelStatus
@@ -41,6 +47,7 @@ structure AdjudicatorState where
   configuredAssets : Nat → Prop
   self : Nat
   now : Nat
+  signedBy : Nat → Nat → Prop
 
 /-- `heldValue`: `0` for no collateral, else the pool's own recorded value
     for the live commitment (N1a brief S2: "it returns `0` for an empty
@@ -67,22 +74,44 @@ def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
     `Operations.lean` never mutates it). -/
 abbrev isAsset (s : AdjudicatorState) (asset : Nat) : Prop := s.configuredAssets asset
 
-/-- The state at deployment: no channel ever touched, no collateral, the
-    deploy-time asset list and the adjudicator's own identity, clock at
-    `0`. Phase 1 brief: "A safety statement holds at every state reachable
-    from deployment by any sequence of calls by any caller" — `genesis` is
-    THE deployment state every reachability claim anchors to
-    (`Reachability.lean`'s `Reachable`), not an arbitrary starting state a
-    theorem could otherwise leave unconstrained (coordinator correction,
-    this session). `assets`/`self` stay parameters: the deploy-time asset
-    list and the adjudicator's own address are themselves constructor
-    arguments (`ArmadaNitroAdjudicator`'s constructor), fixed once per
-    deployment. `pool` is ALSO a parameter, not empty: the Armada pool
-    (`Notes.lean`) is a shared, already-running contract this adjudicator
-    is deployed alongside, not created by it — a depositor's note
-    (`DepositTransacted`, `Notes.lean`) must already be live in the pool
-    before this adjudicator ever sees a call, so the pool's state at
-    deployment is whatever it already was, not `[]`. -/
+/-- Assumption 2, combined (`Assumptions.lean`'s module comment,
+    `NitroUtils.isAuthorizedBy`, `NitroUtils.sol:101-126`): `p` authorized
+    `d` iff `p` signed `d` in THIS execution (the EOA path, `s.signedBy`),
+    OR `p` is a contract whose own code accepts `d` (the EIP-1271 path,
+    `sig.contractAuthorizes`, fixed and caller-independent). Matches
+    `isAuthorizedBy`'s own two-branch union exactly. -/
+def AuthorizedBy (sig : SignatureAssumptions) (s : AdjudicatorState) (p d : Nat) : Prop :=
+  s.signedBy p d ∨ sig.contractAuthorizes p d
+
+/-- `candidate` is signed by every participant of `fp` (used by `conclude`,
+    `Operations.lean` — S3 §2.2's `signedByEveryone`; S4
+    `0020-execution-rules.md`, `ConsensusApp`, "a state must be
+    unanimously countersigned — that is, signed by all of the channel
+    participants"). -/
+def SignedByAll (sig : SignatureAssumptions) (s : AdjudicatorState)
+    (fp : FixedPart) (vp : VariablePart) : Prop :=
+  ∀ p ∈ fp.participants, AuthorizedBy sig s p (stateHash fp vp)
+
+/-- The state at deployment: no channel ever touched, no collateral, no
+    digest signed yet, the deploy-time asset list and the adjudicator's
+    own identity, clock at `0`. Phase 1 brief: "A safety statement holds
+    at every state reachable from deployment by any sequence of calls by
+    any caller" — `genesis` is THE deployment state every reachability
+    claim anchors to (`Reachability.lean`'s `Reachable`), not an arbitrary
+    starting state a theorem could otherwise leave unconstrained
+    (coordinator correction, prior session). `assets`/`self` stay
+    parameters: the deploy-time asset list and the adjudicator's own
+    address are themselves constructor arguments
+    (`ArmadaNitroAdjudicator`'s constructor), fixed once per deployment.
+    `pool` is ALSO a parameter, not empty: the Armada pool (`Notes.lean`)
+    is a shared, already-running contract this adjudicator is deployed
+    alongside, not created by it — a depositor's note (`DepositTransacted`,
+    `Notes.lean`) must already be live in the pool before this adjudicator
+    ever sees a call, so the pool's state at deployment is whatever it
+    already was, not `[]`. `signedBy` is NOT a parameter: no Nitro-layer
+    digest is signed before the first `.sign` call in the execution
+    (coordinator correction, this session: signing is an action the
+    execution carries, not a deploy-time given). -/
 def genesis (assets : Nat → Prop) (self : Nat) (pool : PoolState) : AdjudicatorState where
   pool := pool
   channels := fun _ => emptyStatus
@@ -90,5 +119,6 @@ def genesis (assets : Nat → Prop) (self : Nat) (pool : PoolState) : Adjudicato
   configuredAssets := assets
   self := self
   now := 0
+  signedBy := fun _ _ => False
 
 end ArmadaLean.Adjudicator

@@ -16,7 +16,7 @@
   fact any proof anywhere can invoke without the theorem's own signature
   showing it; a structure a theorem takes as an explicit argument forces
   the dependency onto the type, so a reader sees from the statement alone
-  which assumptions it needs (coordinator correction, this session).
+  which assumptions it needs (coordinator correction, prior session).
   `channelIdOf`, `stateHashOf` and `outcomeHashOf` stay as bare `axiom`
   declarations: each names an uninterpreted FUNCTION with no asserted
   property (the same status as `AppSupports`/`decodeGuarantee`), not a
@@ -109,86 +109,49 @@ structure HashAssumptions where
 /-!
 ## Assumption 2: a signature cannot be forged (Nitro layer)
 
-S4 `0010-states-channels.md`, "State commitments": a state hash "is signed
-using a dedicated Ethereum private key... The signature has the... type:
-`struct Signature { uint8 v; bytes32 r; bytes32 s; }`."
+Clause 8: "A signature counts for participant i if i signed as an EOA, or,
+when i is a contract, if i accepts the signature through EIP-1271."
+`NitroUtils.isAuthorizedBy` (`NitroUtils.sol:101-126`): "`if (signer ==
+participant) return true;` ... [else, for a contract] `staticcall`" — two
+genuinely different mechanisms, not one relation:
 
-S4 `0070-finalizing-a-channel.md`, "Call `challenge`": "The challenger
-needs to sign this data: `keccak256(abi.encode(challengeStateHash,
-'forceMove'))`... This mechanism allows the challenge to be authorized only
-by a channel participant."
+1. The EOA path (`signer == participant`) is an ACTION a participant
+   takes: they choose to sign a digest, or they do not. No caller can
+   produce this for a key they do not hold (SATP §1.4, "Forging
+   cryptographic signatures is infeasible"). This model records it as part
+   of the EXECUTION, not as a structure field (coordinator correction,
+   this session: a structure field with no constraining axiom — the
+   model's PRIOR design — can be satisfied by an always-true relation,
+   which says every participant authorized every digest, a FALSE claim no
+   source makes). `State.lean`'s `AdjudicatorState.signedBy` and
+   `Operations.lean`'s `.sign` `Call` carry this: `.sign p d`'s `Step` case
+   only ever ADDS `d` to `p`'s OWN row, never another participant's — this
+   is where unforgeability of the EOA path actually lives, in the shape of
+   the `Call`, not in an assumption a proof could pick adversarially.
+2. The EIP-1271 path is a FIXED fact about a contract's already-deployed
+   code: whether `participant.code` accepts a given digest does not change
+   call to call, and no caller can change it either. This stays a
+   structure field below, `contractAuthorizes` — the same discipline as
+   `channelIdOf`: an opaque, caller-independent function, safe to leave
+   unconstrained because nothing in this model claims a specific contract
+   accepts anything in particular.
 
-SATP (sources/satp-2022.pdf) §1.4 states the premise directly, as one of
-its two named security assumptions: "(Safety) Forging cryptographic
-signatures is infeasible."
+`State.lean`'s `AuthorizedBy sig s p d := s.signedBy p d ∨ sig.
+contractAuthorizes p d` combines both paths, the same union
+`NitroUtils.isAuthorizedBy` computes. -/
 
-The code extends "signed" to "authorized" for a contract participant (the
-hub custodian is one): `NitroUtils.isAuthorizedBy`
-(`NitroUtils.sol:101-126`) accepts an EIP-1271 acceptance in place of an
-ECDSA recovery. No S1-S4 source states this; `clauses.md` D1 records it as
-an armada-nitro addition with no upstream spec clause. This model folds
-both paths into one relation, `AuthorizedBy`, because the protocol treats
-them identically once authorized — the SATP safety premise ("forging... is
-infeasible") is exactly the fact this model needs from either path, and an
-EIP-1271 "signature" is a contract's own code choosing to accept, which a
-caller cannot forge any more than an ECDSA signature. Unlike `channelIdOf`,
-`AuthorizedBy` is not a bare naming device: whether a digest counts as
-authorized is itself the non-trivial content "a signature cannot be
-forged" asserts, so the relation is a `SignatureAssumptions` field, not a
-global `axiom` — any `def` or theorem that needs to ask "did `p` authorize
-`d`?" must take a `SignatureAssumptions` argument to do so. -/
-
-/-- CRYPTOGRAPHIC ASSUMPTION 2 (ECDSA / EIP-1271 unforgeability) — assumed,
-    not proven. `sig.AuthorizedBy p d` holds iff participant `p` (an EOA or
-    a contract) itself produced an authorization over digest `d` — an
-    ECDSA signature `p`'s key signed, or an EIP-1271 acceptance `p`'s own
-    code returned (`NitroUtils.isAuthorizedBy`, `NitroUtils.sol:101-126`;
-    SATP §1.4, "Forging cryptographic signatures is infeasible"). Only the
-    *validity* direction is needed: a call that recovers or accepts an
-    authorization for `p` is constrained to a case where
-    `sig.AuthorizedBy p d` already held. -/
+/-- CRYPTOGRAPHIC ASSUMPTION 2, EIP-1271 half (a contract cannot be made to
+    accept an authorization its own code would refuse) — assumed, not
+    proven. `sig.contractAuthorizes p d` holds iff participant `p`, if a
+    contract, accepts digest `d` through its own `isValidSignature`
+    (`NitroUtils.isAuthorizedBy`, `NitroUtils.sol:101-126`, the EIP-1271
+    branch). A fixed fact about already-deployed code; no caller changes
+    it by calling anything. The EOA half of assumption 2 — a participant
+    can authorize a digest only by their own `.sign` action, and no caller
+    can sign on another participant's behalf — lives in `State.lean`'s
+    `AdjudicatorState.signedBy` and `Operations.lean`'s `.sign` `Call`,
+    not here (see the module comment above). -/
 structure SignatureAssumptions where
-  AuthorizedBy : Nat → Nat → Prop
-
-/-!
-## Liveness assumption: signature correctness (Nitro layer)
-
-The three structures above (`HashAssumptions`, `SignatureAssumptions`,
-and `ProofAssumptions` in `Notes.lean`) are SAFETY assumptions: each
-states only what a caller CANNOT do (invert a hash, forge a signature,
-fake a proof). None of them states that an HONEST participant CAN
-actually produce an authorization or a proof — a `SignatureAssumptions`
-instance whose `AuthorizedBy` relation is always `False` satisfies every
-safety field vacuously, yet makes `conclude` and `challenge` impossible
-for anyone, honest or not. A theorem claiming an action CAN happen
-therefore needs a LIVENESS assumption on top of the safety ones
-(coordinator correction, this session): "an honest participant can
-authorize any state they choose."
-
-For an EOA participant this is ECDSA completeness: any private key can
-sign any digest (S4 `0010-states-channels.md`, "State commitments": "a
-dedicated Ethereum private key" signs the state hash — nothing in the
-signing algorithm restricts which digest it can sign). For a contract
-participant this is the EIP-1271 self-authorization path
-(`NitroUtils.isAuthorizedBy`, `NitroUtils.sol:101-126`, `signer ==
-participant` branch): an honestly-coded contract accepts its own
-authorization. This model folds both into the one `AuthorizedBy` relation
-(see `SignatureAssumptions` above), so the liveness assumption is stated
-for that same relation, for every participant and every digest — the
-model has no predicate distinguishing an "honest" participant from any
-other, so the assumption must hold uniformly for it to be usable by a
-`Call` whose signer is just a `Nat`. -/
-
-/-- LIVENESS ASSUMPTION (signature correctness) — assumed, not proven.
-    `sig.can_authorize` says every participant can authorize every digest
-    under `sig`'s `AuthorizedBy` relation — the same relation
-    `SignatureAssumptions` already constrains from the other side (assumed
-    unforgeable; here, assumed available to an honest signer). A theorem
-    claiming `conclude` or `challenge` can succeed takes a
-    `SignatureLiveness sig` argument for the specific `sig` it reasons
-    about, so the dependency is visible on the theorem's own type, the
-    same discipline the three safety assumptions already follow. -/
-structure SignatureLiveness (sig : SignatureAssumptions) : Prop where
-  can_authorize : ∀ p d : Nat, sig.AuthorizedBy p d
+  contractAuthorizes : Nat → Nat → Prop
 
 end ArmadaLean.Adjudicator
