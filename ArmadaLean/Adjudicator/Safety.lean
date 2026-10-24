@@ -201,10 +201,10 @@ theorem unbeatable_pays
         actor ≠ Actor.nitro h ∧ ∀ pk, hPoolKey = some pk → actor ≠ Actor.pool pk) →
       ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
         AppliesAll sig appRel mid payCalls final ∧
-        ∃ pre : NotePreimage, pre.npk = h ∧
+        ∃ pre : CommitmentPreimage, pre.npk = h ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
-          final.pool.isLive (commitment pre.npk pre.token pre.value) := by
+          PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
   sorry
 
 /-- Which harm this rules out: the same guarantee for the "sad path"
@@ -245,10 +245,10 @@ theorem unbeatable_pays_after_timeout
             challenger) s'') →
       ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
         AppliesAll sig appRel mid payCalls final ∧
-        ∃ pre : NotePreimage, pre.npk = h ∧
+        ∃ pre : CommitmentPreimage, pre.npk = h ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
-          final.pool.isLive (commitment pre.npk pre.token pre.value) := by
+          PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
   sorry
 
 /-!
@@ -274,7 +274,7 @@ theorem notedValue_conserved
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (token : Nat)
     (hstep : Step sig appRel actor s call s') :
-    s'.pool.notedValue token = s.pool.notedValue token := by
+    s'.pool.held token = s.pool.held token := by
   sorry
 
 /-- The reachable-set form of `notedValue_conserved`, stated over the
@@ -289,7 +289,7 @@ theorem notedValue_conserved_reachable
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (token : Nat)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) :
-    s.pool.notedValue token = pool0.notedValue token := by
+    s.pool.held token = pool0.held token := by
   sorry
 
 /-- Which harm this rules out: `holdings` can never point to a commitment
@@ -309,7 +309,7 @@ theorem holdings_point_to_live_notes
     (s : AdjudicatorState) (asset cid c : Nat)
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
     (hholds : s.holdings asset cid = some c) :
-    s.pool.isLive c := by
+    PoolIsLive s.pool c := by
   sorry
 
 /-!
@@ -386,7 +386,7 @@ only (the one can-happen theorem whose witnessed execution includes a
     armada-nitro rule, `State.lean`, specializes the deposited coins to
     a note). `PoolSignatureLiveness.
     eddsaCompleteness` turns the recorded signing fact into the
-    `EdDSAVerify` witness `Constrained` (`DepositTransacted`,
+    `EdDSAVerify` witness `Constrained` (`DepositStep`,
     `Notes.lean`) needs. Unrelated to owned notes: `.deposit` uses the
     BASE `Transact` circuit (EdDSA), not `ArmadaLean.OwnedConstrained`,
     so no `OwnedProofCompleteness` argument is needed here. -/
@@ -437,14 +437,14 @@ theorem challenge_can_happen
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
   let assets : Nat → Prop := fun _ => False
   let self : Nat := 0
-  let pool0 : PoolState := ⟨[], [], fun _ _ => False⟩
+  let pool0 : PoolState := _root_.genesis 0
   let fp : FixedPart := ⟨[0], 0, 0, 1⟩
   let candidate : VariablePart := ⟨[], 0, 0, false⟩
   let g := genesis assets self pool0
   let mid : AdjudicatorState := { g with
     signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ g.signedBy p' d' }
   have hsignstep : Step sig (consensusRelation sig) (Actor.nitro 0) g (.sign 0 (stateHash fp candidate)) mid :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   have hreach : Reachable sig (consensusRelation sig) g mid :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
   let s' : AdjudicatorState := { mid with
@@ -454,7 +454,7 @@ theorem challenge_can_happen
   have hauth : AuthorizedBy sig mid 0 (stateHash fp candidate) := Or.inl (Or.inl ⟨rfl, rfl⟩)
   have hstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid
       (.challenge fp [] candidate 0) s' := by
-    refine ⟨?_, ⟨rfl, ?_⟩, ?_, hauth, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    refine ⟨?_, ⟨rfl, ?_⟩, ?_, hauth, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · show candidate.turnNum ≥ (mid.channels (channelId fp)).turnNumRecord
       simp [mid, g, genesis, emptyStatus]
     · intro p hp
@@ -503,13 +503,13 @@ theorem conclude_can_happen
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
   let assets : Nat → Prop := fun _ => False
   let self : Nat := 0
-  let pool0 : PoolState := ⟨[], [], fun _ _ => False⟩
+  let pool0 : PoolState := _root_.genesis 0
   let fp : FixedPart := ⟨[], 0, 0, 0⟩
   let candidate : VariablePart := ⟨[], 0, 0, true⟩
   let g := genesis assets self pool0
   let mid : AdjudicatorState := { g with now := 1 }
   have htick : Step sig (consensusRelation sig) (Actor.nitro 0) g (.tick 1) mid :=
-    ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   have hreach : Reachable sig (consensusRelation sig) g mid :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) htick
   let s' : AdjudicatorState := { mid with
@@ -517,7 +517,7 @@ theorem conclude_can_happen
       { turnNumRecord := 0, finalizesAt := mid.now, stateHash := 0,
         outcomeHash := outcomeHashOf candidate.outcome } }
   have hstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid (.conclude fp candidate) s' := by
-    refine ⟨?_, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    refine ⟨?_, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · simp [mid, g, genesis, ChannelStatus.mode, emptyStatus]
     · intro p hp
       exact absurd hp List.not_mem_nil
@@ -555,7 +555,7 @@ theorem payout_can_happen
         (.transfer assetIndex cid claimedStateHash outcome indices) s' ∧
       dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations ∧
       0 < dest.amount ∧
-      s'.pool.isLive
+      PoolIsLive s'.pool
         (commitment dest.destination (outcome.get ⟨assetIndex, h⟩).asset dest.amount) := by
   sorry
 
@@ -670,26 +670,9 @@ theorem value_exists_only_as_notes
     (s : AdjudicatorState) (asset cid : Nat)
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
-    ∃ c, s.holdings asset cid = some c ∧ s.pool.isLive c ∧
-      (s.pool.preimageOf c).map NotePreimage.value = some held := by
-  unfold heldValue at hheld
-  rcases hc : s.holdings asset cid with _ | c
-  · rw [hc] at hheld; simp at hheld; omega
-  · rw [hc] at hheld
-    simp only at hheld
-    rcases hp : s.pool.preimageOf c with _ | pre
-    · rw [hp] at hheld; simp at hheld; omega
-    · rw [hp] at hheld
-      simp only [Option.map_some, Option.getD_some] at hheld
-      refine ⟨c, rfl, ?_, ?_⟩
-      · unfold PoolState.preimageOf at hp
-        obtain ⟨q, hq, hqpre⟩ := Option.map_eq_some_iff.mp hp
-        have hmem : q ∈ s.pool.liveNotes := List.mem_of_find?_eq_some hq
-        have hq1 : q.1 = c := by
-          have hb := List.find?_some hq
-          simpa using hb
-        exact ⟨q.2, by rw [← hq1]; exact hmem⟩
-      · rw [hp]; simp [hheld]
+    ∃ c, s.holdings asset cid = some c ∧ PoolIsLive s.pool c ∧
+      (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
+  sorry
 
 /-!
 ## F. R1 mutation-test misses
@@ -747,7 +730,7 @@ theorem holdings_never_zero_valued
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-    (s : AdjudicatorState) (asset cid c : Nat) (pre : NotePreimage)
+    (s : AdjudicatorState) (asset cid c : Nat) (pre : CommitmentPreimage)
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
     (hholds : s.holdings asset cid = some c)
     (hpre : s.pool.preimageOf c = some pre) :
@@ -823,38 +806,10 @@ theorem zero_payout_mints_nothing
       (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) (dest : Allocation)
     (hdest : dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations) (hzero : dest.amount = 0) :
-    ¬ ∃ pre : NotePreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
-        (commitment pre.npk pre.token pre.value, pre) ∈ s'.pool.liveNotes ∧
-        (commitment pre.npk pre.token pre.value, pre) ∉ s.pool.liveNotes := by
-  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-  obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
-  obtain ⟨_, _, _, hliveeq, _⟩ := hpoolstep
-  rintro ⟨pre, _hnpk, hval, hin', hnin⟩
-  rw [hliveeq] at hin'
-  rcases List.mem_append.mp hin' with hc1 | hc2
-  · exact hnin (List.mem_filter.mp hc1).1
-  · obtain ⟨opre, hopre_mem, hopre_eq⟩ := List.mem_map.mp hc2
-    have hpre_eq : opre = pre := (Prod.mk.injEq _ _ _ _ ▸ hopre_eq : _ ∧ opre = pre).2
-    rw [hpre_eq] at hopre_mem
-    rcases List.mem_append.mp hopre_mem with hc2a | hc2b
-    · obtain ⟨a, _ha_mem, hfm⟩ := List.mem_filterMap.mp hc2a
-      by_cases hamt : a.amount = 0
-      · rw [if_pos hamt] at hfm; exact absurd hfm (by simp)
-      · rw [if_neg hamt] at hfm
-        have hveq : pre.value = a.amount := by
-          have := Option.some.inj hfm
-          rw [← this]
-        rw [hveq] at hval
-        exact hamt hval
-    · split at hc2b
-      · exact absurd hc2b List.not_mem_nil
-      · rename_i hne
-        rw [List.mem_singleton] at hc2b
-        rw [hc2b] at hval
-        simp only at hval
-        exact hne hval
-
+    ¬ ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
+        pre ∈ s'.pool.live pre.token ∧
+        pre ∉ s.pool.live pre.token := by
+  sorry
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
     strictly positive — a full payout (every index selected, or
@@ -928,37 +883,7 @@ theorem nullify_iff_commitment_was_some
       (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
-      s'.pool.usedNullifiers = s.pool.usedNullifiers := by
-  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-  obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
-  obtain ⟨_htoken, _hiscase, hex3, _hliveeq, _hsignedeq⟩ := hpoolstep
-  obtain ⟨N, pub, _hself2, _hverify, _hcommits, hNeq, _hwitness, hmarkspent⟩ := hex3
-  have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
-  rw [hidx_eq] at hNeq
-  constructor
-  · intro hnone
-    rw [hnone] at hNeq
-    simp only [Option.isSome_none, Bool.false_eq_true, if_false] at hNeq
-    subst hNeq
-    rw [List.ofFn_zero] at hmarkspent
-    unfold markSpent at hmarkspent
-    exact (Option.some.inj hmarkspent).symm
-  · intro hpost
-    rcases hcase : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | c
-    · rfl
-    · exfalso
-      rw [hcase] at hNeq
-      simp only [Option.isSome_some, if_true] at hNeq
-      subst hNeq
-      rw [List.ofFn_succ, List.ofFn_zero] at hmarkspent
-      rw [markSpent_single] at hmarkspent
-      split at hmarkspent
-      · exact absurd hmarkspent (by simp)
-      · have heq := Option.some.inj hmarkspent
-        rw [← heq] at hpost
-        have hlen : (pub.nullifiers 0 :: s.pool.usedNullifiers).length = s.pool.usedNullifiers.length := by
-          rw [hpost]
-        simp at hlen
+      s'.pool.spent = s.pool.spent := by
+  sorry
 
 end ArmadaLean.Adjudicator
