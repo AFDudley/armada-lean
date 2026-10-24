@@ -278,22 +278,46 @@ theorem notedValue_conserved
   cases call with
   | deposit cid expectedHeld asset amount =>
     obtain ⟨_hcfg1, _hheld, _hext, _hpos, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨N, M, w, pub, idx, hdstep, _hholdseq⟩ := hinner
+    obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
     obtain ⟨_hown, _hcommit, _htoken, hN, hM, hC, rest, spent', newRoot, records,
       _hEmergency, _hWithdrawOnly, _hRoot, hRemove, _hNullify, _hValid, _hidxrec, heq⟩ := hdstep
-    unfold PoolState.notedValue
-    rw [heq]
-    show listSum ((if token = w.token then transactAllOutputs w ++ rest else s.pool.live token).map
-        CommitmentPreimage.value) = listSum ((s.pool.live token).map CommitmentPreimage.value)
-    by_cases ht : token = w.token
-    · rw [if_pos ht, ht]
-      have hbal := transact_balance hN hM hC (newNotes := transactAllOutputs w)
-        (unshieldTail := []) (by simp)
-      simp only [List.map_nil, listSum] at hbal
-      have hsum := removeAll_sum hRemove
-      simp only [List.map_append, listSum_append]
-      omega
-    · rw [if_neg ht]
+    have hmidConserved : midPool.notedValue token = s.pool.notedValue token := by
+      unfold PoolState.notedValue
+      rw [heq]
+      show listSum ((if token = w.token then transactAllOutputs w ++ rest else s.pool.live token).map
+          CommitmentPreimage.value) = listSum ((s.pool.live token).map CommitmentPreimage.value)
+      by_cases ht : token = w.token
+      · rw [if_pos ht, ht]
+        have hbal := transact_balance hN hM hC (newNotes := transactAllOutputs w)
+          (unshieldTail := []) (by simp)
+        simp only [List.map_nil, listSum] at hbal
+        have hsum := removeAll_sum hRemove
+        simp only [List.map_append, listSum_append]
+        omega
+      · rw [if_neg ht]
+    rcases hh : s.holdings asset cid with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _⟩ := hmatch
+      rw [hpoolEq]
+      exact hmidConserved
+    · rw [hh] at hmatch
+      obtain ⟨merged, hmerge, _⟩ := hmatch
+      obtain ⟨w', pub', hC', rest', spent'', r', hNonZero', hown', htoken', hnpkOut',
+        hmergedEq, hcommitOld, hcommitNew, hroot', hremove', hnullify', heq'⟩ := hmerge
+      have hmergeConserved : s'.pool.notedValue token = midPool.notedValue token := by
+        unfold PoolState.notedValue
+        rw [heq']
+        show listSum ((if token = asset then (ownedNewNotes w') ++ rest' else midPool.live token).map
+            CommitmentPreimage.value) = listSum ((midPool.live token).map CommitmentPreimage.value)
+        by_cases ht : token = asset
+        · rw [if_pos ht, ht]
+          have hbal := transactOwned_balance (by decide) (by decide) hC'
+          have hsum := removeAll_sum hremove'
+          simp only [List.map_append, listSum_append] at hsum ⊢
+          omega
+        · rw [if_neg ht]
+      rw [hmergeConserved]
+      exact hmidConserved
   | transfer assetIndex cid claimedStateHash outcome indices =>
     obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨_hguarantee, hrest⟩ := hinner
@@ -581,18 +605,28 @@ theorem deposit_can_happen
   have hstep : Step sig (consensusRelation sig) (Actor.pool publicKey) mid
       (.deposit channelId 0 token amount) s' := by
     refine ⟨rfl, rfl, (by simp [channelId, isExternal]), (by decide),
-      ⟨1, 1, w, pub, 0, ?_, rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    exact hdstep
+      ⟨1, 1, w, pub, 0, s'.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact hdstep
+    · exact ⟨rfl, rfl⟩
   exact ⟨assets, self, pool0, mid, s', channelId, 0, token, amount, Actor.pool publicKey,
     hreach, hstep⟩
 
-/-- A top-up can happen: the same construction as `deposit_can_happen`,
-    run twice from a `pool0` holding both notes, against a channel that
-    already holds collateral from the first deposit — `heldValue`
-    increases by the second deposit's amount (`depositBinding`'s own
-    purpose, `ArmadaNitroAdjudicator.sol:60-72`: binds the proof to
-    `(channelId, expectedHeld)` so a deposit always adds to, never
-    replaces, the prior holding). -/
+set_option maxRecDepth 4000 in
+/-- A top-up can happen: for all `HashAssumptions`/`SignatureAssumptions`,
+    two deposits into the same channel, with the second deposit MERGING
+    its fresh note with the first deposit's holding
+    (`Notes.lean`'s `DepositMergeStep`) rather than replacing it —
+    `heldValue` increases by exactly the second deposit's amount.
+    `depositBinding` (`ArmadaNitroAdjudicator.sol:60-72`) binds the
+    proof to `(channelId, expectedHeld)` so a deposit always adds to,
+    never replaces, the prior holding; the merge is what makes this
+    model keep that promise (see `deposit_sets_heldValue`'s own doc
+    comment for the gap a plain, non-merging deposit would leave).
+    The merge's two spent notes (the first deposit's holding, the
+    second deposit's fresh note) share one Merkle root, by construction
+    (a one-level tree with the two notes as its leaves, each reached by
+    its own direction bit) — the pool's own two-nullifier `transactOwned`
+    machinery needs no further assumption beyond that root existing. -/
 theorem topup_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions)
     (poolSigLive : PoolSignatureLiveness) :
@@ -602,7 +636,313 @@ theorem topup_can_happen
       Step sig (consensusRelation sig) actor1 s (.deposit cid a1 asset amt1) mid ∧
       Step sig (consensusRelation sig) actor2 mid (.deposit cid a2 asset amt2) s' ∧
       heldValue s' asset cid = heldValue mid asset cid + amt2 := by
-  sorry
+  let self : Nat := 0
+  let publicKey : Nat × Nat := (0, 0)
+  let nullifyingKey : Nat := 0
+  let token : Nat := 0
+  let assets : Nat → Prop := fun a => a = token
+  let amt1 : Nat := 1
+  let amt2 : Nat := 1
+  let cid : Nat := 2 ^ 160
+  -- Deposit 1's depositor note.
+  let randomIn1 : Fin 1 → Nat := fun _ => 0
+  let valueIn1 : Fin 1 → Nat := fun _ => amt1
+  let leavesIndices1 : Fin 1 → Nat := fun _ => 0
+  let pathIn1 : Fin 1 → List (Nat × Bool) := fun _ => List.replicate 16 (0, false)
+  let npkOut1 : Fin 1 → Nat := fun _ => npk self 0
+  let valueOut1 : Fin 1 → Nat := fun _ => amt1
+  let leafIn1 : Nat :=
+    commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn1 0)) token (valueIn1 0)
+  let rootIn1 : Nat := merkleRoot leafIn1 (pathIn1 0)
+  let pub_d1 : TransactPublic 1 1 :=
+    { merkleRoot := rootIn1, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier nullifyingKey (leavesIndices1 0),
+      commitmentsOut := fun _ => commitment (npkOut1 0) token (valueOut1 0) }
+  let inputNote1 : CommitmentPreimage :=
+    ⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn1 0), token, valueIn1 0⟩
+  let firstNote : CommitmentPreimage := ⟨npk self 0, token, amt1⟩
+  -- Deposit 2's depositor note.
+  let randomIn2 : Fin 1 → Nat := fun _ => 1
+  let valueIn2 : Fin 1 → Nat := fun _ => amt2
+  let leavesIndices2 : Fin 1 → Nat := fun _ => 1
+  let pathIn2 : Fin 1 → List (Nat × Bool) := fun _ => List.replicate 16 (1, false)
+  let npkOut2 : Fin 1 → Nat := fun _ => npk self 1
+  let valueOut2 : Fin 1 → Nat := fun _ => amt2
+  let leafIn2 : Nat :=
+    commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn2 0)) token (valueIn2 0)
+  let rootIn2 : Nat := merkleRoot leafIn2 (pathIn2 0)
+  let pub_d2 : TransactPublic 1 1 :=
+    { merkleRoot := rootIn2, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier nullifyingKey (leavesIndices2 0),
+      commitmentsOut := fun _ => commitment (npkOut2 0) token (valueOut2 0) }
+  let inputNote2 : CommitmentPreimage :=
+    ⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn2 0), token, valueIn2 0⟩
+  let secondNote : CommitmentPreimage := ⟨npk self 1, token, amt2⟩
+  -- The merge step's shared-root two-leaf tree over `firstNote`/`secondNote`.
+  let leafA : Nat := hashCommitment firstNote
+  let leafB : Nat := hashCommitment secondNote
+  let pathA : Fin 2 → List (Nat × Bool) :=
+    fun i => if i = 0 then (leafB, false) :: List.replicate 15 (0, false)
+      else (leafA, true) :: List.replicate 15 (0, false)
+  let rootMerge : Nat := merkleRoot leafA (pathA 0)
+  let mergedNote : CommitmentPreimage := ⟨npk self 2, token, amt1 + amt2⟩
+  let pool0 : PoolState :=
+    { live := fun t => if t = token then [inputNote1, inputNote2] else [],
+      spent := [], roots := [rootIn1, rootIn2, rootMerge], held := fun _ => 0,
+      preimageOf := fun _ => none, shieldsPaused := false,
+      emergencyPaused := false, withdrawOnlyMode := false }
+  let g := genesis assets self pool0
+  let mid0 : AdjudicatorState := { g with
+    poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d1) ∨ g.poolSignedBy pk' m' }
+  have hsignstep1 : Step sig (consensusRelation sig) (Actor.pool publicKey) g
+      (.signNote publicKey (msgHashOf pub_d1)) mid0 :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach0 : Reachable sig (consensusRelation sig) g mid0 :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep1
+  have hsigned1 : mid0.poolSignedBy publicKey (msgHashOf pub_d1) := Or.inl ⟨rfl, rfl⟩
+  obtain ⟨signature1, hveri1⟩ :=
+    poolSigLive.eddsaCompleteness mid0.poolSignedBy publicKey (msgHashOf pub_d1) hsigned1
+  let mid1 : AdjudicatorState := { mid0 with
+    poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d2) ∨ mid0.poolSignedBy pk' m' }
+  have hsignstep2 : Step sig (consensusRelation sig) (Actor.pool publicKey) mid0
+      (.signNote publicKey (msgHashOf pub_d2)) mid1 :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
+    reachable_step hreach0 hsignstep2
+  have hsigned2 : mid1.poolSignedBy publicKey (msgHashOf pub_d2) := Or.inl ⟨rfl, rfl⟩
+  obtain ⟨signature2, hveri2⟩ :=
+    poolSigLive.eddsaCompleteness mid1.poolSignedBy publicKey (msgHashOf pub_d2) hsigned2
+  let w_d1 : TransactWitness 1 1 :=
+    { token := token, publicKey := publicKey, signature := signature1,
+      nullifyingKey := nullifyingKey, randomIn := randomIn1, valueIn := valueIn1,
+      pathElements := pathIn1, leavesIndices := leavesIndices1,
+      npkOut := npkOut1, valueOut := valueOut1 }
+  let w_d2 : TransactWitness 1 1 :=
+    { token := token, publicKey := publicKey, signature := signature2,
+      nullifyingKey := nullifyingKey, randomIn := randomIn2, valueIn := valueIn2,
+      pathElements := pathIn2, leavesIndices := leavesIndices2,
+      npkOut := npkOut2, valueOut := valueOut2 }
+  have hbitsZero : ∀ n, bitsVal (List.replicate n false) = 0 := by
+    intro n
+    induction n with
+    | zero => rfl
+    | succ k ih => simp [List.replicate_succ, bitsVal, ih]
+  have hbitsOne : bitsVal (true :: List.replicate 119 false) = 1 := by
+    rw [show bitsVal (true :: List.replicate 119 false) =
+        1 + 2 * bitsVal (List.replicate 119 false) from rfl, hbitsZero]
+  have hC_d1 : Constrained w_d1 pub_d1 :=
+    { pathLen := fun _ => List.length_replicate
+      merkle := fun _ => rfl
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeOut := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      balance := rfl
+      distinct := fun i j hij => absurd (Subsingleton.elim i j) hij
+      sig := hveri1 }
+  have hC_d2 : Constrained w_d2 pub_d2 :=
+    { pathLen := fun _ => List.length_replicate
+      merkle := fun _ => rfl
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeOut := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      balance := rfl
+      distinct := fun i j hij => absurd (Subsingleton.elim i j) hij
+      sig := hveri2 }
+  have hRemove_d1 : removeAll (mid1.pool.live w_d1.token) (transactSpentNotes w_d1) =
+      some [inputNote2] := by
+    show removeAll [inputNote1, inputNote2] [inputNote1] = some [inputNote2]
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_cons_self))]
+    rw [List.erase_cons_head]
+    rfl
+  have hNullify_d1 : markSpent mid1.pool.spent (List.ofFn pub_d1.nullifiers) =
+      some (List.ofFn pub_d1.nullifiers) := rfl
+  have hidxrec_d1 : (pub_d1.commitmentsOut (0 : Fin 1),
+      (⟨w_d1.npkOut 0, w_d1.token, w_d1.valueOut 0⟩ : CommitmentPreimage)) ∈
+      transactOutputRecords w_d1 pub_d1 :=
+    List.mem_ofFn.mpr ⟨0, rfl⟩
+  let mid2 : AdjudicatorState := { mid1 with
+    pool := { mid1.pool with
+      live := fun t => if t = w_d1.token then transactAllOutputs w_d1 ++ [inputNote2]
+        else mid1.pool.live t,
+      spent := List.ofFn pub_d1.nullifiers,
+      preimageOf := applyRecords mid1.pool.preimageOf (transactOutputRecords w_d1 pub_d1) },
+    holdings := update mid1.holdings token (update (mid1.holdings token) cid
+      (some (pub_d1.commitmentsOut (0 : Fin 1)))) }
+  have hdstep1 : DepositStep mid1.pool self token amt1 w_d1 pub_d1 (0 : Fin 1) mid2.pool :=
+    ⟨⟨0, rfl⟩, rfl, rfl, by decide, by decide, hC_d1, [inputNote2], List.ofFn pub_d1.nullifiers, 0,
+      transactOutputRecords w_d1 pub_d1, rfl, rfl, List.mem_cons_self, hRemove_d1,
+      hNullify_d1, List.Sublist.refl _, hidxrec_d1, rfl⟩
+  have hstep_d1 : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
+      (.deposit cid 0 token amt1) mid2 := by
+    refine ⟨rfl, rfl, (by simp [cid, isExternal]), (by decide),
+      ⟨1, 1, w_d1, pub_d1, 0, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact hdstep1
+    · exact ⟨rfl, rfl⟩
+  have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
+    reachable_step hreach1 hstep_d1
+  have hdistinct : firstNote ≠ inputNote2 := by
+    intro h
+    have hnpkeq : (npk self 0 : Nat) = npk (masterPublicKey publicKey nullifyingKey) (randomIn2 0) :=
+      congrArg CommitmentPreimage.npk h
+    have h01 := (poseidon2_inj hnpkeq).2
+    simp [randomIn2] at h01
+  have hRemove_d2 : removeAll (mid2.pool.live w_d2.token) (transactSpentNotes w_d2) =
+      some [firstNote] := by
+    show removeAll [firstNote, inputNote2] [inputNote2] = some [firstNote]
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_cons_of_mem _ (List.mem_singleton_self _)))]
+    rw [List.erase_cons_tail (by simpa using hdistinct), List.erase_cons_head]
+    rfl
+  have hNullify_d2 : markSpent mid2.pool.spent (List.ofFn pub_d2.nullifiers) =
+      some (pub_d2.nullifiers (0 : Fin 1) :: List.ofFn pub_d1.nullifiers) := by
+    show markSpent (List.ofFn pub_d1.nullifiers) (List.ofFn pub_d2.nullifiers) = _
+    have hnotmem : pub_d2.nullifiers (0 : Fin 1) ∉ List.ofFn pub_d1.nullifiers := by
+      simp only [List.mem_ofFn]
+      rintro ⟨i, hi⟩
+      have h01 := (poseidon2_inj hi).2
+      simp [leavesIndices1, leavesIndices2] at h01
+    show markSpent (List.ofFn pub_d1.nullifiers) [pub_d2.nullifiers 0] = _
+    unfold markSpent
+    rw [if_neg hnotmem]
+    rfl
+  have hidxrec_d2 : (pub_d2.commitmentsOut (0 : Fin 1),
+      (⟨w_d2.npkOut 0, w_d2.token, w_d2.valueOut 0⟩ : CommitmentPreimage)) ∈
+      transactOutputRecords w_d2 pub_d2 :=
+    List.mem_ofFn.mpr ⟨0, rfl⟩
+  let midPool2 : PoolState := { mid2.pool with
+    live := fun t => if t = w_d2.token then transactAllOutputs w_d2 ++ [firstNote]
+      else mid2.pool.live t,
+    spent := pub_d2.nullifiers (0 : Fin 1) :: List.ofFn pub_d1.nullifiers,
+    preimageOf := applyRecords mid2.pool.preimageOf (transactOutputRecords w_d2 pub_d2) }
+  have hdstep2 : DepositStep mid2.pool self token amt2 w_d2 pub_d2 (0 : Fin 1) midPool2 :=
+    ⟨⟨1, rfl⟩, rfl, rfl, by decide, by decide, hC_d2, [firstNote],
+      pub_d2.nullifiers (0 : Fin 1) :: List.ofFn pub_d1.nullifiers, 0,
+      transactOutputRecords w_d2 pub_d2, rfl, rfl,
+      (List.mem_cons_of_mem _ (List.mem_cons_self)), hRemove_d2, hNullify_d2,
+      List.Sublist.refl _, hidxrec_d2, rfl⟩
+  have hheld2 : heldValue mid2 token cid = amt1 :=
+    deposit_sets_heldValue sig (consensusRelation sig) (Actor.pool publicKey) mid1 mid2 cid 0
+      token amt1 hstep_d1 rfl
+  have hmid2holds : mid2.holdings token cid = some (pub_d1.commitmentsOut (0 : Fin 1)) := rfl
+  -- The merge witness: spends firstNote (input 0) and secondNote (input 1),
+  -- mints mergedNote (output 0).
+  let randomInM : Fin 2 → Nat := fun i => if i = 0 then 0 else 1
+  let valueInM : Fin 2 → Nat := fun i => if i = 0 then amt1 else amt2
+  let leavesIndicesM : Fin 2 → Nat := fun i => if i = 0 then (2 : Nat) else 3
+  let npkOutM : Fin 1 → Nat := fun _ => npk self 2
+  let valueOutM : Fin 1 → Nat := fun _ => amt1 + amt2
+  let w_m : TransactOwnedWitness 2 1 :=
+    { token := token, randomIn := randomInM, valueIn := valueInM, pathElements := pathA,
+      leavesIndices := leavesIndicesM, npkOut := npkOutM, valueOut := valueOutM }
+  let pub_m : TransactOwnedPublic 2 1 :=
+    { merkleRoot := rootMerge, boundParamsHash := 0,
+      nullifiers := fun i => nullifier self (leavesIndicesM i),
+      commitmentsOut := fun _ => commitment (npkOutM 0) token (valueOutM 0),
+      ownerField := self }
+  have hbitsTwo : bitsVal (false :: true :: List.replicate 118 false) = 2 := by
+    rw [show bitsVal (false :: true :: List.replicate 118 false) =
+        Bool.toNat false + 2 * (Bool.toNat true + 2 * bitsVal (List.replicate 118 false)) from rfl,
+      hbitsZero]
+    decide
+  have hOC : OwnedConstrained w_m pub_m :=
+    { pathLen := fun i => by match i with | 0 => simp [pathA, w_m] | 1 => simp [pathA, w_m]
+      merkle := fun i => by match i with | 0 => rfl | 1 => rfl
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun i => by
+        match i with
+        | 0 => exact ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+        | 1 => exact ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeOut := fun _ =>
+        ⟨false :: true :: List.replicate 118 false, by simp, hbitsTwo.symm⟩
+      balance := rfl }
+  have hdistinct2 : secondNote ≠ firstNote := by
+    intro h
+    have hnpkeq : (npk self 1 : Nat) = npk self 0 := congrArg CommitmentPreimage.npk h
+    have h01 := (poseidon2_inj hnpkeq).2
+    simp at h01
+  have hremove_m : removeAll (midPool2.live token) (ownedSpentNotes pub_m w_m) = some [] := by
+    show removeAll [secondNote, firstNote] [firstNote, secondNote] = some []
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_cons_of_mem _ (List.mem_singleton_self _)))]
+    rw [List.erase_cons_tail (by simpa using hdistinct2), List.erase_cons_head]
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_singleton_self _))]
+    rw [List.erase_cons_head]
+    rfl
+  have hnullifier_ne : ∀ a b : Nat, a ≠ b → nullifier (0 : Nat) a ≠ nullifier 0 b := by
+    intro a b hab heq
+    exact hab (poseidon2_inj heq).2
+  have hnotmem_m0 : pub_m.nullifiers (0 : Fin 2) ∉ midPool2.spent := by
+    show nullifier self (leavesIndicesM 0) ∉
+      (pub_d2.nullifiers (0 : Fin 1) :: List.ofFn pub_d1.nullifiers)
+    simp only [List.mem_cons, List.mem_ofFn, not_or]
+    refine ⟨hnullifier_ne 2 1 (by decide), ?_⟩
+    rintro ⟨i, hi⟩
+    exact hnullifier_ne 2 0 (by decide) hi.symm
+  have hnotmem_m1 : pub_m.nullifiers (1 : Fin 2) ∉ midPool2.spent := by
+    show nullifier self (leavesIndicesM 1) ∉
+      (pub_d2.nullifiers (0 : Fin 1) :: List.ofFn pub_d1.nullifiers)
+    simp only [List.mem_cons, List.mem_ofFn, not_or]
+    refine ⟨hnullifier_ne 3 1 (by decide), ?_⟩
+    rintro ⟨i, hi⟩
+    exact hnullifier_ne 3 0 (by decide) hi.symm
+  have hne01 : pub_m.nullifiers (1 : Fin 2) ≠ pub_m.nullifiers (0 : Fin 2) :=
+    hnullifier_ne 3 2 (by decide)
+  have hmarkspent_m : markSpent midPool2.spent (List.ofFn pub_m.nullifiers) =
+      some (pub_m.nullifiers (1 : Fin 2) :: pub_m.nullifiers (0 : Fin 2) :: midPool2.spent) := by
+    show markSpent midPool2.spent [pub_m.nullifiers 0, pub_m.nullifiers 1] = _
+    unfold markSpent
+    rw [if_neg hnotmem_m0]
+    unfold markSpent
+    rw [if_neg (by
+      simp only [List.mem_cons, not_or]
+      exact ⟨hne01, hnotmem_m1⟩)]
+    rfl
+  let mergedCommitment : Nat := commitment (npk self 2) token (amt1 + amt2)
+  let s' : AdjudicatorState := { mid2 with
+    pool := { midPool2 with
+      live := fun t => if t = token then [mergedNote] else midPool2.live t,
+      spent := pub_m.nullifiers (1 : Fin 2) :: pub_m.nullifiers (0 : Fin 2) :: midPool2.spent,
+      preimageOf := applyRecords midPool2.preimageOf (ownedOutputRecords w_m pub_m) },
+    holdings := update mid2.holdings token (update (mid2.holdings token) cid (some mergedCommitment)) }
+  have hNonZero_m : ¬ isZeroPreimage (⟨w_m.npkOut 0, w_m.token, w_m.valueOut 0⟩ : CommitmentPreimage) := by
+    unfold isZeroPreimage
+    intro ⟨_, hv, _⟩
+    exact absurd hv (by simp [valueOutM, amt1, amt2])
+  have hdstep_merge : DepositMergeStep midPool2 self token (pub_d1.commitmentsOut (0 : Fin 1))
+      (pub_d2.commitmentsOut (0 : Fin 1)) mergedCommitment s'.pool :=
+    ⟨w_m, pub_m, hOC, [],
+      pub_m.nullifiers (1 : Fin 2) :: pub_m.nullifiers (0 : Fin 2) :: midPool2.spent, 2,
+      hNonZero_m, rfl, rfl, rfl, rfl, rfl, rfl,
+      (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_singleton_self _))),
+      hremove_m, hmarkspent_m, rfl⟩
+  have hstep_d2 : Step sig (consensusRelation sig) (Actor.pool publicKey) mid2
+      (.deposit cid amt1 token amt2) s' := by
+    refine ⟨rfl, hheld2, (by simp [cid, isExternal]), (by decide),
+      ⟨1, 1, w_d2, pub_d2, 0, midPool2, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact hdstep2
+    · rw [hmid2holds]
+      exact ⟨mergedCommitment, hdstep_merge, rfl⟩
+  have hreach3 : Reachable sig (consensusRelation sig) g s' :=
+    reachable_step hreach2 hstep_d2
+  have hinv2 : ∀ qasset qcid qc, mid2.holdings qasset qcid = some qc →
+      ∃ pre, mid2.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc :=
+    reachable_preserves
+      (P := fun s => ∀ qasset qcid qc, s.holdings qasset qcid = some qc →
+        ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+      (by intro qasset qcid qc hc; cases hc)
+      (fun actor call s s' hP hstep => holdings_preimage_nonzero_step sig (consensusRelation sig)
+        actor s s' call hP hstep)
+      hreach2
+  have hfinal : heldValue s' token cid = heldValue mid2 token cid + amt2 :=
+    deposit_merge_sets_heldValue sig (consensusRelation sig) (Actor.pool publicKey) mid2 s' cid
+      amt1 token amt2 hstep_d2 hinv2 (pub_d1.commitmentsOut (0 : Fin 1)) hmid2holds
+  exact ⟨assets, self, pool0, mid1, mid2, s', cid, 0, amt1, token, amt1, amt2,
+    Actor.pool publicKey, Actor.pool publicKey, hreach1, hstep_d1, hstep_d2, hfinal⟩
 
 /-- A challenge can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — a `.sign` call for every one of
@@ -883,8 +1223,9 @@ theorem payout_can_happen
   have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
       (.deposit cid 0 token amount) mid2 := by
     refine ⟨rfl, rfl, hinternal, (by decide),
-      ⟨1, 1, w_d, pub_d, 0, ?_, rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    exact hdstep
+      ⟨1, 1, w_d, pub_d, 0, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact hdstep
+    · exact ⟨rfl, rfl⟩
   have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
     reachable_step hreach1 hstep_d
   let mid3 : AdjudicatorState := { mid2 with now := 1 }
@@ -916,7 +1257,7 @@ theorem payout_can_happen
     simp [ChannelStatus.mode, mid3]
   have hheld2 : heldValue mid2 token cid = amount :=
     deposit_sets_heldValue sig (consensusRelation sig) (Actor.pool publicKey) mid1 mid2 cid 0
-      token amount hstep_d
+      token amount hstep_d rfl
   have hheld4 : heldValue mid4 token cid = amount := hheld2
   let ownerField : Nat := 0
   let randomIn2 : Fin 1 → Nat := fun _ => 0

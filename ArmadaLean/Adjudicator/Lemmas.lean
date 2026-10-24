@@ -349,48 +349,100 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
   cases call with
   | deposit channelId expectedHeld asset amount =>
     obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨N, M, w, pub, idx, hdstep, hholdseq⟩ := hinner
+    obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
     obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
       _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
     have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
       fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
-    intro qasset qcid qc hc
-    rw [hholdseq] at hc
-    unfold update at hc
-    by_cases ha : qasset = asset
-    · subst ha
-      by_cases hcid : qcid = channelId
-      · subst hcid
-        rw [if_pos rfl, if_pos rfl] at hc
-        have hqc : pub.commitmentsOut idx = qc := Option.some.inj hc
-        have hval : w.valueOut idx = amount := by
-          have hout := hC.outputs idx
-          rw [htoken, hcommit] at hout
-          exact (poseidon3_inj hout).2.2.symm
-        have hnz : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
-          unfold isZeroPreimage
-          intro ⟨_, hv, _⟩
-          rw [hval] at hv
-          have hcheck : amount = 0 := hv
-          omega
-        have hread := applyRecords_reads hvalid s.pool.preimageOf (pub.commitmentsOut idx)
-          ⟨w.npkOut idx, w.token, w.valueOut idx⟩ hidxrec hnz
-        rw [hqc] at hread
-        refine ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, ?_, ?_, ?_⟩
-        · rw [heq]; exact hread
-        · rw [hval]
-          intro hz; have hcheck2 : amount = 0 := hz; omega
-        · exact (hC.outputs idx).symm.trans hqc
-      · rw [if_pos rfl, if_neg hcid] at hc
+    have hval : w.valueOut idx = amount := by
+      have hout := hC.outputs idx
+      rw [htoken, hcommit] at hout
+      exact (poseidon3_inj hout).2.2.symm
+    have hnz : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
+      unfold isZeroPreimage
+      intro ⟨_, hv, _⟩
+      rw [hval] at hv
+      have hcheck : amount = 0 := hv
+      omega
+    have hread := applyRecords_reads hvalid s.pool.preimageOf (pub.commitmentsOut idx)
+      ⟨w.npkOut idx, w.token, w.valueOut idx⟩ hidxrec hnz
+    have hchain : ∀ qc pre, s.pool.preimageOf qc = some pre → hashCommitment pre = qc →
+        midPool.preimageOf qc = some pre := fun qc pre hpre hconsist => by
+      rw [heq]; exact applyRecords_preserves_known hvalid s.pool.preimageOf qc pre hpre hconsist
+    rcases hh : s.holdings asset channelId with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, hholdseq⟩ := hmatch
+      intro qasset qcid qc hc
+      rw [hholdseq] at hc
+      unfold update at hc
+      by_cases ha : qasset = asset
+      · subst ha
+        by_cases hcid : qcid = channelId
+        · subst hcid
+          rw [if_pos rfl, if_pos rfl] at hc
+          have hqc : pub.commitmentsOut idx = qc := Option.some.inj hc
+          rw [hqc] at hread
+          refine ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, ?_, ?_, ?_⟩
+          · rw [hpoolEq, heq]; exact hread
+          · rw [hval]
+            intro hz; have hcheck2 : amount = 0 := hz; omega
+          · exact (hC.outputs idx).symm.trans hqc
+        · rw [if_pos rfl, if_neg hcid] at hc
+          obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv qasset qcid qc hc
+          refine ⟨pre_old, ?_, hval_old, hconsist_old⟩
+          rw [hpoolEq]
+          exact hchain qc pre_old hpre_old hconsist_old
+      · rw [if_neg ha] at hc
         obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv qasset qcid qc hc
         refine ⟨pre_old, ?_, hval_old, hconsist_old⟩
-        rw [heq]
-        exact applyRecords_preserves_known hvalid s.pool.preimageOf qc pre_old hpre_old hconsist_old
-    · rw [if_neg ha] at hc
-      obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv qasset qcid qc hc
-      refine ⟨pre_old, ?_, hval_old, hconsist_old⟩
-      rw [heq]
-      exact applyRecords_preserves_known hvalid s.pool.preimageOf qc pre_old hpre_old hconsist_old
+        rw [hpoolEq]
+        exact hchain qc pre_old hpre_old hconsist_old
+    · rw [hh] at hmatch
+      obtain ⟨merged, hmerge, hholdseq⟩ := hmatch
+      obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv asset channelId oldHolding hh
+      obtain ⟨w', pub', hC', rest', spent'', r', hNonZero', hown', htoken', hnpkOut',
+        hmergedEq, hcommitOld, hcommitNew, hroot', hremove', hnullify', heq'⟩ := hmerge
+      have hvalOld' : w'.valueIn 0 = pre_old.value := by
+        have hh2 := hcommitOld.trans hconsist_old.symm
+        unfold hashCommitment at hh2
+        exact (poseidon3_inj hh2).2.2
+      have hvalPos : w'.valueIn 0 ≠ 0 := hvalOld' ▸ hval_old
+      have hbalance := transactOwned_value_conserved w' pub' (by decide) (by decide) hC'
+      have hvalOutPos : w'.valueOut 0 ≠ 0 := by
+        have hsum : w'.valueIn 0 + (w'.valueIn 1 + 0) = w'.valueOut 0 + 0 := hbalance
+        omega
+      have hnzOut : ¬ isZeroPreimage (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) := by
+        unfold isZeroPreimage
+        intro ⟨_, hv, _⟩
+        exact hvalOutPos hv
+      have hreadM := applyRecords_reads (ownedOutputRecords_valid hC') midPool.preimageOf
+        (pub'.commitmentsOut 0) ⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩
+        (List.mem_ofFn.mpr ⟨0, rfl⟩) hnzOut
+      have hchain2 : ∀ qc pre, s.pool.preimageOf qc = some pre → hashCommitment pre = qc →
+          s'.pool.preimageOf qc = some pre := fun qc pre hpre hconsist => by
+        rw [heq']
+        exact applyRecords_preserves_known (ownedOutputRecords_valid hC') midPool.preimageOf qc pre
+          (hchain qc pre hpre hconsist) hconsist
+      intro qasset qcid qc hc
+      rw [hholdseq] at hc
+      unfold update at hc
+      by_cases ha : qasset = asset
+      · subst ha
+        by_cases hcid : qcid = channelId
+        · subst hcid
+          rw [if_pos rfl, if_pos rfl] at hc
+          have hqc : merged = qc := Option.some.inj hc
+          rw [hmergedEq] at hqc
+          rw [hqc] at hreadM
+          refine ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩, ?_, hvalOutPos, ?_⟩
+          · rw [heq']; exact hreadM
+          · exact (hC'.outputs 0).symm.trans hqc
+        · rw [if_pos rfl, if_neg hcid] at hc
+          obtain ⟨pre_old2, hpre_old2, hval_old2, hconsist_old2⟩ := hinv qasset qcid qc hc
+          exact ⟨pre_old2, hchain2 qc pre_old2 hpre_old2 hconsist_old2, hval_old2, hconsist_old2⟩
+      · rw [if_neg ha] at hc
+        obtain ⟨pre_old2, hpre_old2, hval_old2, hconsist_old2⟩ := hinv qasset qcid qc hc
+        exact ⟨pre_old2, hchain2 qc pre_old2 hpre_old2 hconsist_old2, hval_old2, hconsist_old2⟩
   | challenge fp proof candidate challenger =>
     obtain ⟨_, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qc hc
@@ -692,23 +744,26 @@ theorem exists_internal_channelId (hashA : HashAssumptions) :
     rw [← hn]
     exact hbound n
 
-/-- A successful `.deposit` sets `heldValue` to exactly its own `amount`
-    argument — never the prior `heldValue` plus `amount` (`DepositStep`'s
-    own mechanics mint a note worth `amount` directly, with no arithmetic
-    tying it to the prior holding beyond the `expectedHeld` equality
-    GATE, which only checks a value, never adds to one). The same
-    `applyRecords_reads` read-back `holdings_preimage_nonzero_step`'s own
-    `.deposit` case already uses. -/
+/-- A successful `.deposit` into a channel with NO prior holding sets
+    `heldValue` to exactly its own `amount` argument (`DepositStep`'s own
+    mechanics mint a note worth `amount` directly). When the channel
+    already holds a note, `.deposit` instead MERGES — see
+    `deposit_merge_sets_heldValue` below. The same `applyRecords_reads`
+    read-back `holdings_preimage_nonzero_step`'s own `.deposit` case
+    already uses. -/
 theorem deposit_sets_heldValue
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat)
-    (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s') :
+    (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s')
+    (hnone : s.holdings asset channelId = none) :
     heldValue s' asset channelId = amount := by
   obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-  obtain ⟨N, M, w, pub, idx, hdstep, hholdseq⟩ := hinner
+  obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
   obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
     _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+  rw [hnone] at hmatch
+  obtain ⟨hpoolEq, hholdseq⟩ := hmatch
   have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
     fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
   have hval : w.valueOut idx = amount := by
@@ -728,9 +783,82 @@ theorem deposit_sets_heldValue
   unfold update
   rw [if_pos rfl, if_pos rfl]
   show ((s'.pool.preimageOf (pub.commitmentsOut idx)).map CommitmentPreimage.value).getD 0 = amount
-  rw [heq]
+  rw [hpoolEq, heq]
   dsimp only
   rw [hread]
   simp [hval]
+
+/-- A successful `.deposit` into a channel that ALREADY holds a note
+    increases `heldValue` by exactly `amount` — the two notes MERGE
+    (`Notes.lean`'s `DepositMergeStep`), rather than the fresh note
+    replacing or sitting alongside the old one. `depositBinding`
+    (`ArmadaNitroAdjudicator.sol:60-72`) is exactly this: a deposit
+    always adds to, never replaces, the prior holding. -/
+theorem deposit_merge_sets_heldValue
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat)
+    (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s')
+    (hinv : ∀ qasset qcid qc, s.holdings qasset qcid = some qc →
+      ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+    (oldHolding : Nat) (hsome : s.holdings asset channelId = some oldHolding) :
+    heldValue s' asset channelId = heldValue s asset channelId + amount := by
+  obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
+  obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
+    _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+  rw [hsome] at hmatch
+  obtain ⟨merged, hmerge, hholdseq⟩ := hmatch
+  obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv asset channelId oldHolding hsome
+  obtain ⟨w', pub', hC', rest', spent'', r', hNonZero', hown', htoken', hnpkOut',
+    hmergedEq, hcommitOld, hcommitNew, hroot', hremove', hnullify', heq'⟩ := hmerge
+  have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+    fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+  have hvalNew : w.valueOut idx = amount := by
+    have hout := hC.outputs idx
+    rw [htoken, hcommit] at hout
+    exact (poseidon3_inj hout).2.2.symm
+  have hnzNew : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
+    unfold isZeroPreimage
+    intro ⟨_, hv, _⟩
+    rw [hvalNew] at hv
+    have hcheck : amount = 0 := hv
+    omega
+  have hNewKey : hashCommitment (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) =
+      pub.commitmentsOut idx := hvalid _ hidxrec
+  have hvalOld' : w'.valueIn 0 = pre_old.value := by
+    have hh2 := hcommitOld.trans hconsist_old.symm
+    unfold hashCommitment at hh2
+    exact (poseidon3_inj hh2).2.2
+  have hvalNewIn' : w'.valueIn 1 = amount := by
+    have heqcommit : commitment (npk pub'.ownerField (w'.randomIn 1)) w'.token (w'.valueIn 1) =
+        commitment (w.npkOut idx) w.token (w.valueOut idx) := hcommitNew.trans hNewKey.symm
+    rw [← hvalNew]
+    exact (poseidon3_inj heqcommit).2.2
+  have hbalance := transactOwned_value_conserved w' pub' (by decide) (by decide) hC'
+  have hvalOutSum : w'.valueOut 0 = w'.valueIn 0 + w'.valueIn 1 := by
+    have hsum : w'.valueIn 0 + (w'.valueIn 1 + 0) = w'.valueOut 0 + 0 := hbalance
+    omega
+  have hvalOutPos : w'.valueOut 0 ≠ 0 := by
+    rw [hvalOutSum, hvalOld']
+    omega
+  have hnzOut : ¬ isZeroPreimage (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) := by
+    unfold isZeroPreimage
+    intro ⟨_, hv, _⟩
+    exact hvalOutPos hv
+  have hreadM := applyRecords_reads (ownedOutputRecords_valid hC') midPool.preimageOf
+    (pub'.commitmentsOut 0) ⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩
+    (List.mem_ofFn.mpr ⟨0, rfl⟩) hnzOut
+  unfold heldValue
+  rw [hsome, hholdseq]
+  unfold update
+  rw [if_pos rfl, if_pos rfl]
+  show ((s'.pool.preimageOf merged).map CommitmentPreimage.value).getD 0 =
+    ((s.pool.preimageOf oldHolding).map CommitmentPreimage.value).getD 0 + amount
+  rw [hmergedEq, heq']
+  dsimp only
+  rw [hreadM, hpre_old]
+  simp [hvalOutSum, hvalOld', hvalNewIn']
+
 
 end ArmadaLean.Adjudicator

@@ -206,4 +206,49 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
         spent := spent',
         preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub) }
 
+/-!
+## Deposit top-up: merge the old holding with a fresh deposit note
+
+`.deposit` (`Operations.lean`) must never REPLACE a channel's existing
+holding with a fresh note worth only the new `amount` (that would discard
+the prior value — see `Lemmas.lean`'s `deposit_sets_heldValue`), nor let the
+two notes sit side by side (`AdjudicatorState.holdings` names at most one
+commitment per `(asset, channelId)`). When a channel already holds a note,
+a top-up MERGES the old holding and the fresh deposit note into one note of
+their sum, via `ArmadaLean.Pool.Step.transactOwned` with `N = 2` nullified
+inputs and `M = 1` minted output.
+-/
+
+/-- One `pool.transactOwned` merge call: nullifies the channel's old
+    holding note and the freshly deposited note (`oldHolding`/`newNote`,
+    their commitments), and mints exactly one merged note, `merged`, read
+    off the circuit's own public output (`DepositStep`'s own convention
+    for its deposit note, not a separately-asserted value). The pool's own
+    balance check (`OwnedConstrained.balance`,
+    `ArmadaLean.transactOwned_value_conserved`) ties `merged`'s value to
+    the sum of the two spent notes' true Merkle-tree values — no separate
+    arithmetic hypothesis is needed here for that. `npk = npk self r` for
+    some secret `r`: the same convention `DepositStep`'s own holding note
+    uses, since this is still a deposit-side note, not `.transfer`'s
+    remainder (`npk = self` directly). -/
+def DepositMergeStep (before : PoolState) (self token : Nat)
+    (oldHolding newNote merged : Nat) (after : PoolState) : Prop :=
+  ∃ (w : TransactOwnedWitness 2 1) (pub : TransactOwnedPublic 2 1)
+    (hC : OwnedConstrained w pub)
+    (rest : List CommitmentPreimage) (spent' : NullifierSet) (r : Nat)
+    (hNonZero : ¬ isZeroPreimage (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage)),
+    self = addressOf pub.ownerField ∧
+    w.token = token ∧
+    w.npkOut 0 = npk self r ∧
+    merged = pub.commitmentsOut 0 ∧
+    commitment (npk pub.ownerField (w.randomIn 0)) w.token (w.valueIn 0) = oldHolding ∧
+    commitment (npk pub.ownerField (w.randomIn 1)) w.token (w.valueIn 1) = newNote ∧
+    pub.merkleRoot ∈ before.roots ∧
+    removeAll (before.live token) (ownedSpentNotes pub w) = some rest ∧
+    markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
+    after = { before with
+      live := fun t => if t = token then (ownedNewNotes w) ++ rest else before.live t,
+      spent := spent',
+      preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub) }
+
 end ArmadaLean.Adjudicator
