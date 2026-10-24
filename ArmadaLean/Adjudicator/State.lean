@@ -56,12 +56,12 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
     "Forging cryptographic signatures is infeasible" (SATP §1.4). -/
 structure AdjudicatorState where
   pool : PoolState
-  channels : Nat → ChannelStatus
-  holdings : Nat → Nat → Option Nat
+  channels : Term → ChannelStatus
+  holdings : Nat → Term → Option Term
   configuredAssets : Nat → Prop
   self : Nat
   now : Nat
-  signedBy : Nat → Nat → Prop
+  signedBy : Nat → Term → Prop
   /-- The pool layer's own EOA signing record (the SAME kind of
       execution-tracked fact `signedBy` is for the Nitro layer, above):
       which `(babyjubjubPublicKey, msgHash)` pairs this execution has
@@ -70,8 +70,9 @@ structure AdjudicatorState where
       signing key's OWN row. Kept at the ADJUDICATOR level, not inside the
       shared `ArmadaLean.PoolState` (`Pool.lean`): it is this execution's
       own record of who it has seen sign what, not part of the pool
-      contract's own storage. -/
-  poolSignedBy : (Nat × Nat) → Nat → Prop
+      contract's own storage. `msgHash` is a `Term`
+      (`ArmadaLean.Transact.EdDSAVerify`'s own signature). -/
+  poolSignedBy : (Nat × Nat) → Term → Prop
 
 /-!
 The armada-nitro rule (`AdjudicatorState`'s `holdings` field, above),
@@ -108,7 +109,7 @@ valued` states and grounds this precisely, checking `.deposit`/
     an empty commitment read as a positive holding, and (over
     REACHABLE states, `holdings_never_zero_valued`) no reachable
     holding's own preimage reads back as a `0`-value note either. -/
-def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
+def heldValue (s : AdjudicatorState) (asset : Nat) (channelId : Term) : Nat :=
   match s.holdings asset channelId with
   | none => 0
   | some c => (s.pool.preimageOf c).map CommitmentPreimage.value |>.getD 0
@@ -134,7 +135,7 @@ abbrev isAsset (s : AdjudicatorState) (asset : Nat) : Prop := s.configuredAssets
     contractAuthorizes`, fixed and caller-independent). Matches
     `NitroUtils.isAuthorizedBy`'s own two-branch union
     (`NitroUtils.sol:101-126`). -/
-def AuthorizedBy (sig : SignatureAssumptions) (s : AdjudicatorState) (p d : Nat) : Prop :=
+def AuthorizedBy (sig : SignatureAssumptions) (s : AdjudicatorState) (p : Nat) (d : Term) : Prop :=
   s.signedBy p d ∨ sig.contractAuthorizes p d
 
 /-- `candidate` is signed by every participant of `fp` (used by `conclude`,

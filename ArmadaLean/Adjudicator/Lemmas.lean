@@ -219,7 +219,7 @@ theorem step_configuredAssets (sig : SignatureAssumptions)
 
 /-- Marking a single nullifier spent: it fails iff the nullifier is already
     spent, and otherwise prepends it (`ArmadaLean.markSpent`, `PoolOwned.lean`). -/
-theorem markSpent_single (spent : NullifierSet) (n : Nat) :
+theorem markSpent_single (spent : NullifierSet) (n : Term) :
     markSpent spent [n] = if n ∈ spent then none else some (n :: spent) := by
   unfold markSpent
   split <;> rfl
@@ -231,7 +231,7 @@ theorem markSpent_single (spent : NullifierSet) (n : Nat) :
 theorem payout_outputs_nonzero (exitAllocs : List Allocation) (remainder asset self : Nat) :
     ∀ pre ∈ (exitAllocs.filterMap (fun a =>
         if a.amount = 0 then none else some (⟨a.destination, asset, a.amount⟩ : CommitmentPreimage))) ++
-        (if remainder = 0 then [] else [(⟨self, asset, remainder⟩ : CommitmentPreimage)]),
+        (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)]),
       pre.value ≠ 0 := by
   intro pre hpre
   rcases List.mem_append.mp hpre with hc | hc
@@ -254,20 +254,23 @@ theorem payout_outputs_nonzero (exitAllocs : List Allocation) (remainder asset s
     carrying a known one forward through unrelated writes
 
 Both lemmas lean on the same fact: `commitment`'s hash
-(`ArmadaLean.hashCommitment`) is injective (`ArmadaLean.Poseidon.
-poseidon3_inj`), so two VALID entries (`hvalid`'s own hypothesis) sharing
+(`ArmadaLean.hashCommitment`) is injective (`ArmadaLean.Poseidon.Term.
+hash3_inj`), so two VALID entries (`hvalid`'s own hypothesis) sharing
 one commitment key must carry the SAME preimage — a batch can never
 silently overwrite a known holding's registry entry with a different
 value, honest or not. -/
 
 /-- `hashCommitment` is injective: two preimages hashing to the same
-    commitment are the same preimage (`ArmadaLean.Poseidon.poseidon3_inj`,
-    the Poseidon collision-resistance axiom already used by `Transact.lean`
-    and `TransactOwned.lean`). -/
+    commitment are the same preimage (`ArmadaLean.Poseidon.Term.
+    hash3_inj`, the symbolic Poseidon collision-resistance fact, proved
+    from `Term`'s own constructors — `pool-model`'s `af91ab2` — already
+    used by `Transact.lean` and `TransactOwned.lean`). -/
 theorem hashCommitment_inj {p q : CommitmentPreimage} (h : hashCommitment p = hashCommitment q) :
     p = q := by
   unfold hashCommitment commitment at h
-  obtain ⟨h1, h2, h3⟩ := poseidon3_inj h
+  obtain ⟨h1, h2, h3⟩ := Term.hash3_inj h
+  have h2' := Term.val.inj h2
+  have h3' := Term.val.inj h3
   cases p; cases q
   simp_all
 
@@ -276,9 +279,9 @@ theorem hashCommitment_inj {p q : CommitmentPreimage} (h : hashCommitment p = ha
     afterward: any entry in the batch sharing key `c` must, by `hvalid` and
     `hashCommitment_inj`, carry the value `pre` itself, so whether or not
     the batch touches `c`, the final value there is unchanged. -/
-theorem applyRecords_preserves_known {records : List (Nat × CommitmentPreimage)}
+theorem applyRecords_preserves_known {records : List (Term × CommitmentPreimage)}
     (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
-    (reg : PreimageRegistry) (c : Nat) (pre : CommitmentPreimage)
+    (reg : PreimageRegistry) (c : Term) (pre : CommitmentPreimage)
     (hknown : reg c = some pre) (hconsist : hashCommitment pre = c) :
     applyRecords reg records c = some pre := by
   induction records generalizing reg with
@@ -302,9 +305,9 @@ theorem applyRecords_preserves_known {records : List (Nat × CommitmentPreimage)
     `c` afterward, as long as `p` is not the all-zero skip marker
     (`ArmadaLean.PoolOwned.isZeroPreimage`, which `recordStep` never
     writes). -/
-theorem applyRecords_reads {records : List (Nat × CommitmentPreimage)}
+theorem applyRecords_reads {records : List (Term × CommitmentPreimage)}
     (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
-    (reg : PreimageRegistry) (c : Nat) (p : CommitmentPreimage)
+    (reg : PreimageRegistry) (c : Term) (p : CommitmentPreimage)
     (hmem : (c, p) ∈ records) (hnz : ¬ isZeroPreimage p) :
     applyRecords reg records c = some p := by
   induction records generalizing reg with
@@ -351,13 +354,13 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
     obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
     obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
-      _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+      _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
     have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
       fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
     have hval : w.valueOut idx = amount := by
       have hout := hC.outputs idx
       rw [htoken, hcommit] at hout
-      exact (poseidon3_inj hout).2.2.symm
+      exact (Term.val.inj (Term.hash3_inj hout).2.2).symm
     have hnz : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
       unfold isZeroPreimage
       intro ⟨_, hv, _⟩
@@ -405,7 +408,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
       have hvalOld' : w'.valueIn 0 = pre_old.value := by
         have hh2 := hcommitOld.trans hconsist_old.symm
         unfold hashCommitment at hh2
-        exact (poseidon3_inj hh2).2.2
+        exact Term.val.inj (Term.hash3_inj hh2).2.2
       have hvalPos : w'.valueIn 0 ≠ 0 := hvalOld' ▸ hval_old
       have hbalance := transactOwned_value_conserved w' pub' (by decide) (by decide) hC'
       have hvalOutPos : w'.valueOut 0 ≠ 0 := by
@@ -475,7 +478,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
             (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
               (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
          then []
-         else [(⟨s.self, (outcome.get ⟨assetIndex, hidx⟩).asset,
+         else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, hidx⟩).asset,
            heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
              (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
                (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2⟩ : CommitmentPreimage)]))
@@ -486,7 +489,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
             (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
               (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
          then none
-         else some (commitment s.self (outcome.get ⟨assetIndex, hidx⟩).asset
+         else some (commitment (Term.val s.self) (outcome.get ⟨assetIndex, hidx⟩).asset
            (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
              (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
                (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2)))) at hholdseq
@@ -501,7 +504,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
         (heldValue s assetOutcome.asset cid) indices).2.1.filterMap (fun a =>
           if a.amount = 0 then none
           else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-        (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+        (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
         (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)), hashCommitment cp.2 = cp.1 := by
       intro cp hcp
       obtain ⟨pre, hmem, hcpeq⟩ := List.mem_map.mp hcp
@@ -524,37 +527,37 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
         (((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
             (fun a => if a.amount = 0 then none
               else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
           (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)))),
-        remainder ≠ 0 → commitment s.self assetOutcome.asset remainder = qc →
+        remainder ≠ 0 → commitment (Term.val s.self) assetOutcome.asset remainder = qc →
         ∃ pre, s'.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc := by
       intro hpre hrem hqc
-      have hnz : ¬ isZeroPreimage (⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage) :=
+      have hnz : ¬ isZeroPreimage (⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage) :=
         fun hz => hrem hz.2.1
-      have hmemout : (⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage) ∈
+      have hmemout : (⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage) ∈
           ((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
             (fun a => if a.amount = 0 then none
               else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])) := by
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])) := by
         rw [if_neg hrem]
         exact List.mem_append.mpr (Or.inr (List.mem_singleton_self _))
-      have hmemout2 : (qc, (⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)) ∈
+      have hmemout2 : (qc, (⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)) ∈
           ((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
             (fun a => if a.amount = 0 then none
               else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
           (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)) := by
         rw [← hqc]
         exact List.mem_map.mpr ⟨_, hmemout, rfl⟩
-      refine ⟨⟨s.self, assetOutcome.asset, remainder⟩, ?_, hrem, hqc⟩
+      refine ⟨⟨Term.val s.self, assetOutcome.asset, remainder⟩, ?_, hrem, hqc⟩
       rw [hpre]
       exact applyRecords_reads hvalid_outputs s.pool.preimageOf qc
-        (⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage) hmemout2 hnz
+        (⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage) hmemout2 hnz
     have hunrelated : ∀ (hpre : s'.pool.preimageOf = applyRecords s.pool.preimageOf
         (((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
             (fun a => if a.amount = 0 then none
               else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
           (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)))),
         s.holdings qasset qcid = some qc →
         ∃ pre, s'.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc := by
@@ -564,13 +567,14 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
       rw [hpre]
       exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre_old hpre_old hconsist_old
     rcases hc0 : s.holdings assetOutcome.asset cid with _ | c0
-    · rw [hc0] at hmatch
-      obtain ⟨w, pub, _, hC, _, _, hNonZero, _, htoken, hnewnotes, _, _, _, _, heq⟩ := hmatch
+    · simp only [hc0] at hmatch
+      obtain ⟨w, pub, _hM, hC, _spent', _newRoot, hNonZero, _hown, htoken, hnewnotes,
+        _hroot, _hmark, heq⟩ := hmatch
       have hrecordseq : ownedOutputRecords w pub = ((transferEffects assetOutcome.allocations
           (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
             (fun a => if a.amount = 0 then none
               else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
           (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)) := by
         have hstep1 := congrArg
           (List.map (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) hnewnotes
@@ -585,7 +589,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
           (((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
               (fun a => if a.amount = 0 then none
                 else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-            (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+            (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
             (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) := by
         rw [← hrecordseq]
         exact congrArg PoolState.preimageOf heq
@@ -605,13 +609,13 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
             · rw [if_pos rfl, if_neg hcid] at hc; exact hc
           · rw [if_neg ha] at hc; exact hc
         exact hunrelated hpre0 hc'
-    · rw [hc0] at hmatch
+    · simp only [hc0] at hmatch
       obtain ⟨w, pub, _, hC, _, _, _, hNonZero, _, htoken, hnewnotes, _, _, _, _, heq⟩ := hmatch
       have hrecordseq : ownedOutputRecords w pub = ((transferEffects assetOutcome.allocations
           (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
             (fun a => if a.amount = 0 then none
               else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
           (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)) := by
         have hstep1 := congrArg
           (List.map (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) hnewnotes
@@ -626,7 +630,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
           (((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
               (fun a => if a.amount = 0 then none
                 else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
-            (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+            (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
             (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) := by
         rw [← hrecordseq]
         exact congrArg PoolState.preimageOf heq
@@ -674,76 +678,6 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
     obtain ⟨pre, hpre, hval, hconsist⟩ := hinv qasset qcid qc hc
     exact ⟨pre, hpoolEq ▸ hpre, hval, hconsist⟩
 
-/-! ## `payout_can_happen`'s own prerequisites: an internal channel id
-    exists, and a deposit sets `heldValue` to exactly its own `amount` -/
-
-/-- A list with more than `N` pairwise-distinct members cannot have every
-    member below `N` — the pigeonhole principle, stated directly over
-    `List.Nodup` since this project carries no further combinatorics
-    library. Proved by strong induction on `N`: either `N` itself is a
-    member (remove it, recurse at `N - 1`) or it is not (every member
-    is already below `N - 1`, recurse without removing anything). -/
-theorem no_long_nodup_bounded_list :
-    ∀ (N : Nat) (l : List Nat), l.Nodup → N < l.length → (∀ x ∈ l, x < N) → False := by
-  intro N
-  induction N with
-  | zero =>
-    intro l _ hlen hbound
-    match l, hlen with
-    | x :: _, _ => exact absurd (hbound x List.mem_cons_self) (by omega)
-  | succ N ih =>
-    intro l hnodup hlen hbound
-    by_cases hmem : N ∈ l
-    · have hnodup' : (l.erase N).Nodup := List.Nodup.erase N hnodup
-      have hlen' : (l.erase N).length = l.length - 1 := List.length_erase_of_mem hmem
-      have hbound' : ∀ x ∈ l.erase N, x < N := by
-        intro x hx
-        have := (List.Nodup.mem_erase_iff hnodup).mp hx
-        have hlt : x < N + 1 := hbound x this.2
-        have hne : x ≠ N := this.1
-        omega
-      exact ih (l.erase N) hnodup' (by omega) hbound'
-    · have hbound' : ∀ x ∈ l, x < N := by
-        intro x hx
-        have hlt : x < N + 1 := hbound x hx
-        by_cases hxN : x = N
-        · exact absurd (hxN ▸ hx) hmem
-        · omega
-      exact ih l hnodup (by omega) hbound'
-
-/-- A channel id that is not an external (address-sized) destination
-    exists: `channelIdOf`'s own injectivity (`HashAssumptions.
-    channelIdOf_inj`) forces its range over `channelNonce ∈ [0, 2^160]`
-    (2^160+1 pairwise-distinct values) to escape `[0, 2^160)` (only
-    2^160 slots), by `no_long_nodup_bounded_list`. `payout_can_happen`
-    needs this to fund a channel by `.deposit` (which requires `¬
-    isExternal channelId`) and later finalize that SAME channel by
-    `.conclude`/`.challenge` (whose own index is `channelId fp`, for
-    whichever `fp` the call names) — the two requirements can only
-    meet at a channel id neither `channelIdOf`'s nor `isExternal`'s own
-    definition otherwise guarantees. -/
-theorem exists_internal_channelId (hashA : HashAssumptions) :
-    ∃ n : Nat, ¬ isExternal (channelIdOf [] n 0 0) := by
-  apply Classical.byContradiction
-  intro hcon
-  have hf : Function.Injective (fun n => channelIdOf [] n 0 0) := by
-    intro a b hab
-    exact (hashA.channelIdOf_inj hab).2.1
-  have hbound : ∀ n, channelIdOf [] n 0 0 < 2 ^ 160 := by
-    intro n
-    apply Classical.byContradiction
-    intro hn
-    exact hcon ⟨n, hn⟩
-  apply no_long_nodup_bounded_list (2 ^ 160)
-    ((List.range (2 ^ 160 + 1)).map (fun n => channelIdOf [] n 0 0))
-  · exact List.Pairwise.map _ (fun _ _ hab heq => hab (hf heq)) (List.nodup_range)
-  · rw [List.length_map, List.length_range]
-    omega
-  · intro x hx
-    obtain ⟨n, _, hn⟩ := List.mem_map.mp hx
-    rw [← hn]
-    exact hbound n
-
 /-- A successful `.deposit` into a channel with NO prior holding sets
     `heldValue` to exactly its own `amount` argument (`DepositStep`'s own
     mechanics mint a note worth `amount` directly). When the channel
@@ -754,14 +688,14 @@ theorem exists_internal_channelId (hashA : HashAssumptions) :
 theorem deposit_sets_heldValue
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (actor : Actor) (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat)
+    (actor : Actor) (s s' : AdjudicatorState) (channelId : Term) (expectedHeld asset amount : Nat)
     (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s')
     (hnone : s.holdings asset channelId = none) :
     heldValue s' asset channelId = amount := by
   obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
   obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
-    _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
   rw [hnone] at hmatch
   obtain ⟨hpoolEq, hholdseq⟩ := hmatch
   have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
@@ -769,7 +703,7 @@ theorem deposit_sets_heldValue
   have hval : w.valueOut idx = amount := by
     have hout := hC.outputs idx
     rw [htoken, hcommit] at hout
-    exact (poseidon3_inj hout).2.2.symm
+    exact (Term.val.inj (Term.hash3_inj hout).2.2).symm
   have hnz : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
     unfold isZeroPreimage
     intro ⟨_, hv, _⟩
@@ -797,16 +731,16 @@ theorem deposit_sets_heldValue
 theorem deposit_merge_sets_heldValue
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (actor : Actor) (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat)
+    (actor : Actor) (s s' : AdjudicatorState) (channelId : Term) (expectedHeld asset amount : Nat)
     (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s')
     (hinv : ∀ qasset qcid qc, s.holdings qasset qcid = some qc →
       ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
-    (oldHolding : Nat) (hsome : s.holdings asset channelId = some oldHolding) :
+    (oldHolding : Term) (hsome : s.holdings asset channelId = some oldHolding) :
     heldValue s' asset channelId = heldValue s asset channelId + amount := by
   obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
   obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
-    _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
   rw [hsome] at hmatch
   obtain ⟨merged, hmerge, hholdseq⟩ := hmatch
   obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv asset channelId oldHolding hsome
@@ -817,7 +751,7 @@ theorem deposit_merge_sets_heldValue
   have hvalNew : w.valueOut idx = amount := by
     have hout := hC.outputs idx
     rw [htoken, hcommit] at hout
-    exact (poseidon3_inj hout).2.2.symm
+    exact (Term.val.inj (Term.hash3_inj hout).2.2).symm
   have hnzNew : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
     unfold isZeroPreimage
     intro ⟨_, hv, _⟩
@@ -829,12 +763,12 @@ theorem deposit_merge_sets_heldValue
   have hvalOld' : w'.valueIn 0 = pre_old.value := by
     have hh2 := hcommitOld.trans hconsist_old.symm
     unfold hashCommitment at hh2
-    exact (poseidon3_inj hh2).2.2
+    exact Term.val.inj (Term.hash3_inj hh2).2.2
   have hvalNewIn' : w'.valueIn 1 = amount := by
-    have heqcommit : commitment (npk pub'.ownerField (w'.randomIn 1)) w'.token (w'.valueIn 1) =
+    have heqcommit : commitment (npk (Term.val pub'.ownerField) (w'.randomIn 1)) w'.token (w'.valueIn 1) =
         commitment (w.npkOut idx) w.token (w.valueOut idx) := hcommitNew.trans hNewKey.symm
     rw [← hvalNew]
-    exact (poseidon3_inj heqcommit).2.2
+    exact Term.val.inj (Term.hash3_inj heqcommit).2.2
   have hbalance := transactOwned_value_conserved w' pub' (by decide) (by decide) hC'
   have hvalOutSum : w'.valueOut 0 = w'.valueIn 0 + w'.valueIn 1 := by
     have hsum : w'.valueIn 0 + (w'.valueIn 1 + 0) = w'.valueOut 0 + 0 := hbalance
@@ -859,6 +793,20 @@ theorem deposit_merge_sets_heldValue
   dsimp only
   rw [hreadM, hpre_old]
   simp [hvalOutSum, hvalOld', hvalNewIn']
+
+/-- A channel id is never an external (address-sized) destination:
+    `channelId fp` is always a `Term.hash` term (`channelIdOf`'s own
+    definition, `Assumptions.lean`), and `isExternal` names only
+    `Term.val` terms (`Outcome.lean`) — a raw value can never equal a
+    genuine hash, by construction (`Term.val_ne_hash`). Replaces the
+    old `exists_internal_channelId`/`no_long_nodup_bounded_list`
+    pigeonhole argument the `Nat`-channelId model needed: with `Term`
+    channel ids, EVERY `channelId fp` already satisfies `.deposit`'s
+    `¬isExternal` requirement, for any `fp` at all. -/
+theorem channelId_not_external (fp : FixedPart) : ¬ isExternal (channelId fp) := by
+  rintro ⟨a, _, heq⟩
+  unfold channelId channelIdOf at heq
+  exact Term.val_ne_hash a _ heq.symm
 
 
 end ArmadaLean.Adjudicator

@@ -12,6 +12,7 @@
   finalizability pieces that use them.
 -/
 import ArmadaLean.ValueConservation
+import ArmadaLean.Poseidon
 
 namespace ArmadaLean.Adjudicator
 
@@ -40,13 +41,30 @@ inductive AllocationType where
   | shield
   deriving DecidableEq
 
+/-- A plain-number tag for each `AllocationType`, used only to fold an
+    allocation's type into its `Term` encoding (`Allocation.toTerm`
+    below) — Lean bookkeeping, not a protocol concept. Injective by a
+    direct case split (`AllocationType.toNat_inj`). -/
+def AllocationType.toNat : AllocationType → Nat
+  | .simple => 0
+  | .guarantee => 1
+  | .shield => 2
+
+theorem AllocationType.toNat_inj {a b : AllocationType} (h : a.toNat = b.toNat) : a = b := by
+  cases a <;> cases b <;> simp_all [AllocationType.toNat]
+
 /-- An allocation (S4 `0030-outcomes.md`, "Allocations"; S2 §6.1's `A(a)`).
     `destination` and `amount` are the quoted fields; `allocationType`
     distinguishes `simple` from `guarantee`; `metadata` is the quoted
     "optional `metadata`" field, read by a guarantee allocation
-    (`decodeGuarantee` below) and otherwise unused. -/
+    (`decodeGuarantee` below) and otherwise unused. `destination` is a
+    `Term`: S4 `0030-outcomes.md`'s "Destinations" names it a `bytes32`
+    that either denotes a channel id (`channelId`, `Channel.lean` — a
+    genuine keccak256 output, a `Term.hash` term) or an external address
+    left-padded with zeros (a raw value, `Term.val` — `isExternal`
+    below). -/
 structure Allocation where
-  destination : Nat
+  destination : Term
   amount : Nat
   allocationType : AllocationType
   metadata : Nat
@@ -55,7 +73,41 @@ structure Allocation where
 /-- The default allocation, used only to discharge an index lookup already
     proven in range; its fields are never read in that case. Not a paper
     concept — a Lean bookkeeping device. -/
-def Allocation.default : Allocation := ⟨0, 0, .simple, 0⟩
+def Allocation.default : Allocation := ⟨Term.val 0, 0, .simple, 0⟩
+
+/-- An allocation's `Term` encoding, for folding into an outcome's hash
+    (`SingleAssetExit.toTerm`/`Outcome.toTerm` below). Injective
+    (`Allocation.toTerm_inj`) by `Term.hash`'s own constructor
+    injectivity, applied to this 4-field tuple. -/
+def Allocation.toTerm (a : Allocation) : Term :=
+  Term.hash [a.destination, Term.val a.amount, Term.val a.allocationType.toNat, Term.val a.metadata]
+
+/-- If `f` is injective, mapping it over a list is injective. Core/Std
+    carries no such lemma (it is a mathlib fact, `List.map_injective_iff`,
+    and this repo has no mathlib dependency), so it is proved here, by
+    structural induction on both lists together. -/
+theorem List.map_injective_of_injective {α β : Type} {f : α → β}
+    (hf : ∀ a b, f a = f b → a = b) :
+    ∀ l1 l2 : List α, l1.map f = l2.map f → l1 = l2
+  | [], [] => fun _ => rfl
+  | [], _ :: _ => fun h => by simp at h
+  | _ :: _, [] => fun h => by simp at h
+  | a :: as, b :: bs => fun h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    obtain ⟨h1, h2⟩ := h
+    rw [hf a b h1, List.map_injective_of_injective hf as bs h2]
+
+theorem Allocation.toTerm_inj {a b : Allocation} (h : a.toTerm = b.toTerm) : a = b := by
+  unfold Allocation.toTerm at h
+  injection h with hl
+  simp only [List.cons.injEq] at hl
+  obtain ⟨h1, h2, h3, h4⟩ := hl
+  have ha := Term.val.inj h2
+  have ht := AllocationType.toNat_inj (Term.val.inj h3)
+  have hm := Term.val.inj h4.1
+  cases a; cases b
+  simp_all
+
 
 /-- A single asset's exit (S4 `0030-outcomes.md`: "An `Outcome` is an array
     of `SingleAssetExits`, each specifying: an `asset`; optional
@@ -69,6 +121,27 @@ structure SingleAssetExit where
   asset : Nat
   allocations : List Allocation
 
+/-- A single-asset-exit's `Term` encoding, for folding into an outcome's
+    hash (`Outcome.toTerm` below). Injective (`SingleAssetExit.toTerm_inj`)
+    by `Term.hash`'s own constructor injectivity plus map-injectivity
+    (`List.map_injective_of_injective`, above) lifted from
+    `Allocation.toTerm_inj`. -/
+def SingleAssetExit.toTerm (e : SingleAssetExit) : Term :=
+  Term.hash (Term.val e.asset :: e.allocations.map Allocation.toTerm)
+
+/-- A single-asset-exit's `Term` encoding is injective. -/
+theorem SingleAssetExit.toTerm_inj {e1 e2 : SingleAssetExit} (h : e1.toTerm = e2.toTerm) :
+    e1 = e2 := by
+  unfold SingleAssetExit.toTerm at h
+  injection h with hl
+  simp only [List.cons.injEq] at hl
+  obtain ⟨ha, hallocs⟩ := hl
+  have ha' := Term.val.inj ha
+  have hallocs' := List.map_injective_of_injective
+    (fun a b => Allocation.toTerm_inj) e1.allocations e2.allocations hallocs
+  cases e1; cases e2
+  simp_all
+
 /-- A channel's outcome (S4 `0010-states-channels.md`, `VariablePart.outcome
 : Outcome.SingleAssetExit[]`; S2 §3.2, "An outcome dictates how assets...
 will be redistributed"). S2 §3.2 also states the outcome is "an ordered
@@ -78,13 +151,27 @@ idea; S2 itself predates multi-asset outcomes (S2 §3.1 restricts to "a
 single asset, which we will refer to as coins"). -/
 abbrev Outcome := List SingleAssetExit
 
+/-- An outcome's `Term` encoding (`Assumptions.lean`'s `outcomeHashOf`).
+    Injective (`Outcome.toTerm_inj`), the same proof shape as
+    `SingleAssetExit.toTerm_inj` one layer up. -/
+def Outcome.toTerm (o : Outcome) : Term := Term.hash (o.map SingleAssetExit.toTerm)
+
+theorem Outcome.toTerm_inj {o1 o2 : Outcome} (h : o1.toTerm = o2.toTerm) : o1 = o2 := by
+  unfold Outcome.toTerm at h
+  injection h with hl
+  exact List.map_injective_of_injective (fun a b => SingleAssetExit.toTerm_inj) o1 o2 hl
+
 /-- A destination is external when its top 96 bits are zero (S4
     `0030-outcomes.md`, "Destinations": "A `destination` is [a] 32 byte
     identifier which may either denote a channel ID or a so-called
     'external destination' (a 20 byte Ethereum address left-padded with
-    zeros)."). Modeled as a numeric bound: the slicing itself carries no
-    content beyond "fits in 160 bits". -/
-def isExternal (destination : Nat) : Prop := destination < 2 ^ 160
+    zeros)."). `destination` is a `Term` now (`Allocation.destination`'s
+    own doc comment): an external destination is a RAW value (an address,
+    embedded `Term.val`), never a genuine hash — a channel id
+    (`Channel.lean`'s `channelId`) is always a `Term.hash` term, so
+    `Term.val_ne_hash` already rules out a channel id ever being
+    external, with no separate numeric check needed for that direction. -/
+def isExternal (destination : Term) : Prop := ∃ a : Nat, a < 2 ^ 160 ∧ destination = Term.val a
 
 /-- The priority payout rule (S2 §5.1, "Allocations and Transfer": "The
     allocation is in priority order, so that if the channel does not hold
@@ -168,7 +255,7 @@ reclaims a two-party guarantee.
     (S4 `0030-outcomes.md`, quoted above). Modeled as an abstract decoder:
     the encode/decode round trip carries no content this model needs beyond
     "it recovers the two addresses the guarantee's creator encoded". -/
-axiom decodeGuarantee : Nat → Nat × Nat
+axiom decodeGuarantee : Nat → Term × Term
 
 /-- `reclaim`'s effect on the source (ledger) channel's own outcome (S3
     §2.4, Listing 2, "Reclaim": `o_ledger[left] += o_target[0]`;
@@ -177,7 +264,7 @@ axiom decodeGuarantee : Nat → Nat × Nat
     the target's first two allocation amounts). Every other asset's exit,
     and every other allocation of the named asset, is unchanged. -/
 def reallocateGuarantee (outcome : Outcome) (assetIndex allocIndex : Nat)
-    (left right amtLeft amtRight : Nat) : Outcome :=
+    (left right : Term) (amtLeft amtRight : Nat) : Outcome :=
   outcome.mapIdx fun i exit =>
     if i ≠ assetIndex then exit
     else { exit with
