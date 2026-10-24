@@ -3,11 +3,10 @@
   change: a hash cannot be inverted or collided, and a signature cannot be
   forged.
 
-  Phase 1 brief (`armada-laconic/.scratch/rewrite-B/PHASE1-lean-model.md`),
-  "Why this model exists": "The only things the model takes as given are
-  things no caller can change: that the hash cannot be inverted or
-  collided, that a signature cannot be forged, and that an accepted proof
-  means its constraints hold." This file states the first two. The third
+  This model takes as given only what no caller can change: that a
+  hash cannot be inverted or collided, that a signature cannot be
+  forged, and that an accepted proof means its constraints hold.
+  This file states the first two. The third
   (proof soundness, owned-spend circuit) now sits in `ArmadaLean.
   TransactOwned`/`ArmadaLean.PoolOwned` (root `ArmadaLean` modules,
   branch `owned-notes`): the adjudicator is an ordinary user of the
