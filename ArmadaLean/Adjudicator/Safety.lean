@@ -65,7 +65,7 @@
   owned_no_double_spend` grounds `nullify_iff_commitment_was_some`
   (section F).
 -/
-import ArmadaLean.Adjudicator.Reachability
+import ArmadaLean.Adjudicator.Lemmas
 
 namespace ArmadaLean.Adjudicator
 
@@ -562,8 +562,8 @@ theorem conclude_moves_no_value
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
     (hstep : Step sig appRel actor s (.conclude fp candidate) s') :
-    s'.pool = s.pool ∧ s'.holdings = s.holdings := by
-  sorry
+    s'.pool = s.pool ∧ s'.holdings = s.holdings :=
+  ⟨hstep.2.2.2.2.1, hstep.2.2.2.2.2.1⟩
 
 /-- The bulk paths revert: `transferAllAssets` and
     `concludeAndTransferAllAssets` have no successful `Step`, for any
@@ -582,8 +582,8 @@ theorem bulk_paths_never_succeed
       ¬ Step sig appRel actor s (.bulkTransferAllAssets cid outcome claimedStateHash) s') ∧
     (∀ (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
         (actor : Actor) (s s' : AdjudicatorState),
-      ¬ Step sig appRel actor s (.bulkConcludeAndTransferAllAssets fp candidate) s') := by
-  sorry
+      ¬ Step sig appRel actor s (.bulkConcludeAndTransferAllAssets fp candidate) s') :=
+  ⟨fun _ _ _ _ h => h, fun _ _ _ _ h => h⟩
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
     interface: `AdjudicatorState` has no raw-balance field anywhere, and
@@ -601,7 +601,24 @@ theorem value_exists_only_as_notes
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
     ∃ c, s.holdings asset cid = some c ∧ s.pool.isLive c ∧
       (s.pool.preimageOf c).map NotePreimage.value = some held := by
-  sorry
+  unfold heldValue at hheld
+  rcases hc : s.holdings asset cid with _ | c
+  · rw [hc] at hheld; simp at hheld; omega
+  · rw [hc] at hheld
+    simp only at hheld
+    rcases hp : s.pool.preimageOf c with _ | pre
+    · rw [hp] at hheld; simp at hheld; omega
+    · rw [hp] at hheld
+      simp only [Option.map_some, Option.getD_some] at hheld
+      refine ⟨c, rfl, ?_, ?_⟩
+      · unfold PoolState.preimageOf at hp
+        obtain ⟨q, hq, hqpre⟩ := Option.map_eq_some_iff.mp hp
+        have hmem : q ∈ s.pool.liveNotes := List.mem_of_find?_eq_some hq
+        have hq1 : q.1 = c := by
+          have hb := List.find?_some hq
+          simpa using hb
+        exact ⟨q.2, by rw [← hq1]; exact hmem⟩
+      · rw [hp]; simp [hheld]
 
 /-!
 ## F. R1 mutation-test misses
@@ -702,8 +719,10 @@ theorem configuredAssets_invariant
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) :
-    s.configuredAssets = assets := by
-  sorry
+    s.configuredAssets = assets :=
+  reachable_preserves (P := fun s => s.configuredAssets = assets) rfl
+    (fun actor call s s' hP hstep => (step_configuredAssets sig appRel actor s s' call hstep).trans hP)
+    hreach
 
 /-- Closes two of the five `_mintTransferPayout` misses (old offsets
     11666, 11738): an allocation paid exactly `0` mints no note at all —

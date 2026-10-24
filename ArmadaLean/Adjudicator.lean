@@ -21,7 +21,9 @@
   - `State.lean`        — the full adjudicator state and `heldValue`.
   - `Operations.lean`   — every call and its effect.
   - `Reachability.lean` — every state any sequence of calls can reach.
-  - `Safety.lean`       — the theorem statements, proofs `sorry`.
+  - `Lemmas.lean`       — helper facts about the payout math, used by
+                           `Safety.lean`'s proofs.
+  - `Safety.lean`       — the 24 theorem statements and their proofs.
 
   See `Safety.lean`'s module comment for the three questions this model
   answers and the sources it answers them from.
@@ -82,6 +84,6 @@ import ArmadaLean.Adjudicator.Assumptions
 import ArmadaLean.Adjudicator.Channel
 import ArmadaLean.Adjudicator.Notes
 import ArmadaLean.Adjudicator.State
-import ArmadaLean.Adjudicator.Operations
 import ArmadaLean.Adjudicator.Reachability
+import ArmadaLean.Adjudicator.Lemmas
 import ArmadaLean.Adjudicator.Safety
