@@ -809,7 +809,56 @@ theorem zero_payout_mints_nothing
     ¬ ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
         pre ∈ s'.pool.live pre.token ∧
         pre ∉ s.pool.live pre.token := by
-  sorry
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨_houtnz, _hemerg, _hwithdraw, hmatch⟩ := hpoolstep
+  rintro ⟨pre, _hnpk, hval, hin, hnin⟩
+  by_cases htok : pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset
+  · rw [htok] at hin hnin
+    have hnz := payout_outputs_nonzero
+      (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.1
+      (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2)
+      (outcome.get ⟨assetIndex, hidx⟩).asset s.self
+    rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
+    · rw [hc] at hmatch
+      obtain ⟨pub, _hself2, _hverify, _hcommits, _hmarkspent, heq⟩ := hmatch
+      rw [heq] at hin
+      simp only at hin
+      rcases List.mem_append.mp hin with hc1 | hc2
+      · exact hnz pre hc1 hval
+      · exact hnin hc2
+    · rw [hc] at hmatch
+      obtain ⟨pub, w, root, _hroot, _hself2, _hverify, _hcommits, _hconstr, _hmerkle, _hceq,
+        rest, hremove, spent', _hmarkspent, heq⟩ := hmatch
+      rw [heq] at hin
+      simp only at hin
+      rcases List.mem_append.mp hin with hc1 | hc2
+      · exact hnz pre hc1 hval
+      · have hperm := removeAll_perm hremove
+        have hmem : pre ∈ s.pool.live (outcome.get ⟨assetIndex, hidx⟩).asset :=
+          (List.Perm.mem_iff hperm).mpr (List.mem_append.mpr (Or.inr hc2))
+        exact hnin hmem
+  · have heqlive : s'.pool.live pre.token = s.pool.live pre.token := by
+      rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
+      · rw [hc] at hmatch
+        obtain ⟨pub, _hself2, _hverify, _hcommits, _hmarkspent, heq⟩ := hmatch
+        rw [heq]
+        show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
+            else s.pool.live pre.token) = s.pool.live pre.token
+        rw [if_neg htok]
+      · rw [hc] at hmatch
+        obtain ⟨pub, w, root, _hroot, _hself2, _hverify, _hcommits, _hconstr, _hmerkle, _hceq,
+          rest, hremove, spent', _hmarkspent, heq⟩ := hmatch
+        rw [heq]
+        show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
+            else s.pool.live pre.token) = s.pool.live pre.token
+        rw [if_neg htok]
+    rw [heqlive] at hin
+    exact hnin hin
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
     strictly positive — a full payout (every index selected, or
