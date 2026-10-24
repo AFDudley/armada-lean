@@ -435,7 +435,40 @@ theorem challenge_can_happen
       Step sig (consensusRelation sig) actor s
         (.challenge fp [] candidate challenger) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
-  sorry
+  let assets : Nat → Prop := fun _ => False
+  let self : Nat := 0
+  let pool0 : PoolState := ⟨[], [], fun _ _ => False⟩
+  let fp : FixedPart := ⟨[0], 0, 0, 1⟩
+  let candidate : VariablePart := ⟨[], 0, 0, false⟩
+  let g := genesis assets self pool0
+  let mid : AdjudicatorState := { g with
+    signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ g.signedBy p' d' }
+  have hsignstep : Step sig (consensusRelation sig) (Actor.nitro 0) g (.sign 0 (stateHash fp candidate)) mid :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach : Reachable sig (consensusRelation sig) g mid :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
+  let s' : AdjudicatorState := { mid with
+    channels := update mid.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome } }
+  have hauth : AuthorizedBy sig mid 0 (stateHash fp candidate) := Or.inl (Or.inl ⟨rfl, rfl⟩)
+  have hstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid
+      (.challenge fp [] candidate 0) s' := by
+    refine ⟨?_, ⟨rfl, ?_⟩, ?_, hauth, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · show candidate.turnNum ≥ (mid.channels (channelId fp)).turnNumRecord
+      simp [mid, g, genesis, emptyStatus]
+    · intro p hp
+      rw [List.mem_singleton] at hp
+      subst hp
+      exact hauth
+    · exact List.mem_singleton.mpr rfl
+  refine ⟨assets, self, pool0, mid, s', fp, candidate, 0, Actor.nitro 0, hreach, hstep, ?_⟩
+  show ((update mid.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome })
+      (channelId fp)).mode mid.now = .challenge
+  unfold update
+  simp [ChannelStatus.mode, fp]
 
 /-- A challenge can time out: starting from `challenge_can_happen`'s own
     construction, a reachable state with a registered, unanswered
@@ -468,7 +501,33 @@ theorem conclude_can_happen
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       Step sig (consensusRelation sig) actor s (.conclude fp candidate) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
-  sorry
+  let assets : Nat → Prop := fun _ => False
+  let self : Nat := 0
+  let pool0 : PoolState := ⟨[], [], fun _ _ => False⟩
+  let fp : FixedPart := ⟨[], 0, 0, 0⟩
+  let candidate : VariablePart := ⟨[], 0, 0, true⟩
+  let g := genesis assets self pool0
+  let mid : AdjudicatorState := { g with now := 1 }
+  have htick : Step sig (consensusRelation sig) (Actor.nitro 0) g (.tick 1) mid :=
+    ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach : Reachable sig (consensusRelation sig) g mid :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) htick
+  let s' : AdjudicatorState := { mid with
+    channels := update mid.channels (channelId fp)
+      { turnNumRecord := 0, finalizesAt := mid.now, stateHash := 0,
+        outcomeHash := outcomeHashOf candidate.outcome } }
+  have hstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid (.conclude fp candidate) s' := by
+    refine ⟨?_, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [mid, g, genesis, ChannelStatus.mode, emptyStatus]
+    · intro p hp
+      exact absurd hp List.not_mem_nil
+  refine ⟨assets, self, pool0, mid, s', fp, candidate, Actor.nitro 0, hreach, hstep, ?_⟩
+  show ((update mid.channels (channelId fp)
+      { turnNumRecord := 0, finalizesAt := mid.now, stateHash := 0,
+        outcomeHash := outcomeHashOf candidate.outcome }) (channelId fp)).mode mid.now
+      = .finalized
+  unfold update
+  simp [ChannelStatus.mode, mid]
 
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
     to fund a channel, a `.sign` sequence to `.conclude` it (as in
