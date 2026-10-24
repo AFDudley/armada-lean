@@ -2,12 +2,12 @@
   ArmadaLean.Adjudicator — the armada-nitro adjudicator model, phase 1
   stage A (state, operations, the three assumptions, theorem statements).
 
-  Operator ruling, this session: this model, with sufficient comments, IS
-  the specification of the armada-nitro adjudicator. Briefs are derived
-  from it, not the reverse. Where a comment below cites a paper (S1-S4)
-  or the lab book, that source states the RULE; where no outside source
-  states it, the comment states Armada's own rule directly, and this
-  file's own prose is the record of that decision.
+  This model, with sufficient comments, IS the specification of the
+  armada-nitro adjudicator. Briefs are derived from it, not the
+  reverse. Where a comment below cites a paper (S1-S4) or the lab book,
+  that source states the RULE; where no outside source states it, the
+  comment states Armada's own rule directly, and this file's own prose
+  is the record of that decision.
 
   Read in this order:
   - `Outcome.lean`      — allocations, guarantees, the priority payout rule.
@@ -71,11 +71,11 @@
   they are used. The N1a, N1b, N2a, N2b, N3 and R1 task briefs that
   guided the first write of this model's armada-nitro half are deleted
   from `armada-nitro`, kept in its git history at commit
-  `5519526c1901ecb4c0a698c61e8ba027346bf1be` (operator ruling, this
-  session: this model is now the specification; the briefs were a
-  pre-specification scaffold). A comment below cites one of those task
-  briefs by its git path only where NO other source exists for an
-  empirical fact the brief alone recorded (`Safety.lean`'s section F).
+  `5519526c1901ecb4c0a698c61e8ba027346bf1be` — this model is now the
+  specification; the briefs were a pre-specification scaffold. A
+  comment below cites one of those task briefs by its git path only
+  where NO other source exists for an empirical fact the brief alone
+  recorded (`Safety.lean`'s section F).
 -/
 import ArmadaLean.Adjudicator.Outcome
 import ArmadaLean.Adjudicator.Assumptions

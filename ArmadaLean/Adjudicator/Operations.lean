@@ -17,18 +17,18 @@
   `Step` takes `SignatureAssumptions` (`Assumptions.lean`) as an explicit
   argument, because `.challenge`/`.conclude` need to ask whether a digest
   was authorized — an explicit structure argument, never a bare global
-  axiom (coordinator correction, prior session). `appRel` is the
+  axiom. `appRel` is the
   application rule (`Channel.lean`'s module comment on `.challenge`/
   `.checkpoint`): a PARAMETER of the model, like `sig`, not a bare global
   axiom — `Safety.lean`'s safety theorems quantify it for any app; its
   can-happen theorems use the real `ConsensusApp`'s own relation in its
   place (`Safety.lean`'s "concrete app" section). `.transfer`'s owned-spend
   calls `ArmadaLean.PoolOwnedSpendStep` (`Notes.lean`), which reads the
-  pool's OWN `VerifyOwnedAccepts`/`OwnedConstrained` directly (operator
-  ruling, this session: contract-owned notes are a pool feature; the
-  adjudicator is an ordinary caller of `ArmadaLean.PoolOwned`, branch
-  `owned-notes`) — no separate adjudicator-level proof-assumption
-  structure is threaded through `Step` for it. Two `Call`s, `.sign` and
+  pool's OWN `VerifyOwnedAccepts`/`OwnedConstrained` directly: contract-
+  owned notes are a pool feature, and the adjudicator is an ordinary
+  caller of `ArmadaLean.PoolOwned`, branch `owned-notes` — no separate
+  adjudicator-level proof-assumption structure is threaded through
+  `Step` for it. Two `Call`s, `.sign` and
   `.signNote`, are how an EOA participant's half of assumption 2 enters
   the execution: `actor` names who is really taking the step — the
   identity `ecrecover`/the pool's own witness check would recover, not a
@@ -268,10 +268,12 @@ def Step (sig : SignatureAssumptions)
   owned by `self` for whatever is left of `heldValue` after the
   selected payouts (`:228`, `holdings[asset][channelId] = ... -
   totalPayouts`, where `totalPayouts` sums only the selected amounts).
-  Operator ruling, 2026-10-22: there is no protocol fee on a payout, so
-  a payout is a plain output, with no fee tag and no `cumulativeFees`
-  coupling — no fee field appears anywhere in this case, which is the
-  Lean statement of "no fee".
+  Treasury lab book §3a T9 (`labbook/2026-10-18-treasury-governance-baal
+  -safe-shielded.md`): "The only protocol fee is the shield-in fee,
+  charged by `ShieldModule` on a shield." A payout is a plain output,
+  with no fee tag and no `cumulativeFees` coupling — no fee field
+  appears anywhere in this case, which is the Lean statement of "no
+  fee".
   -/
   | .transfer assetIndex cid claimedStateHash outcome indices => fun s' =>
       ∃ h : assetIndex < outcome.length,
