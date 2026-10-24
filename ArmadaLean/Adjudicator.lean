@@ -6,8 +6,11 @@
   - `Outcome.lean`      — allocations, guarantees, the priority payout rule.
   - `Assumptions.lean`  — hash and signature axioms (assumptions 1, 2).
   - `Channel.lean`      — channel state, support, modes, finalizability.
-  - `Notes.lean`        — the Armada layer: pool notes, the owned-spend
-                           circuit, proof soundness (assumption 3).
+  - `Notes.lean`        — the Armada layer: pool notes, deposit (base
+                           `Transact` circuit). Imports `ArmadaLean.
+                           PoolOwned` for the owned-spend circuit and its
+                           assumptions (a pool feature, not an
+                           adjudicator feature).
   - `State.lean`        — the full adjudicator state and `heldValue`.
   - `Operations.lean`   — every call and its effect.
   - `Reachability.lean` — every state any sequence of calls can reach.

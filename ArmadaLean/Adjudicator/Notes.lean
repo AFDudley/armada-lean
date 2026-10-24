@@ -15,8 +15,18 @@
   not define new ones." `State.lean` embeds `PoolState` inside the full
   adjudicator state; `Operations.lean` calls the relations this file
   defines.
+
+  Contract-owned notes are a POOL feature, not an adjudicator feature
+  (operator ruling, this session): the adjudicator, the Safe, and the
+  ragequit contract are all ORDINARY callers of the pool's `transactOwned`
+  entry point, so the owned-note circuit model, its soundness/completeness
+  assumptions, and its safety theorems live in `ArmadaLean.TransactOwned`/
+  `ArmadaLean.PoolOwned` (root `ArmadaLean` modules, branch `owned-notes`),
+  not here. This file now IMPORTS that model instead of duplicating it;
+  `PoolOwnedSpendStep` below calls its definitions directly, the same way
+  any other owning caller would.
 -/
-import ArmadaLean.Transact
+import ArmadaLean.PoolOwned
 
 namespace ArmadaLean.Adjudicator
 
@@ -46,7 +56,11 @@ every operation this adjudicator performs.
     as `TokenType.ERC20` (the only type the adjudicator's `isAsset`/
     `configuredAssets` list admits, `ArmadaNitroAdjudicator.sol`). `npk` and
     `value` match the root pool model's fields exactly; `token` is reused
-    unchanged from `ArmadaLean.Transact.TransactWitness.token`. -/
+    unchanged from `ArmadaLean.Transact.TransactWitness.token`. Distinct
+    from `ArmadaLean.CommitmentPreimage` (`PoolOwned.lean`) — the SAME
+    shape, kept as its own type here because `liveNotes` below also holds
+    REGULAR (non-owned) deposit-change notes, which the pool-level type is
+    not named for. -/
 structure NotePreimage where
   npk : Nat
   token : Nat
@@ -58,19 +72,18 @@ structure NotePreimage where
     the creating transaction"; `IArmadaPool.preimageOf`). `usedNullifiers`
     is the pool's separate double-spend record — a nullifier is a function
     of the spender's key and the leaf index (`ArmadaLean.nullifier`), not
-    of the commitment, so it is tracked apart from `liveNotes`.
-    `poolSignedBy` is the pool layer's own EOA signing record (the SAME
-    kind of execution-tracked fact `AdjudicatorState.signedBy` is for the
-    Nitro layer, `State.lean`): which `(babyjubjubPublicKey, msgHash)`
-    pairs this execution has recorded a genuine EdDSA signature for.
-    Grows only through `Operations.lean`'s `.signNote` `Call`, which only
-    ever adds to the signing key's OWN row (coordinator correction, this
-    session: "Do the same for the pool layer's EdDSA authorization of a
-    deposit spend: the depositor's signed messages are part of the
-    execution"). -/
+    of the commitment, so it is tracked apart from `liveNotes`; it holds
+    exactly the `NullifierSet` shape `ArmadaLean.markSpent`
+    (`PoolOwned.lean`) reads and grows. `poolSignedBy` is the pool layer's
+    own EOA signing record (the SAME kind of execution-tracked fact
+    `AdjudicatorState.signedBy` is for the Nitro layer, `State.lean`):
+    which `(babyjubjubPublicKey, msgHash)` pairs this execution has
+    recorded a genuine EdDSA signature for. Grows only through
+    `Operations.lean`'s `.signNote` `Call`, which only ever adds to the
+    signing key's OWN row. -/
 structure PoolState where
   liveNotes : List (Nat × NotePreimage)
-  usedNullifiers : List Nat
+  usedNullifiers : NullifierSet
   poolSignedBy : (Nat × Nat) → Nat → Prop
 
 /-- `c` is currently a live (unspent, preimage-known) note. -/
@@ -93,232 +106,6 @@ def PoolState.notedValue (s : PoolState) (token : Nat) : Nat :=
   listSum ((s.liveNotes.filter (fun p => p.2.token = token)).map (fun p => p.2.value))
 
 /-!
-## The owned-spend circuit (`TransactOwned.circom`)
-
-Mirrors `armada-circuits/src/operations/TransactOwned.circom` exactly,
-which itself states what it changes from the base circuit: "A Transact
-variant for a note owned by a contract instead of a user keypair... npk[i]
-= Poseidon(ownerField, randomIn[i]) replaces the master-public-key
-derivation in Transact.circom... nullifier = Poseidon(ownerField,
-leafIndex)" (`TransactOwned.circom:1-24,89-97`). The commitment and
-nullifier formulas are therefore EXACTLY `ArmadaLean.commitment` and
-`ArmadaLean.nullifier`, reused unchanged — only the key that feeds them
-(`ownerField` instead of a signed master public key) differs, so this
-model defines no new hash use.
-
-Lab book decision 1: "A Safe can own shielded notes through a `Transact`
-variant that derives the note keys from a public `owner` address and
-disables the EdDSA check, because the hook already exists at
-`Transact.circom:158`." Decision 2: "The pool authorizes a contract-owned
-spend by `msg.sender == owner`... because the contract holds no spending
-key" (`IArmadaPool.transactOwned`'s doc comment: "the pool checks
-`msg.sender == owner`... Callable only by the owning contract."). This
-model's `OwnedConstrained.ownerMatches` field is that check.
--/
-
-/-- Witness of the `TransactOwned` circuit (`TransactOwned.circom:42-53`).
-    Same shape as `ArmadaLean.Transact.TransactWitness`, minus the spending
-    key/signature fields `TransactOwned.circom` drops (no EdDSA), plus
-    `ownerField` in their place. -/
-structure OwnedWitness (N M : Nat) where
-  token : Nat
-  ownerField : Nat
-  randomIn : Fin N → Nat
-  valueIn : Fin N → Nat
-  pathElements : Fin N → List (Nat × Bool)
-  leavesIndices : Fin N → Nat
-  npkOut : Fin M → Nat
-  valueOut : Fin M → Nat
-
-/-- Public inputs of `TransactOwned` (`TransactOwned.circom:10`: "Public
-    inputs: [merkleRoot, boundParamsHash, nullifiers[N], commitmentsOut[M],
-    ownerField]" — matching exactly what `PrivacyPool.verifyOwned` builds,
-    `PrivacyPool.sol:577-590`: "`inputs = [merkleRoot, boundParamsHash,
-    nullifiers..., commitments..., ownerField]`"). The circuit's two public
-    OUTPUTS, `npk[N]` and `transcriptHash`, are not modeled as separate
-    fields: `verifyOwned`'s own `inputs` array (the ground truth for what
-    this model checks) has no room for them (`uint256[](3 + nullifiersLength
-    + commitmentsLength)`), so they carry no content this adjudicator layer
-    reads. -/
-structure OwnedPublic (N M : Nat) where
-  merkleRoot : Nat
-  boundParamsHash : Nat
-  nullifiers : Fin N → Nat
-  commitmentsOut : Fin M → Nat
-  ownerField : Nat
-
-/-- The full constraint system of `TransactOwned` (`TransactOwned.circom:
-57-148`), mirroring `ArmadaLean.Transact.Constrained`'s structure field for
-field. -/
-structure OwnedConstrained {N M : Nat} (w : OwnedWitness N M)
-    (pub : OwnedPublic N M) : Prop where
-  /-- Every Merkle path has the production depth 16
-      (`TransactOwned.circom:48,79`). -/
-  pathLen : ∀ i, (w.pathElements i).length = 16
-  /-- The circuit's public `ownerField` input is the witness's own
-      (`TransactOwned.circom:36,68`; "the pool checks `msg.sender ==
-      owner`", `IArmadaPool.transactOwned`'s doc comment, lab book
-      decision 2). -/
-  ownerMatches : pub.ownerField = w.ownerField
-  /-- 1a-1c: each input note's commitment opens to the public root along
-      its path (`TransactOwned.circom:66-87`). Reuses `ArmadaLean.npk`/
-      `commitment`/`merkleRoot` unchanged (no new notes or commitments). -/
-  merkle : ∀ i,
-    merkleRoot
-      (commitment (npk w.ownerField (w.randomIn i)) w.token (w.valueIn i))
-      (w.pathElements i) = pub.merkleRoot
-  /-- 1d: nullifier derivation, `nullifier = Poseidon(ownerField,
-      leafIndex)` (`TransactOwned.circom:89-97`). Reuses `ArmadaLean.
-      nullifier` unchanged — it is already exactly this formula with `nk :=
-      ownerField`. -/
-  nullifiers : ∀ i, pub.nullifiers i = nullifier w.ownerField (w.leavesIndices i)
-  /-- 2: output commitments (`TransactOwned.circom:100-109`). -/
-  outputs : ∀ j, pub.commitmentsOut j = commitment (w.npkOut j) w.token (w.valueOut j)
-  /-- 3 (inputs/outputs): every value passes `Num2Bits(120)`
-      (`TransactOwned.circom:112-121`). -/
-  rangeIn : ∀ i, RangeChecked120 (w.valueIn i)
-  rangeOut : ∀ j, RangeChecked120 (w.valueOut j)
-  /-- 3: value conservation, checked in the field
-      (`TransactOwned.circom:123-135`; same `sumIn === sumOut` pattern as
-      the base circuit). -/
-  balance : fieldEq (listSum (List.ofFn w.valueIn)) (listSum (List.ofFn w.valueOut))
-  /-- Input notes are pairwise distinct, the same `IsEqual`-style guard the
-      base circuit uses (SECURITY_REVIEW.md Finding 2 fix, reused unchanged
-      — `TransactOwned.circom` has no separate distinctness block, but the
-      pool's shared Merkle-tree/nullifier plumbing makes this the condition
-      under which `ArmadaLean.distinct_leaves_distinct_nullifiers` applies). -/
-  distinct : ∀ i j, i ≠ j → w.leavesIndices i ≠ w.leavesIndices j
-
-/-!
-## Assumption 3: an accepted proof means its constraints hold (owned
-circuit)
-
-Phase 1 brief, "Why this model exists": "that an accepted proof means its
-constraints hold." `PrivacyPool.verifyOwned` (`PrivacyPool.sol:562-601`) is
-the on-chain check: "Construct public inputs array... `bool validity =
-Snark.verify(verifyingKey, _transaction.proof, inputs);`... return
-validity." The adjudicator never inspects a proof itself — the same
-abstraction `ArmadaLean.EdDSAVerify` already uses for a signature
-(`Transact.lean:29`), one level further removed (a Groth16 verifier accepts
-or rejects; this model does not model the verifier's arithmetic, only that
-accepting implies a satisfying witness existed). Bundled as a structure,
-not a bare `axiom`, for the same reason `SignatureAssumptions` is
-(`Assumptions.lean`): whether a proof counts as accepted is itself the
-non-trivial content "an accepted proof means its constraints hold"
-asserts, so any `def` or theorem that needs to ask "was this proof
-accepted?" must take a `ProofAssumptions` argument to do so. -/
-
-/-- CRYPTOGRAPHIC ASSUMPTION 3 (an accepted proof means its constraints
-    hold) — assumed, not proven. `proofA.OwnedProofAccepted pub` holds iff
-    some Groth16 proof the caller supplied verifies against public-input
-    vector `pub` under the pool's owned verifying key (`PrivacyPool.
-    verifyOwned`, quoted above). `proofA.ownedProof_sound` is Groth16
-    soundness for the owned verifying-key set: a caller cannot make
-    `verifyOwned` accept a public-input vector no witness satisfies
-    (`PrivacyPool.sol:562-601`; `TransactOwned.circom`, full file). Every
-    theorem about a `pool.transactOwned` call takes this structure as an
-    explicit argument, never relying on a witness a caller merely
-    asserts. -/
-structure ProofAssumptions where
-  OwnedProofAccepted : {N M : Nat} → OwnedPublic N M → Prop
-  ownedProof_sound : ∀ {N M : Nat} (pub : OwnedPublic N M),
-    OwnedProofAccepted pub → ∃ w : OwnedWitness N M, OwnedConstrained w pub
-
-/-!
-## Liveness assumption: proof completeness (owned circuit)
-
-`ProofAssumptions` is a SAFETY assumption: it states only that an
-accepted proof could not have been faked (`ownedProof_sound`). It does
-not state that an honest spender, holding a real `OwnedConstrained`
-witness, can actually GET a proof accepted — a `ProofAssumptions`
-instance whose `OwnedProofAccepted` relation is always `False` satisfies
-`ownedProof_sound` vacuously (its hypothesis is never met), yet makes
-every `transactOwned` call impossible. A theorem claiming a deposit,
-transfer or reclaim-adjacent spend CAN happen therefore needs the
-converse: Groth16 COMPLETENESS for the `TransactOwned` verifying-key set
-(coordinator correction, this session) — "for an `OwnedConstrained`
-witness that satisfies the circuit, an accepted proof exists." This is
-the standard completeness property of a Groth16 proof system (every
-satisfying witness has SOME accepted proof), the converse of the
-soundness property `ownedProof_sound` already states; it is not claimed
-or cited by any S1-S4 paper — it is a property of the Groth16 system the
-owned circuit (`TransactOwned.circom`) is compiled for, the same way
-`ownedProof_sound` is. -/
-
-/-- LIVENESS ASSUMPTION (proof completeness, `TransactOwned`) — assumed,
-    not proven. `proofA.completeness` says every witness satisfying
-    `OwnedConstrained` has SOME accepted proof under `proofA`'s
-    `OwnedProofAccepted` relation — the same relation `ProofAssumptions`
-    already constrains from the other side (assumed sound; here, assumed
-    completable by an honest prover holding a real witness).
-    A theorem claiming a `transactOwned`-backed action can succeed takes
-    a `ProofLiveness proofA` argument for the specific `proofA` it
-    reasons about, so the dependency is visible on the theorem's own
-    type — the same discipline `eddsaCompleteness` below follows for the
-    pool layer's signature check. -/
-structure ProofLiveness (proofA : ProofAssumptions) : Prop where
-  completeness : ∀ {N M : Nat} (w : OwnedWitness N M) (pub : OwnedPublic N M),
-    OwnedConstrained w pub → proofA.OwnedProofAccepted pub
-
-/-!
-DEPARTURE (`departures-found.md` item 6, "Zero proof"): the current
-`PoolSpend.mintOwnedCommitments` (`src/armada/libraries/PoolSpend.sol:
-38-76`) passes a hard-coded zero `SnarkProof` to `pool.transactOwned`
-instead of a real proof, so no `ProofAssumptions.OwnedProofAccepted`
-instance genuinely holds for the current code's calls outside
-`testingMode`. This model requires an `OwnedProofAccepted` witness for
-every mint (`PoolOwnedSpendStep` below) because that is what the CORRECT
-design must do; the current code's zero-proof shortcut is exactly the bug
-the departures report, not a rule this model follows.
--/
-
-/-!
-## One `transactOwned` spend: nullify at most one owned note, mint fresh
-ones
-
-`PoolSpend.sol`'s own doc comment names what this function must do:
-"`mintOwnedCommitments`: submit one `pool.transactOwned` transaction that
-nullifies `nullifiers` (0 or 1 entries here) and mints one fresh owned
-commitment per `outputs` entry" (`PoolSpend.sol:34-39`). This model's
-version derives every self-owned output's `npk` as `npk self r` for a
-fresh `r` — DEPARTURE (`departures-found.md` item 4, "Wrong `npk`"): the
-current code instead uses the raw adjudicator address as `npk` directly
-(`ArmadaNitroAdjudicator.sol:106,125`; `PoolSpend.sol`'s `settleReclaim`
-and `notePreimage`), which does not match `TransactOwned.circom:66-70`'s
-`npk = Poseidon(ownerField, random)`. A note minted with a raw address as
-`npk` can never be proven spendable through the owned circuit (assumption
-1, hash non-invertibility, makes finding a matching `random` infeasible),
-so the current code's remainder and reclaim notes are stuck. This model's
-`PoolOwnedSpendStep` requires the CORRECT derivation, matching the circuit. -/
-
-/-- One adjudicator-initiated `pool.transactOwned` call: nullifies at most
-    one of the adjudicator's own previously-owned commitments and mints one
-    fresh commitment per `outputPreimages` entry, with each output's
-    commitment computed by the pool's own hash (`PoolSpend.hashCommitment`,
-    `PoolSpend.sol:48-57`: "mirrors `TransactModule._hashCommitment`").
-    Requires an accepted owned proof (`proofA`, assumption 3) binding
-    exactly this nullifier/output shape under `ownerField = self`. -/
-def PoolOwnedSpendStep (proofA : ProofAssumptions) (before : PoolState) (self token : Nat)
-    (nullifiedCommitment : Option Nat) (outputPreimages : List NotePreimage)
-    (after : PoolState) : Prop :=
-  (∀ pre ∈ outputPreimages, pre.token = token) ∧
-  (match nullifiedCommitment with
-    | none => True
-    | some c => before.isLive c) ∧
-  (∃ N : Nat, ∃ pub : OwnedPublic N outputPreimages.length,
-    pub.ownerField = self ∧
-    proofA.OwnedProofAccepted pub ∧
-    (∀ j : Fin outputPreimages.length,
-      pub.commitmentsOut j = commitment (outputPreimages.get j).npk token (outputPreimages.get j).value) ∧
-    N = (if nullifiedCommitment.isSome then 1 else 0) ∧
-    (∀ _hc : nullifiedCommitment.isSome = true,
-      ∃ i : Fin N, ∃ w : OwnedWitness N outputPreimages.length, OwnedConstrained w pub ∧
-        commitment (npk self (w.randomIn i)) token (w.valueIn i) = nullifiedCommitment.getD 0)) ∧
-  after.liveNotes = (before.liveNotes.filter (fun p => nullifiedCommitment ≠ some p.1)) ++
-    (outputPreimages.map (fun pre => (commitment pre.npk token pre.value, pre))) ∧
-  after.poolSignedBy = before.poolSignedBy
-
-/-!
 ## Deposit: a plain, EdDSA-signed spend with one contract-owned output
 
 N2a brief point 1: "A `transact` output can be contract-owned: the caller
@@ -330,8 +117,8 @@ unchanged: a normal user note, spent with the user's own EdDSA signature.
 Only the output is contract-owned." This is the BASE `Transact` circuit
 (`ArmadaLean.Transact`, already proven in the root model), not
 `TransactOwned` — deposit's signer is the depositing user, not the
-adjudicator, so it cannot fit `PoolOwnedSpendStep` above (which requires
-`ownerField = self` on every input).
+adjudicator, so it uses the base circuit's own EdDSA check, not the
+owned-note path `PoolOwnedSpendStep` below calls.
 
 `Constrained w pub`'s `sig` field (`Transact.lean:119`) requires
 `EdDSAVerify w.publicKey w.signature (msgHashOf pub)` — the root pool
@@ -343,10 +130,7 @@ fact `PoolState.poolSignedBy` records: it only fires once the depositor
 has actually recorded, via `Operations.lean`'s `.signNote` `Call`, that
 THIS key signed THIS message — the same unforgeability-by-construction
 `.sign` uses for the Nitro layer (`Operations.lean`'s module comment,
-quoting Nitro-2019-219.pdf §3.1 and ForceMove-2018.pdf §3.1.3). A
-theorem relying on this liveness fact takes `PoolSignatureLiveness` as
-an explicit argument, never a bare `axiom` — the same discipline
-`ProofLiveness` above follows. -/
+quoting Nitro-2019-219.pdf §3.1 and ForceMove-2018.pdf §3.1.3). -/
 
 /-- LIVENESS ASSUMPTION (EdDSA completeness, pool layer) — assumed, not
     proven. `eddsaCompleteness` says: if THIS execution has recorded
@@ -356,7 +140,10 @@ an explicit argument, never a bare `axiom` — the same discipline
     to) made SAFE by the gate: a caller cannot make the hypothesis true
     for a key they do not hold, because `poolSignedBy` only grows
     through `.signNote`, whose `Step` case (`Operations.lean`) only
-    succeeds when the ACTOR submitting it holds `pk`. -/
+    succeeds when the ACTOR submitting it holds `pk`. Unrelated to owned
+    notes — this is the BASE circuit's own completeness, the same
+    discipline `ArmadaLean.OwnedProofCompleteness` (`PoolOwned.lean`)
+    follows for the owned circuit. -/
 structure PoolSignatureLiveness where
   eddsaCompleteness : ∀ (s : PoolState) (pk : Nat × Nat) (msgHash : Nat),
     s.poolSignedBy pk msgHash →
@@ -398,6 +185,73 @@ def DepositPoolStep {N M : Nat} (before : PoolState) (self token amount : Nat)
     (before.liveNotes.filter (fun p => ∀ i, p.1 ≠ nullifier w.nullifyingKey (w.leavesIndices i))) ++
     List.ofFn (fun j : Fin M =>
       (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : NotePreimage))) ∧
+  after.poolSignedBy = before.poolSignedBy
+
+/-!
+## One `transactOwned` spend: nullify at most one owned note, mint fresh
+ones (the adjudicator, as an ORDINARY caller of `ArmadaLean.PoolOwned`)
+
+`PoolSpend.sol`'s own doc comment names what this function must do:
+"`mintOwnedCommitments`: submit one `pool.transactOwned` transaction that
+nullifies `nullifiers` (0 or 1 entries here) and mints one fresh owned
+commitment per `outputs` entry" (`PoolSpend.sol:34-39`). This model's
+version derives every self-owned output's `npk` as `npk self r` for a
+fresh `r` — DEPARTURE (`departures-found.md` item 4, "Wrong `npk`"): the
+current code instead uses the raw adjudicator address as `npk` directly
+(`ArmadaNitroAdjudicator.sol:106,125`; `PoolSpend.sol`'s `settleReclaim`
+and `notePreimage`), which does not match `TransactOwned.circom:66-70`'s
+`npk = Poseidon(ownerField, random)`. A note minted with a raw address as
+`npk` can never be proven spendable through the owned circuit (`ArmadaLean
+.commitment_owner_inj`'s collision-resistance premise makes finding a
+matching `random` infeasible), so the current code's remainder and
+reclaim notes are stuck. This model's `PoolOwnedSpendStep` requires the
+CORRECT derivation, matching the circuit.
+
+DEPARTURE (`departures-found.md` item 6, "Zero proof"): the current
+`PoolSpend.mintOwnedCommitments` (`src/armada/libraries/PoolSpend.sol:
+38-76`) passes a hard-coded zero `SnarkProof` to `pool.transactOwned`
+instead of a real proof, so `ArmadaLean.VerifyOwnedAccepts` genuinely
+never holds for the current code's calls outside `testingMode`. This
+model requires a `VerifyOwnedAccepts` witness for every mint
+(`PoolOwnedSpendStep` below) because that is what the CORRECT design
+must do; the current code's zero-proof shortcut is exactly the bug the
+departures report, not a rule this model follows. -/
+
+/-- One adjudicator-initiated `pool.transactOwned` call: nullifies at most
+    one of the adjudicator's own previously-owned commitments and mints one
+    fresh commitment per `outputPreimages` entry, with each output's
+    commitment computed by the pool's own hash (`ArmadaLean.hashCommitment`,
+    `PoolSpend.sol:48-57`: "mirrors `TransactModule._hashCommitment`").
+    Requires the pool's OWN acceptance check (`ArmadaLean.
+    VerifyOwnedAccepts`, `PoolOwned.lean`) and its OWN owner-authorization
+    convention (`self = ArmadaLean.addressOf pub.ownerField`, matching
+    `ArmadaLean.owned_owner_binding`'s `caller = addressOf ownerField`) —
+    the adjudicator supplies no mechanism of its own; it calls the pool's
+    rule exactly as any other owning contract (the Safe, the ragequit
+    contract) would. `markSpent` (`PoolOwned.lean`) threads
+    `usedNullifiers` through the SAME freshness check
+    `ArmadaLean.owned_no_double_spend` proves sound. -/
+def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
+    (nullifiedCommitment : Option Nat) (outputPreimages : List NotePreimage)
+    (after : PoolState) : Prop :=
+  (∀ pre ∈ outputPreimages, pre.token = token) ∧
+  (match nullifiedCommitment with
+    | none => True
+    | some c => before.isLive c) ∧
+  (∃ N : Nat, ∃ pub : TransactOwnedPublic N outputPreimages.length,
+    self = addressOf pub.ownerField ∧
+    VerifyOwnedAccepts pub ∧
+    (∀ j : Fin outputPreimages.length,
+      pub.commitmentsOut j = commitment (outputPreimages.get j).npk token (outputPreimages.get j).value) ∧
+    N = (if nullifiedCommitment.isSome then 1 else 0) ∧
+    (∀ _hc : nullifiedCommitment.isSome = true,
+      ∃ (w : TransactOwnedWitness N outputPreimages.length) (i : Fin N),
+        OwnedConstrained w pub ∧
+        commitment (npk pub.ownerField (w.randomIn i)) token (w.valueIn i) =
+          nullifiedCommitment.getD 0) ∧
+    markSpent before.usedNullifiers (List.ofFn pub.nullifiers) = some after.usedNullifiers) ∧
+  after.liveNotes = (before.liveNotes.filter (fun p => nullifiedCommitment ≠ some p.1)) ++
+    (outputPreimages.map (fun pre => (commitment pre.npk token pre.value, pre))) ∧
   after.poolSignedBy = before.poolSignedBy
 
 end ArmadaLean.Adjudicator

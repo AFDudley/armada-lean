@@ -12,17 +12,21 @@
   own effect IS the fact that only a key's holder can produce (`Actor`
   below, `Assumptions.lean`'s module comment).
 
-  `Step` takes `SignatureAssumptions` and `ProofAssumptions`
-  (`Assumptions.lean`, `Notes.lean`) as explicit arguments, because
-  `.challenge`/`.conclude` need to ask whether a digest was authorized and
-  `.deposit`/`.transfer` need to ask whether an owned proof was accepted —
-  both are explicit structure arguments, never a bare global axiom
-  (coordinator correction, prior session). `appRel` is the application
-  rule (`Channel.lean`'s module comment on `.challenge`/`.checkpoint`): a
-  PARAMETER of the model, like `sig`/`proofA`, not a bare global axiom —
-  `Safety.lean`'s safety theorems quantify it for any app; its can-happen
-  theorems use the real `ConsensusApp`'s own relation in its place
-  (`Safety.lean`'s "concrete app" section). Two `Call`s, `.sign` and
+  `Step` takes `SignatureAssumptions` (`Assumptions.lean`) as an explicit
+  argument, because `.challenge`/`.conclude` need to ask whether a digest
+  was authorized — an explicit structure argument, never a bare global
+  axiom (coordinator correction, prior session). `appRel` is the
+  application rule (`Channel.lean`'s module comment on `.challenge`/
+  `.checkpoint`): a PARAMETER of the model, like `sig`, not a bare global
+  axiom — `Safety.lean`'s safety theorems quantify it for any app; its
+  can-happen theorems use the real `ConsensusApp`'s own relation in its
+  place (`Safety.lean`'s "concrete app" section). `.transfer`'s owned-spend
+  calls `ArmadaLean.PoolOwnedSpendStep` (`Notes.lean`), which reads the
+  pool's OWN `VerifyOwnedAccepts`/`OwnedConstrained` directly (operator
+  ruling, this session: contract-owned notes are a pool feature; the
+  adjudicator is an ordinary caller of `ArmadaLean.PoolOwned`, branch
+  `owned-notes`) — no separate adjudicator-level proof-assumption
+  structure is threaded through `Step` for it. Two `Call`s, `.sign` and
   `.signNote`, are how an EOA participant's half of assumption 2 enters
   the execution: `actor` names who is really taking the step — the
   identity `ecrecover`/the pool's own witness check would recover, not a
@@ -79,12 +83,12 @@ inductive Call where
   | signNote (pk : Nat × Nat) (msgHash : Nat)
 
 /-- One call's effect: `s` steps to `s'` under `call`, taken by `actor`,
-    given the signature and proof assumptions (`sig`, `proofA`) and the
-    application rule (`appRel`) the call's checks may need. Each case is
-    a conjunction of the call's checks (citing its source) and its effect
-    on `s'`'s fields, stated as equations rather than a record update so
-    every untouched field is named explicitly. -/
-def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    given the signature assumptions (`sig`) and the application rule
+    (`appRel`) the call's checks may need. Each case is a conjunction of
+    the call's checks (citing its source) and its effect on `s'`'s
+    fields, stated as equations rather than a record update so every
+    untouched field is named explicitly. -/
+def Step (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   /-
@@ -102,7 +106,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   intent, not the current code. Deposit is authorized by the depositor's
   own EdDSA signature on the spent note (the pool layer's `EdDSAVerify`,
   reused via `Constrained`/`DepositTransacted`, `Notes.lean`), not by
-  `sig`/`proofA`/`actor`, so this case does not use any of the three.
+  `sig`/`actor`, so this case does not use either.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
@@ -179,7 +183,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   known, not a finalizable outcome — `transfer`/`reclaim` require a
   `.finalized` channel, so the cleared hashes are never read as a payout
   outcome. No signature or proof check beyond `appRel`, so this case does
-  not use `sig`/`proofA`, and `actor` is unconstrained ("anyone with a
+  not use `sig`, and `actor` is unconstrained ("anyone with a
   supported off-chain state", quoted above).
   -/
   | .checkpoint fp proof candidate => fun s' =>
@@ -266,7 +270,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
           else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : NotePreimage))
         let outputs := payoutOutputs ++
           (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : NotePreimage)])
-        PoolOwnedSpendStep proofA s.pool s.self assetOutcome.asset
+        PoolOwnedSpendStep s.pool s.self assetOutcome.asset
           (s.holdings assetOutcome.asset cid) outputs s'.pool ∧
         s'.holdings = update s.holdings assetOutcome.asset
           (update (s.holdings assetOutcome.asset) cid
@@ -298,7 +302,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   `ArmadaNitroAdjudicator._settleReclaimExit` instead mints a brand-new
   commitment worth `priorHeld + guaranteeAmount` to the target with
   nothing debited anywhere, which this model does not follow. No
-  signature or proof check, so this case does not use `sig`/`proofA`, and
+  signature or proof check, so this case does not use `sig`, and
   `actor` is unconstrained (clause 28 names no caller restriction).
   -/
   | .reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
