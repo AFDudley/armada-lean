@@ -623,27 +623,66 @@ Armada's specialization of Nitro-2019-219.pdf §3.1's "If an address
 does not appear in the table we take the balance to be zero," and (for
 21 and 22) §5.1's payout rule: "the allocation is in priority order...
 if A can afford x for B, then `T(A, B, x)`: 1. Reduces the funds held
-in channel A by x. 2. Increases the funds held by B by x." Statement
-20 stays an adjudicator statement; it does not touch the owned-note
-circuit or the balance encoding. Statements 21 and 22 are also
-adjudicator statements in a second sense: both are about `.transfer`'s
-own OUTPUT CONSTRUCTION (`Operations.lean`'s `payoutOutputs`/
-`holdings` update), upstream of anything `ArmadaLean.PoolOwned`
-checks, so neither follows from a POOL theorem. 23 DOES follow from
-one, now that `PoolOwnedSpendStep` (`Notes.lean`) threads
-`usedNullifiers` through `ArmadaLean.markSpent` (operator ruling, a
-prior session) — see its own doc comment.
+in channel A by x. 2. Increases the funds held by B by x." The "zero
+balance is held as no note" half is the ADJUDICATOR's OWN invariant
+over REACHABLE states, not a pool guarantee (`holdings_never_zero_
+valued` below states and grounds it: `TransactOwned.circom:117-120`
+only range-checks an output value, so a `0`-valued note is a VALID
+pool commitment — the adjudicator's own `Step` cases are what keep one
+from ever being recorded as a holding). Statement 20 stays an
+adjudicator statement; it does not touch the owned-note circuit or the
+balance encoding. Statements 21 and 22 are also adjudicator statements
+in a second sense: both are about `.transfer`'s own OUTPUT
+CONSTRUCTION (`Operations.lean`'s `payoutOutputs`/`holdings` update),
+upstream of anything `ArmadaLean.PoolOwned` checks, so neither follows
+from a POOL theorem. 23 DOES follow from one, now that
+`PoolOwnedSpendStep` (`Notes.lean`) threads `usedNullifiers` through
+`ArmadaLean.markSpent` (operator ruling, a prior session) — see its
+own doc comment.
 -/
+
+/-- The adjudicator's own invariant: it never records a `0`-value note
+    as a channel's holding — it records NO holding instead.
+    `TransactOwned.circom:117-120` only range-checks each output value
+    to 120 bits (`Num2Bits(120)`), with no further constraint, so a
+    `0`-valued output commitment is a VALID owned-spend output
+    (`ArmadaLean.OwnedConstrained`, `TransactOwned.lean`, permits it)
+    — this invariant CANNOT come from the pool or the circuit. It is
+    the adjudicator's own rule, kept by every `Step` case that writes
+    `holdings`: `.deposit` requires `0 < amount` (`Operations.lean`);
+    `.transfer` writes `none`, not a `0`-valued commitment, exactly
+    when the remainder is `0` (`full_payout_leaves_no_remainder`
+    below); `.reclaim` never touches `holdings` at all
+    (`s'.holdings = s.holdings`, `Operations.lean`'s `.reclaim` case). -/
+theorem holdings_never_zero_valued
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (asset cid c : Nat) (pre : NotePreimage)
+    (hreach : Reachable sig appRel (genesis assets self pool0) s)
+    (hholds : s.holdings asset cid = some c)
+    (hpre : s.pool.preimageOf c = some pre) :
+    pre.value ≠ 0 := by
+  sorry
 
 /-- Closes the `heldValue`'s `commitment == 0` miss (old offset 2549): an
     empty commitment reads as `0`, and — the mutant's blind spot — this
     cannot be confused with a REAL note the pool happens to value at `0`.
     Formalizes the Armada encoding rule's "zero balance is held as no
     note" half (`State.lean`'s `heldValue` doc comment, which also
-    states the rule's other half, "a balance is held as one note", and
-    the pool-level guarantee this statement's RIGHT disjunct additionally
-    covers: a `some c` holding whose preimage the pool lost). -/
-theorem heldValue_zero_iff_no_collateral (s : AdjudicatorState) (asset cid : Nat) :
+    states the rule's other half, "a balance is held as one note").
+    Needs `Reachable`, unlike a bare fact about `AdjudicatorState`: for
+    an ARBITRARY (possibly unreachable) state, a `some c` holding whose
+    preimage happens to read back `value = 0` would make `heldValue = 0`
+    true while BOTH disjuncts below are false — `holdings_never_zero_
+    valued` is exactly what rules that third case out, and it only
+    holds over the reachable set. -/
+theorem heldValue_zero_iff_no_collateral
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (s : AdjudicatorState) (asset cid : Nat)
+    (hreach : Reachable sig appRel (genesis assets self pool0) s) :
     heldValue s asset cid = 0 ↔
       s.holdings asset cid = none ∨
       ∃ c, s.holdings asset cid = some c ∧ s.pool.preimageOf c = none := by
