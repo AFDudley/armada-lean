@@ -11,12 +11,13 @@
   are spent, which roots are valid, and which tokens the pool holds.
 
   The pool cannot see a note's value; it only ever reads a note's commitment (a Poseidon
-  hash). `PoolState.live` is therefore GHOST state: the model's own knowledge of every
-  live note's real preimage, which the contract itself never stores for an encrypted
-  output. This is what lets the theorems in ArmadaLean.PoolSafety state the value
-  invariant at all. `PoolState.preimageOf`, by contrast, mirrors the real public
-  `PrivacyPoolStorage.preimageOf` mapping (PrivacyPoolStorage.sol:248): the pool writes an
-  entry there only for a commitment it has itself hashed and matched to a proof.
+  hash, modeled symbolically — `ArmadaLean.Poseidon.Term`). `PoolState.live` is therefore
+  GHOST state: the model's own knowledge of every live note's real preimage, which the
+  contract itself never stores for an encrypted output. This is what lets the theorems in
+  ArmadaLean.PoolSafety state the value invariant at all. `PoolState.preimageOf`, by
+  contrast, mirrors the real public `PrivacyPoolStorage.preimageOf` mapping
+  (PrivacyPoolStorage.sol:248): the pool writes an entry there only for a commitment it
+  has itself hashed and matched to a proof.
 
   Scope: local `shield` (ShieldModule.sol:45-90), local `transact` including a local
   unshield (TransactModule.sol:43-96), and `transactOwned` (TransactModule.sol:488-519).
@@ -33,8 +34,8 @@
   `ArmadaLean.TransactOwned.OwnedConstrained`, exactly as ArmadaLean.PoolOwned already
   takes them. This model does not additionally reconstruct the incremental Merkle tree
   that `MerkleModule.insertLeaves` builds (MerkleModule.sol:54-121): `PoolState.roots`
-  tracks only *which* field elements the pool has produced as a root (so a proof cannot
-  name a root the pool never computed — `transact_root_was_produced` below), the same way
+  tracks only *which* terms the pool has produced as a root (so a proof cannot name a
+  root the pool never computed — `transact_root_was_produced` below), the same way
   ArmadaLean.Merkle's `merkleRoot_inj_leaf` binds one membership proof to one leaf without
   modelling the whole tree. ABDK's 2021-04-01 audit of Railgun's `Commitments.sol`
   (`.scratch/rewrite-B/sources/railgun-audit-2021-04-01-ABDK.pdf`, sha256
@@ -197,7 +198,7 @@ sites. -/
 /-- Apply a batch of `(commitment, preimage)` records to a registry, in order — the
     pool-level generalization of `ArmadaLean.PoolOwned.recordPreimages` that does not
     assume the batch comes from one transaction's `Fin K` output indexing. -/
-def applyRecords (reg : PreimageRegistry) : List (Nat × CommitmentPreimage) → PreimageRegistry
+def applyRecords (reg : PreimageRegistry) : List (Term × CommitmentPreimage) → PreimageRegistry
   | [] => reg
   | (c, p) :: rest => applyRecords (recordStep reg c p) rest
 
@@ -206,7 +207,7 @@ def applyRecords (reg : PreimageRegistry) : List (Nat × CommitmentPreimage) →
     `ArmadaLean.PoolOwned.preimageOf_consistent` takes per-transaction, here taken per
     batch. -/
 theorem applyRecords_preserves_consistency {reg : PreimageRegistry}
-    (hreg : RegistryConsistent reg) {records : List (Nat × CommitmentPreimage)}
+    (hreg : RegistryConsistent reg) {records : List (Term × CommitmentPreimage)}
     (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1) :
     RegistryConsistent (applyRecords reg records) := by
   induction records generalizing reg with
@@ -221,7 +222,7 @@ theorem applyRecords_preserves_consistency {reg : PreimageRegistry}
 
 /-- `applyRecords` distributes over `++`: folding two batches in sequence is the same
     as folding their concatenation. -/
-theorem applyRecords_append (reg : PreimageRegistry) (l1 l2 : List (Nat × CommitmentPreimage)) :
+theorem applyRecords_append (reg : PreimageRegistry) (l1 l2 : List (Term × CommitmentPreimage)) :
     applyRecords reg (l1 ++ l2) = applyRecords (applyRecords reg l1) l2 := by
   induction l1 generalizing reg with
   | nil => rfl
@@ -233,20 +234,22 @@ theorem applyRecords_append (reg : PreimageRegistry) (l1 l2 : List (Nat × Commi
     rfl
 
 /-- `hashCommitment` is injective: two preimages with the same commitment are the same
-    preimage (collision resistance, `ArmadaLean.Poseidon.poseidon3_inj`, the same
-    assumption `ArmadaLean.TransactOwned.commitment_owner_inj` and
-    `ArmadaLean.Transact.commitment_mpk_inj` already rest on). -/
+    preimage. Collision resistance of `Term.hash3` (by construction,
+    `ArmadaLean.Poseidon`), the same fact `ArmadaLean.TransactOwned.commitment_owner_inj`
+    and `ArmadaLean.Transact.commitment_mpk_inj` already rest on, applied to the
+    preimage's own `(npk, token, value)` triple. -/
 theorem hashCommitment_inj {p1 p2 : CommitmentPreimage} (h : hashCommitment p1 = hashCommitment p2) :
     p1 = p2 := by
-  obtain ⟨h1, h2, h3⟩ := poseidon3_inj h
-  cases p1; cases p2; simp_all
+  obtain ⟨h1, h2, h3⟩ := Term.hash3_inj h
+  cases p1; cases p2
+  simp_all [Term.val.injEq]
 
 /-- Once `reg` already answers key `c` with `p`, folding a batch through it cannot
     change that answer, provided every later record touching key `c` agrees with `p` —
     the invariant `applyRecords_returns` below bootstraps and carries through a whole
     batch. -/
-theorem applyRecords_preserves_key {reg : PreimageRegistry} {records : List (Nat × CommitmentPreimage)}
-    {c : Nat} {p : CommitmentPreimage} (hreg : reg c = some p)
+theorem applyRecords_preserves_key {reg : PreimageRegistry} {records : List (Term × CommitmentPreimage)}
+    {c : Term} {p : CommitmentPreimage} (hreg : reg c = some p)
     (hagree : ∀ cp ∈ records, cp.1 = c → cp.2 = p) :
     applyRecords reg records c = some p := by
   induction records generalizing reg with
@@ -274,10 +277,10 @@ theorem applyRecords_preserves_key {reg : PreimageRegistry} {records : List (Nat
     whatever else is in the batch: a later record sharing key `c` must, by
     `hashCommitment_inj`, carry the identical preimage `p`, so even an overwrite leaves
     the answer unchanged. The key lemma behind `transactOwned_records_all`. -/
-theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Nat × CommitmentPreimage)}
+theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × CommitmentPreimage)}
     (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
     (hNonZero : ∀ cp ∈ records, ¬ isZeroPreimage cp.2)
-    {c : Nat} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) :
+    {c : Term} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) :
     applyRecords reg records c = some p := by
   obtain ⟨pre, post, hsplit⟩ := List.append_of_mem hmem
   rw [hsplit, applyRecords_append]
@@ -297,8 +300,8 @@ theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Nat × Co
 
 /-- The `(commitment, preimage)` pair a plain `Transact` output would record, if
     disclosed — the full candidate batch `Step.transact`'s `records` is a sublist of. -/
-noncomputable def transactOutputRecords {N M : Nat} (w : TransactWitness N M)
-    (pub : TransactPublic N M) : List (Nat × CommitmentPreimage) :=
+def transactOutputRecords {N M : Nat} (w : TransactWitness N M)
+    (pub : TransactPublic N M) : List (Term × CommitmentPreimage) :=
   List.ofFn fun j => (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
 
 /-- Every candidate record a plain `Transact` could disclose is valid: its commitment
@@ -315,8 +318,8 @@ theorem transactOutputRecords_valid {N M : Nat} {w : TransactWitness N M} {pub :
     `transactOwned` discloses every one (`_validatePublicOutputs(requireAll = true)`,
     TransactModule.sol:630-634), so this is `Step.transactOwned`'s whole batch, not a
     candidate list a caller trims. -/
-noncomputable def ownedOutputRecords {N M : Nat} (w : TransactOwnedWitness N M)
-    (pub : TransactOwnedPublic N M) : List (Nat × CommitmentPreimage) :=
+def ownedOutputRecords {N M : Nat} (w : TransactOwnedWitness N M)
+    (pub : TransactOwnedPublic N M) : List (Term × CommitmentPreimage) :=
   List.ofFn fun j => (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
 
 /-- Every owned output's record is valid: its commitment key is exactly its own
@@ -351,7 +354,7 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
 structure PoolState where
   live : Nat → List CommitmentPreimage
   spent : NullifierSet
-  roots : List Nat
+  roots : List Term
   held : Nat → Nat
   preimageOf : PreimageRegistry
   shieldsPaused : Bool
@@ -362,7 +365,7 @@ structure PoolState where
     not paused. `emptyRoot` stands for whatever `initializeMerkle` computes from
     `ZERO_VALUE` (PrivacyPoolStorage.sol:150); this model does not recompute that hash
     (see the module comment on `roots`). -/
-def genesis (emptyRoot : Nat) : PoolState :=
+def genesis (emptyRoot : Term) : PoolState :=
   { live := fun _ => [], spent := [], roots := [emptyRoot], held := fun _ => 0,
     preimageOf := fun _ => none, shieldsPaused := false }
 
@@ -377,7 +380,7 @@ answer, derived, not asserted. -/
 /-- The commitment preimages of a plain `TransactWitness`'s `N` inputs: input `i` opens
     the commitment at `npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i)`
     (Transact.circom:74-84). -/
-noncomputable def transactSpentNotes {N M : Nat} (w : TransactWitness N M) :
+def transactSpentNotes {N M : Nat} (w : TransactWitness N M) :
     List CommitmentPreimage :=
   List.ofFn fun i =>
     (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i), w.token,
@@ -390,13 +393,13 @@ def transactAllOutputs {N M : Nat} (w : TransactWitness N M) : List CommitmentPr
   List.ofFn fun j => (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)
 
 /-- The commitment preimages of an owned `TransactOwnedWitness`'s `N` inputs: input `i`
-    opens the commitment at `npk pub.ownerField (w.randomIn i)`
+    opens the commitment at `npk (Term.val pub.ownerField) (w.randomIn i)`
     (TransactOwned.circom:66-76). -/
-noncomputable def ownedSpentNotes {N M : Nat} (pub : TransactOwnedPublic N M)
+def ownedSpentNotes {N M : Nat} (pub : TransactOwnedPublic N M)
     (w : TransactOwnedWitness N M) :
     List CommitmentPreimage :=
   List.ofFn fun i =>
-    (⟨npk pub.ownerField (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage)
+    (⟨npk (Term.val pub.ownerField) (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage)
 
 /-- The commitment preimages of an owned `TransactOwnedWitness`'s `M` outputs. All of
     them stay live: `transactOwned` never unshields
@@ -419,15 +422,19 @@ inductive Step : PoolState → PoolState → Prop where
       creates exactly one note of the shielded amount minus the fee
       (`_transferTokenIn`/`_getFee`, ShieldModule.sol:277-371, reusing
       `ArmadaLean.Fee.shieldBase`); see the module comment for why no second, fee, note
-      is created. `hNotPaused` is `_requireShieldsNotPaused`
-      (ShieldModule.sol:393-397). `hValue` is `_validateCommitmentPreimage`'s `_note
-      .value > 0` check (ShieldModule.sol:243-244) — the blocklist and field-range
-      checks on the same line are elided (Pool module comment: they gate *which* shields
-      succeed, not the value invariant). S-RG, "RAILGUN Core System & Protocol": "Then
-      the smart contract transfers tokens from the user wallet to itself, if a deposit
-      amount is specified ... The hashes of the output UTXOs are then added to the
-      Merkle tree so they can be spent in the future." -/
-  | shield {s : PoolState} (token npk grossAmount feeBP newRoot : Nat)
+      is created. `npk` is the shielded note's public key, a term the caller supplies
+      directly (the shield circuit does not derive it — the recipient computes their own
+      `npk` off-chain and the shielder just names it, same role as `npkOut` in a
+      `transact`). `newRoot` is the Merkle root the shield produces. `hNotPaused` is
+      `_requireShieldsNotPaused` (ShieldModule.sol:393-397). `hValue` is
+      `_validateCommitmentPreimage`'s `_note.value > 0` check (ShieldModule.sol:243-244)
+      — the blocklist and field-range checks on the same line are elided (Pool module
+      comment: they gate *which* shields succeed, not the value invariant). S-RG,
+      "RAILGUN Core System & Protocol": "Then the smart contract transfers tokens from
+      the user wallet to itself, if a deposit amount is specified ... The hashes of the
+      output UTXOs are then added to the Merkle tree so they can be spent in the
+      future." -/
+  | shield {s : PoolState} (token grossAmount feeBP : Nat) (npk newRoot : Term)
       (hNotPaused : s.shieldsPaused = false)
       (hValue : 0 < grossAmount) (hFeeBP : feeBP ≤ BASIS) :
       Step s
@@ -503,7 +510,7 @@ inductive Step : PoolState → PoolState → Prop where
   | transact {s : PoolState} {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
       (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
       (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
-      (newRoot : Nat) (records : List (Nat × CommitmentPreimage))
+      (newRoot : Term) (records : List (Term × CommitmentPreimage))
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
       (hUnshieldLen : unshieldTail.length ≤ 1)
@@ -553,7 +560,7 @@ inductive Step : PoolState → PoolState → Prop where
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
-      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat)
+      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Term)
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
@@ -581,7 +588,7 @@ inductive Step : PoolState → PoolState → Prop where
 
 /-- Every state the pool can reach from deployment, by any sequence of calls from any
     caller — the quantifier the brief's four promises range over. -/
-inductive Reachable (emptyRoot : Nat) : PoolState → Prop where
+inductive Reachable (emptyRoot : Term) : PoolState → Prop where
   | genesis : Reachable emptyRoot (genesis emptyRoot)
   | step {s s' : PoolState} (hs : Reachable emptyRoot s) (hstep : Step s s') :
       Reachable emptyRoot s'

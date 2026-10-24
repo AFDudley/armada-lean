@@ -8,9 +8,10 @@
   Imports `ArmadaLean.TransactOwned` and builds on `OwnedConstrained` — "the
   accepted proof's witness satisfies every circuit constraint" is the named
   hypothesis every theorem below takes (the brief's soundness assumption:
-  Poseidon cannot be inverted or collided, and an accepted proof means its
-  circuit constraints hold). Only `owned_spend_can_happen` additionally takes
-  an explicit `OwnedProofCompleteness` hypothesis, the converse assumption.
+  Poseidon cannot be inverted or collided — modeled symbolically,
+  `ArmadaLean.Poseidon` — and an accepted proof means its circuit constraints
+  hold). Only `owned_spend_can_happen` additionally takes an explicit
+  `OwnedProofCompleteness` hypothesis, the converse assumption.
 
   Theorems proved here:
   * `owned_owner_binding` — no one except the owning contract can spend its
@@ -34,15 +35,17 @@ import ArmadaLean.TransactOwned
 
 /-- EVM address truncation: `address(uint160(x))`
     (TransactModule.sol:637, `_validateOwnedTransaction`'s authorization
-    check). -/
+    check). An address is a raw `Nat`, never a hash term. -/
 def addressOf (x : Nat) : Nat := x % 2 ^ 160
 
 /-- The data committed into a Merkle leaf for a contract-owned output
-    (`PoolTypes.sol:79-83`, `struct CommitmentPreimage`). `token` abstracts
-    `_getTokenID(token)` the same way `TransactOwnedWitness.token` does
-    (ArmadaLean.TransactOwned). -/
+    (`PoolTypes.sol:79-83`, `struct CommitmentPreimage`). `npk` is a term (a
+    note public key); `token` abstracts `_getTokenID(token)` the same way
+    `TransactOwnedWitness.token` does (ArmadaLean.TransactOwned), and `value`
+    is the note value — both raw numbers, never hashed by this preimage
+    itself. -/
 structure CommitmentPreimage where
-  npk : Nat
+  npk : Term
   token : Nat
   value : Nat
   deriving DecidableEq
@@ -51,13 +54,18 @@ structure CommitmentPreimage where
     `PoseidonT4.poseidon([npk, tokenID, value])`, the same 3-argument
     Poseidon as `commitment` in ArmadaLean.Transact — reused directly, no
     second commitment hash is defined here. -/
-noncomputable def hashCommitment (pre : CommitmentPreimage) : Nat := commitment pre.npk pre.token pre.value
+def hashCommitment (pre : CommitmentPreimage) : Term := commitment pre.npk pre.token pre.value
 
 /-- An output that stays ciphertext-only carries an all-zero preimage
     (`_isZeroPreimage`, TransactModule.sol:582-585) and is skipped by
-    `_recordPreimages`. -/
+    `_recordPreimages`. The real contract compares the raw stored `npk`
+    field to the literal `bytes32(0)`; the symbolic equivalent is comparing
+    the term to `Term.val 0`, the raw-value embedding of that same literal —
+    a genuine Poseidon output (`Term.hash ...`) can never equal `Term.val 0`
+    (`Term.val_ne_hash`), so this sentinel can only ever be set deliberately,
+    exactly as in the real contract, never hit by coincidence. -/
 def isZeroPreimage (pre : CommitmentPreimage) : Prop :=
-  pre.npk = 0 ∧ pre.value = 0 ∧ pre.token = 0
+  pre.npk = Term.val 0 ∧ pre.value = 0 ∧ pre.token = 0
 
 instance (pre : CommitmentPreimage) : Decidable (isZeroPreimage pre) := by
   unfold isZeroPreimage; infer_instance
@@ -96,21 +104,22 @@ structure OwnedProofCompleteness where
 **Owner binding**: no one except the owning contract can spend its note.
 
 Take a note truly created for owner `trueOwner` with randomness
-`trueRandom` (its commitment is `commitment (npk trueOwner trueRandom) token
-value`, by construction — ArmadaLean.TransactOwned's `outputs` field, read at
-the transaction that minted it). If an accepted owned spend's input `i`
-opens the same commitment value (`hSameNote`), `commitment_owner_inj` forces
-its `ownerField` to equal `trueOwner`; the pool's own authorization check
-(`msg.sender == address(uint160(uint256(ownerField)))`, TransactModule.sol
-:636-639, `hAuth`) then forces the caller to be `addressOf trueOwner`. A
-caller that is not the owning contract can never satisfy both, so it can
-never produce an accepted spend of that note. -/
+`trueRandom` (its commitment is `commitment (npk (Term.val trueOwner)
+trueRandom) token value`, by construction — ArmadaLean.TransactOwned's
+`outputs` field, read at the transaction that minted it). If an accepted
+owned spend's input `i` opens the same commitment value (`hSameNote`),
+`commitment_owner_inj` forces its `ownerField` to equal `trueOwner`; the
+pool's own authorization check (`msg.sender ==
+address(uint160(uint256(ownerField)))`, TransactModule.sol:636-639, `hAuth`)
+then forces the caller to be `addressOf trueOwner`. A caller that is not the
+owning contract can never satisfy both, so it can never produce an accepted
+spend of that note. -/
 theorem owned_owner_binding {N M : Nat} {w : TransactOwnedWitness N M}
     {pub : TransactOwnedPublic N M} (_h : OwnedConstrained w pub) (i : Fin N)
     {trueOwner trueRandom : Nat}
     (hSameNote :
-      commitment (npk pub.ownerField (w.randomIn i)) w.token (w.valueIn i) =
-      commitment (npk trueOwner trueRandom) w.token (w.valueIn i))
+      commitment (npk (Term.val pub.ownerField) (w.randomIn i)) w.token (w.valueIn i) =
+      commitment (npk (Term.val trueOwner) trueRandom) w.token (w.valueIn i))
     {caller : Nat} (hAuth : caller = addressOf pub.ownerField) :
     caller = addressOf trueOwner := by
   rw [hAuth, commitment_owner_inj hSameNote]
@@ -121,14 +130,15 @@ theorem owned_owner_binding {N M : Nat} {w : TransactOwnedWitness N M}
     (`PrivacyPoolStorage.sol:174`, `mapping(uint256 => mapping(bytes32 =>
     bool)) public nullifiers`, one tree's slice). `treeNumber` is a further
     key of the real mapping that this model elides: the freshness/
-    distinctness argument below holds the same way inside any one tree. -/
-abbrev NullifierSet := List Nat
+    distinctness argument below holds the same way inside any one tree.
+    Nullifiers are terms. -/
+abbrev NullifierSet := List Term
 
 /-- Marking one call's nullifiers spent (`_accumulateAndNullify`,
     TransactModule.sol:379-386): each nullifier must not already be in
     `spent`; the pool reverts the whole call (`"Note already spent"`, :384)
     the first time one already is, returning `none` here. -/
-def markSpent (spent : NullifierSet) : List Nat → Option NullifierSet
+def markSpent (spent : NullifierSet) : List Term → Option NullifierSet
   | [] => some spent
   | n :: ns => if n ∈ spent then none else markSpent (n :: spent) ns
 
@@ -140,7 +150,7 @@ none of them was already in `spent` beforehand. Applied to a whole history
 of calls (each one's `spent` is the previous call's `spent'`), this is
 exactly "no nullifier is ever marked twice": a note's nullifier can only
 ever pass this check once, in the one call that first spends it. -/
-theorem owned_no_double_spend {spent spent' : NullifierSet} {ns : List Nat}
+theorem owned_no_double_spend {spent spent' : NullifierSet} {ns : List Term}
     (h : markSpent spent ns = some spent') :
     ns.Pairwise (· ≠ ·) ∧ ∀ n ∈ ns, n ∉ spent := by
   induction ns generalizing spent with
@@ -164,7 +174,7 @@ theorem owned_no_double_spend {spent spent' : NullifierSet} {ns : List Nat}
     batch of pairwise-distinct, previously-unspent nullifiers always marks
     cleanly (the pool never reverts `_accumulateAndNullify` on a genuinely
     fresh batch). -/
-theorem markSpent_succeeds {spent : NullifierSet} {ns : List Nat}
+theorem markSpent_succeeds {spent : NullifierSet} {ns : List Term}
     (hpw : ns.Pairwise (· ≠ ·)) (hfresh : ∀ n ∈ ns, n ∉ spent) :
     ∃ spent', markSpent spent ns = some spent' := by
   induction ns generalizing spent with
@@ -187,8 +197,8 @@ theorem markSpent_succeeds {spent : NullifierSet} {ns : List Nat}
 
 /-- The pool's preimage registry (`PrivacyPoolStorage.sol:248`, `mapping
     (bytes32 => CommitmentPreimage) public preimageOf`): `none` means no
-    preimage was ever recorded for that commitment. -/
-abbrev PreimageRegistry := Nat → Option CommitmentPreimage
+    preimage was ever recorded for that commitment. Keyed by commitment term. -/
+abbrev PreimageRegistry := Term → Option CommitmentPreimage
 
 /-- The registry invariant: every recorded preimage hashes to the
     commitment key it is recorded under. -/
@@ -198,14 +208,14 @@ def RegistryConsistent (reg : PreimageRegistry) : Prop :=
 /-- Recording one output (TransactModule.sol:593-599): a zero preimage is
     skipped (:594-596); otherwise the registry entry at `c` becomes
     `preimage` (:598). -/
-def recordStep (reg : PreimageRegistry) (c : Nat) (preimage : CommitmentPreimage) :
+def recordStep (reg : PreimageRegistry) (c : Term) (preimage : CommitmentPreimage) :
     PreimageRegistry :=
   fun c' => if isZeroPreimage preimage then reg c' else if c' = c then some preimage else reg c'
 
 /-- Recording every output of one transaction (`_recordPreimages`'s loop,
     TransactModule.sol:590-604), `commitments` and `publicOutputs` running
     in parallel, index for index. -/
-def recordPreimages {K : Nat} (commitments : Fin K → Nat)
+def recordPreimages {K : Nat} (commitments : Fin K → Term)
     (publicOutputs : Fin K → CommitmentPreimage) (reg : PreimageRegistry) : PreimageRegistry :=
   (List.finRange K).foldl (fun r i => recordStep r (commitments i) (publicOutputs i)) reg
 
@@ -217,7 +227,7 @@ theorem foldl_preserves {α β : Type} (f : α → β → α) (P : α → Prop)
   | b :: bs, a, ha => foldl_preserves f P hstep bs (f a b) (hstep a b ha)
 
 theorem recordStep_preserves_consistency {reg : PreimageRegistry} (hreg : RegistryConsistent reg)
-    {c : Nat} {preimage : CommitmentPreimage} (hvalid : hashCommitment preimage = c) :
+    {c : Term} {preimage : CommitmentPreimage} (hvalid : hashCommitment preimage = c) :
     RegistryConsistent (recordStep reg c preimage) := by
   intro c' pre' hc'
   unfold recordStep at hc'
@@ -233,7 +243,7 @@ theorem recordStep_preserves_consistency {reg : PreimageRegistry} (hreg : Regist
     · rw [if_neg heq] at hc'
       exact hreg c' pre' hc'
 
-theorem recordPreimages_preserves_consistency {K : Nat} (commitments : Fin K → Nat)
+theorem recordPreimages_preserves_consistency {K : Nat} (commitments : Fin K → Term)
     (publicOutputs : Fin K → CommitmentPreimage)
     (hvalid : ∀ i, hashCommitment (publicOutputs i) = commitments i)
     {reg : PreimageRegistry} (hreg : RegistryConsistent reg) :
@@ -251,7 +261,7 @@ every non-zero entry *before* `_recordPreimages` (:590-604) ever runs
 and folding every transaction ever processed through `recordPreimages`
 preserves that one fact by induction, so it holds of the live `preimageOf`
 mapping at every block. -/
-theorem preimageOf_consistent {K : Nat} (commitments : Fin K → Nat)
+theorem preimageOf_consistent {K : Nat} (commitments : Fin K → Term)
     (publicOutputs : Fin K → CommitmentPreimage)
     (hvalid : ∀ i, hashCommitment (publicOutputs i) = commitments i) :
     RegistryConsistent (recordPreimages commitments publicOutputs (fun _ => none)) :=
@@ -276,20 +286,20 @@ revert (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers`
 from ArmadaLean.Nullifier to turn the owner's genuinely-distinct note
 positions into pairwise-distinct nullifiers). -/
 theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
-    (ownerField token boundParamsHash root : Nat)
+    (ownerField token boundParamsHash : Nat) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
-    (pathElements : Fin N → List (Nat × Bool))
-    (npkOut valueOut : Fin M → Nat)
+    (pathElements : Fin N → List (Term × Bool))
+    (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i)) (pathElements i)
-        = root)
+      merkleRoot (commitment (npk (Term.val ownerField) (randomIn i)) token (valueIn i))
+        (pathElements i) = root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
     (spent : NullifierSet) (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ spent)
-    (hOutputsNonZero : ∀ j, npkOut j ≠ 0)
+    (hOutputsNonZero : ∀ j, npkOut j ≠ Term.val 0)
     (caller : Nat) (hCaller : caller = addressOf ownerField) :
     ∃ (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M),
       OwnedConstrained w pub ∧

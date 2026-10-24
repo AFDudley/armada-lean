@@ -11,6 +11,14 @@
   * `transact_value_conserved` — input value equals output value as integers
     (SECURITY_REVIEW.md Finding 1 fix; the in-field check at :141-143 cannot be
     exploited by wraparound).
+
+  Commitments, nullifiers, note public keys, master public keys and Merkle
+  roots are `Term`s (`ArmadaLean.Poseidon`, the symbolic Dolev-Yao hash model);
+  note values, token amounts and range checks stay `Nat`. `msgHashOf`, the
+  variable-arity EdDSA message hash, is now defined directly as a `Term.hash`
+  call rather than left as an axiom — the generic `Term.hash : List Term →
+  Term` constructor represents exactly what `Poseidon(2+N+M)` computes, so no
+  separate assumption is needed for this one arity.
 -/
 import ArmadaLean.Field
 import ArmadaLean.Poseidon
@@ -25,21 +33,33 @@ CRYPTOGRAPHIC ASSUMPTION: EdDSA signature unforgeability is assumed, not modeled
 `EdDSAVerify pk sig msg` holds iff `sig` is a valid EdDSA-Poseidon signature on
 `msg` under public key `pk` (Transact.circom:177-186, circomlib
 eddsaposeidon.circom). We only need the *validity* direction here: the circuit
-constrains the signature to verify. -/
-axiom EdDSAVerify : (Nat × Nat) → (Nat × Nat × Nat) → Nat → Prop
+constrains the signature to verify. The message `msg` is a `Term`
+(`ArmadaLean.Poseidon`): it is itself a Poseidon output (`msgHashOf` below),
+and `EdDSAVerify` is left abstract only on the signature-scheme primitive, not
+on the hash that produces its input. -/
+axiom EdDSAVerify : (Nat × Nat) → (Nat × Nat × Nat) → Term → Prop
 
 /-- Master public key = Poseidon(spendingPublicKeyX, spendingPublicKeyY,
-    nullifyingKey) (Transact.circom:61-66). -/
-noncomputable def masterPublicKey (pk : Nat × Nat) (nk : Nat) : Nat :=
-  poseidon3 pk.1 pk.2 nk
+    nullifyingKey) (Transact.circom:61-66). `pk`/`nk` are raw values (BabyJubJub
+    coordinates and a secret nullifying key) the spender chose, embedded as
+    `Term.val` before hashing; the result is a genuine hash term, never a
+    `Term.val` of anything — this is what
+    `ArmadaLean.TransactOwned.user_npk_ne_contract_npk` rests on. -/
+def masterPublicKey (pk : Nat × Nat) (nk : Nat) : Term :=
+  Term.hash3 (Term.val pk.1) (Term.val pk.2) (Term.val nk)
 
-/-- Note public key = Poseidon(masterPublicKey, random) (Transact.circom:75-78). -/
-noncomputable def npk (mpk r : Nat) : Nat := poseidon2 mpk r
+/-- Note public key = Poseidon(masterPublicKey, random) (Transact.circom:75-78).
+    `mpk` is already a `Term` (a master public key, or — on the owned path,
+    `ArmadaLean.TransactOwned` — `Term.val ownerField`); `r` is a raw
+    randomness value, embedded as `Term.val`. -/
+def npk (mpk : Term) (r : Nat) : Term := Term.hash2 mpk (Term.val r)
 
 /-- Note commitment = Poseidon(npk, token, value)
-    (Transact.circom:80-84 for inputs, :105-113 for outputs). -/
-noncomputable def commitment (npk token value : Nat) : Nat :=
-  poseidon3 npk token value
+    (Transact.circom:80-84 for inputs, :105-113 for outputs). `npk` is already
+    a `Term`; `token`/`value` are raw numbers (a token ID field element and a
+    note value), embedded as `Term.val`. -/
+def commitment (npk : Term) (token value : Nat) : Term :=
+  Term.hash3 npk (Term.val token) (Term.val value)
 
 /-- Private witness of the Transact circuit — mirrors the private signals
     (Transact.circom:41-55). Arrays indexed by `Fin N` / `Fin M` play the role
@@ -59,30 +79,37 @@ structure TransactWitness (N M : Nat) where
   /-- note value per input (:49) -/
   valueIn : Fin N → Nat
   /-- Merkle path (sibling, directionBit) per input; each of length 16
-      (:50, enforced by `Constrained.pathLen`) -/
-  pathElements : Fin N → List (Nat × Bool)
+      (:50, enforced by `Constrained.pathLen`). Siblings are terms (other
+      Merkle tree nodes). -/
+  pathElements : Fin N → List (Term × Bool)
   /-- Merkle leaf positions (:51) -/
   leavesIndices : Fin N → Nat
-  /-- output note public keys (:54) -/
-  npkOut : Fin M → Nat
+  /-- output note public keys (:54) — a term the prover supplies freely, the
+      same role `npk` plays for an input note. -/
+  npkOut : Fin M → Term
   /-- output values (:55) -/
   valueOut : Fin M → Nat
 
-/-- Public inputs of the Transact circuit (Transact.circom:35-39). -/
+/-- Public inputs of the Transact circuit (Transact.circom:35-39). `merkleRoot`,
+    `nullifiers` and `commitmentsOut` are terms; `boundParamsHash` is a plain
+    field element (`keccak256(...) % SNARK_SCALAR_FIELD`,
+    `PrivacyPoolStorage._boundParamsHash`) — a different hash family this
+    project has never modeled via Poseidon, so it stays a raw `Nat`, exactly
+    as the numeric model already treated it. -/
 structure TransactPublic (N M : Nat) where
-  merkleRoot : Nat
+  merkleRoot : Term
   boundParamsHash : Nat
-  nullifiers : Fin N → Nat
-  commitmentsOut : Fin M → Nat
+  nullifiers : Fin N → Term
+  commitmentsOut : Fin M → Term
 
-/--
-CRYPTOGRAPHIC ASSUMPTION (collision resistance of Poseidon on arity 2+N+M) —
-assumed, not proven.
-
-The message hash the EdDSA signature covers:
-`Poseidon(merkleRoot, boundParamsHash, ...nullifiers, ...commitmentsOut)`
-(Transact.circom:163-175). Modeled as an opaque function of the public inputs. -/
-axiom msgHashOf : {N M : Nat} → TransactPublic N M → Nat
+/-- The message hash the EdDSA signature covers:
+    `Poseidon(merkleRoot, boundParamsHash, ...nullifiers, ...commitmentsOut)`
+    (Transact.circom:142-154, `Poseidon(2 + N + M)`). `Term.hash` already
+    represents a Poseidon call of any arity, so this is a direct, computable
+    transcription of the circuit's own packing — not a separate assumption. -/
+def msgHashOf {N M : Nat} (pub : TransactPublic N M) : Term :=
+  Term.hash (pub.merkleRoot :: Term.val pub.boundParamsHash ::
+    (List.ofFn pub.nullifiers ++ List.ofFn pub.commitmentsOut))
 
 /--
 The full constraint system of the Transact circuit (Transact.circom:57-186),
@@ -136,22 +163,25 @@ theorem transact_public_outputs_determined {N M : Nat} (w : TransactWitness N M)
 
 /--
 **No double-spend within a transaction** (SECURITY_REVIEW.md Finding 2 fix):
-the pairwise leaf-distinctness constraints (:145-161) plus injectivity of
-Poseidon(2,·) force the published nullifiers to be pairwise distinct, so the
-same note cannot be consumed twice by one transaction. -/
+the pairwise leaf-distinctness constraints (:145-161) plus collision
+resistance of `Term.hash2` (by construction, `ArmadaLean.Poseidon`) force the
+published nullifiers to be pairwise distinct, so the same note cannot be
+consumed twice by one transaction. -/
 theorem transact_no_double_spend {N M : Nat} (w : TransactWitness N M)
     (pub : TransactPublic N M) (h : Constrained w pub) :
     ∀ i j, i ≠ j → pub.nullifiers i ≠ pub.nullifiers j := by
   intro i j hij hn
   rw [h.nullifiers i, h.nullifiers j] at hn
-  exact h.distinct i j hij (poseidon2_inj hn).2
+  exact h.distinct i j hij (Term.val.inj (Term.hash2_inj hn).2)
 
 /--
 **Value is conserved as an integer equality** (SECURITY_REVIEW.md Finding 1
 fix): because every note value is range-checked below `2^120` (:120-129) and
 there are at most 8 inputs and 4 outputs, both sums stay below the BN254
 scalar field prime, so the circuit's mod-`p` check `sumIn === sumOut`
-(:141-143) is an honest integer equality — no wraparound minting. -/
+(:141-143) is an honest integer equality — no wraparound minting. Values are
+plain `Nat`, never hashed, so the symbolic `Term` model does not touch this
+theorem. -/
 theorem transact_value_conserved {N M : Nat} (w : TransactWitness N M)
     (pub : TransactPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
     (h : Constrained w pub) :
@@ -171,9 +201,10 @@ theorem transact_value_conserved {N M : Nat} (w : TransactWitness N M)
 /--
 **A note's commitment determines the master public key that spends it.** `npk =
 Poseidon(masterPublicKey, random)` (:75-78) and `commitment = Poseidon(npk, token,
-value)` (:80-84), so by collision resistance (`poseidon2_inj`, `poseidon3_inj`) the same
-commitment value cannot arise from two different master public keys. The plain-path
-analogue of `ArmadaLean.TransactOwned.commitment_owner_inj`: there, the owner is read
+value)` (:80-84), so by collision resistance (`Term.hash2_inj`, `Term.hash3_inj`,
+by construction) the same commitment value cannot arise from two different master
+public keys. The plain-path analogue of
+`ArmadaLean.TransactOwned.commitment_owner_inj`: there, the owner is read
 directly off the commitment because `npk = Poseidon(ownerField, random)`; here, the
 commitment instead pins down `masterPublicKey = Poseidon(spendingPublicKeyX,
 spendingPublicKeyY, nullifyingKey)` (:61-66), one hash layer further from the raw keys.
@@ -181,8 +212,8 @@ This is the Poseidon-injectivity core of "a transact spends only notes whose own
 derives from keys the spender holds" (`ArmadaLean.PoolSafety.transact_spends_only_owned`
 adds the circuit's EdDSA check on top, the plain-path counterpart of
 `ArmadaLean.PoolOwned.owned_owner_binding`). -/
-theorem commitment_mpk_inj {mpk₁ r₁ mpk₂ r₂ token value : Nat}
+theorem commitment_mpk_inj {mpk₁ mpk₂ : Term} {r₁ r₂ token value : Nat}
     (h : commitment (npk mpk₁ r₁) token value = commitment (npk mpk₂ r₂) token value) :
     mpk₁ = mpk₂ := by
-  obtain ⟨hnpk, -, -⟩ := poseidon3_inj h
-  exact (poseidon2_inj hnpk).1
+  obtain ⟨hnpk, -, -⟩ := Term.hash3_inj h
+  exact (Term.hash2_inj hnpk).1

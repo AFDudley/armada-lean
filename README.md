@@ -45,6 +45,7 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 |---|---|---|---|---|
 | `transactOwned_value_conserved` | `TransactOwned` | any valid owned witness conserves value over the integers | `TransactOwned.circom:111-135` | Finding 1, owned path |
 | `commitment_owner_inj` | `TransactOwned` | a note's commitment determines its owner (`ownerField`) | `TransactOwned.circom:66-76` | owner-binding core |
+| `user_npk_ne_contract_npk` | `TransactOwned` | no user note key equals a contract note key | `TransactOwned.circom:66-70`, `Transact.circom:75-78` | Dolev-Yao domain separation |
 | `owned_owner_binding` | `PoolOwned` | no one except the owning contract can spend its note | `TransactModule.sol:636-639` | labbook decision 2 |
 | `owned_no_double_spend` | `PoolOwned` | an accepted call's nullifiers are pairwise distinct and were not already spent | `TransactModule.sol:379-386` | Finding 2, pool-level |
 | `preimageOf_consistent` | `PoolOwned` | every recorded preimage hashes to the commitment it is recorded for | `TransactModule.sol:550-604` | labbook §3a (registry defect) |
@@ -89,9 +90,14 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 
 ## Trust base & scope
 
-Poseidon is modeled as an abstract injective (collision-resistant) hash and
-EdDSA as an abstract unforgeable signature scheme — these are **explicit
-axioms**, visible per-theorem via `#print axioms` (see `docs/axioms-*.txt`).
+Poseidon is modeled symbolically (Dolev-Yao style, `ArmadaLean.Poseidon.Term`):
+a hash output is an inductive term, never a raw number, so collision
+resistance and domain separation hold by construction (the type's own
+constructors), not as an axiom on a concrete numeric function — no
+`poseidon2`/`poseidon3`/injectivity axiom exists in this project. EdDSA stays
+an abstract unforgeable signature scheme — an **explicit axiom**
+(`EdDSAVerify`), visible per-theorem via `#print axioms` (see
+`docs/axioms-*.txt`).
 What is and isn't covered, in plain English: **[docs/what-the-proofs-mean.md](docs/what-the-proofs-mean.md)**.
 
 Out of scope: Groth16, the circom compiler, Poseidon's concrete parameters,
@@ -104,7 +110,7 @@ modeled formulas. This project complements (does not replace) static analysis
 ```
 ArmadaLean/
   Field.lean              BN254 scalar-field modulus + mod lemmas
-  Poseidon.lean           abstract Poseidon + stated cryptographic assumptions
+  Poseidon.lean           symbolic (Dolev-Yao) Term model of Poseidon
   RangeCheck.lean         Num2Bits(120) semantics
   ValueConservation.lean  no-wraparound minting theorem
   Nullifier.lean          double-spend impossibility

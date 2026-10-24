@@ -8,23 +8,30 @@
   The theorem formalizes the SECURITY_REVIEW.md Finding 2 fix: because the leaf
   indices are pairwise distinct and Poseidon(2,·) is collision resistant, the
   published nullifiers are pairwise distinct — the same note cannot be spent
-  twice within one transaction.
+  twice within one transaction. `nullifier`'s output and `Term.hash2`'s
+  collision resistance are symbolic (`ArmadaLean.Poseidon`, Dolev-Yao style): the
+  nullifying key `nk` and leaf index `leafIdx` are raw values an attacker/prover
+  chose (`Term.val`), and the nullifier is the symbolic hash of the pair.
 -/
 import ArmadaLean.Poseidon
 
 /-- The nullifier of a note at Merkle leaf index `leafIdx` spent under
-    nullifying key `nk` (Transact.circom:97-101). -/
-noncomputable def nullifier (nk leafIdx : Nat) : Nat := poseidon2 nk leafIdx
+    nullifying key `nk` (Transact.circom:97-101). `nk`/`leafIdx` are raw values
+    (a secret key or address, and a tree position), embedded as `Term.val` before
+    hashing. -/
+def nullifier (nk leafIdx : Nat) : Term := Term.hash2 (Term.val nk) (Term.val leafIdx)
 
 /--
 **Distinct leaves give distinct nullifiers** (SECURITY_REVIEW.md Finding 2 fix).
 
 The circuit's pairwise `IsEqual`-out-`===0` checks (Transact.circom:145-161)
-force all input leaf indices to differ; injectivity of `poseidon2` then lifts
-that to the published nullifiers, so a transaction cannot list the same note
-twice (which would count its value twice toward `sumIn`). -/
+force all input leaf indices to differ; collision resistance of `Term.hash2`
+(by construction, `ArmadaLean.Poseidon`) then lifts that to the published
+nullifiers, so a transaction cannot list the same note twice (which would count
+its value twice toward `sumIn`). -/
 theorem distinct_leaves_distinct_nullifiers (nk : Nat) (leaves : List Nat)
     (h : leaves.Pairwise (· ≠ ·)) :
     (leaves.map (nullifier nk)).Pairwise (· ≠ ·) := by
   rw [List.pairwise_map]
-  exact h.imp fun {a b} hab hcon => hab (poseidon2_inj hcon).2
+  refine h.imp fun {a b} hab hcon => hab ?_
+  exact Term.val.inj (Term.hash2_inj hcon).2

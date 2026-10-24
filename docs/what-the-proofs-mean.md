@@ -19,7 +19,7 @@ Lean and proved the properties that the internal security review
 |---|---|
 | `rangeCheck120_sound` | The circuit's 120-bit range check really does bound every note value below 2¹²⁰. |
 | `no_wraparound_minting` | Because all values are < 2¹²⁰ and a transaction has ≤ 8 inputs / ≤ 4 outputs, "sum of inputs equals sum of outputs" holds as ordinary integers — not just modulo the field prime. **Value cannot be created by wrapping around the field modulus.** (Formalizes the fix for Finding 1.) |
-| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions guarantees all nullifiers in a proof are distinct (assuming Poseidon is collision-resistant). **The same note can never be spent twice in one proof.** (Formalizes the fix for Finding 2.) |
+| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions guarantees all nullifiers in a proof are distinct (Poseidon is modeled symbolically, so collision resistance holds by construction — see below). **The same note can never be spent twice in one proof.** (Formalizes the fix for Finding 2.) |
 | `merkleRoot_inj_leaf` | A Merkle membership proof binds exactly *one* leaf to the tree root — a proof for one commitment cannot be repurposed for another. |
 | `transact_public_outputs_determined` | Given the private witness, the public outputs (nullifiers, output commitments) are fully determined — no hidden degrees of freedom in the security-critical signals. |
 | `transact_no_double_spend` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. |
@@ -37,13 +37,15 @@ Lean and proved the properties that the internal security review
    Lean. This is why the model is deliberately small and auditable (~a page
    per component), and why this complements rather than replaces Ecne/Picus
    and an external circuit audit.
-3. **Explicit cryptographic assumptions** — Poseidon is modeled as an abstract
-   collision-resistant hash (`poseidon2_inj`, `poseidon3_inj` axioms), and
-   EdDSA signature unforgeability is assumed (`EdDSAVerify` axiom). These are
-   standard assumptions — every security argument about the system makes them,
-   we just make them *visible*. Run `#print axioms <theorem>` to see exactly
-   which assumptions any theorem depends on; they are also listed in
-   `docs/axioms-*.txt`.
+3. **Explicit cryptographic assumptions.** Poseidon is modeled symbolically
+   (Dolev-Yao style): a hash output is a term built by an inductive type
+   (`ArmadaLean.Poseidon.Term`), never a raw number, so collision resistance
+   and domain separation hold *by construction* — no Poseidon axiom exists in
+   this project. EdDSA signature unforgeability is still assumed
+   (`EdDSAVerify` axiom). These are standard assumptions — every security
+   argument about the system makes them, we just make them *visible*. Run
+   `#print axioms <theorem>` to see exactly which assumptions any theorem
+   depends on; they are also listed in `docs/axioms-*.txt`.
 
 ## What is NOT covered
 
