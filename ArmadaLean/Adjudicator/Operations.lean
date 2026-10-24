@@ -7,25 +7,47 @@
   MOVEMENT (deposit, transfer, reclaim — N1a/N1b/N2a/N2b/N3/R1 briefs, the
   INTENDED design, not the current buggy Solidity; see the departures
   report, `Safety.lean`'s closing section). Nitro-2019-219.pdf §3.3: "There
-  is no restriction on who can trigger the operations" — so `Step` below
-  carries no caller-identity check beyond what a call's own signed or
-  owned data supplies.
+  is no restriction on who can trigger the operations" — so `Step` places
+  no restriction on `actor` for any call EXCEPT `.sign`/`.signNote`, whose
+  own effect IS the fact that only a key's holder can produce (`Actor`
+  below, `Assumptions.lean`'s module comment).
 
   `Step` takes `SignatureAssumptions` and `ProofAssumptions`
-  (`Assumptions.lean`, `Notes.lean`) as its first two arguments, because
+  (`Assumptions.lean`, `Notes.lean`) as explicit arguments, because
   `.challenge`/`.conclude` need to ask whether a digest was authorized and
   `.deposit`/`.transfer` need to ask whether an owned proof was accepted —
   both are explicit structure arguments, never a bare global axiom
-  (coordinator correction, prior session). Two new `Call`s, `.sign` and
-  `.signNote`, are how an EOA participant's half of assumption 2 enters the
-  execution (coordinator correction, this session, `State.lean`'s module
-  comment): every OTHER case that touches `s'.signedBy` leaves it equal to
-  `s.signedBy`, so only `.sign` ever grows it, and only in the signing
-  participant's own row.
+  (coordinator correction, prior session). `appRel` is the application
+  rule (`Channel.lean`'s module comment on `.challenge`/`.checkpoint`): a
+  PARAMETER of the model, like `sig`/`proofA`, not a bare global axiom —
+  `Safety.lean`'s safety theorems quantify it for any app; its can-happen
+  theorems use the real `ConsensusApp`'s own relation in its place
+  (`Safety.lean`'s "concrete app" section). Two `Call`s, `.sign` and
+  `.signNote`, are how an EOA participant's half of assumption 2 enters
+  the execution: `actor` names who is really taking the step — the
+  identity `ecrecover`/the pool's own witness check would recover, not a
+  caller-asserted claim — and `.sign p d`/`.signNote pk msgHash` succeed
+  only when `actor` IS the key holder the step names. Every OTHER case
+  places no constraint on `actor` and leaves `s'.signedBy = s.signedBy`,
+  so only `.sign` ever grows it, and only when its own actor check passes.
 -/
 import ArmadaLean.Adjudicator.State
 
 namespace ArmadaLean.Adjudicator
+
+/-- Who actually produced this step's authorization — the identity
+    `ecrecover` (Nitro layer) or the pool's own EdDSA check (pool layer)
+    would recover from a genuine signature, not a caller-asserted claim.
+    Two spaces, because this model spans two signature primitives
+    (`Assumptions.lean`'s module comment: "the Nitro layer hashes with
+    keccak256 and signs with ECDSA/EIP-1271... the pool's
+    Poseidon/EdDSA"): a Nitro-layer address, or a pool-layer babyjubjub
+    public key. Every `Step` case below takes an `actor`; only `.sign`
+    and `.signNote` constrain it. -/
+inductive Actor where
+  | nitro (p : Nat)
+  | pool (pk : Nat × Nat)
+  deriving DecidableEq
 
 /-- Every entry point this model's adjudicator exposes, with the public
     parameters a caller supplies (mirroring each function's own signature,
@@ -36,12 +58,9 @@ namespace ArmadaLean.Adjudicator
     oversight. `transfer` carries `indices` (clause 24: `transfer(
     assetIndex, fromChannelId, outcomeBytes, stateHash, indices)`), since a
     caller chooses which destinations to pay out now. `sign`/`signNote`
-    are not go-nitro/Armada entry points — they model the OFF-CHAIN act of
-    producing a signature, which the real system also treats as
-    submittable by anyone once produced (`NitroUtils.sol:101-126`'s
-    `signer == participant` branch recovers a signer from signature bytes
-    ANY caller could relay; this model just names the act instead of
-    carrying the bytes). -/
+    are not go-nitro/Armada entry points — they name the off-chain act of
+    producing a signature (`Step`'s `actor` parameter is how this model
+    restricts who may take them; see the module comment). -/
 inductive Call where
   | deposit (channelId expectedHeld asset amount : Nat)
   | challenge (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
@@ -59,13 +78,15 @@ inductive Call where
   | sign (p d : Nat)
   | signNote (pk : Nat × Nat) (msgHash : Nat)
 
-/-- One call's effect: `s` steps to `s'` under `call`, given the signature
-    and proof assumptions (`sig`, `proofA`) the call's checks may need.
-    Each case is a conjunction of the call's checks (citing its source)
-    and its effect on `s'`'s fields, stated as equations rather than a
-    record update so every untouched field is named explicitly. -/
+/-- One call's effect: `s` steps to `s'` under `call`, taken by `actor`,
+    given the signature and proof assumptions (`sig`, `proofA`) and the
+    application rule (`appRel`) the call's checks may need. Each case is
+    a conjunction of the call's checks (citing its source) and its effect
+    on `s'`'s fields, stated as equations rather than a record update so
+    every untouched field is named explicitly. -/
 def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s : AdjudicatorState) : Call → AdjudicatorState → Prop
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   /-
   ### `deposit` — N2a brief, intended design
 
@@ -81,7 +102,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   intent, not the current code. Deposit is authorized by the depositor's
   own EdDSA signature on the spent note (the pool layer's `EdDSAVerify`,
   reused via `Constrained`/`DepositTransacted`, `Notes.lean`), not by
-  `sig`/`proofA`, so this case does not use either assumption.
+  `sig`/`proofA`/`actor`, so this case does not use any of the three.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
@@ -111,7 +132,13 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   `Open --challenge--> Challenge`, `Challenge --challenge--> Challenge`.
   Turn-number rule: clause 15 ("when Open, the candidate turn must not
   decrease; when already in Challenge, it must strictly increase",
-  `ForceMove.sol:48-55`).
+  `ForceMove.sol:48-55`). `actor` is unconstrained: the challenger's own
+  authorization is `AuthorizedBy sig s challenger ...` below, which only a
+  prior `.sign challenger ...` step by `challenger` themselves could have
+  established — `actor` here is whoever submits the transaction, which
+  ForceMove-2018.pdf §2.2's worked example already allows to be anyone
+  holding the signature bytes ("Bob ... provides both the last state
+  signed by Alice and the last state he signed").
 
   Simplification: the challenger's digest is modeled as `stateHash fp
   candidate` directly, folding in the `'forceMove'` domain-separation
@@ -127,7 +154,7 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
         | .open => candidate.turnNum ≥ (s.channels cid).turnNumRecord
         | .challenge => candidate.turnNum > (s.channels cid).turnNumRecord
         | .finalized => False) ∧
-      AppSupports fp proof candidate ∧
+      appRel s fp proof candidate ∧
       challenger ∈ fp.participants ∧
       AuthorizedBy sig s challenger (stateHash fp candidate) ∧
       s'.channels = update s.channels cid
@@ -151,14 +178,15 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   bytes32(0))`): checkpoint records only that a higher turn number is now
   known, not a finalizable outcome — `transfer`/`reclaim` require a
   `.finalized` channel, so the cleared hashes are never read as a payout
-  outcome. No signature or proof check beyond `AppSupports`, so this case
-  does not use `sig`/`proofA`.
+  outcome. No signature or proof check beyond `appRel`, so this case does
+  not use `sig`/`proofA`, and `actor` is unconstrained ("anyone with a
+  supported off-chain state", quoted above).
   -/
   | .checkpoint fp proof candidate => fun s' =>
       let cid := channelId fp
       (s.channels cid).mode s.now ≠ .finalized ∧
       candidate.turnNum > (s.channels cid).turnNumRecord ∧
-      AppSupports fp proof candidate ∧
+      appRel s fp proof candidate ∧
       s'.channels = update s.channels cid
         { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := 0, outcomeHash := 0 } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
@@ -179,7 +207,10 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   "`conclude` finalizes without moving value" — this `Step` case touches
   only `s'.channels`; `s'.pool` and `s'.holdings` are UNCHANGED, matching
   N3's wording exactly. A caller who wants a payout calls `transfer`
-  separately afterward (N3 brief S1).
+  separately afterward (N3 brief S1). `actor` is unconstrained ("anyone in
+  possession of a finalization proof", quoted above); `SignedByAll`
+  requires every participant's OWN prior `.sign` step, which `actor` here
+  cannot substitute for.
   -/
   | .conclude fp candidate => fun s' =>
       let cid := channelId fp
@@ -267,7 +298,8 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   `ArmadaNitroAdjudicator._settleReclaimExit` instead mints a brand-new
   commitment worth `priorHeld + guaranteeAmount` to the target with
   nothing debited anywhere, which this model does not follow. No
-  signature or proof check, so this case does not use `sig`/`proofA`.
+  signature or proof check, so this case does not use `sig`/`proofA`, and
+  `actor` is unconstrained (clause 28 names no caller restriction).
   -/
   | .reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
       targetOutcome targetAssetIndex claimedTargetStateHash => fun s' =>
@@ -326,7 +358,8 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
   with a sufficiently large timestamp." `tick` advances `now`
   monotonically and changes nothing else; `ChannelStatus.mode` then reads
   `Finalized` once `finalizesAt ≤ now`, with no separate "apply timeout"
-  step — matching the quote.
+  step — matching the quote. `actor` is unconstrained: advancing the clock
+  is not an authorization act.
   -/
   | .tick newNow => fun s' =>
       newNow ≥ s.now ∧
@@ -335,36 +368,45 @@ def Step (sig : SignatureAssumptions) (proofA : ProofAssumptions)
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧
       s'.signedBy = s.signedBy
   /-
-  ### `sign` — the EOA half of assumption 2 (`Assumptions.lean`, `State.
-  lean`'s module comments)
+  ### `sign` — the EOA half of assumption 2 (`Assumptions.lean`'s module
+  comment)
 
-  Not a go-nitro or Armada entry point: it names the OFF-CHAIN act of a
-  participant producing a signature, the fact `NitroUtils.isAuthorizedBy`'s
-  `signer == participant` branch checks (`NitroUtils.sol:101-126`). Any
-  caller may submit it (matching Nitro-2019-219.pdf §3.3, "no restriction
-  on who can trigger the operations" — once produced, a signature's bytes
-  can be relayed by anyone), but the effect only ever adds `d` to `p`'s OWN
-  row of `signedBy`: no `Call` exists that adds a digest to a DIFFERENT
-  participant's row, which is where unforgeability of this half of
-  assumption 2 lives (coordinator correction, this session: "no caller can
-  add a digest for another participant's key").
+  Not a go-nitro or Armada entry point: it names the off-chain act of a
+  participant producing a signature. Nitro-2019-219.pdf §3.1: "Given an
+  address, A, we assume that the properties of the signature scheme and
+  hashing algorithm make it impossible to find a private key for A... if
+  they are not previously known"; the withdrawal operation "can be used
+  to withdraw coins held at participant address, A, by any party with the
+  knowledge of the corresponding private key" — authority comes from
+  HOLDING the key, which is exactly what `actor = .nitro p` requires
+  below. ForceMove-2018.pdf §3.1.3: "A move consists of a State and a
+  (cryptographic) signature... From the signature you can deduce the
+  signer – the participant who signed the move." This `Step` case is
+  where that deduction is made STRUCTURAL: it succeeds only when `actor`
+  IS `p`, and its effect only ever adds `d` to `p`'s OWN row — no `Call`
+  exists, and no value of `actor`, that adds a digest to a DIFFERENT
+  participant's row.
   -/
   | .sign p d => fun s' =>
+      actor = .nitro p ∧
       s'.signedBy = (fun p' d' => (p' = p ∧ d' = d) ∨ s.signedBy p' d') ∧
       s'.pool = s.pool ∧ s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
   /-
   ### `signNote` — the pool layer's own EdDSA signing action
-  (`Notes.lean`'s `eddsaCompleteness`)
+  (`Notes.lean`'s `PoolSignatureLiveness`)
 
   The exact same idea as `.sign`, for the root pool layer's EdDSA check
   `Constrained.sig` relies on (`Transact.lean:119`): names the off-chain
-  act of the holder of babyjubjub key `pk` signing `msgHash`. Only ever
-  adds `(pk, msgHash)` to `pk`'s OWN row of `PoolState.poolSignedBy`
-  (coordinator instruction, this session: "the depositor's signed messages
-  are part of the execution").
+  act of the holder of babyjubjub key `pk` signing `msgHash`. SATP §1.4,
+  "Our contribution": "(Safety) Forging cryptographic signatures is
+  infeasible" — applies to BOTH signature schemes this model spans, not
+  only the Nitro layer's ECDSA. Succeeds only when `actor` IS the holder
+  of `pk`, and only ever adds `(pk, msgHash)` to `pk`'s OWN row of
+  `PoolState.poolSignedBy`.
   -/
   | .signNote pk msgHash => fun s' =>
+      actor = .pool pk ∧
       s'.pool.poolSignedBy = (fun pk' m' => (pk' = pk ∧ m' = msgHash) ∨ s.pool.poolSignedBy pk' m') ∧
       s'.pool.liveNotes = s.pool.liveNotes ∧ s'.pool.usedNullifiers = s.pool.usedNullifiers ∧
       s'.channels = s.channels ∧ s'.holdings = s.holdings ∧

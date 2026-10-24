@@ -19,9 +19,11 @@
   which assumptions it needs (coordinator correction, prior session).
   `channelIdOf`, `stateHashOf` and `outcomeHashOf` stay as bare `axiom`
   declarations: each names an uninterpreted FUNCTION with no asserted
-  property (the same status as `AppSupports`/`decodeGuarantee`), not a
-  security claim — the security claim is their INJECTIVITY, which is a
-  `HashAssumptions` field below.
+  property (the same status as `decodeGuarantee`), not a security claim —
+  the security claim is their INJECTIVITY, which is a `HashAssumptions`
+  field below. The application rule is NOT a bare axiom either, but a
+  PARAMETER of the model (`Operations.lean`'s `Step`, `appRel`) — see
+  that file's module comment.
 
   The pool layer already states two hash axioms and one signature axiom in
   the root `ArmadaLean` modules (`Poseidon.lean`'s `poseidon2_inj`/
@@ -110,24 +112,41 @@ structure HashAssumptions where
 ## Assumption 2: a signature cannot be forged (Nitro layer)
 
 Clause 8: "A signature counts for participant i if i signed as an EOA, or,
-when i is a contract, if i accepts the signature through EIP-1271."
-`NitroUtils.isAuthorizedBy` (`NitroUtils.sol:101-126`): "`if (signer ==
-participant) return true;` ... [else, for a contract] `staticcall`" — two
+when i is a contract, if i accepts the signature through EIP-1271." Two
 genuinely different mechanisms, not one relation:
 
-1. The EOA path (`signer == participant`) is an ACTION a participant
-   takes: they choose to sign a digest, or they do not. No caller can
-   produce this for a key they do not hold (SATP §1.4, "Forging
-   cryptographic signatures is infeasible"). This model records it as part
-   of the EXECUTION, not as a structure field (coordinator correction,
-   this session: a structure field with no constraining axiom — the
-   model's PRIOR design — can be satisfied by an always-true relation,
-   which says every participant authorized every digest, a FALSE claim no
-   source makes). `State.lean`'s `AdjudicatorState.signedBy` and
-   `Operations.lean`'s `.sign` `Call` carry this: `.sign p d`'s `Step` case
-   only ever ADDS `d` to `p`'s OWN row, never another participant's — this
-   is where unforgeability of the EOA path actually lives, in the shape of
-   the `Call`, not in an assumption a proof could pick adversarially.
+1. The EOA path is an ACTION a participant takes: they choose to sign a
+   digest, or they do not. Only the key holder can take it. Nitro-
+   2019-219.pdf §3.1: "Given an address, A, we assume that the properties
+   of the signature scheme and hashing algorithm make it impossible to
+   find a private key for A... if they are not previously known"; the
+   withdrawal operation "can be used to withdraw coins held at
+   participant address, A, by any party with the knowledge of the
+   corresponding private key" — authority comes from HOLDING the key.
+   SATP §1.4, "Our contribution", the two security assumptions named
+   before Theorem 3.2's informal preview: "(Safety) Forging cryptographic
+   signatures is infeasible." ForceMove-2018.pdf §3.1.3, "Moves and
+   states": "A move consists of a State and a (cryptographic) signature...
+   From the signature you can deduce the signer – the participant who
+   signed the move." §2.2's worked example: Bob "needs signatures from
+   both parties to launch a challenge" — he needs to HOLD them, not
+   produce them himself for Alice.
+
+   None of the three sources lets a caller produce a signature for a key
+   they do not hold; `NitroUtils.sol:101-126`'s `signer == participant`
+   check lets anyone SUBMIT signature bytes that already exist (clause 8;
+   Nitro-2019-219.pdf §3.3, "There is no restriction on who can trigger
+   the operations"), which is a fact about relaying bytes, not about who
+   may produce them — submitting is not signing. This model records
+   signing as part of the EXECUTION, not as a structure field: a
+   structure field with no constraining axiom can be satisfied by an
+   always-true relation, asserting every participant signed every digest,
+   which none of the three sources above supports. `State.lean`'s
+   `AdjudicatorState.signedBy` and `Operations.lean`'s `.sign` `Call`
+   carry it instead, gated on an explicit `Actor` matching the digest's
+   own participant (`Operations.lean`'s module comment) — this is where
+   unforgeability of the EOA path lives: in who may TAKE the step, not
+   only in which row the step's effect touches.
 2. The EIP-1271 path is a FIXED fact about a contract's already-deployed
    code: whether `participant.code` accepts a given digest does not change
    call to call, and no caller can change it either. This stays a

@@ -24,23 +24,33 @@
   `Notes.lean`) as explicit arguments — `Step`/`AppliesAll`/`Reachable` are
   themselves parameterized by them, so a reader sees on the theorem's own
   type which cryptographic facts it relies on, never a hidden global axiom
-  (coordinator correction, prior session). Every theorem that reasons
-  about the reachable set takes the deploy-time asset list (`assets`), the
-  adjudicator's own identity (`self`), and the pool's state at deployment
-  (`pool0`) as explicit arguments and anchors `Reachable` at `genesis
-  assets self pool0` (`State.lean`) — the one true deployment state, not
-  an arbitrary unconstrained starting state (same correction).
+  (coordinator correction, prior session). Safety theorems (sections A-C)
+  also take `appRel` (`Operations.lean`'s module comment) as an explicit
+  UNIVERSAL parameter: "safety stays stated for any app." Every theorem
+  that reasons about the reachable set takes the deploy-time asset list
+  (`assets`), the adjudicator's own identity (`self`), and the pool's
+  state at deployment (`pool0`) as explicit arguments and anchors
+  `Reachable` at `genesis assets self pool0` (`State.lean`) — the one
+  true deployment state, not an arbitrary unconstrained starting state
+  (same correction).
 
-  Signing is now an ACTION, not a bare relation (coordinator correction,
-  this session): `AuthorizedBy sig s p d` (`State.lean`) and `SignedByAll
-  sig s fp vp` take the CURRENT state `s`, so they read the digests `s`'s
-  execution has actually recorded as signed, through `AdjudicatorState.
-  signedBy` (grown only by `Operations.lean`'s `.sign`, in the signer's
-  own row). Signing is monotone (`.sign` only ever adds, never removes a
-  recorded digest), so a fact `SignedByAll sig s fp vp` established at
-  some point in an execution survives to every LATER reachable state too —
-  the safety theorems below state it at the theorem's own `s`, the current
-  or final state, with no loss of generality.
+  Signing is an ACTION taken by a named `Actor` (`Operations.lean`'s
+  module comment): `AuthorizedBy sig s p d` (`State.lean`) and
+  `SignedByAll sig s fp vp` take the CURRENT state `s`, so they read the
+  digests `s`'s execution has actually recorded as signed, through
+  `AdjudicatorState.signedBy` — grown only by `.sign`, and only when the
+  acting `Actor` IS the participant the digest names (`Operations.lean`'s
+  `.sign` case). Signing is monotone (`.sign` only ever adds, never
+  removes a recorded digest), so a fact `SignedByAll sig s fp vp`
+  established at some point in an execution survives to every LATER
+  reachable state too — the safety theorems below state it at the
+  theorem's own `s`, the current or final state, with no loss of
+  generality. The two "unbeatable strategy" theorems (section B) name
+  the strategy's own participant `h` (for "honest"): every step an
+  `interleaved` sequence supplies may be taken by an actor OTHER than
+  `h` (an attacker's own steps), and such a step cannot add to `h`'s row
+  of `signedBy` — a direct consequence of `.sign`'s own actor check, not
+  an extra hypothesis these theorems need to state.
 -/
 import ArmadaLean.Adjudicator.Reachability
 
@@ -74,20 +84,21 @@ protocol-recognized paths, never to a bare caller assertion.
     the ONLY ways a reachable state can show a channel finalized with a
     given `(stateHash, outcomeHash)` pair. Simplification: this statement
     names the call that PRODUCED the finalized status (`conclude` with
-    `SignedByAll`, or `challenge` with `AppSupports`+`AuthorizedBy`) but
-    does not additionally require that no later, higher-turn challenge or
-    checkpoint overwrote it before the timeout — that refinement belongs to
-    the proof stage, not to this statement. -/
+    `SignedByAll`, or `challenge` with `appRel`+`AuthorizedBy`) but does
+    not additionally require that no later, higher-turn challenge or
+    checkpoint overwrote it before the timeout — that refinement belongs
+    to the proof stage, not to this statement. -/
 theorem finalized_outcome_was_concluded_or_challenged
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (cid stateH outcomeH : Nat)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s)
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s)
     (hfin : ChannelFinalizedWith s cid stateH outcomeH) :
     (∃ fp candidate, channelId fp = cid ∧ SignedByAll sig s fp candidate ∧
       outcomeHashOf candidate.outcome = outcomeH) ∨
     (∃ fp proof candidate challenger, channelId fp = cid ∧
-      AppSupports fp proof candidate ∧ challenger ∈ fp.participants ∧
+      appRel s fp proof candidate ∧ challenger ∈ fp.participants ∧
       AuthorizedBy sig s challenger (stateHash fp candidate) ∧
       stateHash fp candidate = stateH ∧
       outcomeHashOf candidate.outcome = outcomeH) := by
@@ -106,9 +117,11 @@ theorem finalized_outcome_was_concluded_or_challenged
     no more than, some allocation already recorded in that outcome. -/
 theorem transfer_pays_only_the_finalized_outcome
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
     (outcome : Outcome) (indices : List Nat)
-    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (hstep : Step sig proofA appRel actor s
+      (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) :
     ChannelFinalizedWith s cid claimedStateHash (outcomeHashOf outcome) ∧
     ∀ paid ∈ (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
@@ -131,36 +144,39 @@ caller can BLOCK another caller's operation, only interleave with it.
 /-- Which harm this rules out: once all participants have signed a final
     state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
     point, Figure 11), no other caller's actions — in any number, in any
-    order, before this theorem's own calls run — can prevent a named
-    participant from obtaining a spendable note worth their allocation.
-    This is the Lean statement of "A's unbeatable strategy ⟹ the
-    finalized outcome": the fixed strategy is `conclude` (if not already
-    concluded) then `transfer`, and it succeeds after ANY interleaving
-    (`interleaved`) another caller runs first — formalizing §4.3's two
-    assumptions (unimpeded, cannot be front-run) as "no interleaving can
-    make the strategy's own `Step` preconditions false". `hsigned` reads
-    unanimous signing at `s`; since `.sign` only ever adds to `signedBy`
-    (`State.lean`'s module comment), `interleaved` cannot UN-sign anything,
-    so `SignedByAll` still holds at `mid`. "Getting money owed" is a live
-    note in the pool, matching this model's note-based payment
-    (`Notes.lean`): `p` can later spend it with their own key, which is
-    the Armada-layer meaning of "paid" (lab book decision 9: the
-    collateral "never leaves the pool"). -/
+    order, by any `Actor`, before this theorem's own calls run — can
+    prevent the honest participant `h` from obtaining a spendable note
+    worth their allocation. This is the Lean statement of "A's unbeatable
+    strategy ⟹ the finalized outcome": the fixed strategy is `conclude`
+    (if not already concluded) then `transfer`, and it succeeds after ANY
+    interleaving (`interleaved`) another caller runs first — formalizing
+    §4.3's two assumptions (unimpeded, cannot be front-run) as "no
+    interleaving can make the strategy's own `Step` preconditions false".
+    `hsigned` reads unanimous signing at `s`; since `.sign` only ever adds
+    to `signedBy`, and only in the ACTING participant's own row
+    (`Operations.lean`'s `.sign` case — no step in `interleaved`, whatever
+    `Actor` it names, can add to or remove from `h`'s row), `interleaved`
+    cannot UN-sign anything, so `SignedByAll` still holds at `mid`.
+    "Getting money owed" is a live note in the pool, matching this
+    model's note-based payment (`Notes.lean`): `h` can later spend it
+    with their own key, which is the Armada-layer meaning of "paid" (lab
+    book decision 9: the collateral "never leaves the pool"). -/
 theorem unbeatable_pays
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
-    (p assetIndex : Nat) (hAssetIdx : assetIndex < candidate.outcome.length)
+    (h : Nat) (assetIndex : Nat) (hAssetIdx : assetIndex < candidate.outcome.length)
     (owed : Nat) (dest : Allocation)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s) (hp : p ∈ fp.participants)
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
     (hsigned : SignedByAll sig s fp candidate)
     (hdest : dest ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations)
-    (hp_dest : dest.destination = p) (howed : dest.amount = owed) :
-    ∀ (interleaved : List Call) (mid : AdjudicatorState),
-      AppliesAll sig proofA s interleaved mid →
-      ∃ (payCalls : List Call) (final : AdjudicatorState),
-        AppliesAll sig proofA mid payCalls final ∧
-        ∃ pre : NotePreimage, pre.npk = p ∧
+    (hh_dest : dest.destination = h) (howed : dest.amount = owed) :
+    ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
+      AppliesAll sig proofA appRel s interleaved mid →
+      ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
+        AppliesAll sig proofA appRel mid payCalls final ∧
+        ∃ pre : NotePreimage, pre.npk = h ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
           final.pool.isLive (commitment pre.npk pre.token pre.value) := by
@@ -171,34 +187,35 @@ theorem unbeatable_pays
     the resolution specified by the most recently known state at the time
     of the dispute" — timeout, not cooperation, decides the payout). Once a
     challenge is registered naming `candidate` and no higher-turn state is
-    presented before `finalizesAt`, a participant's strategy — `tick` to
-    `finalizesAt`, then `transfer` — succeeds after any interleaving,
-    matching `unbeatable_pays` for the non-cooperative case
-    (Nitro-2019-219.pdf §4.4 Figure 11's other universally finalizable
-    point and S4 `0040-lifecycle-of-a-channel.md`'s `Challenge --timeout-->
-    Finalized'`). -/
+    presented before `finalizesAt`, the honest participant `h`'s strategy
+    — `tick` to `finalizesAt`, then `transfer` — succeeds after any
+    interleaving by any `Actor`, matching `unbeatable_pays` for the
+    non-cooperative case (Nitro-2019-219.pdf §4.4 Figure 11's other
+    universally finalizable point and S4
+    `0040-lifecycle-of-a-channel.md`'s `Challenge --timeout--> Finalized'`). -/
 theorem unbeatable_pays_after_timeout
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
-    (candidate : VariablePart) (challenger p assetIndex : Nat)
+    (candidate : VariablePart) (challenger h assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length) (owed : Nat) (dest : Allocation)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s) (hp : p ∈ fp.participants)
-    (hsupported : AppSupports fp proof candidate)
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
+    (hsupported : appRel s fp proof candidate)
     (hchallenger : challenger ∈ fp.participants)
     (hauth : AuthorizedBy sig s challenger (stateHash fp candidate))
     (hfinalizing : (s.channels (channelId fp)).finalizesAt > 0)
     (hdest : dest ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations)
-    (hp_dest : dest.destination = p) (howed : dest.amount = owed) :
-    ∀ (interleaved : List Call) (mid : AdjudicatorState),
-      AppliesAll sig proofA s interleaved mid →
+    (hh_dest : dest.destination = h) (howed : dest.amount = owed) :
+    ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
+      AppliesAll sig proofA appRel s interleaved mid →
       (∀ highTurn, highTurn ≤ candidate.turnNum ∨
-        ¬ ∃ s'', Step sig proofA mid
+        ¬ ∃ (anyActor : Actor) (s'' : AdjudicatorState), Step sig proofA appRel anyActor mid
           (.challenge fp proof ⟨candidate.outcome, candidate.appData, highTurn, candidate.isFinal⟩
             challenger) s'') →
-      ∃ (payCalls : List Call) (final : AdjudicatorState),
-        AppliesAll sig proofA mid payCalls final ∧
-        ∃ pre : NotePreimage, pre.npk = p ∧
+      ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
+        AppliesAll sig proofA appRel mid payCalls final ∧
+        ∃ pre : NotePreimage, pre.npk = h ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
           final.pool.isLive (commitment pre.npk pre.token pre.value) := by
@@ -222,8 +239,9 @@ specializes to pure conservation for every call this adjudicator accepts.
     below. -/
 theorem notedValue_conserved
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (call : Call) (token : Nat)
-    (hstep : Step sig proofA s call s') :
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call) (token : Nat)
+    (hstep : Step sig proofA appRel actor s call s') :
     s'.pool.notedValue token = s.pool.notedValue token := by
   sorry
 
@@ -235,9 +253,10 @@ theorem notedValue_conserved
     held when this adjudicator was deployed (`State.lean`'s `genesis`). -/
 theorem notedValue_conserved_reachable
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (token : Nat)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s) :
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s) :
     s.pool.notedValue token = pool0.notedValue token := by
   sorry
 
@@ -251,9 +270,10 @@ theorem notedValue_conserved_reachable
     storage layer, not only the pool's. -/
 theorem holdings_point_to_live_notes
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (asset cid c : Nat)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s)
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s)
     (hholds : s.holdings asset cid = some c) :
     s.pool.isLive c := by
   sorry
@@ -261,35 +281,33 @@ theorem holdings_point_to_live_notes
 /-!
 ## A concrete app, for the can-happen theorems only
 
-Safety stays stated for ANY `AppSupports` (coordinator instruction, this
-session: "Safety stays stated for any app" — sections A-C above take no
-stance on which app a channel uses, and none of them is touched below).
-The can-happen theorems in section D need to WITNESS a channel whose
-`.challenge` actually succeeds, which needs `AppSupports` satisfiable for
-SOME input — so for THESE theorems only, this model uses the REAL,
-deployed `ConsensusApp` (`ConsensusApp.sol:18-25`): "`Consensus.
-requireConsensus(fixedPart, proof, candidate); return (true, '');`" and
-`Consensus.requireConsensus` (`Consensus.sol:18-28`): "`require(proof.
-length == 0, '|proof|!=0'); require(NitroUtils.getClaimedSignersNum(
-candidate.signedBy) == fixedPart.participants.length, '!unanimous');`" —
-empty proof, unanimous signatures, nothing else.
+Safety stays stated for ANY `appRel` (sections A-C above take no stance
+on which app a channel uses, and none of them is touched below). The
+can-happen theorems in section D need to WITNESS a channel whose
+`.challenge` actually succeeds, which needs `appRel` satisfiable for SOME
+input — so for THESE theorems only, this model uses the REAL, deployed
+`ConsensusApp`'s own relation in `appRel`'s place (`appRel` is a
+PARAMETER of the model, `Operations.lean`'s `Step`, not a bare global
+axiom). `ConsensusApp.sol:18-25`: "`Consensus.requireConsensus(fixedPart,
+proof, candidate); return (true, '');`" and `Consensus.requireConsensus`
+(`Consensus.sol:18-28`): "`require(proof.length == 0, '|proof|!=0');
+require(NitroUtils.getClaimedSignersNum(candidate.signedBy) ==
+fixedPart.participants.length, '!unanimous');`" — empty proof, unanimous
+signatures, nothing else.
 -/
 
-/-- A distinguished `appDefinition` value standing for the address where
-    the real `ConsensusApp` is deployed. -/
-def consensusApp : Nat := 1
-
-/-- `ConsensusApp.stateIsSupported` implements EXACTLY `Consensus.
-    requireConsensus` (quoted above): a fact about what the real, already
-    -written, deployed bytecode computes, not a new cryptographic
-    assumption — the same status this model already gives `channelIdOf`
-    (a deterministic function of its inputs, `Assumptions.lean`). Used
-    only by the can-happen theorems, to replace the opaque `AppSupports`
-    with the real app's rule for a channel that actually runs it. -/
-axiom AppSupports_consensusApp (sig : SignatureAssumptions) (s : AdjudicatorState)
-    (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
-    (happ : fp.appDefinition = consensusApp) :
-    AppSupports fp proof candidate ↔ (proof = [] ∧ SignedByAll sig s fp candidate)
+/-- The real ConsensusApp's rule (`ConsensusApp.sol`/`Consensus.sol`,
+    quoted above): empty proof, and every participant has authorized the
+    candidate's hash at the current state (`SignedByAll`). A `def`, not an
+    axiom: a fact about what the already-deployed, already-audited
+    bytecode computes, the same status this model already gives
+    `channelIdOf` (a deterministic function of its inputs,
+    `Assumptions.lean`). The can-happen theorems below SUBSTITUTE this
+    relation for `appRel` directly, instead of reasoning about an
+    arbitrary one. -/
+def consensusRelation (sig : SignatureAssumptions) (s : AdjudicatorState)
+    (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart) : Prop :=
+  proof = [] ∧ SignedByAll sig s fp candidate
 
 /-!
 ## D. "Can happen": the adjudicator's reason for existing
@@ -302,19 +320,22 @@ below quantifies `HashAssumptions`, `SignatureAssumptions`,
 `ProofAssumptions` and `ProofLiveness` UNIVERSALLY ("for all assumptions
 (hash, signature unforgeability, proof soundness, proof completeness)"),
 with only the EXECUTION (the deployment parameters and the call sequence)
-existentially chosen (coordinator instruction, this session). The
-execution starts from `genesis assets self pool0` and includes whatever
-`.sign`/`.signNote` calls are needed for the honest participants it names
-to sign what the later calls require — this is what "honest participants
-sign what is needed" means concretely: the witness call sequence contains
-the signing actions, not an assumption that signs on their behalf.
+existentially chosen. The execution starts from `genesis assets self
+pool0`, uses `appRel := consensusRelation sig` (the preceding section),
+and includes whatever `.sign`/`.signNote` calls are needed for the honest
+participants it names to sign what the later calls require, EACH taken
+by that participant's own `Actor` (`Operations.lean`'s `.sign`/
+`.signNote` cases) — this is what "honest participants sign what is
+needed" means concretely: the witness call sequence contains the signing
+actions, taken by the right actors, not an assumption that signs on
+their behalf.
 
 All seven restate this way; none needed a further, unauthorized
 assumption. The pool layer's `EdDSAVerify` gap and the app layer's
-`AppSupports` gap the PRIOR correction reported as blocking are both
-closed here: `EdDSAVerify` by `Notes.lean`'s `eddsaCompleteness`, gated on
-`.signNote`; `AppSupports` by `AppSupports_consensusApp` above, gated on
-`.sign` for every participant plus `fp.appDefinition = consensusApp`.
+`appRel` gap are both closed: `EdDSAVerify` by `Notes.lean`'s
+`PoolSignatureLiveness.eddsaCompleteness`, gated on `.signNote`; `appRel`
+by substituting `consensusRelation sig`, gated on `.sign` for every
+participant.
 -/
 
 /-- A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
@@ -322,16 +343,17 @@ closed here: `EdDSAVerify` by `Notes.lean`'s `eddsaCompleteness`, gated on
     `genesis` — with a pool state `pool0` that already holds the
     depositor's spendable note, and a `.signNote` call recording that the
     depositor's key signed the deposit's message hash — in which a deposit
-    succeeds (N2a brief, "Goal"). `eddsaCompleteness` turns the recorded
-    signing fact into the `EdDSAVerify` witness `Constrained`
-    (`DepositTransacted`, `Notes.lean`) needs. -/
+    succeeds (N2a brief, "Goal"). `PoolSignatureLiveness.eddsaCompleteness`
+    turns the recorded signing fact into the `EdDSAVerify` witness
+    `Constrained` (`DepositTransacted`, `Notes.lean`) needs. -/
 theorem deposit_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (proofLive : ProofLiveness proofA) :
+    (proofLive : ProofLiveness proofA) (poolSigLive : PoolSignatureLiveness) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat),
-      Reachable sig proofA (genesis assets self pool0) s ∧
-      Step sig proofA s (.deposit channelId expectedHeld asset amount) s' := by
+      (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat) (actor : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig proofA (consensusRelation sig) actor s
+        (.deposit channelId expectedHeld asset amount) s' := by
   sorry
 
 /-- A top-up can happen: the same construction as `deposit_can_happen`,
@@ -343,32 +365,32 @@ theorem deposit_can_happen
     replaces, the prior holding). -/
 theorem topup_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (proofLive : ProofLiveness proofA) :
+    (proofLive : ProofLiveness proofA) (poolSigLive : PoolSignatureLiveness) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s mid s' : AdjudicatorState) (cid a1 a2 asset amt1 amt2 : Nat),
-      Reachable sig proofA (genesis assets self pool0) s ∧
-      Step sig proofA s (.deposit cid a1 asset amt1) mid ∧
-      Step sig proofA mid (.deposit cid a2 asset amt2) s' ∧
+      (s mid s' : AdjudicatorState) (cid a1 a2 asset amt1 amt2 : Nat) (actor1 actor2 : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig proofA (consensusRelation sig) actor1 s (.deposit cid a1 asset amt1) mid ∧
+      Step sig proofA (consensusRelation sig) actor2 mid (.deposit cid a2 asset amt2) s' ∧
       heldValue s' asset cid = heldValue mid asset cid + amt2 := by
   sorry
 
 /-- A challenge can happen: for all four assumptions, there is an
-    execution from `genesis` — naming a channel `fp` whose `appDefinition`
-    is the real `ConsensusApp` (`consensusApp`), and a `.sign` call for
-    every one of `fp`'s participants on `stateHash fp candidate` — in
-    which a `.challenge` call succeeds and advances the channel to
-    `.challenge` mode (ForceMove.sol:39-81; clause 13).
-    `AppSupports_consensusApp` turns the recorded unanimous signing into
-    `AppSupports fp [] candidate`; the challenger, being one of the
-    participants who signed, is also authorized. -/
+    execution from `genesis` — a `.sign` call for every one of `fp`'s
+    participants on `stateHash fp candidate` — in which a `.challenge`
+    call succeeds and advances the channel to `.challenge` mode
+    (ForceMove.sol:39-81; clause 13), using `consensusRelation sig` for
+    `appRel`: the recorded unanimous signing directly satisfies it with
+    `proof := []`; the challenger, being one of the participants who
+    signed, is also authorized. -/
 theorem challenge_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (proofLive : ProofLiveness proofA) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s s' : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
-      (candidate : VariablePart) (challenger : Nat),
-      Reachable sig proofA (genesis assets self pool0) s ∧
-      Step sig proofA s (.challenge fp proof candidate challenger) s' ∧
+      (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+      (challenger : Nat) (actor : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig proofA (consensusRelation sig) actor s
+        (.challenge fp [] candidate challenger) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
   sorry
 
@@ -381,10 +403,10 @@ theorem challenge_timeout_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (proofLive : ProofLiveness proofA) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s s' : AdjudicatorState) (cid : Nat),
-      Reachable sig proofA (genesis assets self pool0) s ∧
+      (s s' : AdjudicatorState) (cid : Nat) (actor : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
       (s.channels cid).finalizesAt > 0 ∧
-      Step sig proofA s (.tick (s.channels cid).finalizesAt) s' ∧
+      Step sig proofA (consensusRelation sig) actor s (.tick (s.channels cid).finalizesAt) s' ∧
       (s'.channels cid).mode s'.now = .finalized := by
   sorry
 
@@ -394,15 +416,15 @@ theorem challenge_timeout_can_happen
     channel instantly (clause 17, S4 `0070-finalizing-a-channel.md`: "the
     `conclude` method allows anyone... to immediately finalize an
     outcome... without having to wait for a challenge to expire"). Needs
-    no `AppSupports`/`ConsensusApp` machinery: `.conclude`'s `Step` case
-    checks only `SignedByAll`, which the `.sign` calls establish directly. -/
+    no `appRel`/`ConsensusApp` machinery: `.conclude`'s `Step` case checks
+    only `SignedByAll`, which the `.sign` calls establish directly. -/
 theorem conclude_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (proofLive : ProofLiveness proofA) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart),
-      Reachable sig proofA (genesis assets self pool0) s ∧
-      Step sig proofA s (.conclude fp candidate) s' ∧
+      (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart) (actor : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig proofA (consensusRelation sig) actor s (.conclude fp candidate) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
   sorry
 
@@ -412,13 +434,14 @@ theorem conclude_can_happen
     some destination (N1b/N2b briefs). -/
 theorem payout_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (proofLive : ProofLiveness proofA) :
+    (proofLive : ProofLiveness proofA) (poolSigLive : PoolSignatureLiveness) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
       (outcome : Outcome) (indices : List Nat) (h : assetIndex < outcome.length)
-      (dest : Allocation),
-      Reachable sig proofA (genesis assets self pool0) s ∧
-      Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s' ∧
+      (dest : Allocation) (actor : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig proofA (consensusRelation sig) actor s
+        (.transfer assetIndex cid claimedStateHash outcome indices) s' ∧
       dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations ∧
       0 < dest.amount ∧
       s'.pool.isLive
@@ -429,7 +452,7 @@ theorem payout_can_happen
     from `genesis` — `.sign` sequences unanimously concluding both the
     source and the target channel — in which a guarantee allocation can be
     reclaimed, reallocating the source channel's own outcome (S3 §2.4,
-    Listing 2). `.reclaim`'s `Step` case never calls `AppSupports` or
+    Listing 2). `.reclaim`'s `Step` case never calls `appRel` or
     `PoolOwnedSpendStep`, so no `ConsensusApp`/`ProofLiveness` machinery is
     needed beyond the `.sign` calls that finalize both channels. -/
 theorem reclaim_can_happen
@@ -438,10 +461,11 @@ theorem reclaim_can_happen
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (sourceChannelId : Nat) (sourceOutcome : Outcome)
       (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
-      (targetAssetIndex claimedTargetStateHash : Nat),
-      Reachable sig proofA (genesis assets self pool0) s ∧
-      Step sig proofA s (.reclaim sourceChannelId sourceOutcome sourceAssetIndex
-        indexOfTargetInSource targetOutcome targetAssetIndex claimedTargetStateHash) s' ∧
+      (targetAssetIndex claimedTargetStateHash : Nat) (actor : Actor),
+      Reachable sig proofA (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig proofA (consensusRelation sig) actor s (.reclaim sourceChannelId sourceOutcome
+        sourceAssetIndex indexOfTargetInSource targetOutcome targetAssetIndex
+        claimedTargetStateHash) s' ∧
       s'.channels sourceChannelId ≠ s.channels sourceChannelId := by
   sorry
 
@@ -467,9 +491,11 @@ value in the pool exists only as notes."
     not the adjudicator). -/
 theorem payout_takes_no_fee
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
     (outcome : Outcome) (indices : List Nat)
-    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s') :
+    (hstep : Step sig proofA appRel actor s
+      (.transfer assetIndex cid claimedStateHash outcome indices) s') :
     ∀ h : assetIndex < outcome.length,
       let (_, _, totalPayouts) := transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
@@ -483,25 +509,31 @@ theorem payout_takes_no_fee
     a channel... without the inherited... bulk payout path"). -/
 theorem conclude_moves_no_value
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
-    (hstep : Step sig proofA s (.conclude fp candidate) s') :
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+    (hstep : Step sig proofA appRel actor s (.conclude fp candidate) s') :
     s'.pool = s.pool ∧ s'.holdings = s.holdings := by
   sorry
 
 /-- The bulk paths revert: `transferAllAssets` and
     `concludeAndTransferAllAssets` have no successful `Step`, for any
-    arguments (N3 brief S2; R1 brief, "Behavior (unchanged)": "`
-    transferAllAssets` and `concludeAndTransferAllAssets` revert with a
-    use-`transfer` message instead of running the inherited bulk path.").
-    DEPARTURE (`departures-found.md` item 5): the current code has no such
-    override and both calls succeed, which is the bug this statement rules
-    out of the model. -/
+    arguments, any application rule and any actor (N3 brief S2; R1 brief,
+    "Behavior (unchanged)": "`transferAllAssets` and
+    `concludeAndTransferAllAssets` revert with a use-`transfer` message
+    instead of running the inherited bulk path."). DEPARTURE
+    (`departures-found.md` item 5): the current code has no such override
+    and both calls succeed, which is the bug this statement rules out of
+    the model. -/
 theorem bulk_paths_never_succeed
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (cid : Nat) (outcome : Outcome) (claimedStateHash : Nat)
     (fp : FixedPart) (candidate : VariablePart) :
-    (∀ s s', ¬ Step sig proofA s (.bulkTransferAllAssets cid outcome claimedStateHash) s') ∧
-    (∀ s s', ¬ Step sig proofA s (.bulkConcludeAndTransferAllAssets fp candidate) s') := by
+    (∀ (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+        (actor : Actor) (s s' : AdjudicatorState),
+      ¬ Step sig proofA appRel actor s (.bulkTransferAllAssets cid outcome claimedStateHash) s') ∧
+    (∀ (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+        (actor : Actor) (s s' : AdjudicatorState),
+      ¬ Step sig proofA appRel actor s (.bulkConcludeAndTransferAllAssets fp candidate) s') := by
   sorry
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
@@ -514,9 +546,10 @@ theorem bulk_paths_never_succeed
     claim the brief names separately from plain conservation. -/
 theorem value_exists_only_as_notes
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (asset cid : Nat)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s)
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s)
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
     ∃ c, s.holdings asset cid = some c ∧ s.pool.isLive c ∧
       (s.pool.preimageOf c).map NotePreimage.value = some held := by
@@ -549,9 +582,10 @@ theorem heldValue_zero_iff_no_collateral (s : AdjudicatorState) (asset cid : Nat
     reachable state. -/
 theorem configuredAssets_invariant
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState)
-    (hreach : Reachable sig proofA (genesis assets self pool0) s) :
+    (hreach : Reachable sig proofA appRel (genesis assets self pool0) s) :
     s.configuredAssets = assets := by
   sorry
 
@@ -564,9 +598,11 @@ theorem configuredAssets_invariant
     `< 1` check a mutant could weaken unnoticed. -/
 theorem zero_payout_mints_nothing
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
     (outcome : Outcome) (indices : List Nat)
-    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (hstep : Step sig proofA appRel actor s
+      (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) (dest : Allocation)
     (hdest : dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations) (hzero : dest.amount = 0) :
     ¬ ∃ pre : NotePreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
@@ -584,9 +620,11 @@ theorem zero_payout_mints_nothing
     left pointing at a `0`-value commitment"). -/
 theorem full_payout_leaves_no_remainder
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
     (outcome : Outcome) (indices : List Nat)
-    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (hstep : Step sig proofA appRel actor s
+      (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length)
     (hfull :
       (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
@@ -602,9 +640,11 @@ theorem full_payout_leaves_no_remainder
     0)` field, `Notes.lean`). -/
 theorem nullify_iff_commitment_was_some
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
-    (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex cid claimedStateHash : Nat)
     (outcome : Outcome) (indices : List Nat)
-    (hstep : Step sig proofA s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (hstep : Step sig proofA appRel actor s
+      (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
       s'.pool.usedNullifiers = s.pool.usedNullifiers := by
