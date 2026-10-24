@@ -130,12 +130,12 @@ def SignedByAll (sig : SignatureAssumptions) (s : AdjudicatorState)
 
 /-- The state at deployment: no channel ever touched, no collateral, no
     digest signed yet, the deploy-time asset list and the adjudicator's
-    own identity, clock at `0`. Phase 1 brief: "A safety statement holds
-    at every state reachable from deployment by any sequence of calls by
-    any caller" — `genesis` is THE deployment state every reachability
-    claim anchors to (`Reachability.lean`'s `Reachable`), not an arbitrary
-    starting state a theorem could otherwise leave unconstrained.
-    `assets`/`self` stay
+    own identity, clock at `0`. A safety statement holds at every state
+    reachable from deployment by any sequence of calls by any caller, so
+    `genesis` is THE deployment state every reachability claim anchors
+    to (`Reachability.lean`'s `Reachable`), not an arbitrary starting
+    state a theorem could otherwise leave unconstrained. `assets`/`self`
+    stay
     parameters: the deploy-time asset list and the adjudicator's own
     address are themselves constructor arguments
     (`ArmadaNitroAdjudicator`'s constructor), fixed once per deployment.

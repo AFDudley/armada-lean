@@ -1,16 +1,15 @@
 /-
   ArmadaLean.Adjudicator.Safety — the theorem STATEMENTS stage A asks for.
-  Every proof is `sorry`; the operator reviews the statements before any
-  proof work starts (Phase 1 brief, "What to produce now (stage A)").
+  Every theorem's proof is `sorry`; the proofs are not written yet.
 
-  Phase 1 brief, "Why this model exists": the adjudicator holds other
-  people's money, so this model must show three things: (1) no caller can
-  take money they are not owed; (2) no caller can stop someone from
-  getting money they are owed; (3) no caller can create or destroy value in
-  the pool. Every theorem below is grounded in one of these three, stated
-  over the REACHABLE set (`Reachability.lean`), never over one step from a
-  chosen state, per the brief: "A safety statement holds at every state
-  reachable from deployment by any sequence of calls by any caller."
+  The adjudicator holds other people's money, so this model shows three
+  things: (1) no caller can take money they are not owed; (2) no caller
+  can stop someone from getting money they are owed; (3) no caller can
+  create or destroy value in the pool. Every theorem below is grounded
+  in one of these three, stated over the REACHABLE set
+  (`Reachability.lean`), never over one step from a chosen state: a
+  safety statement holds at every state reachable from deployment by
+  any sequence of calls by any caller.
 
   This model also requires: every finalizable outcome is paid out as
   notes, with no fee, with pool value conserved; and no caller can make
@@ -274,9 +273,9 @@ theorem notedValue_conserved
     s'.pool.notedValue token = s.pool.notedValue token := by
   sorry
 
-/-- The reachable-set form of `notedValue_conserved` (Phase 1 brief: "state
-    it over that reachable set, not over one step from a chosen state"):
-    every reachable state's `notedValue` per token equals the DEPLOYED
+/-- The reachable-set form of `notedValue_conserved`, stated over the
+    REACHABLE set rather than over one step from a chosen state: every
+    reachable state's `notedValue` per token equals the DEPLOYED
     pool's — the adjudicator only ever reassigns which note backs a
     token's value, starting from whatever the shared Armada pool already
     held when this adjudicator was deployed (`State.lean`'s `genesis`). -/
@@ -343,10 +342,10 @@ def consensusRelation (sig : SignatureAssumptions) (s : AdjudicatorState)
 /-!
 ## D. "Can happen": the adjudicator's reason for existing
 
-Phase 1 brief: "Also state, for each thing the adjudicator is for (a
-deposit, a payout, a top-up, a reclaim, a conclude, a challenge that times
-out), that it can actually happen. A model in which nothing can happen
-satisfies every safety statement, and proves nothing." Every statement
+For each thing the adjudicator is for — a deposit, a payout, a top-up,
+a reclaim, a conclude, a challenge that times out — this model also
+states that it can actually happen. A model in which nothing can
+happen satisfies every safety statement, and proves nothing. Every statement
 below quantifies `HashAssumptions`, `SignatureAssumptions` and whichever
 liveness assumptions its own call sequence needs UNIVERSALLY, with only
 the EXECUTION (the deployment parameters and the call sequence)
@@ -519,11 +518,11 @@ theorem reclaim_can_happen
 /-!
 ## E. Behavior-brief statements, on top of the three questions
 
-Phase 1 brief: "The behavior briefs add rules on top of the three
-questions. State them too: the only fee is the shield-in fee, so a payout
-takes no fee; `conclude` finalizes without moving value, and the bulk
-paths `transferAllAssets` and `concludeAndTransferAllAssets` revert (N3);
-value in the pool exists only as notes."
+This model also states four rules on top of the three questions: the
+only fee is the shield-in fee, so a payout takes no fee; `conclude`
+finalizes without moving value; the bulk paths `transferAllAssets` and
+`concludeAndTransferAllAssets` revert; and value in the pool exists
+only as notes.
 -/
 
 /-- A payout takes no fee: `transfer` mints exactly as much as it debits —
