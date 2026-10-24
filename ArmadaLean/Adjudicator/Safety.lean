@@ -144,29 +144,38 @@ caller can BLOCK another caller's operation, only interleave with it.
 /-- Which harm this rules out: once all participants have signed a final
     state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
     point, Figure 11), no other caller's actions — in any number, in any
-    order, by any `Actor`, before this theorem's own calls run — can
-    prevent the honest participant `h` from obtaining a spendable note
-    worth their allocation. This is the Lean statement of "A's unbeatable
-    strategy ⟹ the finalized outcome": the fixed strategy is `conclude`
-    (if not already concluded) then `transfer`, and it succeeds after ANY
-    interleaving (`interleaved`) another caller runs first — formalizing
-    §4.3's two assumptions (unimpeded, cannot be front-run) as "no
-    interleaving can make the strategy's own `Step` preconditions false".
-    `hsigned` reads unanimous signing at `s`; since `.sign` only ever adds
-    to `signedBy`, and only in the ACTING participant's own row
-    (`Operations.lean`'s `.sign` case — no step in `interleaved`, whatever
-    `Actor` it names, can add to or remove from `h`'s row), `interleaved`
-    cannot UN-sign anything, so `SignedByAll` still holds at `mid`.
-    "Getting money owed" is a live note in the pool, matching this
-    model's note-based payment (`Notes.lean`): `h` can later spend it
-    with their own key, which is the Armada-layer meaning of "paid" (lab
-    book decision 9: the collateral "never leaves the pool"). -/
+    order, by any `Actor` OTHER than `h` themselves, before this
+    theorem's own calls run — can prevent the honest participant `h` from
+    obtaining a spendable note worth their allocation. This is the Lean
+    statement of "A's unbeatable strategy ⟹ the finalized outcome": the
+    fixed strategy is `conclude` (if not already concluded) then
+    `transfer`, and it succeeds after ANY interleaving (`interleaved`)
+    another caller runs first — formalizing §4.3's two assumptions
+    (unimpeded, cannot be front-run) as "no interleaving can make the
+    strategy's own `Step` preconditions false". `hnotActor` excludes `h`'s
+    OWN actor identities (the Nitro identity `h`, and the pool key
+    `hPoolKey` if `h` has one) from `interleaved`: without it,
+    `interleaved` could contain a step only `h` themselves could take
+    (`.sign h d` for an arbitrary `d` `h` never chose, `Operations.lean`'s
+    actor check) and have it count as "the adversary's" doing, when it is
+    really `h`'s own action — "the adversary could sign as `h`"
+    (coordinator correction, this session). `h`'s own steps belong only
+    in the witnessed `payCalls`, never in `interleaved`. `hsigned` reads
+    unanimous signing at `s`; since `.sign` only ever adds to `signedBy`,
+    and only in the ACTING participant's own row, `interleaved` (now
+    excluding `h`'s own actor) cannot UN-sign anything, so `SignedByAll`
+    still holds at `mid`. "Getting money owed" is a live note in the
+    pool, matching this model's note-based payment (`Notes.lean`): `h`
+    can later spend it with their own key, which is the Armada-layer
+    meaning of "paid" (lab book decision 9: the collateral "never leaves
+    the pool"). -/
 theorem unbeatable_pays
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
-    (h : Nat) (assetIndex : Nat) (hAssetIdx : assetIndex < candidate.outcome.length)
+    (h : Nat) (hPoolKey : Option (Nat × Nat)) (assetIndex : Nat)
+    (hAssetIdx : assetIndex < candidate.outcome.length)
     (owed : Nat) (dest : Allocation)
     (hreach : Reachable sig proofA appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
     (hsigned : SignedByAll sig s fp candidate)
@@ -174,6 +183,8 @@ theorem unbeatable_pays
     (hh_dest : dest.destination = h) (howed : dest.amount = owed) :
     ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
       AppliesAll sig proofA appRel s interleaved mid →
+      (∀ actor call, (actor, call) ∈ interleaved →
+        actor ≠ Actor.nitro h ∧ ∀ pk, hPoolKey = some pk → actor ≠ Actor.pool pk) →
       ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
         AppliesAll sig proofA appRel mid payCalls final ∧
         ∃ pre : NotePreimage, pre.npk = h ∧
@@ -189,16 +200,19 @@ theorem unbeatable_pays
     challenge is registered naming `candidate` and no higher-turn state is
     presented before `finalizesAt`, the honest participant `h`'s strategy
     — `tick` to `finalizesAt`, then `transfer` — succeeds after any
-    interleaving by any `Actor`, matching `unbeatable_pays` for the
-    non-cooperative case (Nitro-2019-219.pdf §4.4 Figure 11's other
-    universally finalizable point and S4
-    `0040-lifecycle-of-a-channel.md`'s `Challenge --timeout--> Finalized'`). -/
+    interleaving by any `Actor` OTHER than `h`, matching `unbeatable_pays`
+    for the non-cooperative case (Nitro-2019-219.pdf §4.4 Figure 11's
+    other universally finalizable point and S4
+    `0040-lifecycle-of-a-channel.md`'s `Challenge --timeout--> Finalized'`).
+    `hnotActor` excludes `h`'s own actor identities from `interleaved`,
+    for the same reason `unbeatable_pays` does. -/
 theorem unbeatable_pays_after_timeout
     (sig : SignatureAssumptions) (proofA : ProofAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
-    (candidate : VariablePart) (challenger h assetIndex : Nat)
+    (candidate : VariablePart) (challenger h : Nat) (hPoolKey : Option (Nat × Nat))
+    (assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length) (owed : Nat) (dest : Allocation)
     (hreach : Reachable sig proofA appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
     (hsupported : appRel s fp proof candidate)
@@ -209,6 +223,8 @@ theorem unbeatable_pays_after_timeout
     (hh_dest : dest.destination = h) (howed : dest.amount = owed) :
     ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
       AppliesAll sig proofA appRel s interleaved mid →
+      (∀ actor call, (actor, call) ∈ interleaved →
+        actor ≠ Actor.nitro h ∧ ∀ pk, hPoolKey = some pk → actor ≠ Actor.pool pk) →
       (∀ highTurn, highTurn ≤ candidate.turnNum ∨
         ¬ ∃ (anyActor : Actor) (s'' : AdjudicatorState), Step sig proofA appRel anyActor mid
           (.challenge fp proof ⟨candidate.outcome, candidate.appData, highTurn, candidate.isFinal⟩
