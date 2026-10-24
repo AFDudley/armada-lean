@@ -15,9 +15,8 @@
   theorem could leave unconstrained (coordinator correction, prior
   session).
 
-  `AppliesAll`/`Reachable` carry the same `SignatureAssumptions`/
-  `ProofAssumptions`/`appRel` parameters `Step` does, since they are built
-  from `Step`.
+  `AppliesAll`/`Reachable` carry the same `SignatureAssumptions`/`appRel`
+  parameters `Step` does, since they are built from `Step`.
 -/
 import ArmadaLean.Adjudicator.Operations
 
@@ -29,36 +28,36 @@ namespace ArmadaLean.Adjudicator
     reordered). Each pair names who actually took that step — unconstrained
     for most calls, restricted to the key holder for `.sign`/`.signNote`
     (`Operations.lean`'s `Step`). -/
-def AppliesAll (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+def AppliesAll (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (s : AdjudicatorState) : List (Actor × Call) → AdjudicatorState → Prop
   | [], s' => s' = s
   | (actor, call) :: rest, s' =>
-      ∃ mid, Step sig proofA appRel actor s call mid ∧ AppliesAll sig proofA appRel mid rest s'
+      ∃ mid, Step sig appRel actor s call mid ∧ AppliesAll sig appRel mid rest s'
 
 /-- Every state reachable from deployment (`genesis assets self pool0`) by
     SOME sequence of `(actor, call)` steps by SOME (unrestricted) set of
-    callers, under assumptions `sig`/`proofA`/`appRel`. The
-    reflexive-transitive closure of `Step`, stated through `AppliesAll` so
-    a witnessing call sequence is always at hand for the liveness theorems
-    in `Safety.lean`. -/
-def Reachable (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+    callers, under assumptions `sig`/`appRel`. The reflexive-transitive
+    closure of `Step`, stated through `AppliesAll` so a witnessing call
+    sequence is always at hand for the liveness theorems in
+    `Safety.lean`. -/
+def Reachable (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (deployed s : AdjudicatorState) : Prop :=
-  ∃ calls : List (Actor × Call), AppliesAll sig proofA appRel deployed calls s
+  ∃ calls : List (Actor × Call), AppliesAll sig appRel deployed calls s
 
-theorem reachable_refl (sig : SignatureAssumptions) (proofA : ProofAssumptions)
+theorem reachable_refl (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (deployed : AdjudicatorState) : Reachable sig proofA appRel deployed deployed :=
+    (deployed : AdjudicatorState) : Reachable sig appRel deployed deployed :=
   ⟨[], rfl⟩
 
 /-- `AppliesAll` composes along list append. -/
-theorem appliesAll_append {sig : SignatureAssumptions} {proofA : ProofAssumptions}
+theorem appliesAll_append {sig : SignatureAssumptions}
     {appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop}
     {s mid s' : AdjudicatorState} {calls1 calls2 : List (Actor × Call)}
-    (h1 : AppliesAll sig proofA appRel s calls1 mid)
-    (h2 : AppliesAll sig proofA appRel mid calls2 s') :
-    AppliesAll sig proofA appRel s (calls1 ++ calls2) s' := by
+    (h1 : AppliesAll sig appRel s calls1 mid)
+    (h2 : AppliesAll sig appRel mid calls2 s') :
+    AppliesAll sig appRel s (calls1 ++ calls2) s' := by
   induction calls1 generalizing s with
   | nil =>
     have hmid : mid = s := h1
@@ -68,12 +67,12 @@ theorem appliesAll_append {sig : SignatureAssumptions} {proofA : ProofAssumption
     obtain ⟨m, hc, hrest⟩ := h1
     exact ⟨m, hc, ih hrest⟩
 
-theorem reachable_step {sig : SignatureAssumptions} {proofA : ProofAssumptions}
+theorem reachable_step {sig : SignatureAssumptions}
     {appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop}
     {deployed s s' : AdjudicatorState} {actor : Actor} {call : Call}
-    (h : Reachable sig proofA appRel deployed s)
-    (hstep : Step sig proofA appRel actor s call s') :
-    Reachable sig proofA appRel deployed s' := by
+    (h : Reachable sig appRel deployed s)
+    (hstep : Step sig appRel actor s call s') :
+    Reachable sig appRel deployed s' := by
   obtain ⟨calls, happ⟩ := h
   exact ⟨calls ++ [(actor, call)], appliesAll_append happ ⟨s', hstep, rfl⟩⟩
 

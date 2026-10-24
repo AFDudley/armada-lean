@@ -8,8 +8,11 @@
   things no caller can change: that the hash cannot be inverted or
   collided, that a signature cannot be forged, and that an accepted proof
   means its constraints hold." This file states the first two. The third
-  (proof soundness) sits in `Notes.lean`, next to the owned-spend circuit
-  it is about, as `ProofAssumptions`.
+  (proof soundness, owned-spend circuit) now sits in `ArmadaLean.
+  TransactOwned`/`ArmadaLean.PoolOwned` (root `ArmadaLean` modules,
+  branch `owned-notes`): contract-owned notes are a POOL feature, not an
+  adjudicator feature (operator ruling, this session), so the owned
+  circuit's own assumptions moved out of this adjudicator model entirely.
 
   Each assumption is a FIELD of a named structure (`HashAssumptions`,
   `SignatureAssumptions`), never a bare global `axiom`. A bare axiom is a
