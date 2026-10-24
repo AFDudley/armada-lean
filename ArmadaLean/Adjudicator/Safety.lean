@@ -141,7 +141,10 @@ theorem transfer_pays_only_the_finalized_outcome
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.1,
       ∃ original ∈ (outcome.get ⟨assetIndex, h⟩).allocations,
         paid.destination = original.destination ∧ paid.amount ≤ original.amount := by
-  sorry
+  obtain ⟨_hidx, hmode, hsh, hoh, _hstrict, _hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  exact ⟨⟨hmode, hsh, hoh⟩,
+    transferEffects_exit_provenance (outcome.get ⟨assetIndex, h⟩).allocations
+      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices⟩
 
 /-!
 ## B. No caller can stop someone from getting money they are owed
@@ -551,7 +554,16 @@ theorem payout_takes_no_fee
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
       totalPayouts + (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid - totalPayouts)
         = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
-  sorry
+  intro h
+  show (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 +
+      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)
+      = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid
+  have hle := transferEffects_totalPayouts_le (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
+  omega
 
 /-- `conclude` finalizes without moving value: `conclude`'s `Step` case
     touches only `s'.channels`; `s'.pool` and `s'.holdings` are provably
