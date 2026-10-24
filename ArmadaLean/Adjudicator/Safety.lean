@@ -275,7 +275,103 @@ theorem notedValue_conserved
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (token : Nat)
     (hstep : Step sig appRel actor s call s') :
     s'.pool.notedValue token = s.pool.notedValue token := by
-  sorry
+  cases call with
+  | deposit cid expectedHeld asset amount =>
+    obtain ⟨_hcfg1, _hheld, _hext, _hpos, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, hdstep, _hholdseq⟩ := hinner
+    obtain ⟨_hown, _hcommit, _htoken, hN, hM, hC, rest, spent', newRoot, records,
+      _hEmergency, _hWithdrawOnly, _hRoot, hRemove, _hNullify, _hValid, heq⟩ := hdstep
+    unfold PoolState.notedValue
+    rw [heq]
+    show listSum ((if token = w.token then transactAllOutputs w ++ rest else s.pool.live token).map
+        CommitmentPreimage.value) = listSum ((s.pool.live token).map CommitmentPreimage.value)
+    by_cases ht : token = w.token
+    · rw [if_pos ht, ht]
+      have hbal := transact_balance hN hM hC (newNotes := transactAllOutputs w)
+        (unshieldTail := []) (by simp)
+      simp only [List.map_nil, listSum] at hbal
+      have hsum := removeAll_sum hRemove
+      simp only [List.map_append, listSum_append]
+      omega
+    · rw [if_neg ht]
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
+    unfold PoolState.notedValue
+    by_cases ht : token = (outcome.get ⟨assetIndex, hidx⟩).asset
+    · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, spent', newRoot, records, _hself2, _htoken, hnewnotes,
+          _hemerg, _hwithdraw, _hroot, _hmarkspent, _hvalid, heq⟩ := hmatch
+        have hbal := transactOwned_balance (Nat.zero_le 8) hM hC
+        have hspent0 : listSum ((ownedSpentNotes pub w).map CommitmentPreimage.value) = 0 := by
+          have hnil : ownedSpentNotes pub w = [] := by
+            apply List.eq_nil_of_length_eq_zero
+            unfold ownedSpentNotes
+            simp
+          rw [hnil]; rfl
+        rw [hspent0] at hbal
+        rw [heq, ← hnewnotes]
+        show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then
+            ownedNewNotes w ++ s.pool.live token
+            else s.pool.live token).map CommitmentPreimage.value) =
+          listSum ((s.pool.live token).map CommitmentPreimage.value)
+        rw [if_pos ht, ht]
+        simp only [List.map_append, listSum_append]
+        omega
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, records, _hself2, _htoken, hnewnotes,
+          _hceq, _hroot, hremove, _hmarkspent, _hvalid, heq⟩ := hmatch
+        have hbal := transactOwned_balance (by decide) hM hC
+        have hsum := removeAll_sum hremove
+        rw [heq, ← hnewnotes]
+        show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then
+            ownedNewNotes w ++ rest else s.pool.live token).map CommitmentPreimage.value) =
+          listSum ((s.pool.live token).map CommitmentPreimage.value)
+        rw [if_pos ht, ht]
+        simp only [List.map_append, listSum_append] at hsum ⊢
+        omega
+    · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, spent', newRoot, records, _hself2, _htoken, hnewnotes,
+          _hemerg, _hwithdraw, _hroot, _hmarkspent, _hvalid, heq⟩ := hmatch
+        rw [heq]
+        show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
+            else s.pool.live token).map CommitmentPreimage.value) =
+          listSum ((s.pool.live token).map CommitmentPreimage.value)
+        rw [if_neg ht]
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, records, _hself2, _htoken, hnewnotes,
+          _hceq, _hroot, hremove, _hmarkspent, _hvalid, heq⟩ := hmatch
+        rw [heq]
+        show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
+            else s.pool.live token).map CommitmentPreimage.value) =
+          listSum ((s.pool.live token).map CommitmentPreimage.value)
+        rw [if_neg ht]
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpool, _, _, _, _, _⟩ := hstep
+    rw [hpool]
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpool, _, _, _, _, _⟩ := hstep
+    rw [hpool]
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpool, _, _⟩ := hstep
+    rw [hpool]
+  | reclaim a b c d e f g =>
+    obtain ⟨_, _, _, _, _, _, hpool, _, _, _, _, _, _⟩ := hstep
+    rw [hpool]
+  | bulkTransferAllAssets a b c => exact hstep.elim
+  | bulkConcludeAndTransferAllAssets a b => exact hstep.elim
+  | tick newNow =>
+    obtain ⟨_, _, hpool, _, _, _, _, _, _⟩ := hstep
+    rw [hpool]
+  | sign p d =>
+    obtain ⟨_, _, hpool, _, _, _, _, _, _⟩ := hstep
+    rw [hpool]
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpool, _, _, _, _, _, _⟩ := hstep
+    rw [hpool]
 
 /-- The reachable-set form of `notedValue_conserved`, stated over the
     REACHABLE set rather than over one step from a chosen state: every
