@@ -474,6 +474,18 @@ structure PoolState where
   ownedRandomOf : OwnedRandomRegistry
   shieldsPaused : Bool
 
+/-- The total value of `token`'s currently-live notes: the pool's own ghost
+    bookkeeping (`live`) read as a sum, not the custody ledger (`held`) — the
+    quantity a caller's step must leave unchanged for one token to say "this
+    step moved no value in or out of the pool" (`ArmadaLean.Adjudicator.
+    notedValue_conserved`). `HeldInvariant` (`PoolSafety.lean`) proves this
+    equals `held t` at every reachable state; the two are definitionally
+    different quantities (one a ghost sum, one the on-chain custody field),
+    kept apart so a one-step claim about this sum does not silently lean on
+    reachability to hold. -/
+def PoolState.notedValue (s : PoolState) (token : Nat) : Nat :=
+  listSum ((s.live token).map CommitmentPreimage.value)
+
 /-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
     which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): no leaves, no
     spent nullifiers, the one root of the empty tree (`ArmadaLean.Merkle.treeRoot
