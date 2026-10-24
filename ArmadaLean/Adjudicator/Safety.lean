@@ -884,6 +884,35 @@ theorem nullify_iff_commitment_was_some
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
       s'.pool.spent = s.pool.spent := by
-  sorry
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
+  have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hpoolstep
+  obtain ⟨_htoken, _hemerg, _hwithdraw, hmatch⟩ := hpoolstep
+  constructor
+  · intro hnone
+    rw [hnone] at hmatch
+    obtain ⟨pub, _hself2, _hverify, _hcommits, _hmarkspent, heq⟩ := hmatch
+    rw [heq]
+  · intro hpost
+    rcases hcase : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | c
+    · rfl
+    · exfalso
+      rw [hcase] at hmatch
+      obtain ⟨pub, w, root, _hroot, _hself2, _hverify, _hcommits, _hconstr, _hmerkle, _hceq,
+        rest, _hremove, spent', hmarkspent, heq⟩ := hmatch
+      rw [heq] at hpost
+      simp only at hpost
+      rw [List.ofFn_succ, List.ofFn_zero] at hmarkspent
+      rw [markSpent_single] at hmarkspent
+      split at hmarkspent
+      · exact absurd hmarkspent (by simp)
+      · rename_i hne
+        have heq2 := Option.some.inj hmarkspent
+        rw [← heq2] at hpost
+        have hlen : (pub.nullifiers 0 :: s.pool.spent).length = s.pool.spent.length := by
+          rw [hpost]
+        simp at hlen
 
 end ArmadaLean.Adjudicator
