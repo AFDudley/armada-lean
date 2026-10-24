@@ -302,7 +302,7 @@ theorem notedValue_conserved
     by_cases ht : token = (outcome.get ⟨assetIndex, hidx⟩).asset
     · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', newRoot, _hself2, _htoken, hnewnotes,
+        obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
           _hemerg, _hwithdraw, _hroot, _hmarkspent, heq⟩ := hmatch
         have hbal := transactOwned_balance (Nat.zero_le 8) hM hC
         have hspent0 : listSum ((ownedSpentNotes pub w).map CommitmentPreimage.value) = 0 := by
@@ -312,29 +312,26 @@ theorem notedValue_conserved
             simp
           rw [hnil]; rfl
         rw [hspent0] at hbal
-        rw [heq, ← hnewnotes]
-        show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then
-            ownedNewNotes w ++ s.pool.live token
-            else s.pool.live token).map CommitmentPreimage.value) =
-          listSum ((s.pool.live token).map CommitmentPreimage.value)
+        rw [heq]
+        dsimp only
+        rw [← hnewnotes]
         rw [if_pos ht, ht]
         simp only [List.map_append, listSum_append]
         omega
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hself2, _htoken, hnewnotes,
+        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
           _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
         have hbal := transactOwned_balance (by decide) hM hC
         have hsum := removeAll_sum hremove
-        rw [heq, ← hnewnotes]
-        show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then
-            ownedNewNotes w ++ rest else s.pool.live token).map CommitmentPreimage.value) =
-          listSum ((s.pool.live token).map CommitmentPreimage.value)
+        rw [heq]
+        dsimp only
+        rw [← hnewnotes]
         rw [if_pos ht, ht]
         simp only [List.map_append, listSum_append] at hsum ⊢
         omega
     · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', newRoot, _hself2, _htoken, hnewnotes,
+        obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
           _hemerg, _hwithdraw, _hroot, _hmarkspent, heq⟩ := hmatch
         rw [heq]
         show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
@@ -342,7 +339,7 @@ theorem notedValue_conserved
           listSum ((s.pool.live token).map CommitmentPreimage.value)
         rw [if_neg ht]
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hself2, _htoken, hnewnotes,
+        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
           _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
         rw [heq]
         show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
@@ -930,7 +927,7 @@ theorem zero_payout_mints_nothing
       (outcome.get ⟨assetIndex, hidx⟩).asset s.self
     rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
     · rw [hc] at hmatch
-      obtain ⟨w, pub, hM, hC, spent', newRoot, _hself2, _htoken, _hnewnotes,
+      obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
         _hemerg, _hwithdraw, _hroot, _hmarkspent, heq⟩ := hmatch
       rw [heq] at hin
       simp only at hin
@@ -938,7 +935,7 @@ theorem zero_payout_mints_nothing
       · exact hnz pre hc1 hval
       · exact hnin hc2
     · rw [hc] at hmatch
-      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hself2, _htoken, _hnewnotes,
+      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
         _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
       rw [heq] at hin
       simp only at hin
@@ -951,14 +948,14 @@ theorem zero_payout_mints_nothing
   · have heqlive : s'.pool.live pre.token = s.pool.live pre.token := by
       rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', newRoot, _hself2, _htoken, _hnewnotes,
+        obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
           _hemerg, _hwithdraw, _hroot, _hmarkspent, heq⟩ := hmatch
         rw [heq]
         show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
             else s.pool.live pre.token) = s.pool.live pre.token
         rw [if_neg htok]
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hself2, _htoken, _hnewnotes,
+        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
           _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
         rw [heq]
         show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
@@ -1048,7 +1045,7 @@ theorem nullify_iff_commitment_was_some
   constructor
   · intro hnone
     rw [hnone] at hmatch
-    obtain ⟨w, pub, hM, hC, spent', newRoot, _hself2, _htoken, _hnewnotes,
+    obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
       _hemerg, _hwithdraw, _hroot, hmarkspent, heq⟩ := hmatch
     rw [heq]
     show spent' = s.pool.spent
@@ -1061,7 +1058,7 @@ theorem nullify_iff_commitment_was_some
     · rfl
     · exfalso
       rw [hcase] at hmatch
-      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hself2, _htoken, _hnewnotes,
+      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
         _hceq, _hroot, _hremove, hmarkspent, heq⟩ := hmatch
       rw [heq] at hpost
       simp only at hpost

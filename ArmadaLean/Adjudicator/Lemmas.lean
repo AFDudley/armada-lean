@@ -351,7 +351,9 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
     obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨N, M, w, pub, idx, hdstep, hholdseq⟩ := hinner
     obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
-      _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hValid, hidxrec, heq⟩ := hdstep
+      _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+      fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
     intro qasset qcid qc hc
     rw [hholdseq] at hc
     unfold update at hc
@@ -371,7 +373,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
           rw [hval] at hv
           have hcheck : amount = 0 := hv
           omega
-        have hread := applyRecords_reads hValid s.pool.preimageOf (pub.commitmentsOut idx)
+        have hread := applyRecords_reads hvalid s.pool.preimageOf (pub.commitmentsOut idx)
           ⟨w.npkOut idx, w.token, w.valueOut idx⟩ hidxrec hnz
         rw [hqc] at hread
         refine ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, ?_, ?_, ?_⟩
@@ -383,12 +385,12 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
         obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv qasset qcid qc hc
         refine ⟨pre_old, ?_, hval_old, hconsist_old⟩
         rw [heq]
-        exact applyRecords_preserves_known hValid s.pool.preimageOf qc pre_old hpre_old hconsist_old
+        exact applyRecords_preserves_known hvalid s.pool.preimageOf qc pre_old hpre_old hconsist_old
     · rw [if_neg ha] at hc
       obtain ⟨pre_old, hpre_old, hval_old, hconsist_old⟩ := hinv qasset qcid qc hc
       refine ⟨pre_old, ?_, hval_old, hconsist_old⟩
       rw [heq]
-      exact applyRecords_preserves_known hValid s.pool.preimageOf qc pre_old hpre_old hconsist_old
+      exact applyRecords_preserves_known hvalid s.pool.preimageOf qc pre_old hpre_old hconsist_old
   | challenge fp proof candidate challenger =>
     obtain ⟨_, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qc hc
@@ -511,13 +513,29 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
       exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre_old hpre_old hconsist_old
     rcases hc0 : s.holdings assetOutcome.asset cid with _ | c0
     · rw [hc0] at hmatch
-      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, heq⟩ := hmatch
+      obtain ⟨w, pub, _, hC, _, _, hNonZero, _, htoken, hnewnotes, _, _, _, _, heq⟩ := hmatch
+      have hrecordseq : ownedOutputRecords w pub = ((transferEffects assetOutcome.allocations
+          (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
+            (fun a => if a.amount = 0 then none
+              else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
+          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)) := by
+        have hstep1 := congrArg
+          (List.map (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) hnewnotes
+        rw [← hstep1]
+        unfold ownedOutputRecords ownedNewNotes
+        rw [List.map_ofFn]
+        congr 1
+        funext j
+        congr 1
+        exact (hC.outputs j).trans (by rw [htoken])
       have hpre0 : s'.pool.preimageOf = applyRecords s.pool.preimageOf
           (((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
               (fun a => if a.amount = 0 then none
                 else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
             (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
             (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) := by
+        rw [← hrecordseq]
         exact congrArg PoolState.preimageOf heq
       by_cases heqch : qasset = assetOutcome.asset ∧ qcid = cid
       · obtain ⟨ha, hcid⟩ := heqch
@@ -536,13 +554,29 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
           · rw [if_neg ha] at hc; exact hc
         exact hunrelated hpre0 hc'
     · rw [hc0] at hmatch
-      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, heq⟩ := hmatch
+      obtain ⟨w, pub, _, hC, _, _, _, hNonZero, _, htoken, hnewnotes, _, _, _, _, heq⟩ := hmatch
+      have hrecordseq : ownedOutputRecords w pub = ((transferEffects assetOutcome.allocations
+          (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
+            (fun a => if a.amount = 0 then none
+              else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
+          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
+          (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre)) := by
+        have hstep1 := congrArg
+          (List.map (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) hnewnotes
+        rw [← hstep1]
+        unfold ownedOutputRecords ownedNewNotes
+        rw [List.map_ofFn]
+        congr 1
+        funext j
+        congr 1
+        exact (hC.outputs j).trans (by rw [htoken])
       have hpre0 : s'.pool.preimageOf = applyRecords s.pool.preimageOf
           (((transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.1.filterMap
               (fun a => if a.amount = 0 then none
                 else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) ++
             (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])).map
             (fun pre => (commitment pre.npk assetOutcome.asset pre.value, pre))) := by
+        rw [← hrecordseq]
         exact congrArg PoolState.preimageOf heq
       by_cases heqch : qasset = assetOutcome.asset ∧ qcid = cid
       · obtain ⟨ha, hcid⟩ := heqch
