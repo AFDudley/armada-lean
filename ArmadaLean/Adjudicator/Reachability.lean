@@ -2,10 +2,10 @@
   ArmadaLean.Adjudicator.Reachability — every state any sequence of calls
   by any caller can reach, from the deployment state.
 
-  Phase 1 brief: "A safety statement holds at every state reachable from
-  deployment by any sequence of calls by any caller, so state it over that
-  reachable set, not over one step from a chosen state." Nitro-2019-219.pdf
-  §3.3: "There is no restriction on who can trigger the operations" — this
+  A safety statement holds at every state reachable from deployment by
+  any sequence of calls by any caller, so this model states it over
+  that reachable set, not over one step from a chosen state.
+  Nitro-2019-219.pdf §3.3: "There is no restriction on who can trigger the operations" — this
   file's closure does not distinguish CALLERS, matching that quote; it
   does track each call's `Actor` (`Operations.lean`), because `.sign`/
   `.signNote` restrict who may take THOSE two steps (same file's module
