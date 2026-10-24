@@ -86,6 +86,26 @@
   (PrivacyPool.sol:508-510, 547-549, 564-566, 596-598) is the same defect, kept
   intentionally for testing and never removed from the merged contract (the sibling
   labbook entry's R8 calls for its removal; it is still present).
+
+  DEPARTURE (contract → design, owner-controlled freeze removed): the merged contract
+  lets the owner block every spend and unshield at any time. `PrivacyPool
+  .setShieldPauseContract` (PrivacyPool.sol:466-470) is owner-gated with no restriction
+  on when or to what address it is called, and it installs an `IShieldPauseController`
+  whose `emergencyPaused()` or `withdrawOnlyMode()` `TransactModule` reads before every
+  `transact` and `transactOwned` (`_requireNotEmergencyPaused`/`_requireNotWithdrawOnly`,
+  TransactModule.sol:460-475, called at :48, :52, :491-492): an emergency pause blocks
+  every spend outright, and withdraw-only mode blocks a pure transfer (a `transact` with
+  no unshield output) and blocks every owned transaction unconditionally (the owned
+  path's `unshield` is always `NONE`, so it can never satisfy
+  `_requireNotWithdrawOnly`'s `unshield != NONE` escape). The Armada design removes this
+  owner power entirely: `Step.transact` and `Step.transactOwned` below carry no pause
+  check of any kind, so no step any caller — the owner included — can take ever blocks
+  an otherwise-valid spend
+  (`ArmadaLean.PoolSafety.transact_cannot_be_blocked`/`.transactOwned_cannot_be_blocked`).
+  `PoolState` below therefore drops `emergencyPaused` and `withdrawOnlyMode`; only
+  `shieldsPaused` remains, and it gates `Step.shield` alone — a shield pause, if the
+  design keeps one, blocks only new value entering the pool, never an existing note's
+  owner from spending or exiting it.
 -/
 import ArmadaLean.PoolOwned
 import ArmadaLean.Transact
@@ -324,11 +344,10 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
     `t` — not `IERC20.balanceOf`, which a caller can inflate with a raw, pool-unmediated
     `transfer` that credits no note (sibling labbook entry §3a, the surplus/R4 discussion);
     `held` is the ledger the three modeled operations maintain, which is exactly what the
-    core invariant is about. `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`. The
-    three `Bool` fields mirror `IShieldPauseController.shieldsPaused` /
-    `.emergencyPaused` / `.withdrawOnlyMode`, read by `ShieldModule
-    ._requireShieldsNotPaused` and `TransactModule._requireNotEmergencyPaused` /
-    `._requireNotWithdrawOnly`. -/
+    core invariant is about. `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`.
+    `shieldsPaused` mirrors `IShieldPauseController.shieldsPaused`, read by
+    `ShieldModule._requireShieldsNotPaused` — the one freeze the Armada design keeps,
+    and it gates `Step.shield` alone (module comment, freeze-removal departure). -/
 structure PoolState where
   live : Nat → List CommitmentPreimage
   spent : NullifierSet
@@ -336,19 +355,16 @@ structure PoolState where
   held : Nat → Nat
   preimageOf : PreimageRegistry
   shieldsPaused : Bool
-  emergencyPaused : Bool
-  withdrawOnlyMode : Bool
 
 /-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
     which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): no notes, no
     spent nullifiers, the one root of the empty tree, no custody, an empty registry,
-    nothing paused. `emptyRoot` stands for whatever `initializeMerkle` computes from
+    not paused. `emptyRoot` stands for whatever `initializeMerkle` computes from
     `ZERO_VALUE` (PrivacyPoolStorage.sol:150); this model does not recompute that hash
     (see the module comment on `roots`). -/
 def genesis (emptyRoot : Nat) : PoolState :=
   { live := fun _ => [], spent := [], roots := [emptyRoot], held := fun _ => 0,
-    preimageOf := fun _ => none, shieldsPaused := false, emergencyPaused := false,
-    withdrawOnlyMode := false }
+    preimageOf := fun _ => none, shieldsPaused := false }
 
 /-! ### Deriving notes from a witness
 
@@ -440,24 +456,24 @@ inductive Step : PoolState → PoolState → Prop where
       unshield payout — the circuit itself draws no such line
       (TransactOwned.circom/Transact.circom treat every output alike); the pool does, via
       `boundParams.unshield`/`commitmentCiphertext.length` (TransactModule.sol:289-337).
-      `hRemove`/`hNullify` are the ghost-level and on-chain halves of "spend these
-      inputs": `hRemove` is licensed by the proof's `Constrained.merkle`/root-history
-      facts (soundness: a Merkle-membership proof against a historical root cannot name a
-      note the pool never created — Pool module comment), `hNullify` is
-      `_validatePublicOutputs(requireAll = false)`/`_recordPreimages`
-      (TransactModule.sol:544-604): disclosure is optional, so `records` is any
-      sublist of the outputs' own `(commitment, preimage)` pairs
-      (`transactOutputRecords`), in witness order — never an unrelated list, since
-      `List.Sublist` forces every disclosed entry to be one of the circuit's own
-      outputs (`transactOutputRecords_valid` then gives `hashCommitment` correctness for
-      free, not as a separate hypothesis). The
-      balance fact itself is not a hypothesis here: `ArmadaLean.PoolSafety
-      .step_preserves_invariant` derives it from `transact_value_conserved hN hM hC`
-      at the point it is needed, exactly as the contract's own guarantee rests on the
-      circuit constraints and nothing else. S-RG: "The contract checks to make sure: ...
-      That it hasn't seen the nullifiers before, eliminating any double spends[;] The
-      Merkle root is the current or a previous Merkle root, to prevent users from making
-      up UTXOs." Zokyo's 2022-12-21 audit of `RailgunLogic.sol`
+      `hRemove` is the ghost-level half of "spend these inputs", licensed by the proof's
+      `Constrained.merkle`/root-history facts (soundness: a Merkle-membership proof
+      against a historical root cannot name a note the pool never created — Pool module
+      comment); `hNullify` is its on-chain half, `_accumulateAndNullify`
+      (TransactModule.sol:373-399). `hRecords` is `_validatePublicOutputs
+      (requireAll = false)`/`_recordPreimages` (TransactModule.sol:544-604): disclosure
+      is optional, so `records` is any sublist of the outputs' own `(commitment,
+      preimage)` pairs (`transactOutputRecords`), in witness order — never an unrelated
+      list, since `List.Sublist` forces every disclosed entry to be one of the circuit's
+      own outputs (`transactOutputRecords_valid` then gives `hashCommitment`
+      correctness for free, not as a separate hypothesis). The balance fact itself is
+      not a hypothesis here: `ArmadaLean.PoolSafety.step_preserves_invariant` derives
+      it from `transact_value_conserved hN hM hC` at the point it is needed, exactly
+      as the contract's own guarantee rests on the circuit constraints and nothing
+      else. S-RG: "The contract checks to make sure: ... That it hasn't seen the
+      nullifiers before, eliminating any double spends[;] The Merkle root is the
+      current or a previous Merkle root, to prevent users from making up UTXOs."
+      Zokyo's 2022-12-21 audit of `RailgunLogic.sol`
       (`.scratch/rewrite-B/sources/railgun-audit-2022-12-21-Zokyo.pdf`, sha256
       `b974caa94f7eee9f3f52e7996e4251ac1581523af161a5c83b7468cb06f3a9a9`), finding #1
       ("Transaction validation is out of the scope", Medium, Resolved): "the current
@@ -471,13 +487,23 @@ inductive Step : PoolState → PoolState → Prop where
       marking a transaction processed before any token moves; `_accumulateAndNullify`
       already runs for every transaction in the batch (TransactModule.sol:63-73) before
       any unshield payout (TransactModule.sol:76-80) — `hNullify` is taken before `held`
-      changes below for the same reason. -/
+      changes below for the same reason.
+
+      DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
+      `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before every `transact`
+      (called at TransactModule.sol:48, :52; the checks themselves at :460-475), which
+      can revert the whole call whenever the owner has installed a controller
+      (`PrivacyPool.setShieldPauseContract`, owner-gated, no restriction on when,
+      PrivacyPool.sol:466-470) whose `emergencyPaused()` or `withdrawOnlyMode()` returns
+      true. This constructor carries no such check: the Armada design removes the
+      owner's power to block a spend. `hRoot`, `hRemove` and `hNullify` are the only
+      preconditions that gate a `transact`, and none of them reads `s.shieldsPaused` —
+      `ArmadaLean.PoolSafety.transact_cannot_be_blocked` proves no step any caller can
+      take, the owner included, changes whether they hold. -/
   | transact {s : PoolState} {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
       (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
       (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
       (newRoot : Nat) (records : List (Nat × CommitmentPreimage))
-      (hEmergency : s.emergencyPaused = false)
-      (hWithdrawOnly : unshieldTail = [] → s.withdrawOnlyMode = false)
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
       (hUnshieldLen : unshieldTail.length ≤ 1)
@@ -502,24 +528,32 @@ inductive Step : PoolState → PoolState → Prop where
       list a caller trims (unlike `transact`, where disclosure is optional). `hNonZero`
       is `_validatePublicOutputs(requireAll = true)`'s own check that no owned output
       may be the zero preimage (TransactModule.sol:567-571, "Missing public output").
-      `hC : OwnedConstrained w pub` is the soundness hypothesis; `caller`/
+      `hC : OwnedConstrained w pub` is the soundness hypothesis; `caller`/`hCaller` is
+      the authorization check (`msg.sender == address(uint160(uint256(ownerField)))`,
+      TransactModule.sol:636-639) — together these are exactly what
       `ArmadaLean.PoolSafety.transactOwned_spends_only_owned`
       (`ArmadaLean.PoolOwned.owned_owner_binding`) needs. `hN`/`hM`: the registered owned
       shapes (`armada-circuits/src/main/main_{1x1,1x2,1x3}_owned.circom`) all have
       `N = 1 ≤ 8` and `M ≤ 3 ≤ 4`, well inside the bound
       `transactOwned_value_conserved` needs; this model uses the same `N ≤ 8 ∧ M ≤ 4`
       bound as the plain path rather than the tighter true one, since that is the bound
-      the existing proof already supplies. `hWithdrawOnly` is unconditional, not an
-      implication like `transact`'s: `_requireNotWithdrawOnly` demands `unshield !=
-      NONE` for every transaction in withdraw-only mode, which an owned transaction
-      (unshield always `NONE`) can never satisfy, so a `transactOwned` call always
-      reverts while withdraw-only mode is on. -/
+      the existing proof already supplies.
+
+      DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
+      `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before `transactOwned` too
+      (called at TransactModule.sol:491-492; the checks themselves at :460-475) —
+      withdraw-only mode in particular always blocks an owned transaction outright,
+      since the owned path's `unshield` is always `NONE` and `_requireNotWithdrawOnly`
+      demands `unshield != NONE` for every transaction while withdraw-only mode is on.
+      This constructor carries no such check: the Armada design removes the owner's
+      power to block a spend, owned included. `hRoot`, `hRemove` and `hNullify` are the
+      only preconditions that gate a `transactOwned`, and none of them reads
+      `s.shieldsPaused` — `ArmadaLean.PoolSafety.transactOwned_cannot_be_blocked` proves
+      no step any caller can take, the owner included, changes whether they hold. -/
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
       (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat)
-      (hEmergency : s.emergencyPaused = false)
-      (hWithdrawOnly : s.withdrawOnlyMode = false)
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
@@ -531,18 +565,19 @@ inductive Step : PoolState → PoolState → Prop where
             spent := spent',
             roots := newRoot :: s.roots,
             preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub) }
-  /-- The administrative paths that change neither notes, nullifiers, roots nor custody:
-      `setShieldPauseContract`'s three flags, read through `IShieldPauseController
-      .shieldsPaused`/`.emergencyPaused`/`.withdrawOnlyMode`. Owner functions that change
-      only configuration unrelated to these three flags (`setShieldFee`,
-      `setFeeRecipient`, `addToBlocklist`, `setVerificationKey`,
-      `setVerificationKeyOwned`, `setTestingMode`, ...) are not modeled individually: none
-      of them touches `live`, `spent`, `roots`, `held` or `preimageOf`, so every one of
-      them is this same no-op on the fields the safety theorems are about. -/
-  | admin {s : PoolState} (shieldsPaused emergencyPaused withdrawOnlyMode : Bool) :
-      Step s
-        { s with shieldsPaused := shieldsPaused, emergencyPaused := emergencyPaused,
-                 withdrawOnlyMode := withdrawOnlyMode }
+  /-- The one remaining administrative path that changes pool state at all:
+      `setShieldPauseContract` installs a controller whose `IShieldPauseController
+      .shieldsPaused` this model reads (`ShieldModule._requireShieldsNotPaused`,
+      ShieldModule.sol:393-397) — the Armada design keeps this one freeze, and only
+      this one: it blocks `Step.shield` alone (module comment, freeze-removal
+      departure). Every other owner function (`setShieldFee`, `setFeeRecipient`,
+      `addToBlocklist`, `setVerificationKey`, `setVerificationKeyOwned`,
+      `setTestingMode`, ...) changes configuration this model does not represent and is
+      not modeled individually: none of them touches `live`, `spent`, `roots`, `held`
+      or `preimageOf`, so every one of them is this same no-op on the fields the safety
+      theorems are about. -/
+  | admin {s : PoolState} (shieldsPaused : Bool) :
+      Step s { s with shieldsPaused := shieldsPaused }
 
 /-- Every state the pool can reach from deployment, by any sequence of calls from any
     caller — the quantifier the brief's four promises range over. -/

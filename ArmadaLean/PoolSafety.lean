@@ -70,7 +70,7 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     · simp only [if_neg ht]
       exact hinv t
   | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -83,7 +83,7 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     · simp only [if_neg ht]
       exact hinv t
   | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-      hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
+      hRoot hRemove hNullify hNonZero =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -95,7 +95,7 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
+  | admin shieldsPaused =>
     intro t
     exact hinv t
 
@@ -158,6 +158,55 @@ theorem transactOwned_spends_only_owned {N M : Nat} {w : TransactOwnedWitness N 
     caller = addressOf trueOwner :=
   owned_owner_binding hC i hSameNote hCaller
 
+/-! ### No step can block an otherwise-valid spend -/
+
+/--
+**No step any caller can take, the owner included, can make a `transact` that is
+otherwise valid fail.** `Step.transact`'s only preconditions on the source state `s`
+are `hRoot : pub.merkleRoot ∈ s.roots`, `hRemove : removeAll (s.live w.token)
+(transactSpentNotes w) = some rest` and `hNullify : markSpent s.spent (...) = some
+spent'`. None of them reads `s.shieldsPaused`, the one field any step other than
+`Step.shield`/`.transact`/`.transactOwned` can change (`Step.admin`, the one remaining
+owner-controlled path — the module comment on `Step.transact` records the departure
+this closes). So the exact witnesses that make a `transact` valid from `s` also make
+the identical `transact` valid from `s` with `shieldsPaused` flipped to any `b`: an
+admin step can never turn a valid spend into an invalid one. The proof is immediate
+reapplication of `Step.transact`'s own constructor — the state `{ s with shieldsPaused
+:= b }` agrees with `s` on `roots`, `live` and `spent` definitionally, since a
+record-field update touches only the one field named. -/
+theorem transact_cannot_be_blocked {s : PoolState} (b : Bool)
+    {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
+    (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
+    (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
+    (newRoot : Nat) (records : List (Nat × CommitmentPreimage))
+    (hRoot : pub.merkleRoot ∈ s.roots)
+    (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
+    (hUnshieldLen : unshieldTail.length ≤ 1)
+    (hRemove : removeAll (s.live w.token) (transactSpentNotes w) = some rest)
+    (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
+    (hRecords : records.Sublist (transactOutputRecords w pub)) :
+    ∃ s', Step { s with shieldsPaused := b } s' :=
+  ⟨_, Step.transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
+    hRoot hSplit hUnshieldLen hRemove hNullify hRecords⟩
+
+/-- The owned-path counterpart of `transact_cannot_be_blocked`: no step any caller can
+    take, the owner included, can make an otherwise-valid `transactOwned` fail. Same
+    proof shape: `Step.transactOwned`'s preconditions never read `s.shieldsPaused`
+    either. -/
+theorem transactOwned_cannot_be_blocked {s : PoolState} (b : Bool)
+    {N M : Nat} (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M)
+    (hN : N ≤ 8) (hM : M ≤ 4) (hC : OwnedConstrained w pub)
+    (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
+    (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat)
+    (hRoot : pub.merkleRoot ∈ s.roots)
+    (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
+    (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
+    (hNonZero : ∀ j, ¬ isZeroPreimage
+      (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)) :
+    ∃ s', Step { s with shieldsPaused := b } s' :=
+  ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
+    hRoot hRemove hNullify hNonZero⟩
+
 /-! ### No double spend across transactions -/
 
 /-- A successful `markSpent` call never drops a nullifier that was already marked: it
@@ -183,12 +232,12 @@ theorem spent_monotone {s s' : PoolState} (hstep : Step s s') : ∀ n ∈ s.spen
   | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
     exact fun n hn => hn
   | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
     exact markSpent_subset hNullify
   | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-      hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
+      hRoot hRemove hNullify hNonZero =>
     exact markSpent_subset hNullify
-  | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
+  | admin shieldsPaused =>
     exact fun n hn => hn
 
 /-- Reachability relative to a starting state, for stating "once spent, a nullifier
@@ -299,12 +348,12 @@ theorem roots_grounded {emptyRoot : Nat} {s : PoolState} (h : Reachable emptyRoo
     | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
     | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+        hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
     | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-        hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
+        hRoot hRemove hNullify hNonZero =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
+    | admin shieldsPaused =>
       exact ⟨pushed, hpushed⟩
 
 /--
@@ -342,13 +391,13 @@ theorem pool_preimageOf_consistent {emptyRoot : Nat} {s : PoolState}
     | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
       exact recordStep_preserves_consistency ih rfl
     | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+        hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
       exact applyRecords_preserves_consistency ih
         (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
     | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-        hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
+        hRoot hRemove hNullify hNonZero =>
       exact applyRecords_preserves_consistency ih (ownedOutputRecords_valid hC)
-    | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
+    | admin shieldsPaused =>
       exact ih
 
 /--
@@ -503,7 +552,6 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool)) (npkOut valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
-    (hEmergency : s.emergencyPaused = false) (hNotWithdrawOnly : s.withdrawOnlyMode = false)
     (hRoot : root ∈ s.roots)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
@@ -553,7 +601,7 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
       exact hFresh i)
   refine ⟨_, Step.transact w pub hN hM hC
     (List.ofFn fun j => (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) [] rest spent'
-    newRoot [] hEmergency (fun _ => hNotWithdrawOnly) hRoot (by simp [transactAllOutputs, w])
+    newRoot [] hRoot (by simp [transactAllOutputs, w])
     (by simp) hLive hMark (List.nil_sublist _)⟩
 
 /-- **Can happen: an unshield succeeds.** The degenerate single-output shape of
@@ -569,7 +617,7 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool)) (npkOut valueOut : Nat)
     (hN : N ≤ 8)
-    (hEmergency : s.emergencyPaused = false) (hRoot : root ∈ s.roots)
+    (hRoot : root ∈ s.roots)
     (hValuePos : 0 < valueOut)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
@@ -621,7 +669,7 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
       exact hFresh i)
   refine ⟨_, Step.transact w pub hN (by omega) hC []
     (List.ofFn fun (_ : Fin 1) => (⟨npkOut, token, valueOut⟩ : CommitmentPreimage)) rest
-    spent' newRoot [] hEmergency (fun h => absurd h (by simp)) hRoot
+    spent' newRoot [] hRoot
     (by simp [transactAllOutputs, w]) (by simp) hLive hMark (List.nil_sublist _)⟩
 
 /-- **Can happen: an owned transact succeeds.** Directly wires an owned witness,
@@ -638,7 +686,6 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool)) (npkOut valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
-    (hEmergency : s.emergencyPaused = false) (hNotWithdrawOnly : s.withdrawOnlyMode = false)
     (hRoot : root ∈ s.roots)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
@@ -683,6 +730,6 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
       rw [← hi]
       exact hFresh i)
   refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-    hEmergency hNotWithdrawOnly hRoot hLive hMark ?_⟩
+    hRoot hLive hMark ?_⟩
   intro j hz
   exact hOutputsNonZero j hz.1
