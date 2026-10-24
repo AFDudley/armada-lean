@@ -19,6 +19,24 @@ def listSum : List Nat → Nat
   | [] => 0
   | x :: xs => x + listSum xs
 
+/-- `listSum` distributes over `++` (ArmadaLean.Pool uses this to split a batch's total
+    into the part carried by new notes and the part carried by notes already live). -/
+theorem listSum_append (l1 l2 : List Nat) : listSum (l1 ++ l2) = listSum l1 + listSum l2 := by
+  induction l1 with
+  | nil => simp [listSum]
+  | cons x xs ih => simp only [List.cons_append, listSum, ih]; omega
+
+/-- `listSum` is invariant under reordering (ArmadaLean.Pool uses this together with
+    `List.Perm.map` to show that removing a sub-multiset of live notes and reinserting
+    it changes the total value by exactly the sub-multiset's value, regardless of where
+    in the list the removed notes sat). -/
+theorem listSum_perm {l1 l2 : List Nat} (h : l1.Perm l2) : listSum l1 = listSum l2 := by
+  induction h with
+  | nil => rfl
+  | cons x _ ih => simp [listSum, ih]
+  | swap x y l => simp [listSum]; omega
+  | trans _ _ ih1 ih2 => rw [ih1, ih2]
+
 /-- A list whose elements are all below `c` sums to at most `length * (c - 1)`. -/
 theorem listSum_le_length_mul_sub_one (vs : List Nat) (c : Nat)
     (h : ∀ v ∈ vs, v < c) : listSum vs ≤ vs.length * (c - 1) := by

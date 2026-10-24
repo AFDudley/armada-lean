@@ -45,6 +45,7 @@ structure CommitmentPreimage where
   npk : Nat
   token : Nat
   value : Nat
+  deriving DecidableEq
 
 /-- `_hashCommitment` (TransactModule.sol:441-443, ShieldModule.sol:376-378):
     `PoseidonT4.poseidon([npk, tokenID, value])`, the same 3-argument

@@ -2,7 +2,8 @@
 
 Formal verification (Lean 4) of the core security properties of the **Armada
 shielded pool** — the `Transact` ZK circuit, its Merkle membership verifier,
-the yield-vault share math, and the shield fee formula.
+the `PrivacyPool` contract's bookkeeping (notes, nullifiers, roots, token
+custody), the yield-vault share math, and the shield fee formula.
 
 **Status:** pre-audit assurance artifact. Companion to
 `armada-circuits/docs/SECURITY_REVIEW.md` and the shielded-pool launch track
@@ -49,6 +50,22 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `preimageOf_consistent` | `PoolOwned` | every recorded preimage hashes to the commitment it is recorded for | `TransactModule.sol:550-604` | labbook §3a (registry defect) |
 | `owned_spend_can_happen` | `PoolOwned` | the real owner's spend, with an accepted proof, clears every modeled pool gate | `TransactModule.sol:488-519,609-647` | proof completeness |
 
+### Pool contract (`armada-poc` `PrivacyPool.sol`, `ShieldModule.sol`, `TransactModule.sol`, `MerkleModule.sol`)
+
+| Lean theorem | Module | Property | Contract code | Source |
+|---|---|---|---|---|
+| `core_invariant` | `PoolSafety` | for every reachable state and each token, the tokens the pool holds equal the total value of its unspent notes | full model | the pool's core invariant |
+| `pool_no_double_spend` | `PoolSafety` | no nullifier is ever accepted twice, across the pool's whole history | `TransactModule.sol:379-386` | S-RG, "RAILGUN Core System & Protocol" |
+| `spend_live_exact` | `PoolSafety` | a spend removes exactly the notes it spends from the live set and adds exactly its new notes | `Step.transact`/`Step.transactOwned` | S-RG, "How Does RAILGUN Work?" |
+| `transact_unshield_exact` | `PoolSafety` | an unshield sends out exactly the value of the notes it spends minus what stays in new notes | `TransactModule.sol:401-424` | value conservation |
+| `shield_creates_exactly` | `PoolSafety` | a shield creates exactly one note of the shielded amount minus the fee; no second note | `ShieldModule.sol:277-341` | DEPARTURE, see module comment |
+| `transact_root_was_produced` | `PoolSafety` | a transact names only a root the pool itself produced, or the genesis root | `TransactModule.sol:538` | S-RG, "RAILGUN Core System & Protocol" |
+| `pool_preimageOf_consistent` | `PoolSafety` | every entry the pool has ever written to `preimageOf` hashes to the commitment it is recorded under | `TransactModule.sol:590-604`, `ShieldModule.sol:71,136` | lifts `PoolOwned.preimageOf_consistent` |
+| `shield_can_happen` | `PoolSafety` | a shield of a positive amount, while not paused, succeeds | `ShieldModule.sol:45-90` | shield can happen |
+| `transact_can_happen` | `PoolSafety` | a private transfer by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | transact can happen |
+| `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | unshield can happen |
+| `owned_transact_can_happen` | `PoolSafety` | an owned transact by the real owner, with an accepted proof, succeeds | `TransactModule.sol:488-519` | owned transact can happen |
+
 ### Yield vault (`armada-poc/contracts/yield/ArmadaYieldVault.sol`, issue #365)
 
 | Lean theorem | Module | Property | Contract code |
@@ -90,6 +107,8 @@ ArmadaLean/
   Transact.lean           full constraint model of Transact.circom
   TransactOwned.lean      constraint model of TransactOwned.circom
   PoolOwned.lean          pool's owned path (TransactModule.transactOwned) and preimage storage
+  Pool.lean               pool state (live notes, nullifiers, roots, custody) and operations
+  PoolSafety.lean         pool contract's safety theorems, over Pool.lean
   Vault.lean              #365 attack + mitigation proofs
   Fee.lean                shield-fee reference spec
 docs/

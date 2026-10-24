@@ -11,5 +11,7 @@ import ArmadaLean.Merkle
 import ArmadaLean.Transact
 import ArmadaLean.TransactOwned
 import ArmadaLean.PoolOwned
+import ArmadaLean.Pool
+import ArmadaLean.PoolSafety
 import ArmadaLean.Vault
 import ArmadaLean.Fee
