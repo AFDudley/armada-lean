@@ -30,8 +30,8 @@ S2 §6.1 calls the same two shapes `A(a)` (an allocation of amount `a`) and
 
 The Armada layer adds a third tag, `shield`: a payout that mints a fresh
 pool note instead of paying an external account directly
-(`ArmadaNitroAdjudicator.sol:18`, `SHIELD_ALLOCATION_TYPE`; N2b brief). No
-paper names this tag; it exists only because this adjudicator's money is
+(`ArmadaNitroAdjudicator.sol:18`, `SHIELD_ALLOCATION_TYPE`). No paper
+names this tag; it exists only because this adjudicator's money is
 pool notes, not a raw balance (see `Notes.lean`).
 -/
 inductive AllocationType where

@@ -3,9 +3,10 @@
 
   Combines `Channel.lean`'s per-channel status (the S1-S4 layer) with
   `Notes.lean`'s pool state (the Armada layer) into one record every
-  `Operations.lean` call transitions. Armada layer: N1a brief ("`holdings`
-  stop being raw token-unit balances... They become references to one
-  Armada pool commitment per `(asset, channelId)`").
+  `Operations.lean` call transitions. Armada layer, lab book decision 9:
+  "The adjudicator owns its channel collateral as notes" — `holdings`
+  are references to one Armada pool commitment per `(asset, channelId)`,
+  never a raw token-unit balance.
 -/
 import ArmadaLean.Adjudicator.Channel
 import ArmadaLean.Adjudicator.Notes
@@ -23,11 +24,11 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
 /-- The adjudicator's full state: the pool (`Notes.lean`), one
     `ChannelStatus` per channel id (S4 `0040-lifecycle-of-a-channel.md`,
     "Adjudicator storage"), one live collateral commitment per `(asset,
-    channelId)` (`holdings`, N1a brief S1: "Replace `mapping(address =>
-    mapping(bytes32 => uint256)) public holdings;` with `mapping(address =>
-    mapping(bytes32 => bytes32)) public holdings;`, where the value is the
-    live commitment for that asset and channel (`bytes32(0)` means no
-    collateral)" — modeled as `Option Nat`, `none` for `bytes32(0)`), the
+    channelId)` (`holdings` — lab book decision 9, "the adjudicator owns
+    its channel collateral as notes": the field holds a live commitment,
+    not a raw token amount — modeled as `Option Nat`, `none` for no
+    collateral; see `heldValue`'s doc comment for the full encoding
+    rule), the
     hub's configured asset list (`ArmadaNitroAdjudicator.configuredAssets`),
     the adjudicator contract's own note-owner identity (`self` — the
     `address(this)` every self-owned `npk` derivation in `Notes.lean`
@@ -50,29 +51,49 @@ structure AdjudicatorState where
   now : Nat
   signedBy : Nat → Nat → Prop
 
-/-- `heldValue`: `0` for no collateral, else the pool's own recorded value
-    for the live commitment (N1a brief S2: "it returns `0` for an empty
-    commitment, else `pool.preimageOf(holdings[asset][channelId]).value`");
-    never a cached or caller-asserted amount (N1a husband review: "`
-    heldValue` never trusts a value the pool did not attest: it always
-    reads `preimageOf`"). The R1 mutant this closes
-    (`R1-adjudicator-rewrite.md`, "`heldValue`'s `commitment == 0` check...
-    1/17 mutants missed") is the `match ... | none => 0` branch below: a
-    caller cannot make an empty commitment read as a positive holding, nor
-    can the pool's own `0`-value-commitment prohibition (N1a husband
-    review, third bullet) make a REAL note read as empty. -/
+/-!
+Armada encoding rule (stated once here; `Safety.lean`'s statements 19
+("`heldValue_zero_iff_no_collateral`"), 21 ("`zero_payout_mints_
+nothing`") and 22 ("`full_payout_leaves_no_remainder`") cite it by
+name, not a second time). Nitro-2019-219.pdf §3.1: "We model the
+adjudicator as having a simple mapping that stores the quantity of
+coins for an address. If an address does not appear in the table we
+take the balance to be zero." This model's note-backed balance
+specializes that rule: A BALANCE IS HELD AS ONE NOTE, AND A ZERO
+BALANCE IS HELD AS NO NOTE. A positive balance is exactly one live
+commitment (`holdings asset channelId = some c`, `s.pool.isLive c`); a
+zero balance is no commitment at all (`holdings asset channelId =
+none`), never a commitment recorded with value `0` — the pool itself
+enforces this half (it never mints a `0`-value commitment, N1a husband
+review's third bullet, armada-nitro@5519526c:docs/tasks/
+N1a-multiassetholder-commitment-storage.md, the only source recording
+this specific pool-level guarantee). No paper covers a note-backed
+balance representation at all; this is Armada's own encoding, with no
+dedicated lab book section.
+-/
+
+/-- `heldValue`: `0` for no collateral (`none`, the Armada encoding
+    rule's "zero balance is held as no note" half, stated above), else
+    the pool's own recorded value for the live commitment — never a
+    cached or caller-asserted amount (lab book decision 11: the
+    adjudicator reads only what the pool itself attests through
+    `preimageOf`). The `match ... | none => 0` branch below is where
+    the encoding rule becomes a value-level fact: a caller cannot make
+    an empty commitment read as a positive holding, nor can the pool's
+    own `0`-value-commitment prohibition make a REAL note read as
+    empty. -/
 def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
   match s.holdings asset channelId with
   | none => 0
   | some c => (s.pool.preimageOf c).map NotePreimage.value |>.getD 0
 
-/-- Whether `asset` is on the hub's configured list (`ArmadaNitroAdjudicator
-    .isAsset`; the R1 mutant this closes, `R1-adjudicator-rewrite.md`:
-    "the constructor's `configuredAssets[...] = true`... 1/3 mutants
-    missed"). Stated as a field of `AdjudicatorState` rather than derived
-    from a fixed list, because the deployed asset list is itself part of
-    the state a reachability argument must track (set once at construction,
-    `Operations.lean` never mutates it). -/
+/-- Whether `asset` is on the hub's configured list
+    (`ArmadaNitroAdjudicator.isAsset`). Stated as a field of
+    `AdjudicatorState` rather than derived from a fixed list, because
+    the deployed asset list is itself part of the state a reachability
+    argument must track (set once at construction, `Operations.lean`
+    never mutates it — `Safety.lean`'s `configuredAssets_invariant`,
+    statement 20, states and cites this). -/
 abbrev isAsset (s : AdjudicatorState) (asset : Nat) : Prop := s.configuredAssets asset
 
 /-- Assumption 2, combined (`Assumptions.lean`'s module comment): `p`
