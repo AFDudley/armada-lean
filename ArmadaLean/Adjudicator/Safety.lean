@@ -179,8 +179,7 @@ caller can BLOCK another caller's operation, only interleave with it.
     still holds at `mid`. "Getting money owed" is a live note in the
     pool, matching this model's note-based payment (`Notes.lean`): `h`
     can later spend it with their own key, which is the Armada-layer
-    meaning of "paid" (lab book decision 9: the collateral "never leaves
-    the pool"). -/
+    meaning of "paid" — the armada-nitro rule (`State.lean`). -/
 theorem unbeatable_pays
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -252,12 +251,14 @@ theorem unbeatable_pays_after_timeout
 /-!
 ## C. No caller can create or destroy value in the pool
 
-Lab book §3a: "The pool's core invariant is that value in the pool exists
-only as notes: every token the pool holds backs exactly one unspent note,
-and the only moves are shield, transact and unshield." This adjudicator
+The armada-nitro rule (`State.lean`): a channel's holding is a note in
+the pool, owned by the adjudicator. This adjudicator
 calls only `transact`/`transactOwned` (every `Step` case in
-`Operations.lean`), never `shield`/`unshield`, so the quoted invariant
-specializes to pure conservation for every call this adjudicator accepts.
+`Operations.lean`), never `shield`/`unshield`, so value in the pool
+can be reassigned between notes but neither created nor destroyed:
+`ArmadaLean.transact_value_conserved` (`Transact.lean`) and
+`ArmadaLean.transactOwned_value_conserved` (`TransactOwned.lean`)
+prove this for each circuit's own spend.
 -/
 
 /-- Which harm this rules out: no single call can mint value into the pool
@@ -291,13 +292,13 @@ theorem notedValue_conserved_reachable
 /-- Which harm this rules out: `holdings` can never point to a commitment
     the pool itself does not back with a live note — there is no path by
     which a channel's recorded collateral becomes a dangling reference a
-    caller could exploit (lab book decision 11: the adjudicator
-    "verifies [the preimage] against the proof's output commitment
-    before it credits anything"; no code path sets `holdings[asset][
-    channelId]` to a commitment whose preimage the adjudicator has not
-    itself verified). This is the formal content of lab book decision
-    9's "value in the pool exists only as notes" at the adjudicator's own
-    storage layer, not only the pool's. -/
+    caller could exploit. The held value is the note's value read from
+    the pool's own record, which `ArmadaLean.preimageOf_consistent`
+    (`PoolOwned.lean`) proves trustworthy; only the owner can ever
+    spend the note the holding points at, by `ArmadaLean.
+    owned_owner_binding` (`PoolOwned.lean`). This is the formal content
+    of the armada-nitro rule at the adjudicator's own storage layer,
+    not only the pool's. -/
 theorem holdings_point_to_live_notes
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -377,8 +378,10 @@ only (the one can-happen theorem whose witnessed execution includes a
     `genesis` — with a pool state `pool0` that already holds the
     depositor's spendable note, and a `.signNote` call recording that the
     depositor's key signed the deposit's message hash — in which a
-    deposit succeeds (lab book decision 9, "the adjudicator owns its
-    channel collateral as notes"). `PoolSignatureLiveness.
+    deposit succeeds (Nitro-2019-219.pdf §3.1: "There are no
+    restrictions on who can deposit coins for an address"; the
+    armada-nitro rule, `State.lean`, specializes the deposited coins to
+    a note). `PoolSignatureLiveness.
     eddsaCompleteness` turns the recorded signing fact into the
     `EdDSAVerify` witness `Constrained` (`DepositTransacted`,
     `Notes.lean`) needs. Unrelated to owned notes: `.deposit` uses the
@@ -527,11 +530,11 @@ only as notes.
 
 /-- A payout takes no fee: `transfer` mints exactly as much as it debits —
     the paid allocations' total plus the remainder equals the pre-call
-    `heldValue`, with no amount withheld anywhere (treasury lab book §3a
-    T9, `labbook/2026-10-18-treasury-governance-baal-safe-shielded.md`:
-    "The only protocol fee is the shield-in fee, charged by
-    `ShieldModule` on a shield"). The only fee ANYWHERE in the Armada
-    design is that shield-in fee, charged by the pool's `ShieldModule`
+    `heldValue`, with no amount withheld anywhere. Nitro-2019-219.pdf
+    §5.1: `T(A, B, x)` "Reduces the funds held in channel A by x" —
+    the channel is reduced by EXACTLY what it pays, with no third
+    quantity withheld. The only fee ANYWHERE in the Armada
+    design is the shield-in fee, charged by the pool's `ShieldModule`
     on a DIFFERENT entry point this adjudicator never calls
     (`ArmadaLean.Fee`, the root pool model's `fee_conservation` theorem,
     which this model does not restate — it belongs to the pool, not the
@@ -585,11 +588,10 @@ theorem bulk_paths_never_succeed
 /-- Value in the pool exists only as notes, at the adjudicator's own
     interface: `AdjudicatorState` has no raw-balance field anywhere, and
     `heldValue` (`State.lean`) is always a read of a live note's preimage,
-    never a stored integer (lab book §3a; decision 9, "there is no public
-    `deposit` path, no raw-transfer surplus, and no `sweep`"). This
-    statement packages `holdings_point_to_live_notes` (C) and
+    never a stored integer — the armada-nitro rule (`State.lean`).
+    This statement packages `holdings_point_to_live_notes` (C) and
     `notedValue_conserved_reachable` (C) as the single "value is notes"
-    claim the brief names separately from plain conservation. -/
+    claim, on top of plain conservation. -/
 theorem value_exists_only_as_notes
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
