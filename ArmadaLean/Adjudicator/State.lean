@@ -63,13 +63,21 @@ specializes that rule: A BALANCE IS HELD AS ONE NOTE, AND A ZERO
 BALANCE IS HELD AS NO NOTE. A positive balance is exactly one live
 commitment (`holdings asset channelId = some c`, `s.pool.isLive c`); a
 zero balance is no commitment at all (`holdings asset channelId =
-none`), never a commitment recorded with value `0` — the pool itself
-enforces this half (it never mints a `0`-value commitment, N1a husband
-review's third bullet, armada-nitro@5519526c:docs/tasks/
-N1a-multiassetholder-commitment-storage.md, the only source recording
-this specific pool-level guarantee). No paper covers a note-backed
-balance representation at all; this is Armada's own encoding, with no
-dedicated lab book section.
+none`), never a commitment recorded with value `0`.
+
+This is the ADJUDICATOR's OWN invariant over REACHABLE states, not a
+pool guarantee: `TransactOwned.circom:117-120` only range-checks each
+output value to 120 bits (`Num2Bits(120)`), with no further
+constraint, so a `0`-valued output commitment is a VALID owned-spend
+output — `ArmadaLean.OwnedConstrained` (`TransactOwned.lean`) permits
+it, and the pool will happily mint and hold such a note. The rule
+that NO channel's `holdings` entry ever POINTS AT one is the
+adjudicator's own rule, kept by every `Step` case that writes
+`holdings` (`Safety.lean`'s `holdings_never_zero_valued` states and
+grounds this precisely, checking `.deposit`/`.transfer`/`.reclaim`
+each keep it). No paper covers a note-backed balance representation
+at all; this is Armada's own encoding, with no dedicated lab book
+section.
 -/
 
 /-- `heldValue`: `0` for no collateral (`none`, the Armada encoding
@@ -79,9 +87,9 @@ dedicated lab book section.
     adjudicator reads only what the pool itself attests through
     `preimageOf`). The `match ... | none => 0` branch below is where
     the encoding rule becomes a value-level fact: a caller cannot make
-    an empty commitment read as a positive holding, nor can the pool's
-    own `0`-value-commitment prohibition make a REAL note read as
-    empty. -/
+    an empty commitment read as a positive holding, and (over
+    REACHABLE states, `holdings_never_zero_valued`) no reachable
+    holding's own preimage reads back as a `0`-value note either. -/
 def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
   match s.holdings asset channelId with
   | none => 0
