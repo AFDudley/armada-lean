@@ -187,13 +187,13 @@ theorem step_configuredAssets (sig : SignatureAssumptions)
     s'.configuredAssets = s.configuredAssets := by
   cases call with
   | deposit cid expectedHeld asset amount =>
-    obtain ⟨_, _, _, _, _, _, h, _, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, _, h, _, _, _, _⟩ := hstep
     exact h
   | challenge fp proof candidate challenger =>
-    obtain ⟨_, _, _, _, _, _, _, h, _, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, _, _, h, _, _, _, _⟩ := hstep
     exact h
   | checkpoint fp proof candidate =>
-    obtain ⟨_, _, _, _, _, _, h, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
   | conclude fp candidate =>
     obtain ⟨_, _, _, _, _, _, h, _, _, _⟩ := hstep
@@ -203,18 +203,18 @@ theorem step_configuredAssets (sig : SignatureAssumptions)
     exact h
   | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
       targetAssetIndex claimedTargetStateHash =>
-    obtain ⟨_, _, _, _, _, _, _, _, h, _, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, _, _, _, h, _, _, _, _⟩ := hstep
     exact h
   | bulkTransferAllAssets cid outcome claimedStateHash => exact hstep.elim
   | bulkConcludeAndTransferAllAssets fp candidate => exact hstep.elim
   | tick newNow =>
-    obtain ⟨_, _, _, _, _, h, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
   | sign p d =>
-    obtain ⟨_, _, _, _, _, h, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
   | signNote pk msgHash =>
-    obtain ⟨_, _, _, _, _, _, h, _, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
 
 /-- Marking a single nullifier spent: it fails iff the nullifier is already

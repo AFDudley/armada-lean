@@ -114,7 +114,7 @@ def Step (sig : SignatureAssumptions)
   model follows the armada-nitro rule's intent, not the current code.
   Deposit is authorized by the depositor's own EdDSA signature on the
   spent note (the pool layer's `EdDSAVerify`, reused via `Constrained`/
-  `DepositTransacted`, `Notes.lean`), not by `sig`/`actor`, so this case
+  `DepositStep`, `Notes.lean`), not by `sig`/`actor`, so this case
   does not use either. `0 < amount`: the adjudicator's own rule that it
   never records a `0`-value note as a channel holding (`State.lean`'s
   armada-nitro rule, applied to zero; `Safety.lean`'s `holdings_never_
@@ -131,14 +131,14 @@ def Step (sig : SignatureAssumptions)
       0 < amount ∧
       (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
           (idx : Fin M),
-        DepositPoolStep s.pool s.self asset amount w pub idx s'.pool ∧
+        DepositStep s.pool s.self asset amount w pub idx s'.pool ∧
         s'.holdings = update s.holdings asset
           (update (s.holdings asset) channelId (some (pub.commitmentsOut idx)))) ∧
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
       s'.self = s.self ∧
       s'.now = s.now ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `challenge` — ForceMove.sol:39-81; S4 `0070-finalizing-a-channel.md`
 
@@ -185,7 +185,7 @@ def Step (sig : SignatureAssumptions)
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `checkpoint` — ForceMove.sol:90-119; S4 `0070-finalizing-a-channel.md`
 
@@ -212,7 +212,7 @@ def Step (sig : SignatureAssumptions)
         { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := 0, outcomeHash := 0 } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `conclude` — ForceMove.sol:127-170; S4 `0070-finalizing-a-channel.md`
 
@@ -246,7 +246,7 @@ def Step (sig : SignatureAssumptions)
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `transfer` — MultiAssetHolder.sol:135-191 (trusted, vendored
   `src/nitro`), settled via the adjudicator's own owned-spend
@@ -293,9 +293,9 @@ def Step (sig : SignatureAssumptions)
        (let remainder := heldValue s assetOutcome.asset cid - totalPayouts
         let payoutOutputs := exitAllocs.filterMap (fun a =>
           if a.amount = 0 then none
-          else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : NotePreimage))
+          else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage))
         let outputs := payoutOutputs ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : NotePreimage)])
+          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])
         PoolOwnedSpendStep s.pool s.self assetOutcome.asset
           (s.holdings assetOutcome.asset cid) outputs s'.pool ∧
         s'.holdings = update s.holdings assetOutcome.asset
@@ -307,7 +307,7 @@ def Step (sig : SignatureAssumptions)
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
               if i ≠ assetIndex then exit else { exit with allocations := newAllocs }) })) ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `reclaim` — MultiAssetHolder.sol:237-390 (trusted, vendored
   `src/nitro`); S3 §2.4 Listing 2; clause 28
@@ -357,7 +357,7 @@ def Step (sig : SignatureAssumptions)
                (reallocateGuarantee sourceOutcome sourceAssetIndex indexOfTargetInSource left right a0 a1) }) ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `bulkTransferAllAssets`, `bulkConcludeAndTransferAllAssets` —
   Armada's own rule: revert
@@ -400,7 +400,7 @@ def Step (sig : SignatureAssumptions)
       s'.now = newNow ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧ s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧
-      s'.signedBy = s.signedBy
+      s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `sign` — the EOA half of assumption 2 (`Assumptions.lean`'s module
   comment)
@@ -425,7 +425,8 @@ def Step (sig : SignatureAssumptions)
       actor = .nitro p ∧
       s'.signedBy = (fun p' d' => (p' = p ∧ d' = d) ∨ s.signedBy p' d') ∧
       s'.pool = s.pool ∧ s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now
+      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.poolSignedBy = s.poolSignedBy
   /-
   ### `signNote` — the pool layer's own EdDSA signing action
   (`Notes.lean`'s `PoolSignatureLiveness`)
@@ -441,8 +442,8 @@ def Step (sig : SignatureAssumptions)
   -/
   | .signNote pk msgHash => fun s' =>
       actor = .pool pk ∧
-      s'.pool.poolSignedBy = (fun pk' m' => (pk' = pk ∧ m' = msgHash) ∨ s.pool.poolSignedBy pk' m') ∧
-      s'.pool.liveNotes = s.pool.liveNotes ∧ s'.pool.usedNullifiers = s.pool.usedNullifiers ∧
+      s'.poolSignedBy = (fun pk' m' => (pk' = pk ∧ m' = msgHash) ∨ s.poolSignedBy pk' m') ∧
+      s'.pool = s.pool ∧
       s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy

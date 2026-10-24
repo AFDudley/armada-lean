@@ -62,6 +62,16 @@ structure AdjudicatorState where
   self : Nat
   now : Nat
   signedBy : Nat → Nat → Prop
+  /-- The pool layer's own EOA signing record (the SAME kind of
+      execution-tracked fact `signedBy` is for the Nitro layer, above):
+      which `(babyjubjubPublicKey, msgHash)` pairs this execution has
+      recorded a genuine EdDSA signature for. Grows only through
+      `Operations.lean`'s `.signNote` `Call`, which only ever adds to the
+      signing key's OWN row. Kept at the ADJUDICATOR level, not inside the
+      shared `ArmadaLean.PoolState` (`Pool.lean`): it is this execution's
+      own record of who it has seen sign what, not part of the pool
+      contract's own storage. -/
+  poolSignedBy : (Nat × Nat) → Nat → Prop
 
 /-!
 The armada-nitro rule (`AdjudicatorState`'s `holdings` field, above),
@@ -101,7 +111,7 @@ valued` states and grounds this precisely, checking `.deposit`/
 def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
   match s.holdings asset channelId with
   | none => 0
-  | some c => (s.pool.preimageOf c).map NotePreimage.value |>.getD 0
+  | some c => (s.pool.preimageOf c).map CommitmentPreimage.value |>.getD 0
 
 /-- Whether `asset` is on the hub's configured list
     (`ArmadaNitroAdjudicator.isAsset`). Stated as a field of
@@ -149,7 +159,7 @@ def SignedByAll (sig : SignatureAssumptions) (s : AdjudicatorState)
     (`ArmadaNitroAdjudicator`'s constructor), fixed once per deployment.
     `pool` is ALSO a parameter, not empty: the Armada pool (`Notes.lean`)
     is a shared, already-running contract this adjudicator is deployed
-    alongside, not created by it — a depositor's note (`DepositTransacted`,
+    alongside, not created by it — a depositor's note (`DepositStep`,
     `Notes.lean`) must already be live in the pool before this adjudicator
     ever sees a call, so the pool's state at deployment is whatever it
     already was, not `[]`. `signedBy` is NOT a parameter: no Nitro-layer
@@ -164,5 +174,6 @@ def genesis (assets : Nat → Prop) (self : Nat) (pool : PoolState) : Adjudicato
   self := self
   now := 0
   signedBy := fun _ _ => False
+  poolSignedBy := fun _ _ => False
 
 end ArmadaLean.Adjudicator
