@@ -471,6 +471,7 @@ only (the one can-happen theorem whose witnessed execution includes a
 `.transfer` call).
 -/
 
+set_option maxRecDepth 2000 in
 /-- A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
     `PoolSignatureLiveness`, there is an execution from
     `genesis` — with a pool state `pool0` that already holds the
@@ -493,7 +494,97 @@ theorem deposit_can_happen
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       Step sig (consensusRelation sig) actor s
         (.deposit channelId expectedHeld asset amount) s' := by
-  sorry
+  let self : Nat := 0
+  let publicKey : Nat × Nat := (0, 0)
+  let nullifyingKey : Nat := 0
+  let token : Nat := 0
+  let assets : Nat → Prop := fun a => a = token
+  let amount : Nat := 1
+  let channelId : Nat := 2 ^ 160
+  let randomIn : Fin 1 → Nat := fun _ => 0
+  let valueIn : Fin 1 → Nat := fun _ => amount
+  let leavesIndices : Fin 1 → Nat := fun _ => 0
+  let pathElements : Fin 1 → List (Nat × Bool) := fun _ => List.replicate 16 (0, false)
+  let npkOut : Fin 1 → Nat := fun _ => npk self 0
+  let valueOut : Fin 1 → Nat := fun _ => amount
+  let leaf : Nat :=
+    commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn 0)) token (valueIn 0)
+  let root : Nat := merkleRoot leaf (pathElements 0)
+  let pub : TransactPublic 1 1 :=
+    { merkleRoot := root, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier nullifyingKey (leavesIndices 0),
+      commitmentsOut := fun _ => commitment (npkOut 0) token (valueOut 0) }
+  let inputNote : CommitmentPreimage :=
+    ⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn 0), token, valueIn 0⟩
+  let pool0 : PoolState :=
+    { live := fun t => if t = token then [inputNote] else [],
+      spent := [], roots := [root], held := fun _ => 0,
+      preimageOf := fun _ => none, shieldsPaused := false,
+      emergencyPaused := false, withdrawOnlyMode := false }
+  let g := genesis assets self pool0
+  let mid : AdjudicatorState := { g with
+    poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub) ∨ g.poolSignedBy pk' m' }
+  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
+      (.signNote publicKey (msgHashOf pub)) mid :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach : Reachable sig (consensusRelation sig) g mid :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
+  have hsigned : mid.poolSignedBy publicKey (msgHashOf pub) := Or.inl ⟨rfl, rfl⟩
+  obtain ⟨signature, hveri⟩ :=
+    poolSigLive.eddsaCompleteness mid.poolSignedBy publicKey (msgHashOf pub) hsigned
+  let w : TransactWitness 1 1 :=
+    { token := token, publicKey := publicKey, signature := signature,
+      nullifyingKey := nullifyingKey, randomIn := randomIn, valueIn := valueIn,
+      pathElements := pathElements, leavesIndices := leavesIndices,
+      npkOut := npkOut, valueOut := valueOut }
+  have hbitsZero : ∀ n, bitsVal (List.replicate n false) = 0 := by
+    intro n
+    induction n with
+    | zero => rfl
+    | succ k ih => simp [List.replicate_succ, bitsVal, ih]
+  have hbitsOne : bitsVal (true :: List.replicate 119 false) = 1 := by
+    rw [show bitsVal (true :: List.replicate 119 false) =
+        1 + 2 * bitsVal (List.replicate 119 false) from rfl, hbitsZero]
+  have hC : Constrained w pub :=
+    { pathLen := fun _ => List.length_replicate
+      merkle := fun _ => rfl
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeOut := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      balance := rfl
+      distinct := fun i j hij => absurd (Subsingleton.elim i j) hij
+      sig := hveri }
+  have hRemove : removeAll (mid.pool.live w.token) (transactSpentNotes w) = some [] := by
+    show removeAll [inputNote] [inputNote] = some []
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_singleton_self _))]
+    rw [List.erase_cons_head]
+    rfl
+  have hNullify : markSpent mid.pool.spent (List.ofFn pub.nullifiers) =
+      some (List.ofFn pub.nullifiers) := rfl
+  have hidxrec : (pub.commitmentsOut (0 : Fin 1),
+      (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage)) ∈ transactOutputRecords w pub :=
+    List.mem_ofFn.mpr ⟨0, rfl⟩
+  let s' : AdjudicatorState := { mid with
+    pool := { mid.pool with
+      live := fun t => if t = w.token then transactAllOutputs w ++ ([] : List CommitmentPreimage)
+        else mid.pool.live t,
+      spent := List.ofFn pub.nullifiers,
+      preimageOf := applyRecords mid.pool.preimageOf (transactOutputRecords w pub) },
+    holdings := update mid.holdings token (update (mid.holdings token) channelId
+      (some (pub.commitmentsOut (0 : Fin 1)))) }
+  have hdstep : DepositStep mid.pool self token amount w pub (0 : Fin 1) s'.pool :=
+    ⟨⟨0, rfl⟩, rfl, rfl, by decide, by decide, hC, [], List.ofFn pub.nullifiers, 0,
+      transactOutputRecords w pub, rfl, rfl, List.mem_singleton_self _, hRemove, hNullify,
+      List.Sublist.refl _, hidxrec, rfl⟩
+  have hstep : Step sig (consensusRelation sig) (Actor.pool publicKey) mid
+      (.deposit channelId 0 token amount) s' := by
+    refine ⟨rfl, rfl, (by simp [channelId, isExternal]), (by decide),
+      ⟨1, 1, w, pub, 0, ?_, rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    exact hdstep
+  exact ⟨assets, self, pool0, mid, s', channelId, 0, token, amount, Actor.pool publicKey,
+    hreach, hstep⟩
 
 /-- A top-up can happen: the same construction as `deposit_can_happen`,
     run twice from a `pool0` holding both notes, against a channel that
