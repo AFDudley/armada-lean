@@ -167,3 +167,22 @@ theorem transact_value_conserved {N M : Nat} (w : TransactWitness N M)
     obtain ⟨j, hjv⟩ := List.mem_ofFn.mp hv
     rw [← hjv]
     exact rangeCheck120_sound _ (h.rangeOut j)
+
+/--
+**A note's commitment determines the master public key that spends it.** `npk =
+Poseidon(masterPublicKey, random)` (:75-78) and `commitment = Poseidon(npk, token,
+value)` (:80-84), so by collision resistance (`poseidon2_inj`, `poseidon3_inj`) the same
+commitment value cannot arise from two different master public keys. The plain-path
+analogue of `ArmadaLean.TransactOwned.commitment_owner_inj`: there, the owner is read
+directly off the commitment because `npk = Poseidon(ownerField, random)`; here, the
+commitment instead pins down `masterPublicKey = Poseidon(spendingPublicKeyX,
+spendingPublicKeyY, nullifyingKey)` (:61-66), one hash layer further from the raw keys.
+This is the Poseidon-injectivity core of "a transact spends only notes whose owner key
+derives from keys the spender holds" (`ArmadaLean.PoolSafety.transact_spends_only_owned`
+adds the circuit's EdDSA check on top, the plain-path counterpart of
+`ArmadaLean.PoolOwned.owned_owner_binding`). -/
+theorem commitment_mpk_inj {mpk₁ r₁ mpk₂ r₂ token value : Nat}
+    (h : commitment (npk mpk₁ r₁) token value = commitment (npk mpk₂ r₂) token value) :
+    mpk₁ = mpk₂ := by
+  obtain ⟨hnpk, -, -⟩ := poseidon3_inj h
+  exact (poseidon2_inj hnpk).1

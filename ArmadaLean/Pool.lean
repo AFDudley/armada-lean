@@ -240,6 +240,44 @@ def genesis (emptyRoot : Nat) : PoolState :=
     preimageOf := fun _ => none, shieldsPaused := false, emergencyPaused := false,
     withdrawOnlyMode := false }
 
+/-! ### Deriving notes from a witness
+
+A spend's input and output notes are never free choices: they are read off the witness
+a `Constrained`/`OwnedConstrained` proof already pins down. These four definitions are
+the single place that reads them off, reused by every `Step` constructor and every
+`can_happen` theorem below, so "which notes did this spend touch" has exactly one
+answer, derived, not asserted. -/
+
+/-- The commitment preimages of a plain `TransactWitness`'s `N` inputs: input `i` opens
+    the commitment at `npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i)`
+    (Transact.circom:74-84). -/
+noncomputable def transactSpentNotes {N M : Nat} (w : TransactWitness N M) :
+    List CommitmentPreimage :=
+  List.ofFn fun i =>
+    (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i), w.token,
+      w.valueIn i⟩ : CommitmentPreimage)
+
+/-- The commitment preimages of a plain `TransactWitness`'s `M` outputs, in witness
+    order (Transact.circom:105-113). The circuit does not distinguish a kept note from
+    an unshield payout; `Step.transact` below splits this list into the two. -/
+def transactAllOutputs {N M : Nat} (w : TransactWitness N M) : List CommitmentPreimage :=
+  List.ofFn fun j => (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)
+
+/-- The commitment preimages of an owned `TransactOwnedWitness`'s `N` inputs: input `i`
+    opens the commitment at `npk pub.ownerField (w.randomIn i)`
+    (TransactOwned.circom:66-76). -/
+noncomputable def ownedSpentNotes {N M : Nat} (pub : TransactOwnedPublic N M)
+    (w : TransactOwnedWitness N M) :
+    List CommitmentPreimage :=
+  List.ofFn fun i =>
+    (⟨npk pub.ownerField (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage)
+
+/-- The commitment preimages of an owned `TransactOwnedWitness`'s `M` outputs. All of
+    them stay live: `transactOwned` never unshields
+    (`_validateOwnedTransaction`, TransactModule.sol:619-623). -/
+def ownedNewNotes {N M : Nat} (w : TransactOwnedWitness N M) : List CommitmentPreimage :=
+  List.ofFn fun j => (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)
+
 /-! ### Operations
 
 Each constructor below takes, as explicit hypotheses, exactly the checks the named
@@ -274,21 +312,37 @@ inductive Step : PoolState → PoolState → Prop where
              roots := newRoot :: s.roots,
              preimageOf := recordStep s.preimageOf (hashCommitment note) note })
   /-- Local `TransactModule.transact` (TransactModule.sol:43-96), covering both a pure
-      transfer and a transfer with a local unshield (`unshieldValue = 0` means no
-      unshield — TransactModule.sol:301-303 rejects a zero-value unshield output, so the
-      correspondence is exact). `hRoot` is `rootHistory[treeNumber][merkleRoot]`
-      (`_validateCommonContext`, TransactModule.sol:538). `hRemove`/`hNullify` are the
-      ghost-level and on-chain halves of "spend these inputs": `hRemove` is licensed by
-      the proof's `Constrained.merkle`/root-history facts (soundness: a Merkle-membership
-      proof against a historical root cannot name a note the pool never created — Pool
-      module comment), `hNullify` is `_accumulateAndNullify`
-      (TransactModule.sol:373-399). `hBalance` is `transact_value_conserved`
-      (ArmadaLean.Transact), split so the unshield's payout is excluded from the new live
-      notes. `hValid`/`records` is `_validatePublicOutputs`/`_recordPreimages`
-      (TransactModule.sol:544-604). S-RG: "The contract checks to make sure: ... That it
-      hasn't seen the nullifiers before, eliminating any double spends[;] The Merkle root
-      is the current or a previous Merkle root, to prevent users from making up UTXOs."
-      Zokyo's 2022-12-21 audit of `RailgunLogic.sol`
+      transfer and a transfer with a local unshield. `w`/`pub` are the proof's own
+      witness and public inputs; `hC : Constrained w pub` is the soundness hypothesis
+      ("an accepted proof means its circuit constraints hold") — this is what ties
+      `transactSpentNotes w` to notes the spender actually derived from keys it holds,
+      not a free choice (see `ArmadaLean.PoolSafety.transact_spends_only_owned`).
+      `hN`/`hM` are the registered circuit shapes: `VerifierModule.setVerificationKey`
+      (VerifierModule.sol:32-47) registers one key per `(nullifierCount,
+      commitmentCount)` pair, and an unregistered shape reverts
+      (`verifyingKey.alpha1.x != 0` check, PrivacyPool.sol:519); the 19 registered plain
+      shapes (`armada-circuits/src/main/main_{1x1,1x2,1x3,2x1,2x2,2x3,3x1,3x2,3x3,4x1,
+      4x2,4x3,5x1,5x2,6x1,6x2,7x1,8x1,8x4}.circom`) all satisfy `N ≤ 8 ∧ M ≤ 4`, the
+      exact bound `transact_value_conserved` needs. `hRoot` is
+      `rootHistory[treeNumber][merkleRoot]` (`_validateCommonContext`,
+      TransactModule.sol:538). `hSplit`/`hUnshieldLen` separate the circuit's uniform `M`
+      outputs (`transactAllOutputs`) into the notes that stay live and, at most, one
+      unshield payout — the circuit itself draws no such line
+      (TransactOwned.circom/Transact.circom treat every output alike); the pool does, via
+      `boundParams.unshield`/`commitmentCiphertext.length` (TransactModule.sol:289-337).
+      `hRemove`/`hNullify` are the ghost-level and on-chain halves of "spend these
+      inputs": `hRemove` is licensed by the proof's `Constrained.merkle`/root-history
+      facts (soundness: a Merkle-membership proof against a historical root cannot name a
+      note the pool never created — Pool module comment), `hNullify` is
+      `_accumulateAndNullify` (TransactModule.sol:373-399). `hValid`/`records` is
+      `_validatePublicOutputs`/`_recordPreimages` (TransactModule.sol:544-604). The
+      balance fact itself is not a hypothesis here: `ArmadaLean.PoolSafety
+      .step_preserves_invariant` derives it from `transact_value_conserved hN hM hC`
+      at the point it is needed, exactly as the contract's own guarantee rests on the
+      circuit constraints and nothing else. S-RG: "The contract checks to make sure: ...
+      That it hasn't seen the nullifiers before, eliminating any double spends[;] The
+      Merkle root is the current or a previous Merkle root, to prevent users from making
+      up UTXOs." Zokyo's 2022-12-21 audit of `RailgunLogic.sol`
       (`.scratch/rewrite-B/sources/railgun-audit-2022-12-21-Zokyo.pdf`, sha256
       `b974caa94f7eee9f3f52e7996e4251ac1581523af161a5c83b7468cb06f3a9a9`), finding #1
       ("Transaction validation is out of the scope", Medium, Resolved): "the current
@@ -297,30 +351,31 @@ inductive Step : PoolState → PoolState → Prop where
       Armada's `_validateTransaction` already carries this fix (TransactModule.sol
       :295-331, the unshield npk/value/token checks and the
       `_hashCommitment(unshieldPreimage) == commitments[last]` check), which is what
-      licenses taking "the unshield payout is this transaction's real notes' value" as a
-      sound hypothesis here. The same audit, finding #2 ("Possible re-entrancy", Medium,
-      Resolved), recommends marking a transaction processed before any token moves;
-      `_accumulateAndNullify` already runs for every transaction in the batch
-      (TransactModule.sol:63-73) before any unshield payout
-      (TransactModule.sol:76-80) — `hNullify` is taken before `held` changes below for
-      the same reason. -/
-  | transact {s : PoolState} (token : Nat)
-      (spentNotes newNotes rest : List CommitmentPreimage) (spent' : NullifierSet)
-      (spentNullifiers : List Nat) (root newRoot unshieldValue : Nat)
-      (records : List (Nat × CommitmentPreimage))
+      licenses `hSplit` reading the unshield payout off the circuit's own output. The
+      same audit, finding #2 ("Possible re-entrancy", Medium, Resolved), recommends
+      marking a transaction processed before any token moves; `_accumulateAndNullify`
+      already runs for every transaction in the batch (TransactModule.sol:63-73) before
+      any unshield payout (TransactModule.sol:76-80) — `hNullify` is taken before `held`
+      changes below for the same reason. -/
+  | transact {s : PoolState} {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
+      (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
+      (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
+      (newRoot : Nat) (records : List (Nat × CommitmentPreimage))
       (hEmergency : s.emergencyPaused = false)
-      (hWithdrawOnly : unshieldValue = 0 → s.withdrawOnlyMode = false)
-      (hRoot : root ∈ s.roots)
-      (hRemove : removeAll (s.live token) spentNotes = some rest)
-      (hNullify : markSpent s.spent spentNullifiers = some spent')
-      (hBalance : listSum (spentNotes.map CommitmentPreimage.value) =
-          listSum (newNotes.map CommitmentPreimage.value) + unshieldValue)
+      (hWithdrawOnly : unshieldTail = [] → s.withdrawOnlyMode = false)
+      (hRoot : pub.merkleRoot ∈ s.roots)
+      (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
+      (hUnshieldLen : unshieldTail.length ≤ 1)
+      (hRemove : removeAll (s.live w.token) (transactSpentNotes w) = some rest)
+      (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hValid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1) :
       Step s
         { s with
-            live := fun t => if t = token then newNotes ++ rest else s.live t,
+            live := fun t => if t = w.token then newNotes ++ rest else s.live t,
             spent := spent',
-            held := fun t => if t = token then s.held t - unshieldValue else s.held t,
+            held := fun t => if t = w.token
+                then s.held t - listSum (unshieldTail.map CommitmentPreimage.value)
+                else s.held t,
             roots := newRoot :: s.roots,
             preimageOf := applyRecords s.preimageOf records }
   /-- `TransactModule.transactOwned` (TransactModule.sol:488-519): the same bookkeeping
@@ -328,25 +383,34 @@ inductive Step : PoolState → PoolState → Prop where
       `unshield != NONE`, TransactModule.sol:619-623) and every output's preimage
       mandatory (`_validatePublicOutputs(requireAll = true)`, TransactModule.sol:630-634
       — `records` therefore has one entry per new note here, unlike `transact` where it
-      is optional). `hWithdrawOnly` is unconditional, not an implication like `transact`'s:
-      `_requireNotWithdrawOnly` demands `unshield != NONE` for every transaction in
-      withdraw-only mode, which an owned transaction (unshield always `NONE`) can never
-      satisfy, so a `transactOwned` call always reverts while withdraw-only mode is on. -/
-  | transactOwned {s : PoolState} (token : Nat)
-      (spentNotes newNotes rest : List CommitmentPreimage) (spent' : NullifierSet)
-      (spentNullifiers : List Nat) (root newRoot : Nat)
+      is optional). `hC : OwnedConstrained w pub` is the soundness hypothesis; `caller`/
+      `hCaller` is the authorization check (`msg.sender == address(uint160(uint256
+      (ownerField)))`, TransactModule.sol:636-639) — together these are exactly what
+      `ArmadaLean.PoolSafety.transactOwned_spends_only_owned`
+      (`ArmadaLean.PoolOwned.owned_owner_binding`) needs. `hN`/`hM`: the registered owned
+      shapes (`armada-circuits/src/main/main_{1x1,1x2,1x3}_owned.circom`) all have
+      `N = 1 ≤ 8` and `M ≤ 3 ≤ 4`, well inside the bound
+      `transactOwned_value_conserved` needs; this model uses the same `N ≤ 8 ∧ M ≤ 4`
+      bound as the plain path rather than the tighter true one, since that is the bound
+      the existing proof already supplies. `hWithdrawOnly` is unconditional, not an
+      implication like `transact`'s: `_requireNotWithdrawOnly` demands `unshield !=
+      NONE` for every transaction in withdraw-only mode, which an owned transaction
+      (unshield always `NONE`) can never satisfy, so a `transactOwned` call always
+      reverts while withdraw-only mode is on. -/
+  | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
+      (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
+      (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
+      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat)
       (records : List (Nat × CommitmentPreimage))
       (hEmergency : s.emergencyPaused = false)
       (hWithdrawOnly : s.withdrawOnlyMode = false)
-      (hRoot : root ∈ s.roots)
-      (hRemove : removeAll (s.live token) spentNotes = some rest)
-      (hNullify : markSpent s.spent spentNullifiers = some spent')
-      (hBalance : listSum (spentNotes.map CommitmentPreimage.value) =
-          listSum (newNotes.map CommitmentPreimage.value))
+      (hRoot : pub.merkleRoot ∈ s.roots)
+      (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
+      (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hValid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1) :
       Step s
         { s with
-            live := fun t => if t = token then newNotes ++ rest else s.live t,
+            live := fun t => if t = w.token then ownedNewNotes w ++ rest else s.live t,
             spent := spent',
             roots := newRoot :: s.roots,
             preimageOf := applyRecords s.preimageOf records }

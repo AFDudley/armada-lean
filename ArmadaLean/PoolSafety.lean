@@ -14,6 +14,49 @@ theorem genesis_invariant (emptyRoot : Nat) : HeldInvariant (genesis emptyRoot) 
   intro t
   simp [genesis, listSum]
 
+/-- The value projection of a `List.ofFn`-built list of notes, all sharing one `token`
+    and one key-derivation `mk`, is exactly the underlying value function. Bridges the
+    circuit's `Fin`-indexed `valueIn`/`valueOut` and the pool's `List`-indexed note
+    bookkeeping everywhere below. -/
+theorem value_ofFn_eq {N : Nat} (mk g : Fin N → Nat) (token : Nat) :
+    (List.ofFn (fun i => (⟨mk i, token, g i⟩ : CommitmentPreimage))).map
+        CommitmentPreimage.value = List.ofFn g := by
+  rw [List.map_ofFn]
+  rfl
+
+/-- **The balance a `Step.transact` moves is derived, not assumed.** `transactSpentNotes`
+    and `transactAllOutputs` are built straight from the witness; `transact_value_conserved`
+    (`ArmadaLean.Transact`) — which needs exactly the registered-shape bound `hN`/`hM` to
+    upgrade the circuit's mod-`p` equality to an integer one — gives their values' sum
+    equality, and `hSplit` carries that equality across the split into kept notes and the
+    unshield payout. This is the fact `Step.transact`'s own comment points to instead of
+    taking it as a hypothesis. -/
+theorem transact_balance {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M}
+    (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
+    {newNotes unshieldTail : List CommitmentPreimage}
+    (hSplit : transactAllOutputs w = newNotes ++ unshieldTail) :
+    listSum ((transactSpentNotes w).map CommitmentPreimage.value) =
+      listSum (newNotes.map CommitmentPreimage.value) +
+        listSum (unshieldTail.map CommitmentPreimage.value) := by
+  have hbal := transact_value_conserved w pub hN hM hC
+  have hSplit' := congrArg (List.map CommitmentPreimage.value) hSplit
+  rw [List.map_append] at hSplit'
+  unfold transactAllOutputs at hSplit'
+  rw [value_ofFn_eq] at hSplit'
+  unfold transactSpentNotes
+  rw [value_ofFn_eq, hbal, hSplit', listSum_append]
+
+/-- The owned-path counterpart of `transact_balance`: no unshield split, since
+    `transactOwned` never unshields. -/
+theorem transactOwned_balance {N M : Nat} {w : TransactOwnedWitness N M}
+    {pub : TransactOwnedPublic N M} (hN : N ≤ 8) (hM : M ≤ 4) (hC : OwnedConstrained w pub) :
+    listSum ((ownedSpentNotes pub w).map CommitmentPreimage.value) =
+      listSum ((ownedNewNotes w).map CommitmentPreimage.value) := by
+  have hbal := transactOwned_value_conserved w pub hN hM hC
+  unfold ownedSpentNotes ownedNewNotes
+  rw [value_ofFn_eq, value_ofFn_eq]
+  exact hbal
+
 theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     (hstep : Step s s') : HeldInvariant s' := by
   cases hstep with
@@ -26,27 +69,28 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | transact token spentNotes newNotes rest spent' spentNullifiers root newRoot
-      unshieldValue records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance
-      hValid =>
+  | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
+      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
     intro t
-    by_cases ht : t = token
+    by_cases ht : t = w.token
     · subst ht
       simp only [if_pos]
       have hsum := removeAll_sum hRemove
-      have hinv_t := hinv t
+      have hbal := transact_balance hN hM hC hSplit
+      have hinv_t := hinv w.token
       simp only [List.map_append, listSum_append]
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | transactOwned token spentNotes newNotes rest spent' spentNullifiers root newRoot
-      records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance hValid =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
+      hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
     intro t
-    by_cases ht : t = token
+    by_cases ht : t = w.token
     · subst ht
       simp only [if_pos]
       have hsum := removeAll_sum hRemove
-      have hinv_t := hinv t
+      have hbal := transactOwned_balance hN hM hC
+      have hinv_t := hinv w.token
       simp only [List.map_append, listSum_append]
       omega
     · simp only [if_neg ht]
@@ -61,14 +105,58 @@ holds equal the total value of its unspent notes. Rules out the pool ever holdin
 no live note backs (insolvency) and the pool ever owing more than it holds (a note whose
 value is not actually backed). Proved by induction on `Reachable`: the genesis state
 trivially satisfies it (no tokens, no notes), and `step_preserves_invariant` shows every
-`Step` preserves it, using `transact_value_conserved`/`transactOwned_value_conserved`
-(via each `Step` constructor's `hBalance` hypothesis) for `transact`/`transactOwned` and
-direct construction for `shield`. -/
+`Step` preserves it, using `transact_balance`/`transactOwned_balance` (which themselves
+derive from `transact_value_conserved`/`transactOwned_value_conserved` under the
+registered-shape bound `hN`/`hM`, not an assumed hypothesis) for
+`transact`/`transactOwned`, and direct construction for `shield`. -/
 theorem core_invariant {emptyRoot : Nat} {s : PoolState} (h : Reachable emptyRoot s) :
     HeldInvariant s := by
   induction h with
   | genesis => exact genesis_invariant emptyRoot
   | step _ hstep ih => exact step_preserves_invariant ih hstep
+
+/-! ### Ownership: a spend can only touch notes its spender derives keys for -/
+
+/--
+**A transact spends only notes whose owner key derives from keys the spender holds.** If
+a `Step.transact`'s input `i` opens the same commitment as a note genuinely created for
+master public key `trueMpk` (`hSameNote`), `ArmadaLean.Transact.commitment_mpk_inj` forces
+the witness's own derived key, `masterPublicKey w.publicKey w.nullifyingKey`, to equal
+`trueMpk` — and `Constrained.sig` (the circuit's EdDSA check, Transact.circom:142-150)
+already requires a signature by `w.publicKey` that verifies, which, under "a signature
+cannot be forged" (the brief's named assumption), only the true holder of `w.publicKey`'s
+private key can produce. This is the first harm the brief names, for the plain path: no
+caller can take tokens no unspent note of theirs backs, because no caller without
+`trueMpk`'s private key can build a `Constrained` witness opening `trueMpk`'s note. The
+plain-path counterpart of `ArmadaLean.PoolOwned.owned_owner_binding`. -/
+theorem transact_spends_only_owned {N M : Nat} {w : TransactWitness N M}
+    {pub : TransactPublic N M} (hC : Constrained w pub) (i : Fin N)
+    {trueMpk trueRandom : Nat}
+    (hSameNote :
+      commitment (npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i)) w.token
+        (w.valueIn i) =
+      commitment (npk trueMpk trueRandom) w.token (w.valueIn i)) :
+    masterPublicKey w.publicKey w.nullifyingKey = trueMpk ∧
+      EdDSAVerify w.publicKey w.signature (msgHashOf pub) :=
+  ⟨commitment_mpk_inj hSameNote, hC.sig⟩
+
+/--
+**An owned transact spends only notes owned by the calling contract.** Direct
+restatement of `ArmadaLean.PoolOwned.owned_owner_binding` at the point `Step.transactOwned`
+is built: the `hC`/`caller`/`hCaller` a `Step.transactOwned` term already requires are
+exactly what this needs. If input `i`'s true creator was `trueOwner` (`hSameNote`: the
+spent commitment is the one `trueOwner` genuinely created), the step's `caller` must be
+`trueOwner`'s own address — the second half of the brief's first harm, for the owned
+path. -/
+theorem transactOwned_spends_only_owned {N M : Nat} {w : TransactOwnedWitness N M}
+    {pub : TransactOwnedPublic N M} (hC : OwnedConstrained w pub) (i : Fin N)
+    {trueOwner trueRandom : Nat}
+    (hSameNote :
+      commitment (npk pub.ownerField (w.randomIn i)) w.token (w.valueIn i) =
+      commitment (npk trueOwner trueRandom) w.token (w.valueIn i))
+    {caller : Nat} (hCaller : caller = addressOf pub.ownerField) :
+    caller = addressOf trueOwner :=
+  owned_owner_binding hC i hSameNote hCaller
 
 /-! ### No double spend across transactions -/
 
@@ -94,12 +182,11 @@ theorem spent_monotone {s s' : PoolState} (hstep : Step s s') : ∀ n ∈ s.spen
   cases hstep with
   | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
     exact fun n hn => hn
-  | transact token spentNotes newNotes rest spent' spentNullifiers root newRoot
-      unshieldValue records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance
-      hValid =>
+  | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
+      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
     exact markSpent_subset hNullify
-  | transactOwned token spentNotes newNotes rest spent' spentNullifiers root newRoot
-      records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance hValid =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
+      hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
     exact markSpent_subset hNullify
   | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
     exact fun n hn => hn
@@ -146,11 +233,14 @@ new notes.** Before the step, the live notes of the spent token are exactly the 
 notes plus a remainder (`removeAll_perm`, a multiset statement: a note's commitment
 need not be unique, so "exactly" means multiset equality, not set equality). After the
 step, the live notes of that token are exactly the new notes plus that same remainder,
-by `Step.transact`/`Step.transactOwned`'s own construction. S-RG, "How Does RAILGUN
-Work?": "The input notes are moved from the live pool to the dead pool, and the output
-notes are added to the live pool." (Armada keeps no separate dead pool — a spent note
-stays in the Merkle tree, only its nullifier is marked — so "moved to the dead pool"
-corresponds here to "removed from `live`", the model's own live-note bookkeeping.) -/
+by `Step.transact`/`Step.transactOwned`'s own construction (where `spentNotes` is always
+`transactSpentNotes w`/`ownedSpentNotes pub w`, read off the proof's own witness — never a
+free choice, `ArmadaLean.PoolSafety.transact_spends_only_owned`/
+`.transactOwned_spends_only_owned`). S-RG, "How Does RAILGUN Work?": "The input notes are
+moved from the live pool to the dead pool, and the output notes are added to the live
+pool." (Armada keeps no separate dead pool — a spent note stays in the Merkle tree, only
+its nullifier is marked — so "moved to the dead pool" corresponds here to "removed from
+`live`", the model's own live-note bookkeeping.) -/
 theorem spend_live_exact {s : PoolState} {token : Nat}
     {spentNotes newNotes rest : List CommitmentPreimage}
     (hRemove : removeAll (s.live token) spentNotes = some rest) :
@@ -162,16 +252,17 @@ theorem spend_live_exact {s : PoolState} {token : Nat}
 
 /--
 **An unshield sends out exactly the value of the notes it spends minus what stays in
-new notes.** `hBalance` (upheld by `transact_value_conserved` at the call site building
-the `Step.transact`) splits the spent notes' value exactly into the new notes' value and
-`unshieldValue`; rearranged, the payout is the spent value minus what the new notes
-keep. The pool's custody of the token drops by exactly that amount
-(`Step.transact`'s `held` field, `s.held t - unshieldValue` at `t = token`). -/
-theorem transact_unshield_exact {spentNotes newNotes : List CommitmentPreimage}
-    {unshieldValue : Nat}
+new notes.** `transact_balance` (derived from `transact_value_conserved` at the
+registered-shape bound, not assumed) splits the spent notes' value exactly into the new
+notes' value and the unshield payout's value; rearranged, the payout is the spent value
+minus what the new notes keep. The pool's custody of the token drops by exactly that
+amount (`Step.transact`'s `held` field). -/
+theorem transact_unshield_exact {spentNotes newNotes unshieldTail : List CommitmentPreimage}
     (hBalance : listSum (spentNotes.map CommitmentPreimage.value) =
-        listSum (newNotes.map CommitmentPreimage.value) + unshieldValue) :
-    unshieldValue = listSum (spentNotes.map CommitmentPreimage.value) -
+        listSum (newNotes.map CommitmentPreimage.value) +
+          listSum (unshieldTail.map CommitmentPreimage.value)) :
+    listSum (unshieldTail.map CommitmentPreimage.value) =
+      listSum (spentNotes.map CommitmentPreimage.value) -
         listSum (newNotes.map CommitmentPreimage.value) := by omega
 
 /--
@@ -207,12 +298,11 @@ theorem roots_grounded {emptyRoot : Nat} {s : PoolState} (h : Reachable emptyRoo
     cases hstep with
     | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | transact token spentNotes newNotes rest spent' spentNullifiers root newRoot
-        unshieldValue records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance
-        hValid =>
+    | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
+        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | transactOwned token spentNotes newNotes rest spent' spentNullifiers root newRoot
-        records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance hValid =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
+        hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
     | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
       exact ⟨pushed, hpushed⟩
@@ -221,7 +311,7 @@ theorem roots_grounded {emptyRoot : Nat} {s : PoolState} (h : Reachable emptyRoo
 **A transact names only a root the pool actually produced.** `roots_grounded` shows
 `s.roots`, for any reachable `s`, is built from the genesis root by prepending values the
 pool itself pushed at earlier `shield`/`transact`/`transactOwned` steps — never anything
-else. A `transact`/`transactOwned`/`shield` step's own `hRoot : root ∈ s.roots`
+else. A `transact`/`transactOwned`/`shield` step's own `hRoot : pub.merkleRoot ∈ s.roots`
 precondition then means the named root is one of those pushed values, or the genesis
 root — never a caller's invention. S-RG, "RAILGUN Core System & Protocol": "The contract
 checks to make sure: ... The Merkle root is the current or a previous Merkle root, to
@@ -251,12 +341,11 @@ theorem pool_preimageOf_consistent {emptyRoot : Nat} {s : PoolState}
     cases hstep with
     | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
       exact recordStep_preserves_consistency ih rfl
-    | transact token spentNotes newNotes rest spent' spentNullifiers root newRoot
-        unshieldValue records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance
-        hValid =>
+    | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
+        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
       exact applyRecords_preserves_consistency ih hValid
-    | transactOwned token spentNotes newNotes rest spent' spentNullifiers root newRoot
-        records hEmergency hWithdrawOnly hRoot hRemove hNullify hBalance hValid =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
+        hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
       exact applyRecords_preserves_consistency ih hValid
     | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
       exact ih
@@ -371,28 +460,24 @@ theorem shield_can_happen {s : PoolState} (token npk grossAmount feeBP newRoot :
     (hFeeBP : feeBP ≤ BASIS) : ∃ s', Step s s' :=
   ⟨_, Step.shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP⟩
 
-/-- The value projection of a `List.ofFn`-built list of notes, all sharing one `token`
-    and one key-derivation `mk`, is exactly the underlying value function. Bridges the
-    circuit's `Fin`-indexed `valueIn`/`valueOut` and the pool's `List`-indexed note
-    bookkeeping in every `can_happen` theorem below. -/
-theorem value_ofFn_eq {N : Nat} (mk g : Fin N → Nat) (token : Nat) :
-    (List.ofFn (fun i => (⟨mk i, token, g i⟩ : CommitmentPreimage))).map
-        CommitmentPreimage.value = List.ofFn g := by
-  rw [List.map_ofFn]
-  rfl
-
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` genuinely-held, genuinely-live notes, re-minting them into `M` fresh
-    notes of equal total value, clears every gate `Step.transact` checks:
-    `transact_spend_can_happen` for the circuit and nullifier freshness, `hLive` for the
-    ghost liveness precondition (the holder's notes are the model's own record of what
-    it minted for them earlier). `records := []`: a plain transact's `publicOutputs` is
+    notes of equal total value, clears every gate `Step.transact` checks: the witness is
+    built and shown `Constrained` exactly as `transact_spend_can_happen` builds one
+    (inlined here, not obtained from that theorem's existential, so `w`'s fields stay
+    definitionally the caller's own data — `Step.transact`'s `hRemove`/`hSplit`
+    hypotheses need that transparency), `hComplete.complete` shows `verify` accepts, and
+    `markSpent_succeeds` (with `distinct_leaves_distinct_nullifiers`) shows the
+    nullifiers are fresh. `hLive` is the ghost liveness precondition (the holder's notes
+    are the model's own record of what it minted for them earlier); `hN`/`hM` the
+    registered-shape bound. `records := []`: a plain transact's `publicOutputs` is
     optional (TransactModule.sol:556-561), so no contract-owned output is needed here. -/
 theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N M : Nat} (publicKey : Nat × Nat)
     (nullifyingKey token boundParamsHash root newRoot : Nat)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool)) (npkOut valueOut : Fin M → Nat)
+    (hN : N ≤ 8) (hM : M ≤ 4)
     (hEmergency : s.emergencyPaused = false) (hNotWithdrawOnly : s.withdrawOnlyMode = false)
     (hRoot : root ∈ s.roots)
     (hPathLen : ∀ i, (pathElements i).length = 16)
@@ -413,29 +498,52 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
             CommitmentPreimage))
         = some rest) :
     ∃ s', Step s s' := by
-  obtain ⟨w, pub, hC, hV, hCommit, spent', hMark⟩ :=
-    transact_spend_can_happen hComplete hSig publicKey nullifyingKey token boundParamsHash
-      root randomIn valueIn leavesIndices pathElements npkOut valueOut hPathLen hMerkle
-      hRangeIn hRangeOut hBalance hDistinctLeaves s.spent hFresh
-  refine ⟨_, Step.transact token _
-    (List.ofFn fun j => (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) rest spent'
-    (List.ofFn pub.nullifiers) root newRoot 0 [] hEmergency (fun _ => hNotWithdrawOnly)
-    hRoot hLive hMark ?_ (by simp)⟩
-  rw [value_ofFn_eq, value_ofFn_eq]
-  omega
+  let pub : TransactPublic N M :=
+    { merkleRoot := root, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier nullifyingKey (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j) }
+  let w : TransactWitness N M :=
+    { token := token, publicKey := publicKey,
+      signature := hSig.sign publicKey (msgHashOf pub), nullifyingKey := nullifyingKey,
+      randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  have hC : Constrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance,
+      distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
+      sig := hSig.signSound publicKey (msgHashOf pub) }
+  have hV : VerifyAccepts pub := hComplete.complete hC
+  obtain ⟨spent', hMark⟩ := markSpent_succeeds
+    (by
+      have hmap := distinct_leaves_distinct_nullifiers nullifyingKey (List.ofFn leavesIndices)
+        hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier nullifyingKey)
+          = List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)) := List.map_ofFn
+      rwa [heq] at hmap)
+    (show ∀ n ∈ List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)), n ∉ s.spent by
+      intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i)
+  refine ⟨_, Step.transact w pub hN hM hC
+    (List.ofFn fun j => (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) [] rest spent'
+    newRoot [] hEmergency (fun _ => hNotWithdrawOnly) hRoot (by simp [transactAllOutputs, w])
+    (by simp) hLive hMark (by simp)⟩
 
 /-- **Can happen: an unshield succeeds.** The degenerate single-output shape of
     `transact_can_happen`: a real key holder spends `N` genuinely-held, genuinely-live
     notes and the circuit's one output is the unshield payout itself (`newNotes := []`,
-    the entire spent value becomes `unshieldValue`) — `_validateTransaction`'s unshield
-    checks (TransactModule.sol:295-331; see the Zokyo 2022-12-21 finding #1 cited at
-    `Step.transact`) are exactly what licenses reading the circuit's one output as the
-    payout amount. -/
+    the entire spent value becomes the unshield payout) — `_validateTransaction`'s
+    unshield checks (TransactModule.sol:295-331; see the Zokyo 2022-12-21 finding #1
+    cited at `Step.transact`) are exactly what licenses reading the circuit's one output
+    as the payout amount. -/
 theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N : Nat} (publicKey : Nat × Nat)
     (nullifyingKey token boundParamsHash root newRoot : Nat)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool)) (npkOut valueOut : Nat)
+    (hN : N ≤ 8)
     (hEmergency : s.emergencyPaused = false) (hRoot : root ∈ s.roots)
     (hValuePos : 0 < valueOut)
     (hPathLen : ∀ i, (pathElements i).length = 16)
@@ -455,29 +563,56 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
             CommitmentPreimage))
         = some rest) :
     ∃ s', Step s s' := by
-  have hBalance1 : listSum (List.ofFn valueIn) = listSum (List.ofFn (fun _ : Fin 1 => valueOut)) := by
-    simp [List.ofFn_succ, List.ofFn_zero, listSum, hBalance]
-  obtain ⟨w, pub, hC, hV, hCommit, spent', hMark⟩ :=
-    transact_spend_can_happen (M := 1) hComplete hSig publicKey nullifyingKey token
-      boundParamsHash root randomIn valueIn leavesIndices pathElements (fun _ => npkOut)
-      (fun _ => valueOut) hPathLen hMerkle hRangeIn (fun _ => hRangeOut) hBalance1
-      hDistinctLeaves s.spent hFresh
-  refine ⟨_, Step.transact token _ [] rest spent' (List.ofFn pub.nullifiers) root newRoot
-    valueOut [] hEmergency (fun h => absurd h (by omega)) hRoot hLive hMark ?_ (by simp)⟩
-  rw [value_ofFn_eq]
-  simp only [List.map_nil, listSum]
-  omega
+  let pub : TransactPublic N 1 :=
+    { merkleRoot := root, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier nullifyingKey (leavesIndices i),
+      commitmentsOut := fun _ => commitment npkOut token valueOut }
+  let w : TransactWitness N 1 :=
+    { token := token, publicKey := publicKey,
+      signature := hSig.sign publicKey (msgHashOf pub), nullifyingKey := nullifyingKey,
+      randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := fun _ => npkOut, valueOut := fun _ => valueOut }
+  have hBalance1 : listSum (List.ofFn w.valueIn) = listSum (List.ofFn w.valueOut) := by
+    simp [w, List.ofFn_succ, List.ofFn_zero, listSum, hBalance]
+  have hC : Constrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := fun _ => hRangeOut,
+      balance := congrArg (· % p) hBalance1,
+      distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
+      sig := hSig.signSound publicKey (msgHashOf pub) }
+  have hV : VerifyAccepts pub := hComplete.complete hC
+  have _ := hValuePos
+  obtain ⟨spent', hMark⟩ := markSpent_succeeds
+    (by
+      have hmap := distinct_leaves_distinct_nullifiers nullifyingKey (List.ofFn leavesIndices)
+        hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier nullifyingKey)
+          = List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)) := List.map_ofFn
+      rwa [heq] at hmap)
+    (show ∀ n ∈ List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)), n ∉ s.spent by
+      intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i)
+  refine ⟨_, Step.transact w pub hN (by omega) hC []
+    (List.ofFn fun (_ : Fin 1) => (⟨npkOut, token, valueOut⟩ : CommitmentPreimage)) rest
+    spent' newRoot [] hEmergency (fun h => absurd h (by simp)) hRoot
+    (by simp [transactAllOutputs, w]) (by simp) hLive hMark (by simp)⟩
 
-/-- **Can happen: an owned transact succeeds.** Directly wires
-    `ArmadaLean.PoolOwned.owned_spend_can_happen` — the real owning contract's spend,
-    with an accepted proof — into `Step.transactOwned`: `hLive` supplies the ghost
-    liveness precondition (the owner's notes are the model's own record of what it
-    minted for them), and `owned_spend_can_happen`'s nullifier-freshness and commitment
-    conjuncts supply `hNullify`/`hValid` directly. -/
+/-- **Can happen: an owned transact succeeds.** Directly wires an owned witness,
+    constructed exactly as `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one
+    (inlined here, not obtained from that theorem's existential, for the same
+    definitional-transparency reason as `transact_can_happen`), into
+    `Step.transactOwned`: `hLive` supplies the ghost liveness precondition (the owner's
+    notes are the model's own record of what it minted for them), `hN`/`hM` the
+    registered-shape bound, `caller`/`hCaller` the authorization check
+    (`ArmadaLean.PoolSafety.transactOwned_spends_only_owned` is the matching safety
+    theorem). -/
 theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofCompleteness)
     {N M : Nat} (ownerField token boundParamsHash root newRoot : Nat)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool)) (npkOut valueOut : Fin M → Nat)
+    (hN : N ≤ 8) (hM : M ≤ 4)
     (hEmergency : s.emergencyPaused = false) (hNotWithdrawOnly : s.withdrawOnlyMode = false)
     (hRoot : root ∈ s.roots)
     (hPathLen : ∀ i, (pathElements i).length = 16)
@@ -497,19 +632,37 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
           (⟨npk ownerField (randomIn i), token, valueIn i⟩ : CommitmentPreimage))
         = some rest) :
     ∃ s', Step s s' := by
-  obtain ⟨w, pub, hC, hV, hCallerEq, hCommit, hNonZero, spent', hMark⟩ :=
-    owned_spend_can_happen hComplete ownerField token boundParamsHash root randomIn valueIn
-      leavesIndices pathElements npkOut valueOut hPathLen hMerkle hRangeIn hRangeOut
-      hBalance hDistinctLeaves s.spent hFresh hOutputsNonZero caller hCaller
-  refine ⟨_, Step.transactOwned token _
-    (List.ofFn fun j => (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) rest spent'
-    (List.ofFn pub.nullifiers) root newRoot
-    (List.ofFn fun j => (pub.commitmentsOut j, (⟨npkOut j, token, valueOut j⟩ :
-      CommitmentPreimage)))
-    hEmergency hNotWithdrawOnly hRoot hLive hMark ?_ ?_⟩
-  · rw [value_ofFn_eq, value_ofFn_eq]
-    exact hBalance
-  · intro cp hcp
-    obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
-    rw [← hj]
-    exact hCommit j
+  let w : TransactOwnedWitness N M :=
+    { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  let pub : TransactOwnedPublic N M :=
+    { merkleRoot := root, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
+      ownerField := ownerField }
+  have hC : OwnedConstrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance }
+  have hV : VerifyOwnedAccepts pub := hComplete.complete hC
+  have _ := hOutputsNonZero
+  obtain ⟨spent', hMark⟩ := markSpent_succeeds
+    (by
+      have hmap := distinct_leaves_distinct_nullifiers ownerField (List.ofFn leavesIndices)
+        hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
+          = List.ofFn (fun i => nullifier ownerField (leavesIndices i)) := List.map_ofFn
+      rwa [heq] at hmap)
+    (show ∀ n ∈ List.ofFn (fun i => nullifier ownerField (leavesIndices i)), n ∉ s.spent by
+      intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i)
+  refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
+    (List.ofFn fun j => (commitment (npkOut j) token (valueOut j),
+      (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)))
+    hEmergency hNotWithdrawOnly hRoot hLive hMark ?_⟩
+  intro cp hcp
+  obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
+  rw [← hj]
+  rfl
