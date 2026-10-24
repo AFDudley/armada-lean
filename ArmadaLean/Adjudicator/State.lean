@@ -3,10 +3,10 @@
 
   Combines `Channel.lean`'s per-channel status (the S1-S4 layer) with
   `Notes.lean`'s pool state (the Armada layer) into one record every
-  `Operations.lean` call transitions. Armada layer, lab book decision 9:
-  "The adjudicator owns its channel collateral as notes" — `holdings`
-  are references to one Armada pool commitment per `(asset, channelId)`,
-  never a raw token-unit balance.
+  `Operations.lean` call transitions. Armada layer: the armada-nitro
+  rule (`AdjudicatorState`'s `holdings` field, below, states and cites
+  it) — `holdings` are references to one Armada pool commitment per
+  `(asset, channelId)`, never a raw token-unit balance.
 -/
 import ArmadaLean.Adjudicator.Channel
 import ArmadaLean.Adjudicator.Notes
@@ -24,11 +24,23 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
 /-- The adjudicator's full state: the pool (`Notes.lean`), one
     `ChannelStatus` per channel id (S4 `0040-lifecycle-of-a-channel.md`,
     "Adjudicator storage"), one live collateral commitment per `(asset,
-    channelId)` (`holdings` — lab book decision 9, "the adjudicator owns
-    its channel collateral as notes": the field holds a live commitment,
-    not a raw token amount — modeled as `Option Nat`, `none` for no
-    collateral; see `heldValue`'s doc comment for the full encoding
-    rule), the
+    channelId)` (`holdings`) — THE ARMADA-NITRO RULE, named and cited
+    here, and only here: a channel's holding is a NOTE in the pool,
+    owned by the adjudicator; it is never a NUMBER the adjudicator
+    stores. Lab book decision 9
+    (`labbook/2026-10-18-contract-owned-notes-and-zk-channel-apps.md`):
+    "The adjudicator owns its channel collateral as notes, so the
+    collateral never leaves the pool and there is no public `deposit`
+    path, no raw-transfer surplus, and no `sweep`." §3a of the same
+    entry states the pool-wide invariant this specializes: "The pool's
+    core invariant is that value in the pool exists only as notes:
+    every token the pool holds backs exactly one unspent note, and the
+    only moves are shield, transact and unshield." `holdings` is
+    modeled as `Option Nat`, `none` for no collateral — see
+    `heldValue`'s doc comment for how the armada-nitro rule fixes the
+    rest of this field's encoding. Every other comment in this model
+    that relies on the armada-nitro rule cites it by name, not this
+    quote a second time. The
     hub's configured asset list (`ArmadaNitroAdjudicator.configuredAssets`),
     the adjudicator contract's own note-owner identity (`self` — the
     `address(this)` every self-owned `npk` derivation in `Notes.lean`
@@ -52,41 +64,37 @@ structure AdjudicatorState where
   signedBy : Nat → Nat → Prop
 
 /-!
-Armada encoding rule (stated once here; `Safety.lean`'s statements 19
-("`heldValue_zero_iff_no_collateral`"), 21 ("`zero_payout_mints_
-nothing`") and 22 ("`full_payout_leaves_no_remainder`") cite it by
-name, not a second time). Nitro-2019-219.pdf §3.1: "We model the
+The armada-nitro rule (`AdjudicatorState`'s `holdings` field, above),
+applied to a ZERO balance. Nitro-2019-219.pdf §3.1: "We model the
 adjudicator as having a simple mapping that stores the quantity of
 coins for an address. If an address does not appear in the table we
-take the balance to be zero." This model's note-backed balance
-specializes that rule: A BALANCE IS HELD AS ONE NOTE, AND A ZERO
-BALANCE IS HELD AS NO NOTE. A positive balance is exactly one live
-commitment (`holdings asset channelId = some c`, `s.pool.isLive c`); a
-zero balance is no commitment at all (`holdings asset channelId =
-none`), never a commitment recorded with value `0`.
+take the balance to be zero." Under the armada-nitro rule a balance
+only exists AS a note — there is no number to read instead — so a
+zero balance has no note to point `holdings` at: `holdings asset
+channelId = none`, never `some c` for a `c` recorded with value `0`.
 
-This is the ADJUDICATOR's OWN invariant over REACHABLE states, not a
-pool guarantee: `TransactOwned.circom:117-120` only range-checks each
-output value to 120 bits (`Num2Bits(120)`), with no further
-constraint, so a `0`-valued output commitment is a VALID owned-spend
-output — `ArmadaLean.OwnedConstrained` (`TransactOwned.lean`) permits
-it, and the pool will happily mint and hold such a note. The rule
-that NO channel's `holdings` entry ever POINTS AT one is the
-adjudicator's own rule, kept by every `Step` case that writes
-`holdings` (`Safety.lean`'s `holdings_never_zero_valued` states and
-grounds this precisely, checking `.deposit`/`.transfer`/`.reclaim`
-each keep it). No paper covers a note-backed balance representation
-at all; this is Armada's own encoding, with no dedicated lab book
-section.
+This "never value `0`" half is the ADJUDICATOR's OWN invariant over
+REACHABLE states, not a pool guarantee: `TransactOwned.circom:117-120`
+only range-checks each output value to 120 bits (`Num2Bits(120)`),
+with no further constraint, so a `0`-valued output commitment is a
+VALID owned-spend output — `ArmadaLean.OwnedConstrained`
+(`TransactOwned.lean`) permits it, and the pool will happily mint and
+hold such a note. The rule that NO channel's `holdings` entry ever
+POINTS AT one is the adjudicator's own rule, kept by every `Step`
+case that writes `holdings` (`Safety.lean`'s `holdings_never_zero_
+valued` states and grounds this precisely, checking `.deposit`/
+`.transfer`/`.reclaim` each keep it).
 -/
 
-/-- `heldValue`: `0` for no collateral (`none`, the Armada encoding
-    rule's "zero balance is held as no note" half, stated above), else
-    the pool's own recorded value for the live commitment — never a
-    cached or caller-asserted amount (lab book decision 11: the
-    adjudicator reads only what the pool itself attests through
-    `preimageOf`). The `match ... | none => 0` branch below is where
-    the encoding rule becomes a value-level fact: a caller cannot make
+/-- `heldValue`: `0` for no collateral (`none`, the armada-nitro
+    rule's zero-balance case, stated above), else the pool's own
+    recorded value for the live commitment — the note's value read
+    from the pool's own record, which `ArmadaLean.preimageOf_
+    consistent` (`PoolOwned.lean`) proves trustworthy: every preimage
+    the pool records hashes to the commitment it is recorded for, so
+    no caller can make a commitment read back a value the pool did
+    not itself attest. The `match ... | none => 0` branch below is
+    where the rule becomes a value-level fact: a caller cannot make
     an empty commitment read as a positive holding, and (over
     REACHABLE states, `holdings_never_zero_valued`) no reachable
     holding's own preimage reads back as a `0`-value note either. -/

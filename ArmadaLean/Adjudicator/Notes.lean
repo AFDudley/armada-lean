@@ -6,15 +6,14 @@
   owned-note spend circuit (`armada-circuits/src/operations/
   TransactOwned.circom`), the pool contract's owned path
   (`armada-poc/contracts/privacy-pool/{modules/TransactModule.sol,
-  PrivacyPool.sol}`), and the lab book
-  (`armada-laconic/labbook/2026-10-18-contract-owned-notes-and-zk-channel-
-  apps.md`). Every definition below reuses the pool primitives already
-  proven in the root `ArmadaLean` modules (`Poseidon`, `Nullifier`,
-  `Merkle`, `Transact`, `ValueConservation`) — per the brief, "The
-  adjudicator model uses these notes, commitments and nullifiers. It does
-  not define new ones." `State.lean` embeds `PoolState` inside the full
-  adjudicator state; `Operations.lean` calls the relations this file
-  defines.
+  PrivacyPool.sol}`), and the armada-nitro rule (`State.lean`'s
+  `AdjudicatorState`, `holdings` field). Every definition below reuses
+  the pool primitives already proven in the root `ArmadaLean` modules
+  (`Poseidon`, `Nullifier`, `Merkle`, `Transact`, `ValueConservation`):
+  the adjudicator model uses these notes, commitments and nullifiers,
+  and defines no new ones. `State.lean` embeds `PoolState` inside the
+  full adjudicator state; `Operations.lean` calls the relations this
+  file defines.
 
   Contract-owned notes are a POOL feature, not an adjudicator feature:
   the adjudicator, the Safe, and the ragequit contract are all ORDINARY
@@ -33,21 +32,20 @@ namespace ArmadaLean.Adjudicator
 /-!
 ## The pool's core invariant
 
-Lab book §3a (`labbook/2026-10-18-contract-owned-notes-and-zk-channel-
-apps.md`): "The pool's core invariant is that value in the pool exists
-only as notes: every token the pool holds backs exactly one unspent note,
-and the only moves are shield, transact and unshield." §5 records why a
-competing pool-balance design was rejected for violating this invariant.
-
-Lab book decision 9: "The adjudicator owns its channel collateral as
-notes, so the collateral never leaves the pool and there is no public
-`deposit` path, no raw-transfer surplus, and no `sweep`."
+The armada-nitro rule (`State.lean`'s `AdjudicatorState`, `holdings`
+field): a channel's holding is a note in the pool, owned by the
+adjudicator; it is never a number the adjudicator stores.
 
 This model therefore gives the adjudicator exactly one way to touch value:
 spend/mint through the pool's `transact`/`transactOwned` entry points. It
 never credits a raw balance and never calls the pool's `shield`/`unshield`
-directly (decision 9's "no public `deposit` path"). `Safety.lean`'s
-`notedValue_conserved` is the Lean statement of the quoted invariant for
+directly — the armada-nitro rule's "no public `deposit` path". Each
+individual spend conserves value by the circuit's own proof —
+`ArmadaLean.transact_value_conserved` (`Transact.lean`) for the base
+circuit `DepositTransacted` below uses, `ArmadaLean.
+transactOwned_value_conserved` (`TransactOwned.lean`) for the owned
+circuit `PoolOwnedSpendStep` below uses — and `Safety.lean`'s
+`notedValue_conserved` is the Lean statement that this holds across
 every operation this adjudicator performs.
 -/
 
@@ -68,8 +66,12 @@ structure NotePreimage where
 
 /-- The pool's live-note ledger: which commitments are currently unspent,
     each paired with the preimage the pool recorded when it minted that
-    commitment (lab book decision 3: "the creator publishes the preimage in
-    the creating transaction"; `IArmadaPool.preimageOf`). `usedNullifiers`
+    commitment (`IArmadaPool.preimageOf`). `ArmadaLean.PoolOwned`'s
+    preimage registry (`PreimageRegistry`, `RegistryConsistent`,
+    `recordPreimages`) models exactly this for the owned path;
+    `ArmadaLean.preimageOf_consistent` proves every preimage the pool
+    records there hashes to the commitment it is recorded for.
+    `usedNullifiers`
     is the pool's separate double-spend record — a nullifier is a function
     of the spender's key and the leaf index (`ArmadaLean.nullifier`), not
     of the commitment, so it is tracked apart from `liveNotes`; it holds
@@ -91,27 +93,29 @@ def PoolState.isLive (s : PoolState) (c : Nat) : Prop :=
   ∃ pre, (c, pre) ∈ s.liveNotes
 
 /-- The pool's recorded preimage for `c`, read live and never cached
-    (`IArmadaPool.preimageOf`): the pool's own attested record, never a
-    cached or caller-asserted value (lab book decision 11: the
-    adjudicator "verifies [the preimage] against the proof's output
-    commitment before it credits anything"). -/
+    (`IArmadaPool.preimageOf`): the note's value read from the pool's
+    own record, which `ArmadaLean.preimageOf_consistent`
+    (`PoolOwned.lean`) proves trustworthy — never a cached or
+    caller-asserted value. -/
 def PoolState.preimageOf (s : PoolState) (c : Nat) : Option NotePreimage :=
   (s.liveNotes.find? (fun p => p.1 == c)).map Prod.snd
 
 /-- The pool's own record of how much of `token` sits behind live notes
-    right now: the sum of every live note's value for that token (lab book
-    §3a's "every token the pool holds backs exactly one unspent note",
-    quoted above, read as a sum). -/
+    right now: the sum of every live note's value for that token — the
+    armada-nitro rule (`State.lean`) read as a sum. -/
 def PoolState.notedValue (s : PoolState) (token : Nat) : Nat :=
   listSum ((s.liveNotes.filter (fun p => p.2.token = token)).map (fun p => p.2.value))
 
 /-!
 ## Deposit: a plain, EdDSA-signed spend with one contract-owned output
 
-Lab book decision 1: "a `Transact` variant that derives the note keys
-from a public `owner` address". Decision 3: "the creator publishes the
-preimage in the creating transaction". Stated directly: a `transact`
-output can be contract-owned — the caller supplies the output's full
+`ArmadaLean.TransactOwned`'s own formula, `npk[i] = Poseidon(ownerField,
+randomIn[i])` (`TransactOwned.circom:66-70`, `TransactOwned.lean`), is
+where a note key derives from a public `owner` address; `ArmadaLean.
+PoolOwned`'s preimage registry is where the creator's preimage is
+published at the creating transaction. Stated directly here: a
+`transact` output can be contract-owned — the caller supplies the
+output's full
 preimage in the clear, the pool checks `commitments[i] ==
 poseidon(preimage)` with `preimage.npk` derived from a public `owner`
 address, and the pool stores `preimageOf[commitments[i]] = preimage`.
@@ -157,9 +161,10 @@ structure PoolSignatureLiveness where
     transaction (root pool model, EdDSA-signed by the depositor) whose
     output at `idx` is disclosed as a `NotePreimage` owned by `self` (the
     adjudicator), on `token`, worth `amount`. `npk` derivation reuses
-    `TransactOwned.circom`'s formula (lab book decision 1: "derives the
-    note keys from a public `owner` address" — the same derivation for
-    `transactOwned`'s owner). -/
+    `ArmadaLean.TransactOwned`'s own formula, `npk[i] = Poseidon(
+    ownerField, randomIn[i])` (`TransactOwned.circom:66-70`,
+    `TransactOwned.lean`) — the same derivation for `transactOwned`'s
+    owner. -/
 def DepositTransacted {N M : Nat} (self token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M)
     (idx : Fin M) : Prop :=
@@ -168,10 +173,11 @@ def DepositTransacted {N M : Nat} (self token amount : Nat)
   pub.commitmentsOut idx = commitment (w.npkOut idx) token amount
 
 /-- The pool-state effect of a deposit: the depositor's spent input notes
-    leave `liveNotes`, and EVERY output of the transaction joins it (lab
-    book decision 11: the adjudicator credits `holdings` only after it
-    "verifies [the preimage] against the proof's output commitment").
-    All `M` outputs are recorded, not only the deposit output at `idx`: a
+    leave `liveNotes`, and EVERY output of the transaction joins it: the
+    output recorded here is the note's own preimage, which `ArmadaLean.
+    preimageOf_consistent` (`PoolOwned.lean`) proves hashes to the
+    commitment it is recorded for. All `M` outputs are recorded, not
+    only the deposit output at `idx`: a
     plain `transact` may return private change to the depositor alongside
     the one contract-owned output (`Constrained` places no bound on `M`),
     and dropping those change outputs would make this model under-count

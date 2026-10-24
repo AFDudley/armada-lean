@@ -5,9 +5,10 @@
   Each case below cites the S1-S4 source for its MECHANICS (challenge,
   checkpoint, conclude, timeout) and the Armada source for its VALUE
   MOVEMENT (deposit, transfer, reclaim — this specification's own design,
-  matching the lab book where it has a decision and stated directly
-  where it does not, departing from the current buggy Solidity where
-  noted; see the departures report, `Safety.lean`'s closing section).
+  citing the armada-nitro rule and the proved pool theorems where they
+  apply and stating the mechanics directly where they do not, departing
+  from the current buggy Solidity where noted; see the departures
+  report, `Safety.lean`'s closing section).
   Nitro-2019-219.pdf §3.3: "There is no restriction on who can trigger
   the operations" — so `Step` places no restriction on `actor` for any
   call EXCEPT `.sign`/`.signNote`, whose own effect IS the fact that
@@ -94,12 +95,15 @@ def Step (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   /-
-  ### `deposit` — intended design (lab book decision 9)
+  ### `deposit` — intended design (the armada-nitro rule)
 
-  Lab book decision 9: "The adjudicator owns its channel collateral as
-  notes, so the collateral never leaves the pool and there is no public
-  `deposit` path, no raw-transfer surplus, and no `sweep`." Stated
-  directly: `depositFromNote` funds a channel by having the depositor
+  Nitro-2019-219.pdf §3.1: "The deposit operation, D_A(x), is an
+  on-chain operation used to increase A's balance by x coins. There
+  are no restrictions on who can deposit coins for an address, but
+  the transaction must always include a transfer of x coins into the
+  adjudicator." The armada-nitro rule (`State.lean`) specializes "a
+  transfer of x coins into the adjudicator" to a note transfer:
+  `depositFromNote` funds a channel by having the depositor
   spend their own note into a fresh contract-owned note at the
   adjudicator, inside the pool, instead of unshielding ERC-20 out to the
   adjudicator's raw balance. The deposited value never leaves the pool.
@@ -107,13 +111,14 @@ def Step (sig : SignatureAssumptions)
   DEPARTURE (`departures-found.md` item 1, "Deposit leaves the pool"):
   the current `depositFromNote` still requires `UnshieldType.NORMAL` and
   pays real ERC-20 out via `TransactModule._transferTokenOut`; this
-  model follows decision 9's stated intent, not the current code.
+  model follows the armada-nitro rule's intent, not the current code.
   Deposit is authorized by the depositor's own EdDSA signature on the
   spent note (the pool layer's `EdDSAVerify`, reused via `Constrained`/
   `DepositTransacted`, `Notes.lean`), not by `sig`/`actor`, so this case
   does not use either. `0 < amount`: the adjudicator's own rule that it
   never records a `0`-value note as a channel holding (`State.lean`'s
-  Armada encoding rule, `Safety.lean`'s `holdings_never_zero_valued`) —
+  armada-nitro rule, applied to zero; `Safety.lean`'s `holdings_never_
+  zero_valued`) —
   `TransactOwned.circom:117-120` only range-checks an output value, so
   the circuit alone would let a `0`-amount deposit mint a `0`-valued
   holding; this precondition is what keeps the invariant here, since
@@ -244,8 +249,8 @@ def Step (sig : SignatureAssumptions)
       s'.signedBy = s.signedBy
   /-
   ### `transfer` — MultiAssetHolder.sol:135-191 (trusted, vendored
-  `src/nitro`), settled via the adjudicator's own owned-spend (Armada
-  layer, lab book decision 9)
+  `src/nitro`), settled via the adjudicator's own owned-spend
+  (`ArmadaLean.PoolOwned`, the armada-nitro rule)
 
   S2 §5.1, "Allocations and Transfer": priority-order payout, `afford`
   (`Outcome.lean`). Clause 24: `transfer(assetIndex, fromChannelId,
@@ -258,20 +263,20 @@ def Step (sig : SignatureAssumptions)
   guarantee allocation" (`MultiAssetHolder.sol:169-170`, `revert 'cannot
   transfer a guarantee'`) — checked only for SELECTED allocations, matching
   the code (the `revert` sits inside the `if (selected)` branch,
-  `:168-171`). Armada's own rule, stated directly (decision 9's "the
-  collateral never leaves the pool" is the governing principle; no
-  source states the mechanics below more specifically): the exit
-  becomes one `transactOwned` spend — nullify the channel's old
+  `:168-171`). The armada-nitro rule governs the mechanics: the exit
+  becomes one `transactOwned` spend (`ArmadaLean.PoolOwned`) —
+  nullify the channel's old
   collateral commitment, mint one fresh owned note per non-zero
   SELECTED payout (`npk` = the allocation's own destination, the
   recipient's own note key, not contract-owned), plus a remainder note
   owned by `self` for whatever is left of `heldValue` after the
   selected payouts (`:228`, `holdings[asset][channelId] = ... -
   totalPayouts`, where `totalPayouts` sums only the selected amounts).
-  Treasury lab book §3a T9 (`labbook/2026-10-18-treasury-governance-baal
-  -safe-shielded.md`): "The only protocol fee is the shield-in fee,
-  charged by `ShieldModule` on a shield." A payout is a plain output,
-  with no fee tag and no `cumulativeFees` coupling — no fee field
+  Nitro-2019-219.pdf §5.1: "If A can afford x for B, then T(A, B, x):
+  1. Reduces the funds held in channel A by x. 2. Increases the funds
+  held by B by x." The channel is reduced by EXACTLY what it pays, with
+  no third quantity withheld — a payout is a plain output, with no fee
+  tag and no `cumulativeFees` coupling — no fee field
   appears anywhere in this case, which is the Lean statement of "no
   fee".
   -/
@@ -359,7 +364,7 @@ def Step (sig : SignatureAssumptions)
 
   Armada's own rule, stated directly (no paper covers it): once
   `holdings` stores a `bytes32` commitment per asset per channel instead
-  of a raw `uint256` (lab book decision 9), the inherited bulk
+  of a raw `uint256` (the armada-nitro rule, `State.lean`), the inherited bulk
   finalization path's raw arithmetic no longer applies to it, so
   `ArmadaNitroAdjudicator` overrides `transferAllAssets` and
   `concludeAndTransferAllAssets` to revert with a use-`transfer` message
