@@ -12,26 +12,26 @@
   chosen state, per the brief: "A safety statement holds at every state
   reachable from deployment by any sequence of calls by any caller."
 
-  Operator addition (coordinator message, prior session): "every
-  finalizable outcome is paid out as notes, with no fee, with pool value
-  conserved; and no caller can make the adjudicator pay an outcome that is
-  not finalizable", using Nitro-2019-219.pdf §4.4's own definitions of
-  "finalizable" and "enabled" outcome, not an invented rule. Sections A and
-  B below are the two halves of that sentence.
+  This model also requires: every finalizable outcome is paid out as
+  notes, with no fee, with pool value conserved; and no caller can make
+  the adjudicator pay an outcome that is not finalizable — using
+  Nitro-2019-219.pdf §4.4's own definitions of "finalizable" and
+  "enabled" outcome, not an invented rule. Sections A and B below are
+  the two halves of that requirement.
 
   Every theorem that reasons about a call sequence takes
   `SignatureAssumptions` (`Assumptions.lean`) as an explicit argument —
   `Step`/`AppliesAll`/`Reachable` are themselves parameterized by it, so a
   reader sees on the theorem's own type which cryptographic facts it
-  relies on, never a hidden global axiom (coordinator correction, prior
-  session). Safety theorems (sections A-C) also take `appRel`
+  relies on, never a hidden global axiom. Safety theorems (sections A-C)
+  also take `appRel`
   (`Operations.lean`'s module comment) as an explicit UNIVERSAL parameter:
   "safety stays stated for any app." Every theorem that reasons about the
   reachable set takes the deploy-time asset list (`assets`), the
   adjudicator's own identity (`self`), and the pool's state at deployment
   (`pool0`) as explicit arguments and anchors `Reachable` at `genesis
   assets self pool0` (`State.lean`) — the one true deployment state, not
-  an arbitrary unconstrained starting state (same correction).
+  an arbitrary unconstrained starting state.
 
   Signing is an ACTION taken by a named `Actor` (`Operations.lean`'s
   module comment): `AuthorizedBy sig s p d` (`State.lean`) and
@@ -53,7 +53,8 @@
 
   Contract-owned notes, and the soundness/completeness assumptions about
   the `TransactOwned` circuit's proof system, are a POOL feature, not an
-  adjudicator feature (operator ruling, this session): they live in
+  adjudicator feature: the adjudicator is an ordinary user of the pool,
+  so owned-note rules come from the pool module. They live in
   `ArmadaLean.TransactOwned`/`ArmadaLean.PoolOwned` (root `ArmadaLean`
   modules, branch `owned-notes`), not here. `Operations.lean`'s `.transfer`
   case calls `ArmadaLean.PoolOwnedSpendStep` (`Notes.lean`), which reads
@@ -171,8 +172,7 @@ caller can BLOCK another caller's operation, only interleave with it.
     `interleaved` could contain a step only `h` themselves could take
     (`.sign h d` for an arbitrary `d` `h` never chose, `Operations.lean`'s
     actor check) and have it count as "the adversary's" doing, when it is
-    really `h`'s own action — "the adversary could sign as `h`"
-    (coordinator correction, this session). `h`'s own steps belong only
+    really `h`'s own action. `h`'s own steps belong only
     in the witnessed `payCalls`, never in `interleaved`. `hsigned` reads
     unanimous signing at `s`; since `.sign` only ever adds to `signedBy`,
     and only in the ACTING participant's own row, `interleaved` (now
@@ -362,8 +362,8 @@ their behalf.
 
 All seven restate this way; none needed a further, unauthorized
 assumption. The pool layer's `EdDSAVerify` gap, the app layer's `appRel`
-gap, and (since contract-owned notes moved to `ArmadaLean.PoolOwned`,
-this session) the owned circuit's `VerifyOwnedAccepts` gap are all
+gap, and (now that contract-owned notes moved to `ArmadaLean.
+PoolOwned`) the owned circuit's `VerifyOwnedAccepts` gap are all
 closed: `EdDSAVerify` by `Notes.lean`'s `PoolSignatureLiveness.
 eddsaCompleteness`, gated on `.signNote`; `appRel` by substituting
 `consensusRelation sig`, gated on `.sign` for every participant;
@@ -528,14 +528,15 @@ value in the pool exists only as notes."
 
 /-- A payout takes no fee: `transfer` mints exactly as much as it debits —
     the paid allocations' total plus the remainder equals the pre-call
-    `heldValue`, with no amount withheld anywhere (operator ruling,
-    2026-10-22: "there is no protocol fee on a payout... a payout is a
-    plain output, with no fee tag and no `cumulativeFees` coupling").
-    The only fee ANYWHERE in the Armada design is the shield-in fee,
-    charged by the pool's `ShieldModule` on a DIFFERENT entry point this
-    adjudicator never calls (`ArmadaLean.Fee`, the root pool model's
-    `fee_conservation` theorem, which this model does not restate — it
-    belongs to the pool, not the adjudicator). -/
+    `heldValue`, with no amount withheld anywhere (treasury lab book §3a
+    T9, `labbook/2026-10-18-treasury-governance-baal-safe-shielded.md`:
+    "The only protocol fee is the shield-in fee, charged by
+    `ShieldModule` on a shield"). The only fee ANYWHERE in the Armada
+    design is that shield-in fee, charged by the pool's `ShieldModule`
+    on a DIFFERENT entry point this adjudicator never calls
+    (`ArmadaLean.Fee`, the root pool model's `fee_conservation` theorem,
+    which this model does not restate — it belongs to the pool, not the
+    adjudicator). -/
 theorem payout_takes_no_fee
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -637,8 +638,7 @@ CONSTRUCTION (`Operations.lean`'s `payoutOutputs`/`holdings` update),
 upstream of anything `ArmadaLean.PoolOwned` checks, so neither follows
 from a POOL theorem. 23 DOES follow from one, now that
 `PoolOwnedSpendStep` (`Notes.lean`) threads `usedNullifiers` through
-`ArmadaLean.markSpent` (operator ruling, a prior session) — see its
-own doc comment.
+`ArmadaLean.markSpent` — see its own doc comment.
 -/
 
 /-- The adjudicator's own invariant: it never records a `0`-value note
@@ -769,8 +769,8 @@ theorem full_payout_leaves_no_remainder
 
 /-- Closes the fifth `_mintTransferPayout` miss (old offset 12743): the
     old collateral commitment is nullified if and only if one existed —
-    an unfunded channel's `transfer` call nullifies nothing. NOW A
-    CONSEQUENCE of a pool theorem (operator ruling, this session):
+    an unfunded channel's `transfer` call nullifies nothing. A
+    CONSEQUENCE of a pool theorem:
     `PoolOwnedSpendStep` (`Notes.lean`) threads `usedNullifiers` through
     `ArmadaLean.markSpent` (`PoolOwned.lean`), with `N = (if
     nullifiedCommitment.isSome then 1 else 0)` nullifiers submitted.

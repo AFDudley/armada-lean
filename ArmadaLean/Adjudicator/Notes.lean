@@ -16,15 +16,15 @@
   adjudicator state; `Operations.lean` calls the relations this file
   defines.
 
-  Contract-owned notes are a POOL feature, not an adjudicator feature
-  (operator ruling, this session): the adjudicator, the Safe, and the
-  ragequit contract are all ORDINARY callers of the pool's `transactOwned`
-  entry point, so the owned-note circuit model, its soundness/completeness
-  assumptions, and its safety theorems live in `ArmadaLean.TransactOwned`/
-  `ArmadaLean.PoolOwned` (root `ArmadaLean` modules, branch `owned-notes`),
-  not here. This file now IMPORTS that model instead of duplicating it;
-  `PoolOwnedSpendStep` below calls its definitions directly, the same way
-  any other owning caller would.
+  Contract-owned notes are a POOL feature, not an adjudicator feature:
+  the adjudicator, the Safe, and the ragequit contract are all ORDINARY
+  callers of the pool's `transactOwned` entry point, so the owned-note
+  circuit model, its soundness/completeness assumptions, and its safety
+  theorems live in `ArmadaLean.TransactOwned`/`ArmadaLean.PoolOwned`
+  (root `ArmadaLean` modules, branch `owned-notes`), not here. This
+  file now IMPORTS that model instead of duplicating it;
+  `PoolOwnedSpendStep` below calls its definitions directly, the same
+  way any other owning caller would.
 -/
 import ArmadaLean.PoolOwned
 
@@ -36,8 +36,8 @@ namespace ArmadaLean.Adjudicator
 Lab book §3a (`labbook/2026-10-18-contract-owned-notes-and-zk-channel-
 apps.md`): "The pool's core invariant is that value in the pool exists
 only as notes: every token the pool holds backs exactly one unspent note,
-and the only moves are shield, transact and unshield (ruling
-2026-10-22T09:42:09Z)."
+and the only moves are shield, transact and unshield." §5 records why a
+competing pool-balance design was rejected for violating this invariant.
 
 Lab book decision 9: "The adjudicator owns its channel collateral as
 notes, so the collateral never leaves the pool and there is no public
