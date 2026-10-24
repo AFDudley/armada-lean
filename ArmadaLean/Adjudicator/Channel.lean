@@ -38,9 +38,10 @@ appear in S4/the code, not in S1. `clauses.md` §2 item 1 records why: S1
 fixes `mover = participants[turnNum % n]` and a per-state-type
 `validTransition`; the code (and S4) instead delegate ALL execution rules
 to the deployed app contract `fixedPart.appDefinition`
-(`stateIsSupported`, see `AppSupports` below), so `appDefinition` is new
-infrastructure S1 has no field for. S1's vocabulary is otherwise a strict
-subset of S4's: this model follows S4 (the code's own vocabulary).
+(`stateIsSupported`, see the "Application rules and state support"
+section below), so `appDefinition` is new infrastructure S1 has no field
+for. S1's vocabulary is otherwise a strict subset of S4's: this model
+follows S4 (the code's own vocabulary).
 -/
 
 /-- `FixedPart`: the channel properties that never change across states
@@ -92,15 +93,14 @@ latest single state which is deemed to be supported by those inputs."
 A state is "signed by participant p" iff p produced an authorization over
 its hash — assumption 2 (`Assumptions.lean`'s `SignatureAssumptions.
 contractAuthorizes`, for a contract participant, combined with the
-EXECUTION-tracked `signedBy` relation, for an EOA participant). The
-combined notion, `AuthorizedBy`, and `SignedByAll` (used by `conclude`,
-below — S3 §2.2's `signedByEveryone`; S4 `0020-execution-rules.md`,
-`ConsensusApp`, "a state must be unanimously countersigned — that is,
-signed by all of the channel participants") are defined in `State.lean`,
-not here: both need `AdjudicatorState` (for its `signedBy` field), which
-is not defined until that file (coordinator correction, this session: "an
-honest participant adds a digest by choice... AuthorizedBy p d holds
-exactly when p's set contains d"). -/
+EXECUTION-tracked `signedBy` relation, for an EOA participant, gated on
+an `Actor` matching the signer — `Operations.lean`'s module comment).
+The combined notion, `AuthorizedBy`, and `SignedByAll` (used by
+`conclude`, below — S3 §2.2's `signedByEveryone`; S4
+`0020-execution-rules.md`, `ConsensusApp`, "a state must be unanimously
+countersigned — that is, signed by all of the channel participants") are
+defined in `State.lean`, not here: both need `AdjudicatorState` (for its
+`signedBy` field), which is not defined until that file. -/
 
 /-!
 ## Application rules and state support
@@ -127,24 +127,34 @@ participants[turnNum % n]` with one `validTransition` per state TYPE
 (PREFUNDSETUP/POSTFUNDSETUP/GAME/CONCLUDE), enforced by the core protocol
 itself. S3/S4 remove turn-taking from the core protocol entirely and let
 EVERY application define its own `stateIsSupported`/`latestSupportedState`
-— turn-taking survives only as one such application a deployer may choose
 (`clauses.md` clause 10, `StrictTurnTaking`), not a rule S3/S4's core
-protocol states. This model follows S3/S4: `AppSupports` below is the one
-hook the core protocol core exposes, with no built-in turn-taking or
-consensus rule, matching clause 7's "very little is stipulated at the core
-protocol level". -/
+protocol states. This model follows S3/S4: the application rule below is
+the one hook the core protocol core exposes, with no built-in
+turn-taking or consensus rule, matching clause 7's "very little is
+stipulated at the core protocol level". -/
 
-/-- Application rule: whether `candidate` is supported by `proof` (S4
-    `0020-execution-rules.md`, "Application rules", quoted above; S3 §2.2's
-    `latestSupportedState`; clause 7). Pluggable per `fixedPart.
-    appDefinition`, fixed at channel-creation time — a caller does choose
-    `appDefinition` when opening a channel, but the chosen app's rule then
-    governs that channel for its life, the same way the deployed app
-    contract is itself a parameter of the protocol, not a caller action on
-    an open channel. Modeled as an opaque relation rather than one of the
-    three cryptographic assumptions, because it is not independent of the
-    channel's own setup the way a hash or a signature fact is. -/
-axiom AppSupports : FixedPart → List VariablePart → VariablePart → Prop
+/-!
+Application rule: whether `candidate` is supported by `proof`, AT STATE
+`s` (S4 `0020-execution-rules.md`, "Application rules", quoted above; S3
+§2.2's `latestSupportedState`; clause 7). A PARAMETER of the model
+(`Operations.lean`'s `Step`, `appRel : AdjudicatorState → FixedPart →
+List VariablePart → VariablePart → Prop`), not a bare global axiom
+(coordinator correction, this session: "the app relation is a parameter
+of the model") — safety theorems (`Safety.lean`, sections A-C) quantify
+it for ANY app; the can-happen theorems (section D) use the real,
+deployed `ConsensusApp`'s own relation in its place. Defined in
+`Operations.lean`, not here: it takes `AdjudicatorState`, which is not
+defined until `State.lean`. Takes the CURRENT state `s`, not only
+`(fp, proof, candidate)`: this model's `candidate` carries no inline
+signature array the way the real `RecoveredVariablePart` does
+(`State.lean`'s `SignedByAll` already reads the execution-tracked
+`signedBy` for the same reason), so a concrete consensus-style rule can
+only be evaluated against the execution's own signing record. Pluggable
+per `fixedPart.appDefinition`, fixed at channel-creation time in the
+real protocol; this model uses ONE relation per execution/theorem, the
+simplification Nitro-2019-219.pdf §4.4's own Figure 11 discussion
+already makes (a single hook, not per-channel dispatch).
+-/
 
 /-!
 ## Channel modes
@@ -234,29 +244,30 @@ chain before time t + Δ. 2. Transactions can be front-run: given two
 parties, p1 and p2, and two operations, O1 and O2, there is no way for p1
 to ensure that they can apply O1 to the chain before p2 applies O2."
 
-§3.3 is the Nitro-protocol-independent statement this model's call layer
-already follows without being told to: "There is no restriction on who can
-trigger the operations." This is why `Operations.lean`'s `Step` relation
-below carries no caller-identity check beyond what a call's own signed or
-owned data supplies — matching §4.3 assumption 1 (anyone can apply any
-operation) and assumption 2 (no one can block another's operation), which
-together are exactly the premise "unbeatable strategy" needs: a
-participant's strategy is a fixed sequence of calls they can always append,
-  `Finalizable`/`unbeatable_pays` state this concretely for this
-  adjudicator's two concrete unbeatable cases: the "concluded" point (S2
-  §4.4 point 2, unanimous signatures reached — `SignedByAll`,
-  `State.lean`) and the
-"timeout" point (ForceMove-2018.pdf §1.2: "the adjudicator releases funds
-according to the resolution specified by the most recently known state at
-the time of the dispute", after `challengeDuration` with no higher-turn
-response). Full strategy-space reasoning over an arbitrary application's
-`AppSupports` is out of this phase's scope (see `Safety.lean`'s header);
-this model instantiates finalizability at the two points every ForceMove
-channel is guaranteed to reach (Nitro-2019-219.pdf §4.4, Figure 11: "Every
-ForceMove channel has at least two points when the outcome is universally
-finalizable: one at the funding point and one when the channel has
-concluded."), which is what `Operations.lean`'s `conclude` and the
-challenge-timeout mechanics model.
+§3.3 is the Nitro-protocol-independent statement most of this model's
+call layer already follows without being told to: "There is no
+restriction on who can trigger the operations." This is why
+`Operations.lean`'s `Step` relation carries no `actor` check for any
+call EXCEPT `.sign`/`.signNote` (whose own effect IS the restriction —
+`Operations.lean`'s module comment) — matching §4.3 assumption 1 (anyone
+can apply any operation) and assumption 2 (no one can block another's
+operation), which together are exactly the premise "unbeatable strategy"
+needs: a participant's strategy is a fixed sequence of calls they can
+always append, `Finalizable`/`unbeatable_pays` state this concretely for
+this adjudicator's two concrete unbeatable cases: the "concluded" point
+(S2 §4.4 point 2, unanimous signatures reached — `SignedByAll`,
+`State.lean`) and the "timeout" point (ForceMove-2018.pdf §1.2: "the
+adjudicator releases funds according to the resolution specified by the
+most recently known state at the time of the dispute", after
+`challengeDuration` with no higher-turn response). Full strategy-space
+reasoning over an arbitrary application's `appRel` is out of this
+phase's scope (see `Safety.lean`'s header); this model instantiates
+finalizability at the two points every ForceMove channel is guaranteed
+to reach (Nitro-2019-219.pdf §4.4, Figure 11: "Every ForceMove channel
+has at least two points when the outcome is universally finalizable:
+one at the funding point and one when the channel has concluded."),
+which is what `Operations.lean`'s `conclude` and the challenge-timeout
+mechanics model.
 -/
 
 end ArmadaLean.Adjudicator

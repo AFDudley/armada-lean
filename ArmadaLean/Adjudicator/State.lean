@@ -36,10 +36,11 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
     `signedBy` — the EOA half of assumption 2 (`Assumptions.lean`'s module
     comment): which `(participant, digest)` pairs this EXECUTION has
     recorded a genuine signature for. Grows only through
-    `Operations.lean`'s `.sign` `Call`, which only ever adds to the
-    signing participant's OWN row (coordinator correction, this session:
-    "Each execution carries the set of digests each participant signed...
-    no caller can add a digest for another participant's key"). -/
+    `Operations.lean`'s `.sign` `Call`, whose `Step` case both requires
+    the taking `Actor` to BE the named participant and only ever adds to
+    that participant's OWN row — "authority comes from the knowledge of
+    the corresponding private key" (Nitro-2019-219.pdf §3.1),
+    "Forging cryptographic signatures is infeasible" (SATP §1.4). -/
 structure AdjudicatorState where
   pool : PoolState
   channels : Nat → ChannelStatus
@@ -74,12 +75,18 @@ def heldValue (s : AdjudicatorState) (asset channelId : Nat) : Nat :=
     `Operations.lean` never mutates it). -/
 abbrev isAsset (s : AdjudicatorState) (asset : Nat) : Prop := s.configuredAssets asset
 
-/-- Assumption 2, combined (`Assumptions.lean`'s module comment,
-    `NitroUtils.isAuthorizedBy`, `NitroUtils.sol:101-126`): `p` authorized
-    `d` iff `p` signed `d` in THIS execution (the EOA path, `s.signedBy`),
-    OR `p` is a contract whose own code accepts `d` (the EIP-1271 path,
-    `sig.contractAuthorizes`, fixed and caller-independent). Matches
-    `isAuthorizedBy`'s own two-branch union exactly. -/
+/-- Assumption 2, combined (`Assumptions.lean`'s module comment): `p`
+    authorized `d` iff `p` signed `d` in THIS execution (the EOA path,
+    `s.signedBy`, grown only through `Operations.lean`'s `.sign`, whose
+    `Step` case requires the ACTOR to be `p` — Nitro-2019-219.pdf §3.1,
+    "authority comes from the knowledge of the corresponding private
+    key"; SATP §1.4, "Forging cryptographic signatures is infeasible";
+    ForceMove-2018.pdf §3.1.3, "From the signature you can deduce the
+    signer – the participant who signed the move"), OR `p` is a contract
+    whose own code accepts `d` (the EIP-1271 path, `sig.
+    contractAuthorizes`, fixed and caller-independent). Matches
+    `NitroUtils.isAuthorizedBy`'s own two-branch union
+    (`NitroUtils.sol:101-126`). -/
 def AuthorizedBy (sig : SignatureAssumptions) (s : AdjudicatorState) (p d : Nat) : Prop :=
   s.signedBy p d ∨ sig.contractAuthorizes p d
 
