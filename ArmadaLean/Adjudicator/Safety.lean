@@ -385,8 +385,10 @@ theorem notedValue_conserved_reachable
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (token : Nat)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) :
-    s.pool.notedValue token = pool0.notedValue token := by
-  sorry
+    s.pool.notedValue token = pool0.notedValue token :=
+  reachable_preserves (P := fun s => s.pool.notedValue token = pool0.notedValue token) rfl
+    (fun actor call s s' hP hstep => (notedValue_conserved sig appRel actor s s' call token hstep).trans hP)
+    hreach
 
 /-- Which harm this rules out: `holdings` can never point to a commitment
     the pool itself does not back with a live note — there is no path by
