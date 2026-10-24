@@ -224,4 +224,29 @@ theorem markSpent_single (spent : NullifierSet) (n : Nat) :
   unfold markSpent
   split <;> rfl
 
+/-- `.transfer`'s own output list (`Operations.lean`: `payoutOutputs ++`
+    the conditional remainder note) never names a `0`-value preimage:
+    `payoutOutputs` drops a zero-amount entry by `filterMap`, and the
+    remainder note is appended only when the remainder is nonzero. -/
+theorem payout_outputs_nonzero (exitAllocs : List Allocation) (remainder asset self : Nat) :
+    ∀ pre ∈ (exitAllocs.filterMap (fun a =>
+        if a.amount = 0 then none else some (⟨a.destination, asset, a.amount⟩ : CommitmentPreimage))) ++
+        (if remainder = 0 then [] else [(⟨self, asset, remainder⟩ : CommitmentPreimage)]),
+      pre.value ≠ 0 := by
+  intro pre hpre
+  rcases List.mem_append.mp hpre with hc | hc
+  · obtain ⟨a, _ha, hfa⟩ := List.mem_filterMap.mp hc
+    by_cases hamt : a.amount = 0
+    · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+    · rw [if_neg hamt] at hfa
+      have heq := Option.some.inj hfa
+      rw [← heq]
+      exact hamt
+  · by_cases hrem : remainder = 0
+    · rw [if_pos hrem] at hc; exact absurd hc List.not_mem_nil
+    · rw [if_neg hrem] at hc
+      rw [List.mem_singleton] at hc
+      rw [hc]
+      exact hrem
+
 end ArmadaLean.Adjudicator
