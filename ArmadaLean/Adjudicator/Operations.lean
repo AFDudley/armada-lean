@@ -122,7 +122,19 @@ def Step (sig : SignatureAssumptions)
   `TransactOwned.circom:117-120` only range-checks an output value, so
   the circuit alone would let a `0`-amount deposit mint a `0`-valued
   holding; this precondition is what keeps the invariant here, since
-  the circuit does not.
+  the circuit does not. `depositBinding` (`ArmadaNitroAdjudicator.sol:
+  60-72`) binds the proof to `(channelId, expectedHeld)` so a deposit
+  always ADDS TO, never replaces, the prior holding: when the channel
+  already holds a note (`s.holdings asset channelId = some oldHolding`),
+  the fresh deposit note cannot simply become the new holding (that
+  would discard the old value) and cannot sit alongside it either
+  (`AdjudicatorState.holdings` names at most one commitment per
+  `(asset, channelId)`) — the two notes MERGE into one, via
+  `ArmadaLean.Adjudicator.DepositMergeStep` (`Notes.lean`), the
+  adjudicator's own `transactOwned` call with two nullified inputs (the
+  old holding, the fresh deposit note) and one minted output (their
+  sum). When the channel holds nothing yet, no merge is needed: the
+  fresh deposit note becomes the holding directly, as before.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
@@ -130,10 +142,19 @@ def Step (sig : SignatureAssumptions)
       ¬ isExternal channelId ∧
       0 < amount ∧
       (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
-          (idx : Fin M),
-        DepositStep s.pool s.self asset amount w pub idx s'.pool ∧
-        s'.holdings = update s.holdings asset
-          (update (s.holdings asset) channelId (some (pub.commitmentsOut idx)))) ∧
+          (idx : Fin M) (midPool : PoolState),
+        DepositStep s.pool s.self asset amount w pub idx midPool ∧
+        (match s.holdings asset channelId with
+         | none =>
+           s'.pool = midPool ∧
+           s'.holdings = update s.holdings asset
+             (update (s.holdings asset) channelId (some (pub.commitmentsOut idx)))
+         | some oldHolding =>
+           ∃ merged : Nat,
+             DepositMergeStep midPool s.self asset oldHolding (pub.commitmentsOut idx)
+               merged s'.pool ∧
+             s'.holdings = update s.holdings asset
+               (update (s.holdings asset) channelId (some merged)))) ∧
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
       s'.self = s.self ∧
