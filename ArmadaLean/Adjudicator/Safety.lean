@@ -833,7 +833,15 @@ theorem holdings_never_zero_valued
     (hholds : s.holdings asset cid = some c)
     (hpre : s.pool.preimageOf c = some pre) :
     pre.value ≠ 0 := by
-  sorry
+  have hinv := reachable_preserves
+    (P := fun s => ∀ qasset qcid qc, s.holdings qasset qcid = some qc →
+      ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+    (by intro qasset qcid qc hc; exact absurd hc (by simp [genesis]))
+    (fun actor call s s' hP hstep => holdings_preimage_nonzero_step sig appRel actor s s' call hP hstep)
+    hreach
+  obtain ⟨pre', hpre', hval', _⟩ := hinv asset cid c hholds
+  rw [hpre] at hpre'
+  exact (Option.some.inj hpre') ▸ hval'
 
 /-- Closes the `heldValue`'s `commitment == 0` miss (old offset 2549): an
     empty commitment reads as `0`, and — the mutant's blind spot — this
