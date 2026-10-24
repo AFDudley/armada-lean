@@ -91,10 +91,10 @@ def PoolState.isLive (s : PoolState) (c : Nat) : Prop :=
   ∃ pre, (c, pre) ∈ s.liveNotes
 
 /-- The pool's recorded preimage for `c`, read live and never cached
-    (`IArmadaPool.preimageOf`; N1a brief S2: "it returns... else
-    `pool.preimageOf(holdings[asset][channelId]).value`"; husband-review
-    note on N1a: "`heldValue` never trusts a value the pool did not
-    attest"). -/
+    (`IArmadaPool.preimageOf`): the pool's own attested record, never a
+    cached or caller-asserted value (lab book decision 11: the
+    adjudicator "verifies [the preimage] against the proof's output
+    commitment before it credits anything"). -/
 def PoolState.preimageOf (s : PoolState) (c : Nat) : Option NotePreimage :=
   (s.liveNotes.find? (fun p => p.1 == c)).map Prod.snd
 
@@ -108,13 +108,16 @@ def PoolState.notedValue (s : PoolState) (token : Nat) : Nat :=
 /-!
 ## Deposit: a plain, EdDSA-signed spend with one contract-owned output
 
-N2a brief point 1: "A `transact` output can be contract-owned: the caller
-supplies the output's full `CommitmentPreimage` in the clear... the pool
-checks `commitments[i] == poseidon(preimage)` with `preimage.npk` derived
-from a public `owner` address, and the pool stores `preimageOf[
-commitments[i]] = preimage`... The input side of the transaction is
-unchanged: a normal user note, spent with the user's own EdDSA signature.
-Only the output is contract-owned." This is the BASE `Transact` circuit
+Lab book decision 1: "a `Transact` variant that derives the note keys
+from a public `owner` address". Decision 3: "the creator publishes the
+preimage in the creating transaction". Stated directly: a `transact`
+output can be contract-owned — the caller supplies the output's full
+preimage in the clear, the pool checks `commitments[i] ==
+poseidon(preimage)` with `preimage.npk` derived from a public `owner`
+address, and the pool stores `preimageOf[commitments[i]] = preimage`.
+The INPUT side of the transaction is unchanged: a normal user note,
+spent with the user's own EdDSA signature. Only the output is
+contract-owned. This is the BASE `Transact` circuit
 (`ArmadaLean.Transact`, already proven in the root model), not
 `TransactOwned` — deposit's signer is the depositing user, not the
 adjudicator, so it uses the base circuit's own EdDSA check, not the
@@ -149,14 +152,14 @@ structure PoolSignatureLiveness where
     s.poolSignedBy pk msgHash →
     ∃ signature : Nat × Nat × Nat, EdDSAVerify pk signature msgHash
 
-/-- N2a (intended design — see the departures report for how the CURRENT
+/-- Intended design (see the departures report for how the CURRENT
     `depositFromNote` differs): a deposit is a `Transact.Constrained`
     transaction (root pool model, EdDSA-signed by the depositor) whose
     output at `idx` is disclosed as a `NotePreimage` owned by `self` (the
     adjudicator), on `token`, worth `amount`. `npk` derivation reuses
-    `TransactOwned.circom`'s formula (N2a brief point 1: "`preimage.npk`
-    derived from a public `owner` address... same derivation P2 defines for
-    `transactOwned`'s owner"). -/
+    `TransactOwned.circom`'s formula (lab book decision 1: "derives the
+    note keys from a public `owner` address" — the same derivation for
+    `transactOwned`'s owner). -/
 def DepositTransacted {N M : Nat} (self token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M)
     (idx : Fin M) : Prop :=
@@ -165,15 +168,15 @@ def DepositTransacted {N M : Nat} (self token amount : Nat)
   pub.commitmentsOut idx = commitment (w.npkOut idx) token amount
 
 /-- The pool-state effect of a deposit: the depositor's spent input notes
-    leave `liveNotes`, and EVERY output of the transaction joins it (N2a
-    S2: "After `pool.transact(transactions)` returns, require `pool.
-    preimageOf(newCommitment).value == amount`... then set `holdings[asset][
-    channelId] = newCommitment`"). All `M` outputs are recorded, not only
-    the deposit output at `idx`: a plain `transact` may return private
-    change to the depositor alongside the one contract-owned output
-    (`Constrained` places no bound on `M`), and dropping those change
-    outputs would make this model under-count the pool's own `notedValue`
-    after a deposit (`Safety.lean`'s `notedValue_conserved`). -/
+    leave `liveNotes`, and EVERY output of the transaction joins it (lab
+    book decision 11: the adjudicator credits `holdings` only after it
+    "verifies [the preimage] against the proof's output commitment").
+    All `M` outputs are recorded, not only the deposit output at `idx`: a
+    plain `transact` may return private change to the depositor alongside
+    the one contract-owned output (`Constrained` places no bound on `M`),
+    and dropping those change outputs would make this model under-count
+    the pool's own `notedValue` after a deposit (`Safety.lean`'s
+    `notedValue_conserved`). -/
 def DepositPoolStep {N M : Nat} (before : PoolState) (self token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M)
     (idx : Fin M) (after : PoolState) : Prop :=
