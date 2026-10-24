@@ -758,19 +758,22 @@ theorem conclude_can_happen
   unfold update
   simp [ChannelStatus.mode, mid]
 
+set_option maxRecDepth 4000 in
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
-    to fund a channel, a `.sign` sequence to `.conclude` it (as in
-    `conclude_can_happen`), a `.transfer` call pays a nonzero amount to
-    some destination (`Operations.lean`'s `.transfer` case). `.transfer`'s
-    owned-spend (`ArmadaLean.PoolOwnedSpendStep`, `Notes.lean`) now needs
-    an accepted `transactOwned` proof — `ownedComplete : ArmadaLean.
-    OwnedProofCompleteness` (`PoolOwned.lean`) turns the channel's own
-    collateral witness (satisfying `ArmadaLean.OwnedConstrained` by
-    construction, since the adjudicator itself minted it) into the
-    `VerifyOwnedAccepts` witness the pool's own check needs
-    (`ArmadaLean.owned_spend_can_happen` proves the same bridge for a
-    general owning caller; this theorem specializes it to the
-    adjudicator). -/
+    to fund a channel, a `.conclude` (needing `now ≠ 0`, so a `.tick`
+    comes first) finalizes it, and a `.transfer` call pays the entire
+    deposited amount to a destination (`Operations.lean`'s `.transfer`
+    case). `.transfer`'s owned-spend (`ArmadaLean.PoolOwnedSpendStep`,
+    `Notes.lean`) takes `OwnedConstrained` directly as its own soundness
+    hypothesis, the same convention `Step.transactOwned` now uses, so the
+    witness built by hand already satisfies it — `ownedComplete` is kept
+    on the signature for stability (the statement is unchanged) but is
+    not needed by this construction. `exists_internal_channelId`
+    (`Lemmas.lean`) supplies a channel id that is both non-external (so
+    `.deposit` accepts it) and `channelId fp` for a chosen `fp` (so
+    `.conclude` can later finalize the SAME channel) — the pigeonhole
+    argument over `channelIdOf`'s own injectivity this needs, since
+    `channelIdOf` states no range on its own. -/
 theorem payout_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions)
     (poolSigLive : PoolSignatureLiveness)
@@ -786,7 +789,233 @@ theorem payout_can_happen
       0 < dest.amount ∧
       PoolIsLive s'.pool
         (commitment dest.destination (outcome.get ⟨assetIndex, h⟩).asset dest.amount) := by
-  sorry
+  obtain ⟨n0, hinternal⟩ := exists_internal_channelId hashA
+  let self : Nat := 0
+  let publicKey : Nat × Nat := (0, 0)
+  let nullifyingKey : Nat := 0
+  let token : Nat := 0
+  let assets : Nat → Prop := fun a => a = token
+  let amount : Nat := 1
+  let fp : FixedPart := ⟨[], n0, 0, 0⟩
+  let cid : Nat := channelId fp
+  let randomIn : Fin 1 → Nat := fun _ => 0
+  let valueIn : Fin 1 → Nat := fun _ => amount
+  let leavesIndices : Fin 1 → Nat := fun _ => 0
+  let pathElements1 : Fin 1 → List (Nat × Bool) := fun _ => List.replicate 16 (0, false)
+  let npkOut : Fin 1 → Nat := fun _ => npk self 0
+  let valueOut : Fin 1 → Nat := fun _ => amount
+  let leaf1 : Nat :=
+    commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn 0)) token (valueIn 0)
+  let root1 : Nat := merkleRoot leaf1 (pathElements1 0)
+  let pub_d : TransactPublic 1 1 :=
+    { merkleRoot := root1, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier nullifyingKey (leavesIndices 0),
+      commitmentsOut := fun _ => commitment (npkOut 0) token (valueOut 0) }
+  let inputNote : CommitmentPreimage :=
+    ⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn 0), token, valueIn 0⟩
+  let depositedNote : CommitmentPreimage := ⟨npk self 0, token, amount⟩
+  let pathElements2 : Fin 1 → List (Nat × Bool) := fun _ => List.replicate 16 (1, false)
+  let leaf2 : Nat := hashCommitment depositedNote
+  let root2 : Nat := merkleRoot leaf2 (pathElements2 0)
+  let pool0 : PoolState :=
+    { live := fun t => if t = token then [inputNote] else [],
+      spent := [], roots := [root1, root2], held := fun _ => 0,
+      preimageOf := fun _ => none, shieldsPaused := false,
+      emergencyPaused := false, withdrawOnlyMode := false }
+  let g := genesis assets self pool0
+  let mid1 : AdjudicatorState := { g with
+    poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d) ∨ g.poolSignedBy pk' m' }
+  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
+      (.signNote publicKey (msgHashOf pub_d)) mid1 :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
+  have hsigned : mid1.poolSignedBy publicKey (msgHashOf pub_d) := Or.inl ⟨rfl, rfl⟩
+  obtain ⟨signature, hveri⟩ :=
+    poolSigLive.eddsaCompleteness mid1.poolSignedBy publicKey (msgHashOf pub_d) hsigned
+  let w_d : TransactWitness 1 1 :=
+    { token := token, publicKey := publicKey, signature := signature,
+      nullifyingKey := nullifyingKey, randomIn := randomIn, valueIn := valueIn,
+      pathElements := pathElements1, leavesIndices := leavesIndices,
+      npkOut := npkOut, valueOut := valueOut }
+  have hbitsZero : ∀ n, bitsVal (List.replicate n false) = 0 := by
+    intro n
+    induction n with
+    | zero => rfl
+    | succ k ih => simp [List.replicate_succ, bitsVal, ih]
+  have hbitsOne : bitsVal (true :: List.replicate 119 false) = 1 := by
+    rw [show bitsVal (true :: List.replicate 119 false) =
+        1 + 2 * bitsVal (List.replicate 119 false) from rfl, hbitsZero]
+  have hC_d : Constrained w_d pub_d :=
+    { pathLen := fun _ => List.length_replicate
+      merkle := fun _ => rfl
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeOut := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      balance := rfl
+      distinct := fun i j hij => absurd (Subsingleton.elim i j) hij
+      sig := hveri }
+  have hRemove_d : removeAll (mid1.pool.live w_d.token) (transactSpentNotes w_d) = some [] := by
+    show removeAll [inputNote] [inputNote] = some []
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_singleton_self _))]
+    rw [List.erase_cons_head]
+    rfl
+  have hNullify_d : markSpent mid1.pool.spent (List.ofFn pub_d.nullifiers) =
+      some (List.ofFn pub_d.nullifiers) := rfl
+  have hidxrec_d : (pub_d.commitmentsOut (0 : Fin 1),
+      (⟨w_d.npkOut 0, w_d.token, w_d.valueOut 0⟩ : CommitmentPreimage)) ∈
+      transactOutputRecords w_d pub_d :=
+    List.mem_ofFn.mpr ⟨0, rfl⟩
+  let mid2 : AdjudicatorState := { mid1 with
+    pool := { mid1.pool with
+      live := fun t => if t = w_d.token then transactAllOutputs w_d ++ ([] : List CommitmentPreimage)
+        else mid1.pool.live t,
+      spent := List.ofFn pub_d.nullifiers,
+      preimageOf := applyRecords mid1.pool.preimageOf (transactOutputRecords w_d pub_d) },
+    holdings := update mid1.holdings token (update (mid1.holdings token) cid
+      (some (pub_d.commitmentsOut (0 : Fin 1)))) }
+  have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) mid2.pool :=
+    ⟨⟨0, rfl⟩, rfl, rfl, by decide, by decide, hC_d, [], List.ofFn pub_d.nullifiers, 0,
+      transactOutputRecords w_d pub_d, rfl, rfl, List.mem_cons_self, hRemove_d, hNullify_d,
+      List.Sublist.refl _, hidxrec_d, rfl⟩
+  have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
+      (.deposit cid 0 token amount) mid2 := by
+    refine ⟨rfl, rfl, hinternal, (by decide),
+      ⟨1, 1, w_d, pub_d, 0, ?_, rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    exact hdstep
+  have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
+    reachable_step hreach1 hstep_d
+  let mid3 : AdjudicatorState := { mid2 with now := 1 }
+  have hstep_tick : Step sig (consensusRelation sig) (Actor.nitro 0) mid2 (.tick 1) mid3 :=
+    ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach3 : Reachable sig (consensusRelation sig) g mid3 :=
+    reachable_step hreach2 hstep_tick
+  let dest : Allocation := ⟨1, amount, .simple, 0⟩
+  let outcome : Outcome := [⟨token, [dest]⟩]
+  let candidate : VariablePart := ⟨outcome, 0, 0, true⟩
+  let mid4 : AdjudicatorState := { mid3 with
+    channels := update mid3.channels cid
+      { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := 0,
+        outcomeHash := outcomeHashOf candidate.outcome } }
+  have hstep_conclude : Step sig (consensusRelation sig) (Actor.nitro 0) mid3
+      (.conclude fp candidate) mid4 := by
+    refine ⟨?_, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [mid3, mid2, mid1, g, genesis, ChannelStatus.mode, emptyStatus]
+    · intro p hp
+      exact absurd hp List.not_mem_nil
+  have hreach4 : Reachable sig (consensusRelation sig) g mid4 :=
+    reachable_step hreach3 hstep_conclude
+  have hassetIdx : (0 : Nat) < outcome.length := by decide
+  have hfinalized : (mid4.channels cid).mode mid4.now = .finalized := by
+    show ((update mid3.channels cid
+        { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := 0,
+          outcomeHash := outcomeHashOf candidate.outcome }) cid).mode mid3.now = .finalized
+    unfold update
+    simp [ChannelStatus.mode, mid3]
+  have hheld2 : heldValue mid2 token cid = amount :=
+    deposit_sets_heldValue sig (consensusRelation sig) (Actor.pool publicKey) mid1 mid2 cid 0
+      token amount hstep_d
+  have hheld4 : heldValue mid4 token cid = amount := hheld2
+  let ownerField : Nat := 0
+  let randomIn2 : Fin 1 → Nat := fun _ => 0
+  let valueIn2 : Fin 1 → Nat := fun _ => amount
+  let leavesIndices2 : Fin 1 → Nat := fun _ => 1
+  let npkOut2 : Fin 1 → Nat := fun _ => dest.destination
+  let valueOut2 : Fin 1 → Nat := fun _ => amount
+  let pub_t : TransactOwnedPublic 1 1 :=
+    { merkleRoot := root2, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier ownerField (leavesIndices2 0),
+      commitmentsOut := fun _ => commitment (npkOut2 0) token (valueOut2 0),
+      ownerField := ownerField }
+  let w_t : TransactOwnedWitness 1 1 :=
+    { token := token, randomIn := randomIn2, valueIn := valueIn2, pathElements := pathElements2,
+      leavesIndices := leavesIndices2, npkOut := npkOut2, valueOut := valueOut2 }
+  have hOC : OwnedConstrained w_t pub_t :=
+    { pathLen := fun _ => List.length_replicate
+      merkle := fun _ => rfl
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeOut := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      balance := rfl }
+  have hNonZero_t : ∀ j, ¬ isZeroPreimage
+      (⟨w_t.npkOut j, w_t.token, w_t.valueOut j⟩ : CommitmentPreimage) := by
+    intro j hz
+    have : amount = 0 := hz.2.1
+    simp [amount] at this
+  have hnullseparate : nullifier ownerField (leavesIndices2 0) ≠
+      nullifier nullifyingKey (leavesIndices 0) := by
+    intro heqn
+    have := (poseidon2_inj heqn).2
+    exact absurd this (by decide)
+  have hRemove_t : removeAll (mid4.pool.live token) (ownedSpentNotes pub_t w_t) = some [] := by
+    show removeAll [depositedNote] [depositedNote] = some []
+    unfold removeAll
+    rw [if_pos (List.elem_eq_true_of_mem (List.mem_singleton_self _))]
+    rw [List.erase_cons_head]
+    rfl
+  have hNullify_t : markSpent mid4.pool.spent (List.ofFn pub_t.nullifiers) =
+      some (nullifier ownerField (leavesIndices2 0) :: mid4.pool.spent) := by
+    show markSpent [nullifier nullifyingKey (leavesIndices 0)]
+      [nullifier ownerField (leavesIndices2 0)] =
+      some (nullifier ownerField (leavesIndices2 0) :: [nullifier nullifyingKey (leavesIndices 0)])
+    unfold markSpent
+    rw [if_neg (by simpa using hnullseparate)]
+    rfl
+  let s' : AdjudicatorState := { mid4 with
+    pool := { mid4.pool with
+      live := fun t => if t = token then [⟨dest.destination, token, amount⟩] ++ [] else mid4.pool.live t,
+      spent := nullifier ownerField (leavesIndices2 0) :: mid4.pool.spent,
+      preimageOf := applyRecords mid4.pool.preimageOf (ownedOutputRecords w_t pub_t) },
+    holdings := update mid4.holdings token (update (mid4.holdings token) cid none),
+    channels := update mid4.channels cid
+      { mid4.channels cid with
+        outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
+          if i ≠ 0 then exit else { exit with allocations := [{ dest with amount := 0 }] }) } }
+  have hcEq : mid4.holdings token cid = some (pub_d.commitmentsOut (0 : Fin 1)) := by
+    show (update mid1.holdings token (update (mid1.holdings token) cid
+      (some (pub_d.commitmentsOut (0 : Fin 1))))) token cid = some (pub_d.commitmentsOut (0 : Fin 1))
+    unfold update
+    rw [if_pos rfl, if_pos rfl]
+  have hospend : PoolOwnedSpendStep mid4.pool self token (mid4.holdings token cid)
+      [(⟨dest.destination, token, amount⟩ : CommitmentPreimage)] s'.pool := by
+    rw [hcEq]
+    exact ⟨w_t, pub_t, by decide, hOC, [], _, 0, hNonZero_t, rfl, rfl, rfl, rfl,
+      List.mem_cons_of_mem _ List.mem_cons_self, hRemove_t, hNullify_t, rfl⟩
+  have hstateHash : (mid4.channels cid).stateHash = 0 := by
+    show ((update mid3.channels cid
+      { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := 0,
+        outcomeHash := outcomeHashOf candidate.outcome }) cid).stateHash = 0
+    unfold update
+    rw [if_pos rfl]
+  have houtcomeHash : (mid4.channels cid).outcomeHash = outcomeHashOf outcome := by
+    show ((update mid3.channels cid
+      { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := 0,
+        outcomeHash := outcomeHashOf candidate.outcome }) cid).outcomeHash = outcomeHashOf outcome
+    unfold update
+    rw [if_pos rfl]
+  have htransferEffects : transferEffects [dest] amount [] =
+      ([{dest with amount := 0}], [dest], amount) := by
+    unfold transferEffects afford
+    simp [listSum, dest]
+  have hstep_t : Step sig (consensusRelation sig) (Actor.nitro 0) mid4
+      (.transfer 0 cid 0 outcome []) s' := by
+    refine ⟨hassetIdx, hfinalized, hstateHash, houtcomeHash, trivial, ?_, rfl, rfl, rfl, rfl, rfl⟩
+    have hget : outcome.get ⟨0, hassetIdx⟩ = ⟨token, [dest]⟩ := rfl
+    rw [hget, hheld4, htransferEffects]
+    simp [Nat.sub_self, dest, amount]
+    exact ⟨hospend, rfl, rfl⟩
+  refine ⟨assets, self, pool0, mid4, s', 0, cid, 0, outcome, [], hassetIdx, dest,
+    Actor.nitro 0, hreach4, hstep_t, ?_, ?_, ?_⟩
+  · show dest ∈ [dest]
+    exact List.mem_singleton_self _
+  · decide
+  · refine ⟨token, ⟨dest.destination, token, amount⟩, ?_, rfl⟩
+    show (⟨dest.destination, token, amount⟩ : CommitmentPreimage) ∈
+      [⟨dest.destination, token, amount⟩] ++ ([] : List CommitmentPreimage)
+    exact List.mem_append_left _ (List.mem_singleton_self _)
 
 /-- A reclaim can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — `.sign` sequences unanimously

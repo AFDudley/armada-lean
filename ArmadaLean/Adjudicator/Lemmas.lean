@@ -622,4 +622,115 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
     obtain ⟨pre, hpre, hval, hconsist⟩ := hinv qasset qcid qc hc
     exact ⟨pre, hpoolEq ▸ hpre, hval, hconsist⟩
 
+/-! ## `payout_can_happen`'s own prerequisites: an internal channel id
+    exists, and a deposit sets `heldValue` to exactly its own `amount` -/
+
+/-- A list with more than `N` pairwise-distinct members cannot have every
+    member below `N` — the pigeonhole principle, stated directly over
+    `List.Nodup` since this project carries no further combinatorics
+    library. Proved by strong induction on `N`: either `N` itself is a
+    member (remove it, recurse at `N - 1`) or it is not (every member
+    is already below `N - 1`, recurse without removing anything). -/
+theorem no_long_nodup_bounded_list :
+    ∀ (N : Nat) (l : List Nat), l.Nodup → N < l.length → (∀ x ∈ l, x < N) → False := by
+  intro N
+  induction N with
+  | zero =>
+    intro l _ hlen hbound
+    match l, hlen with
+    | x :: _, _ => exact absurd (hbound x List.mem_cons_self) (by omega)
+  | succ N ih =>
+    intro l hnodup hlen hbound
+    by_cases hmem : N ∈ l
+    · have hnodup' : (l.erase N).Nodup := List.Nodup.erase N hnodup
+      have hlen' : (l.erase N).length = l.length - 1 := List.length_erase_of_mem hmem
+      have hbound' : ∀ x ∈ l.erase N, x < N := by
+        intro x hx
+        have := (List.Nodup.mem_erase_iff hnodup).mp hx
+        have hlt : x < N + 1 := hbound x this.2
+        have hne : x ≠ N := this.1
+        omega
+      exact ih (l.erase N) hnodup' (by omega) hbound'
+    · have hbound' : ∀ x ∈ l, x < N := by
+        intro x hx
+        have hlt : x < N + 1 := hbound x hx
+        by_cases hxN : x = N
+        · exact absurd (hxN ▸ hx) hmem
+        · omega
+      exact ih l hnodup (by omega) hbound'
+
+/-- A channel id that is not an external (address-sized) destination
+    exists: `channelIdOf`'s own injectivity (`HashAssumptions.
+    channelIdOf_inj`) forces its range over `channelNonce ∈ [0, 2^160]`
+    (2^160+1 pairwise-distinct values) to escape `[0, 2^160)` (only
+    2^160 slots), by `no_long_nodup_bounded_list`. `payout_can_happen`
+    needs this to fund a channel by `.deposit` (which requires `¬
+    isExternal channelId`) and later finalize that SAME channel by
+    `.conclude`/`.challenge` (whose own index is `channelId fp`, for
+    whichever `fp` the call names) — the two requirements can only
+    meet at a channel id neither `channelIdOf`'s nor `isExternal`'s own
+    definition otherwise guarantees. -/
+theorem exists_internal_channelId (hashA : HashAssumptions) :
+    ∃ n : Nat, ¬ isExternal (channelIdOf [] n 0 0) := by
+  apply Classical.byContradiction
+  intro hcon
+  have hf : Function.Injective (fun n => channelIdOf [] n 0 0) := by
+    intro a b hab
+    exact (hashA.channelIdOf_inj hab).2.1
+  have hbound : ∀ n, channelIdOf [] n 0 0 < 2 ^ 160 := by
+    intro n
+    apply Classical.byContradiction
+    intro hn
+    exact hcon ⟨n, hn⟩
+  apply no_long_nodup_bounded_list (2 ^ 160)
+    ((List.range (2 ^ 160 + 1)).map (fun n => channelIdOf [] n 0 0))
+  · exact List.Pairwise.map _ (fun _ _ hab heq => hab (hf heq)) (List.nodup_range)
+  · rw [List.length_map, List.length_range]
+    omega
+  · intro x hx
+    obtain ⟨n, _, hn⟩ := List.mem_map.mp hx
+    rw [← hn]
+    exact hbound n
+
+/-- A successful `.deposit` sets `heldValue` to exactly its own `amount`
+    argument — never the prior `heldValue` plus `amount` (`DepositStep`'s
+    own mechanics mint a note worth `amount` directly, with no arithmetic
+    tying it to the prior holding beyond the `expectedHeld` equality
+    GATE, which only checks a value, never adds to one). The same
+    `applyRecords_reads` read-back `holdings_preimage_nonzero_step`'s own
+    `.deposit` case already uses. -/
+theorem deposit_sets_heldValue
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (channelId expectedHeld asset amount : Nat)
+    (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s') :
+    heldValue s' asset channelId = amount := by
+  obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨N, M, w, pub, idx, hdstep, hholdseq⟩ := hinner
+  obtain ⟨_hown, hcommit, htoken, _hN, _hM, hC, _rest, _spent', _newRoot, records,
+    _hEmergency, _hWithdrawOnly, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+  have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+    fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+  have hval : w.valueOut idx = amount := by
+    have hout := hC.outputs idx
+    rw [htoken, hcommit] at hout
+    exact (poseidon3_inj hout).2.2.symm
+  have hnz : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
+    unfold isZeroPreimage
+    intro ⟨_, hv, _⟩
+    rw [hval] at hv
+    have hcheck : amount = 0 := hv
+    omega
+  have hread := applyRecords_reads hvalid s.pool.preimageOf (pub.commitmentsOut idx)
+    ⟨w.npkOut idx, w.token, w.valueOut idx⟩ hidxrec hnz
+  unfold heldValue
+  rw [hholdseq]
+  unfold update
+  rw [if_pos rfl, if_pos rfl]
+  show ((s'.pool.preimageOf (pub.commitmentsOut idx)).map CommitmentPreimage.value).getD 0 = amount
+  rw [heq]
+  dsimp only
+  rw [hread]
+  simp [hval]
+
 end ArmadaLean.Adjudicator
