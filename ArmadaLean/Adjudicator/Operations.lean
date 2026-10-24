@@ -113,7 +113,7 @@ def Step (sig : SignatureAssumptions)
   pays real ERC-20 out via `TransactModule._transferTokenOut`; this
   model follows the armada-nitro rule's intent, not the current code.
   Deposit is authorized by the depositor's own EdDSA signature on the
-  spent note (the pool's own `ArmadaLean.Pool.Step.transact`, reused via
+  spent note (the pool layer's `EdDSAVerify`, reused via `Constrained`/
   `DepositStep`, `Notes.lean`), not by `sig`/`actor`, so this case
   does not use either. `0 < amount`: the adjudicator's own rule that it
   never records a `0`-value note as a channel holding (`State.lean`'s
@@ -129,10 +129,11 @@ def Step (sig : SignatureAssumptions)
       heldValue s asset channelId = expectedHeld ∧
       ¬ isExternal channelId ∧
       0 < amount ∧
-      (∃ outCommitment : Nat,
-        DepositStep s.pool s.self asset amount outCommitment s'.pool ∧
+      (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
+          (idx : Fin M),
+        DepositStep s.pool s.self asset amount w pub idx s'.pool ∧
         s'.holdings = update s.holdings asset
-          (update (s.holdings asset) channelId (some outCommitment))) ∧
+          (update (s.holdings asset) channelId (some (pub.commitmentsOut idx)))) ∧
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
       s'.self = s.self ∧

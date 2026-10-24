@@ -811,8 +811,7 @@ theorem zero_payout_mints_nothing
         pre ∉ s.pool.live pre.token := by
   obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
-  obtain ⟨_houtnz, _hemerg, _hwithdraw, hmatch⟩ := hpoolstep
+  obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
   rintro ⟨pre, _hnpk, hval, hin, hnin⟩
   by_cases htok : pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset
   · rw [htok] at hin hnin
@@ -825,15 +824,16 @@ theorem zero_payout_mints_nothing
       (outcome.get ⟨assetIndex, hidx⟩).asset s.self
     rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
     · rw [hc] at hmatch
-      obtain ⟨pub, _hself2, _hverify, _hcommits, _hmarkspent, heq⟩ := hmatch
+      obtain ⟨w, pub, hM, hC, spent', newRoot, records, _hself2, _htoken, _hnewnotes,
+        _hemerg, _hwithdraw, _hroot, _hmarkspent, _hvalid, heq⟩ := hmatch
       rw [heq] at hin
       simp only at hin
       rcases List.mem_append.mp hin with hc1 | hc2
       · exact hnz pre hc1 hval
       · exact hnin hc2
     · rw [hc] at hmatch
-      obtain ⟨pub, w, root, _hroot, _hself2, _hverify, _hcommits, _hconstr, _hmerkle, _hceq,
-        rest, hremove, spent', _hmarkspent, heq⟩ := hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, records, _hself2, _htoken, _hnewnotes,
+        _hceq, _hroot, hremove, _hmarkspent, _hvalid, heq⟩ := hmatch
       rw [heq] at hin
       simp only at hin
       rcases List.mem_append.mp hin with hc1 | hc2
@@ -845,14 +845,15 @@ theorem zero_payout_mints_nothing
   · have heqlive : s'.pool.live pre.token = s.pool.live pre.token := by
       rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
       · rw [hc] at hmatch
-        obtain ⟨pub, _hself2, _hverify, _hcommits, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, spent', newRoot, records, _hself2, _htoken, _hnewnotes,
+          _hemerg, _hwithdraw, _hroot, _hmarkspent, _hvalid, heq⟩ := hmatch
         rw [heq]
         show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
             else s.pool.live pre.token) = s.pool.live pre.token
         rw [if_neg htok]
       · rw [hc] at hmatch
-        obtain ⟨pub, w, root, _hroot, _hself2, _hverify, _hcommits, _hconstr, _hmerkle, _hceq,
-          rest, hremove, spent', _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, records, _hself2, _htoken, _hnewnotes,
+          _hceq, _hroot, hremove, _hmarkspent, _hvalid, heq⟩ := hmatch
         rw [heq]
         show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
             else s.pool.live pre.token) = s.pool.live pre.token
@@ -935,22 +936,27 @@ theorem nullify_iff_commitment_was_some
       s'.pool.spent = s.pool.spent := by
   obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
   have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
-  rw [hidx_eq] at hpoolstep
-  obtain ⟨_htoken, _hemerg, _hwithdraw, hmatch⟩ := hpoolstep
+  rw [hidx_eq] at hmatch
   constructor
   · intro hnone
     rw [hnone] at hmatch
-    obtain ⟨pub, _hself2, _hverify, _hcommits, _hmarkspent, heq⟩ := hmatch
+    obtain ⟨w, pub, hM, hC, spent', newRoot, records, _hself2, _htoken, _hnewnotes,
+      _hemerg, _hwithdraw, _hroot, hmarkspent, _hvalid, heq⟩ := hmatch
     rw [heq]
+    show spent' = s.pool.spent
+    have hofn : List.ofFn pub.nullifiers = ([] : List Nat) := List.ofFn_zero
+    rw [hofn] at hmarkspent
+    unfold markSpent at hmarkspent
+    exact (Option.some.inj hmarkspent).symm
   · intro hpost
     rcases hcase : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | c
     · rfl
     · exfalso
       rw [hcase] at hmatch
-      obtain ⟨pub, w, root, _hroot, _hself2, _hverify, _hcommits, _hconstr, _hmerkle, _hceq,
-        rest, _hremove, spent', hmarkspent, heq⟩ := hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, records, _hself2, _htoken, _hnewnotes,
+        _hceq, _hroot, _hremove, hmarkspent, _hvalid, heq⟩ := hmatch
       rw [heq] at hpost
       simp only at hpost
       rw [List.ofFn_succ, List.ofFn_zero] at hmarkspent
