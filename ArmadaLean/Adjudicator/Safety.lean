@@ -858,6 +858,36 @@ theorem nullify_iff_commitment_was_some
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
       s'.pool.usedNullifiers = s.pool.usedNullifiers := by
-  sorry
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨_htoken, _hiscase, hex3, _hliveeq, _hsignedeq⟩ := hpoolstep
+  obtain ⟨N, pub, _hself2, _hverify, _hcommits, hNeq, _hwitness, hmarkspent⟩ := hex3
+  have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hNeq
+  constructor
+  · intro hnone
+    rw [hnone] at hNeq
+    simp only [Option.isSome_none, Bool.false_eq_true, if_false] at hNeq
+    subst hNeq
+    rw [List.ofFn_zero] at hmarkspent
+    unfold markSpent at hmarkspent
+    exact (Option.some.inj hmarkspent).symm
+  · intro hpost
+    rcases hcase : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | c
+    · rfl
+    · exfalso
+      rw [hcase] at hNeq
+      simp only [Option.isSome_some, if_true] at hNeq
+      subst hNeq
+      rw [List.ofFn_succ, List.ofFn_zero] at hmarkspent
+      rw [markSpent_single] at hmarkspent
+      split at hmarkspent
+      · exact absurd hmarkspent (by simp)
+      · have heq := Option.some.inj hmarkspent
+        rw [← heq] at hpost
+        have hlen : (pub.nullifiers 0 :: s.pool.usedNullifiers).length = s.pool.usedNullifiers.length := by
+          rw [hpost]
+        simp at hlen
 
 end ArmadaLean.Adjudicator
