@@ -292,9 +292,11 @@ theorem notedValue_conserved_reachable
 /-- Which harm this rules out: `holdings` can never point to a commitment
     the pool itself does not back with a live note — there is no path by
     which a channel's recorded collateral becomes a dangling reference a
-    caller could exploit (N1a husband review: "No code path sets `holdings[
-    asset][channelId]` to a commitment whose preimage the adjudicator has
-    not itself verified"). This is the formal content of lab book decision
+    caller could exploit (lab book decision 11: the adjudicator
+    "verifies [the preimage] against the proof's output commitment
+    before it credits anything"; no code path sets `holdings[asset][
+    channelId]` to a commitment whose preimage the adjudicator has not
+    itself verified). This is the formal content of lab book decision
     9's "value in the pool exists only as notes" at the adjudicator's own
     storage layer, not only the pool's. -/
 theorem holdings_point_to_live_notes
@@ -375,13 +377,14 @@ only (the one can-happen theorem whose witnessed execution includes a
     `PoolSignatureLiveness`, there is an execution from
     `genesis` — with a pool state `pool0` that already holds the
     depositor's spendable note, and a `.signNote` call recording that the
-    depositor's key signed the deposit's message hash — in which a deposit
-    succeeds (N2a brief, "Goal"). `PoolSignatureLiveness.eddsaCompleteness`
-    turns the recorded signing fact into the `EdDSAVerify` witness
-    `Constrained` (`DepositTransacted`, `Notes.lean`) needs. Unrelated to
-    owned notes: `.deposit` uses the BASE `Transact` circuit (EdDSA), not
-    `ArmadaLean.OwnedConstrained`, so no `OwnedProofCompleteness`
-    argument is needed here. -/
+    depositor's key signed the deposit's message hash — in which a
+    deposit succeeds (lab book decision 9, "the adjudicator owns its
+    channel collateral as notes"). `PoolSignatureLiveness.
+    eddsaCompleteness` turns the recorded signing fact into the
+    `EdDSAVerify` witness `Constrained` (`DepositTransacted`,
+    `Notes.lean`) needs. Unrelated to owned notes: `.deposit` uses the
+    BASE `Transact` circuit (EdDSA), not `ArmadaLean.OwnedConstrained`,
+    so no `OwnedProofCompleteness` argument is needed here. -/
 theorem deposit_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions)
     (poolSigLive : PoolSignatureLiveness) :
@@ -465,9 +468,9 @@ theorem conclude_can_happen
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
     to fund a channel, a `.sign` sequence to `.conclude` it (as in
     `conclude_can_happen`), a `.transfer` call pays a nonzero amount to
-    some destination (N1b/N2b briefs). `.transfer`'s owned-spend
-    (`ArmadaLean.PoolOwnedSpendStep`, `Notes.lean`) now needs an accepted
-    `transactOwned` proof — `ownedComplete : ArmadaLean.
+    some destination (`Operations.lean`'s `.transfer` case). `.transfer`'s
+    owned-spend (`ArmadaLean.PoolOwnedSpendStep`, `Notes.lean`) now needs
+    an accepted `transactOwned` proof — `ownedComplete : ArmadaLean.
     OwnedProofCompleteness` (`PoolOwned.lean`) turns the channel's own
     collateral witness (satisfying `ArmadaLean.OwnedConstrained` by
     construction, since the adjudicator itself minted it) into the
@@ -525,14 +528,14 @@ value in the pool exists only as notes."
 
 /-- A payout takes no fee: `transfer` mints exactly as much as it debits —
     the paid allocations' total plus the remainder equals the pre-call
-    `heldValue`, with no amount withheld anywhere (N2b brief, "Goal":
-    "There is no protocol fee on a payout... a payout is a plain output,
-    with no fee tag and no `cumulativeFees` coupling."). The only fee
-    ANYWHERE in the Armada design is the shield-in fee, charged by the
-    pool's `ShieldModule` on a DIFFERENT entry point this adjudicator
-    never calls (`ArmadaLean.Fee`, the root pool model's `fee_conservation`
-    theorem, which this model does not restate — it belongs to the pool,
-    not the adjudicator). -/
+    `heldValue`, with no amount withheld anywhere (operator ruling,
+    2026-10-22: "there is no protocol fee on a payout... a payout is a
+    plain output, with no fee tag and no `cumulativeFees` coupling").
+    The only fee ANYWHERE in the Armada design is the shield-in fee,
+    charged by the pool's `ShieldModule` on a DIFFERENT entry point this
+    adjudicator never calls (`ArmadaLean.Fee`, the root pool model's
+    `fee_conservation` theorem, which this model does not restate — it
+    belongs to the pool, not the adjudicator). -/
 theorem payout_takes_no_fee
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -549,8 +552,8 @@ theorem payout_takes_no_fee
 
 /-- `conclude` finalizes without moving value: `conclude`'s `Step` case
     touches only `s'.channels`; `s'.pool` and `s'.holdings` are provably
-    unchanged (N3/R1 briefs, "Behavior (unchanged)": "`conclude` finalizes
-    a channel... without the inherited... bulk payout path"). -/
+    unchanged (`Operations.lean`'s `.conclude` doc comment states and
+    explains this Armada-specific rule directly). -/
 theorem conclude_moves_no_value
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -561,13 +564,12 @@ theorem conclude_moves_no_value
 
 /-- The bulk paths revert: `transferAllAssets` and
     `concludeAndTransferAllAssets` have no successful `Step`, for any
-    arguments, any application rule and any actor (N3 brief S2; R1 brief,
-    "Behavior (unchanged)": "`transferAllAssets` and
-    `concludeAndTransferAllAssets` revert with a use-`transfer` message
-    instead of running the inherited bulk path."). DEPARTURE
-    (`departures-found.md` item 5): the current code has no such override
-    and both calls succeed, which is the bug this statement rules out of
-    the model. -/
+    arguments, any application rule and any actor (`Operations.lean`'s
+    `.bulkTransferAllAssets`/`.bulkConcludeAndTransferAllAssets` doc
+    comment states and explains this Armada-specific rule directly).
+    DEPARTURE (`departures-found.md` item 5): the current code has no
+    such override and both calls succeed, which is the bug this
+    statement rules out of the model. -/
 theorem bulk_paths_never_succeed
     (sig : SignatureAssumptions)
     (cid : Nat) (outcome : Outcome) (claimedStateHash : Nat)
@@ -600,37 +602,60 @@ theorem value_exists_only_as_notes
   sorry
 
 /-!
-## F. R1 mutation-test misses (`R1-adjudicator-rewrite.md`)
+## F. R1 mutation-test misses
 
-"arn-7c4... found these mutation-test misses... Each rewrite chunk whose
-new code covers the old mutated behavior closes the matching miss with a
-strengthened test." These are the Lean statements of the same three
-closed gaps. Statements 19 and 20 stay ADJUDICATOR statements — neither
-touches the owned-note circuit. 21 and 22 are also adjudicator statements
-— both are about `.transfer`'s own OUTPUT CONSTRUCTION
-(`Operations.lean`'s `payoutOutputs`/`holdings` update), upstream of
-anything `ArmadaLean.PoolOwned` checks, so neither follows from a pool
-theorem; 23 DOES follow from one, now that `PoolOwnedSpendStep`
-(`Notes.lean`) threads `usedNullifiers` through `ArmadaLean.markSpent`
-(operator ruling, this session) — see its own doc comment.
+`armada-nitro@5519526c:docs/tasks/
+R1-adjudicator-rewrite.md` decided: "arn-7c4 (N3) found these
+mutation-test misses against `src/ArmadaNitroAdjudicator.sol` on
+`integrated`... Each rewrite chunk whose new code covers the old
+mutated behavior closes the matching miss with a strengthened test or
+names another test that already kills it." No other source records
+these five old-code mutant offsets (2549, 2921, 11666, 11738, 11843,
+12171, 12743); this deleted brief is the only source for this
+empirical fact, cited by its git path (`Adjudicator.lean`'s module
+comment names the exception this falls under). These are the Lean
+statements of the same five closed gaps.
+
+Statements 19, 21 and 22 formalize the SAME Armada encoding rule
+(`State.lean`'s `heldValue` doc comment, stated once there): a balance
+is held as one note, and a zero balance is held as no note — itself
+Armada's specialization of Nitro-2019-219.pdf §3.1's "If an address
+does not appear in the table we take the balance to be zero," and (for
+21 and 22) §5.1's payout rule: "the allocation is in priority order...
+if A can afford x for B, then `T(A, B, x)`: 1. Reduces the funds held
+in channel A by x. 2. Increases the funds held by B by x." Statement
+20 stays an adjudicator statement; it does not touch the owned-note
+circuit or the balance encoding. Statements 21 and 22 are also
+adjudicator statements in a second sense: both are about `.transfer`'s
+own OUTPUT CONSTRUCTION (`Operations.lean`'s `payoutOutputs`/
+`holdings` update), upstream of anything `ArmadaLean.PoolOwned`
+checks, so neither follows from a POOL theorem. 23 DOES follow from
+one, now that `PoolOwnedSpendStep` (`Notes.lean`) threads
+`usedNullifiers` through `ArmadaLean.markSpent` (operator ruling, a
+prior session) — see its own doc comment.
 -/
 
 /-- Closes the `heldValue`'s `commitment == 0` miss (old offset 2549): an
     empty commitment reads as `0`, and — the mutant's blind spot — this
-    cannot be confused with a REAL note the pool happens to value at `0`,
-    because the pool never mints a `0`-value commitment (N1a husband
-    review, third bullet). -/
+    cannot be confused with a REAL note the pool happens to value at `0`.
+    Formalizes the Armada encoding rule's "zero balance is held as no
+    note" half (`State.lean`'s `heldValue` doc comment, which also
+    states the rule's other half, "a balance is held as one note", and
+    the pool-level guarantee this statement's RIGHT disjunct additionally
+    covers: a `some c` holding whose preimage the pool lost). -/
 theorem heldValue_zero_iff_no_collateral (s : AdjudicatorState) (asset cid : Nat) :
     heldValue s asset cid = 0 ↔
       s.holdings asset cid = none ∨
       ∃ c, s.holdings asset cid = some c ∧ s.pool.preimageOf c = none := by
   sorry
 
-/-- Closes the constructor's `configuredAssets[...] = true` miss (old
-    offset 2921): the configured-asset set never changes after deployment —
-    every `Step` case leaves `s'.configuredAssets = s.configuredAssets`
-    (`Operations.lean`), so it is exactly the deploy-time list for every
-    reachable state. -/
+/-- Closes the constructor's `configuredAssets[...] = true` miss
+    (`armada-nitro@5519526c:docs/tasks/
+    R1-adjudicator-rewrite.md`, old offset 2921; no other source records
+    this mutant): the configured-asset set never changes after
+    deployment — every `Step` case leaves `s'.configuredAssets =
+    s.configuredAssets` (`Operations.lean`), so it is exactly the
+    deploy-time list for every reachable state. -/
 theorem configuredAssets_invariant
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -646,13 +671,19 @@ theorem configuredAssets_invariant
     position's allocation through `afford` regardless of selection, but
     `.transfer`'s output list (`Operations.lean`, `payoutOutputs`) is built
     by `filterMap`, which drops a `0`-amount entry outright, not a `≤ 0`/
-    `< 1` check a mutant could weaken unnoticed. Adjudicator-level: the
-    filtering happens in `Operations.lean`, before `outputPreimages` ever
-    reaches `ArmadaLean.PoolOwnedSpendStep`, so this statement does not
-    follow from a pool theorem — it is consistent with, but independent
-    of, `ArmadaLean.PoolOwned`'s own `isZeroPreimage`/`recordStep`
-    zero-skip convention for the SEPARATE `PreimageRegistry`
-    representation that file uses. -/
+    `< 1` check a mutant could weaken unnoticed. Formalizes the Armada
+    encoding rule's "zero balance is held as no note" half for a PAYOUT
+    destination (`State.lean`'s `heldValue` doc comment): Nitro-2019-
+    219.pdf §3.1 ("an address [with] balance... zero" is simply absent
+    from the table) is why a `0`-amount position — a normal outcome of
+    §5.1's priority-order `afford` when the channel cannot pay it — must
+    mint no note, not a `0`-value one. Adjudicator-level: the filtering
+    happens in `Operations.lean`, before `outputPreimages` ever reaches
+    `ArmadaLean.PoolOwnedSpendStep`, so this statement does not follow
+    from a POOL theorem — it is consistent with, but independent of,
+    `ArmadaLean.PoolOwned`'s own `isZeroPreimage`/`recordStep` zero-skip
+    convention for the SEPARATE `PreimageRegistry` representation that
+    file uses. -/
 theorem zero_payout_mints_nothing
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -671,13 +702,17 @@ theorem zero_payout_mints_nothing
     12171): a remainder note is minted only when the remainder is
     strictly positive — a full payout (every index selected, or
     `indices = []`, and `totalPayouts = heldValue`) leaves `holdings[
-    asset][cid] = none`, never a dangling `0`-value commitment (N1b
-    husband review: "`totalPayouts == initialAssetHoldings` (full payout)
-    mints no remainder output, so `holdings[asset][channelId]` cannot be
-    left pointing at a `0`-value commitment"). Adjudicator-level, like
-    `zero_payout_mints_nothing`: the `if remainder = 0 then none else ...`
-    branch is `Operations.lean`'s own `holdings` update, not a fact
-    `ArmadaLean.PoolOwned` states. -/
+    asset][cid] = none`, never a dangling `0`-value commitment.
+    Formalizes the Armada encoding rule's "zero balance is held as no
+    note" half for the ADJUDICATOR's OWN remainder (`State.lean`'s
+    `heldValue` doc comment): Nitro-2019-219.pdf §5.1's `T(A, B, x)`,
+    "Reduces the funds held in channel A by x" — a FULL payout (`x =
+    heldValue`) reduces A's held funds to exactly zero, which §3.1's "an
+    address [with] balance... zero" is absent from the table" and the
+    Armada encoding rule together require to be `none`, not a `0`-value
+    commitment. Adjudicator-level, like `zero_payout_mints_nothing`: the
+    `if remainder = 0 then none else ...` branch is `Operations.lean`'s
+    own `holdings` update, not a fact `ArmadaLean.PoolOwned` states. -/
 theorem full_payout_leaves_no_remainder
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)

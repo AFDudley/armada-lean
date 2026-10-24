@@ -4,13 +4,15 @@
 
   Each case below cites the S1-S4 source for its MECHANICS (challenge,
   checkpoint, conclude, timeout) and the Armada source for its VALUE
-  MOVEMENT (deposit, transfer, reclaim — N1a/N1b/N2a/N2b/N3/R1 briefs, the
-  INTENDED design, not the current buggy Solidity; see the departures
-  report, `Safety.lean`'s closing section). Nitro-2019-219.pdf §3.3: "There
-  is no restriction on who can trigger the operations" — so `Step` places
-  no restriction on `actor` for any call EXCEPT `.sign`/`.signNote`, whose
-  own effect IS the fact that only a key's holder can produce (`Actor`
-  below, `Assumptions.lean`'s module comment).
+  MOVEMENT (deposit, transfer, reclaim — this specification's own design,
+  matching the lab book where it has a decision and stated directly
+  where it does not, departing from the current buggy Solidity where
+  noted; see the departures report, `Safety.lean`'s closing section).
+  Nitro-2019-219.pdf §3.3: "There is no restriction on who can trigger
+  the operations" — so `Step` places no restriction on `actor` for any
+  call EXCEPT `.sign`/`.signNote`, whose own effect IS the fact that
+  only a key's holder can produce (`Actor` below, `Assumptions.lean`'s
+  module comment).
 
   `Step` takes `SignatureAssumptions` (`Assumptions.lean`) as an explicit
   argument, because `.challenge`/`.conclude` need to ask whether a digest
@@ -92,21 +94,24 @@ def Step (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s : AdjudicatorState) : Call → AdjudicatorState → Prop
   /-
-  ### `deposit` — N2a brief, intended design
+  ### `deposit` — intended design (lab book decision 9)
 
-  N2a brief, "Goal": "`depositFromNote` funds a channel by having the
-  depositor spend their own note into a fresh contract-owned note at the
+  Lab book decision 9: "The adjudicator owns its channel collateral as
+  notes, so the collateral never leaves the pool and there is no public
+  `deposit` path, no raw-transfer surplus, and no `sweep`." Stated
+  directly: `depositFromNote` funds a channel by having the depositor
+  spend their own note into a fresh contract-owned note at the
   adjudicator, inside the pool, instead of unshielding ERC-20 out to the
-  adjudicator's raw balance. The deposited value never leaves the pool (lab
-  book decision 9)." S3 (N2a's own check) "Keep the reentrancy guard and
-  the `held == expectedHeld` check." DEPARTURE (`departures-found.md` item
-  1, "Deposit leaves the pool"): the current `depositFromNote` still
-  requires `UnshieldType.NORMAL` and pays real ERC-20 out via
-  `TransactModule._transferTokenOut`; this model follows N2a's stated
-  intent, not the current code. Deposit is authorized by the depositor's
-  own EdDSA signature on the spent note (the pool layer's `EdDSAVerify`,
-  reused via `Constrained`/`DepositTransacted`, `Notes.lean`), not by
-  `sig`/`actor`, so this case does not use either.
+  adjudicator's raw balance. The deposited value never leaves the pool.
+  The reentrancy guard and the `held == expectedHeld` check stay.
+  DEPARTURE (`departures-found.md` item 1, "Deposit leaves the pool"):
+  the current `depositFromNote` still requires `UnshieldType.NORMAL` and
+  pays real ERC-20 out via `TransactModule._transferTokenOut`; this
+  model follows decision 9's stated intent, not the current code.
+  Deposit is authorized by the depositor's own EdDSA signature on the
+  spent note (the pool layer's `EdDSAVerify`, reused via `Constrained`/
+  `DepositTransacted`, `Notes.lean`), not by `sig`/`actor`, so this case
+  does not use either.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
@@ -207,11 +212,14 @@ def Step (sig : SignatureAssumptions)
   by calling `conclude`." The stored `stateHash` is ALSO cleared to zero on
   conclude (`ForceMove.sol:160-167`, `ChannelData(0, uint48(block.
   timestamp), bytes32(0), NitroUtils.hashOutcome(...))`): only `
-  outcomeHash` survives. N3 brief + R1 brief, "Behavior (unchanged)":
-  "`conclude` finalizes without moving value" — this `Step` case touches
-  only `s'.channels`; `s'.pool` and `s'.holdings` are UNCHANGED, matching
-  N3's wording exactly. A caller who wants a payout calls `transfer`
-  separately afterward (N3 brief S1). `actor` is unconstrained ("anyone in
+  outcomeHash` survives. Armada's own rule, stated directly (no paper
+  covers it — go-nitro's own `conclude` DOES pay out through the
+  inherited bulk path; Armada does not, because once `holdings` stores a
+  commitment instead of a raw amount, that bulk path's arithmetic no
+  longer typechecks against it): `conclude` finalizes without moving
+  value — this `Step` case touches only `s'.channels`; `s'.pool` and
+  `s'.holdings` are UNCHANGED. A caller who wants a payout calls
+  `transfer` separately afterward. `actor` is unconstrained ("anyone in
   possession of a finalization proof", quoted above); `SignedByAll`
   requires every participant's OWN prior `.sign` step, which `actor` here
   cannot substitute for.
@@ -229,7 +237,8 @@ def Step (sig : SignatureAssumptions)
       s'.signedBy = s.signedBy
   /-
   ### `transfer` — MultiAssetHolder.sol:135-191 (trusted, vendored
-  `src/nitro`), settled via N1b/N2b's owned-spend (Armada layer)
+  `src/nitro`), settled via the adjudicator's own owned-spend (Armada
+  layer, lab book decision 9)
 
   S2 §5.1, "Allocations and Transfer": priority-order payout, `afford`
   (`Outcome.lean`). Clause 24: `transfer(assetIndex, fromChannelId,
@@ -242,17 +251,20 @@ def Step (sig : SignatureAssumptions)
   guarantee allocation" (`MultiAssetHolder.sol:169-170`, `revert 'cannot
   transfer a guarantee'`) — checked only for SELECTED allocations, matching
   the code (the `revert` sits inside the `if (selected)` branch,
-  `:168-171`). N1b brief S1/S2: the exit becomes one `transactOwned` spend
-  — nullify the channel's old collateral commitment, mint one fresh owned
-  note per non-zero SELECTED payout (npk = the allocation's own
-  destination, N2b: "the recipient's own note key, not contract-owned"),
-  plus a remainder note owned by `self` for whatever is left of
-  `heldValue` after the selected payouts (`:228`, `holdings[asset][
-  channelId] = ... - totalPayouts`, where `totalPayouts` sums only the
-  selected amounts). N2b brief, "Goal": "There is no protocol fee on a
-  payout... a payout is a plain output, with no fee tag and no
-  `cumulativeFees` coupling" — no fee field appears anywhere in this case,
-  which is the Lean statement of "no fee".
+  `:168-171`). Armada's own rule, stated directly (decision 9's "the
+  collateral never leaves the pool" is the governing principle; no
+  source states the mechanics below more specifically): the exit
+  becomes one `transactOwned` spend — nullify the channel's old
+  collateral commitment, mint one fresh owned note per non-zero
+  SELECTED payout (`npk` = the allocation's own destination, the
+  recipient's own note key, not contract-owned), plus a remainder note
+  owned by `self` for whatever is left of `heldValue` after the
+  selected payouts (`:228`, `holdings[asset][channelId] = ... -
+  totalPayouts`, where `totalPayouts` sums only the selected amounts).
+  Operator ruling, 2026-10-22: there is no protocol fee on a payout, so
+  a payout is a plain output, with no fee tag and no `cumulativeFees`
+  coupling — no fee field appears anywhere in this case, which is the
+  Lean statement of "no fee".
   -/
   | .transfer assetIndex cid claimedStateHash outcome indices => fun s' =>
       ∃ h : assetIndex < outcome.length,
@@ -333,13 +345,17 @@ def Step (sig : SignatureAssumptions)
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy
   /-
-  ### `bulkTransferAllAssets`, `bulkConcludeAndTransferAllAssets` — N3
-  brief, "revert"
+  ### `bulkTransferAllAssets`, `bulkConcludeAndTransferAllAssets` —
+  Armada's own rule: revert
 
-  N3 brief S2: "Override `transferAllAssets` in `ArmadaNitroAdjudicator` to
-  `revert('Use transfer(assetIndex, ...)')`." N3/R1, "Behavior (unchanged)":
-  "`transferAllAssets` and `concludeAndTransferAllAssets` revert with a
-  use-`transfer` message instead of running the inherited bulk path."
+  Armada's own rule, stated directly (no paper covers it): once
+  `holdings` stores a `bytes32` commitment per asset per channel instead
+  of a raw `uint256` (lab book decision 9), the inherited bulk
+  finalization path's raw arithmetic no longer applies to it, so
+  `ArmadaNitroAdjudicator` overrides `transferAllAssets` and
+  `concludeAndTransferAllAssets` to revert with a use-`transfer` message
+  instead of running that inherited bulk path; a caller that wants a
+  payout calls `transfer(assetIndex, ...)` once per asset instead.
   DEPARTURE (`departures-found.md` item 5, "N3 absent"): the current
   `ArmadaNitroAdjudicator.sol` has NO such override — `transferAllAssets`
   and `concludeAndTransferAllAssets` are inherited unchanged and run the
@@ -348,7 +364,7 @@ def Step (sig : SignatureAssumptions)
   commitments via `PoolSpend.mintPayoutCommitmentsNoChannel` with no
   nullifier at all — pure value creation with no debit anywhere. This
   model does not give these two calls any way to succeed, matching the
-  INTENDED N3 design, not the current code.
+  INTENDED design, not the current code.
   -/
   | .bulkTransferAllAssets _ _ _ => fun _ => False
   | .bulkConcludeAndTransferAllAssets _ _ => fun _ => False
