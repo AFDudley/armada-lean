@@ -216,4 +216,12 @@ theorem step_configuredAssets (sig : SignatureAssumptions)
   | signNote pk msgHash =>
     obtain ⟨_, _, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
+
+/-- Marking a single nullifier spent: it fails iff the nullifier is already
+    spent, and otherwise prepends it (`ArmadaLean.markSpent`, `PoolOwned.lean`). -/
+theorem markSpent_single (spent : NullifierSet) (n : Nat) :
+    markSpent spent [n] = if n ∈ spent then none else some (n :: spent) := by
+  unfold markSpent
+  split <;> rfl
+
 end ArmadaLean.Adjudicator
