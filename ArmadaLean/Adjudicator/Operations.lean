@@ -111,12 +111,19 @@ def Step (sig : SignatureAssumptions)
   Deposit is authorized by the depositor's own EdDSA signature on the
   spent note (the pool layer's `EdDSAVerify`, reused via `Constrained`/
   `DepositTransacted`, `Notes.lean`), not by `sig`/`actor`, so this case
-  does not use either.
+  does not use either. `0 < amount`: the adjudicator's own rule that it
+  never records a `0`-value note as a channel holding (`State.lean`'s
+  Armada encoding rule, `Safety.lean`'s `holdings_never_zero_valued`) —
+  `TransactOwned.circom:117-120` only range-checks an output value, so
+  the circuit alone would let a `0`-amount deposit mint a `0`-valued
+  holding; this precondition is what keeps the invariant here, since
+  the circuit does not.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
       heldValue s asset channelId = expectedHeld ∧
       ¬ isExternal channelId ∧
+      0 < amount ∧
       (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
           (idx : Fin M),
         DepositPoolStep s.pool s.self asset amount w pub idx s'.pool ∧
