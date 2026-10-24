@@ -274,7 +274,7 @@ theorem notedValue_conserved
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (token : Nat)
     (hstep : Step sig appRel actor s call s') :
-    s'.pool.held token = s.pool.held token := by
+    s'.pool.notedValue token = s.pool.notedValue token := by
   sorry
 
 /-- The reachable-set form of `notedValue_conserved`, stated over the
@@ -289,7 +289,7 @@ theorem notedValue_conserved_reachable
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (token : Nat)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) :
-    s.pool.held token = pool0.held token := by
+    s.pool.notedValue token = pool0.notedValue token := by
   sorry
 
 /-- Which harm this rules out: `holdings` can never point to a commitment
