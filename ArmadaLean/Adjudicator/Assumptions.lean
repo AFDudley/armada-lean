@@ -10,16 +10,16 @@
   means its constraints hold." This file states the first two. The third
   (proof soundness, owned-spend circuit) now sits in `ArmadaLean.
   TransactOwned`/`ArmadaLean.PoolOwned` (root `ArmadaLean` modules,
-  branch `owned-notes`): contract-owned notes are a POOL feature, not an
-  adjudicator feature (operator ruling, this session), so the owned
-  circuit's own assumptions moved out of this adjudicator model entirely.
+  branch `owned-notes`): the adjudicator is an ordinary user of the
+  pool, so the owned-note circuit's own assumptions belong to the pool
+  module, not this adjudicator model.
 
   Each assumption is a FIELD of a named structure (`HashAssumptions`,
   `SignatureAssumptions`), never a bare global `axiom`. A bare axiom is a
   fact any proof anywhere can invoke without the theorem's own signature
   showing it; a structure a theorem takes as an explicit argument forces
   the dependency onto the type, so a reader sees from the statement alone
-  which assumptions it needs (coordinator correction, prior session).
+  which assumptions it needs.
   `channelIdOf`, `stateHashOf` and `outcomeHashOf` stay as bare `axiom`
   declarations: each names an uninterpreted FUNCTION with no asserted
   property (the same status as `decodeGuarantee`), not a security claim —

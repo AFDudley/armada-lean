@@ -12,8 +12,7 @@
   comment), and a reachability argument needs to see which actor each step
   in a witnessing sequence used. `Reachable` is anchored at `State.lean`'s
   `genesis`, the deployment state — not an arbitrary starting state a
-  theorem could leave unconstrained (coordinator correction, prior
-  session).
+  theorem could leave unconstrained.
 
   `AppliesAll`/`Reachable` carry the same `SignatureAssumptions`/`appRel`
   parameters `Step` does, since they are built from `Step`.

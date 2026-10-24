@@ -134,8 +134,8 @@ def SignedByAll (sig : SignatureAssumptions) (s : AdjudicatorState)
     at every state reachable from deployment by any sequence of calls by
     any caller" — `genesis` is THE deployment state every reachability
     claim anchors to (`Reachability.lean`'s `Reachable`), not an arbitrary
-    starting state a theorem could otherwise leave unconstrained
-    (coordinator correction, prior session). `assets`/`self` stay
+    starting state a theorem could otherwise leave unconstrained.
+    `assets`/`self` stay
     parameters: the deploy-time asset list and the adjudicator's own
     address are themselves constructor arguments
     (`ArmadaNitroAdjudicator`'s constructor), fixed once per deployment.
@@ -145,9 +145,9 @@ def SignedByAll (sig : SignatureAssumptions) (s : AdjudicatorState)
     `Notes.lean`) must already be live in the pool before this adjudicator
     ever sees a call, so the pool's state at deployment is whatever it
     already was, not `[]`. `signedBy` is NOT a parameter: no Nitro-layer
-    digest is signed before the first `.sign` call in the execution
-    (coordinator correction, this session: signing is an action the
-    execution carries, not a deploy-time given). -/
+    digest is signed before the first `.sign` call in the execution:
+    signing is an action the execution carries, not a deploy-time
+    given. -/
 def genesis (assets : Nat → Prop) (self : Nat) (pool : PoolState) : AdjudicatorState where
   pool := pool
   channels := fun _ => emptyStatus

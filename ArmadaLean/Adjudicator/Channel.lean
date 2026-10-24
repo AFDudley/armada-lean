@@ -3,9 +3,9 @@
   supports a state, and who can finalize an outcome.
 
   This file translates S1-S4's state-channel vocabulary into Lean, one
-  definition per source quote, plus the operator's addition: "finalizable
-  outcome" and "enabled outcome" (Nitro-2019-219.pdf §4.4), formalizing
-  "who gets paid" the way the papers define it, not by invented rules.
+  definition per source quote, including Nitro-2019-219.pdf §4.4's
+  "finalizable outcome" and "enabled outcome", formalizing "who gets
+  paid" the way the papers define it, not by invented rules.
   `Outcome.lean` holds the payout pieces these definitions carry as data;
   `Operations.lean` holds the state TRANSITIONS (challenge, checkpoint,
   conclude) that this file's definitions describe the shape of.
@@ -138,12 +138,11 @@ Application rule: whether `candidate` is supported by `proof`, AT STATE
 `s` (S4 `0020-execution-rules.md`, "Application rules", quoted above; S3
 §2.2's `latestSupportedState`; clause 7). A PARAMETER of the model
 (`Operations.lean`'s `Step`, `appRel : AdjudicatorState → FixedPart →
-List VariablePart → VariablePart → Prop`), not a bare global axiom
-(coordinator correction, this session: "the app relation is a parameter
-of the model") — safety theorems (`Safety.lean`, sections A-C) quantify
-it for ANY app; the can-happen theorems (section D) use the real,
-deployed `ConsensusApp`'s own relation in its place. Defined in
-`Operations.lean`, not here: it takes `AdjudicatorState`, which is not
+List VariablePart → VariablePart → Prop`), not a bare global axiom —
+safety theorems (`Safety.lean`, sections A-C) quantify it for ANY app;
+the can-happen theorems (section D) use the real, deployed
+`ConsensusApp`'s own relation in its place.
+Defined in `Operations.lean`, not here: it takes `AdjudicatorState`, which is not
 defined until `State.lean`. Takes the CURRENT state `s`, not only
 `(fp, proof, candidate)`: this model's `candidate` carries no inline
 signature array the way the real `RecoveredVariablePart` does
