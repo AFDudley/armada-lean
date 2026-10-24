@@ -755,7 +755,34 @@ theorem zero_payout_mints_nothing
     ¬ ∃ pre : NotePreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
         (commitment pre.npk pre.token pre.value, pre) ∈ s'.pool.liveNotes ∧
         (commitment pre.npk pre.token pre.value, pre) ∉ s.pool.liveNotes := by
-  sorry
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨hpoolstep, _hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨_, _, _, hliveeq, _⟩ := hpoolstep
+  rintro ⟨pre, _hnpk, hval, hin', hnin⟩
+  rw [hliveeq] at hin'
+  rcases List.mem_append.mp hin' with hc1 | hc2
+  · exact hnin (List.mem_filter.mp hc1).1
+  · obtain ⟨opre, hopre_mem, hopre_eq⟩ := List.mem_map.mp hc2
+    have hpre_eq : opre = pre := (Prod.mk.injEq _ _ _ _ ▸ hopre_eq : _ ∧ opre = pre).2
+    rw [hpre_eq] at hopre_mem
+    rcases List.mem_append.mp hopre_mem with hc2a | hc2b
+    · obtain ⟨a, _ha_mem, hfm⟩ := List.mem_filterMap.mp hc2a
+      by_cases hamt : a.amount = 0
+      · rw [if_pos hamt] at hfm; exact absurd hfm (by simp)
+      · rw [if_neg hamt] at hfm
+        have hveq : pre.value = a.amount := by
+          have := Option.some.inj hfm
+          rw [← this]
+        rw [hveq] at hval
+        exact hamt hval
+    · split at hc2b
+      · exact absurd hc2b List.not_mem_nil
+      · rename_i hne
+        rw [List.mem_singleton] at hc2b
+        rw [hc2b] at hval
+        simp only at hval
+        exact hne hval
 
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
@@ -785,7 +812,28 @@ theorem full_payout_leaves_no_remainder
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 =
       heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) :
     s'.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
-  sorry
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨_hpoolstep, hholdseq, _hchanseq⟩ := hrest
+  have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hholdseq
+  change s'.holdings = update s.holdings (outcome.get ⟨assetIndex, h⟩).asset
+      (update (s.holdings (outcome.get ⟨assetIndex, h⟩).asset) cid
+        (if heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+            (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+              (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 = 0
+         then none
+         else some (commitment s.self (outcome.get ⟨assetIndex, h⟩).asset
+           (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+             (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+               (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)))) at hholdseq
+  simp only [hfull, Nat.sub_self, if_true] at hholdseq
+  rw [hholdseq]
+  show (update s.holdings (outcome.get ⟨assetIndex, h⟩).asset
+      (update (s.holdings (outcome.get ⟨assetIndex, h⟩).asset) cid none))
+      (outcome.get ⟨assetIndex, h⟩).asset cid = none
+  unfold update
+  simp
 
 /-- Closes the fifth `_mintTransferPayout` miss (old offset 12743): the
     old collateral commitment is nullified if and only if one existed —
