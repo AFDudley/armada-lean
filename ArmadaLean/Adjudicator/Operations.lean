@@ -69,21 +69,21 @@ inductive Actor where
     producing a signature (`Step`'s `actor` parameter is how this model
     restricts who may take them; see the module comment). -/
 inductive Call where
-  | deposit (channelId expectedHeld asset amount : Nat)
+  | deposit (channelId : Term) (expectedHeld asset amount : Nat)
   | challenge (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
       (challenger : Nat)
   | checkpoint (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart)
   | conclude (fp : FixedPart) (candidate : VariablePart)
-  | transfer (assetIndex channelId claimedStateHash : Nat) (outcome : Outcome)
+  | transfer (assetIndex : Nat) (channelId : Term) (claimedStateHash : Term) (outcome : Outcome)
       (indices : List Nat)
-  | reclaim (sourceChannelId : Nat) (sourceOutcome : Outcome)
+  | reclaim (sourceChannelId : Term) (sourceOutcome : Outcome)
       (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
-      (targetAssetIndex claimedTargetStateHash : Nat)
-  | bulkTransferAllAssets (channelId : Nat) (outcome : Outcome) (claimedStateHash : Nat)
+      (targetAssetIndex : Nat) (claimedTargetStateHash : Term)
+  | bulkTransferAllAssets (channelId : Term) (outcome : Outcome) (claimedStateHash : Term)
   | bulkConcludeAndTransferAllAssets (fp : FixedPart) (candidate : VariablePart)
   | tick (newNow : Nat)
-  | sign (p d : Nat)
-  | signNote (pk : Nat × Nat) (msgHash : Nat)
+  | sign (p : Nat) (d : Term)
+  | signNote (pk : Nat × Nat) (msgHash : Term)
 
 /-- One call's effect: `s` steps to `s'` under `call`, taken by `actor`,
     given the signature assumptions (`sig`) and the application rule
@@ -150,7 +150,7 @@ def Step (sig : SignatureAssumptions)
            s'.holdings = update s.holdings asset
              (update (s.holdings asset) channelId (some (pub.commitmentsOut idx)))
          | some oldHolding =>
-           ∃ merged : Nat,
+           ∃ merged : Term,
              DepositMergeStep midPool s.self asset oldHolding (pub.commitmentsOut idx)
                merged s'.pool ∧
              s'.holdings = update s.holdings asset
@@ -230,7 +230,8 @@ def Step (sig : SignatureAssumptions)
       candidate.turnNum > (s.channels cid).turnNumRecord ∧
       appRel s fp proof candidate ∧
       s'.channels = update s.channels cid
-        { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := 0, outcomeHash := 0 } ∧
+        { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := Term.val 0,
+          outcomeHash := Term.val 0 } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
@@ -263,7 +264,7 @@ def Step (sig : SignatureAssumptions)
       candidate.isFinal = true ∧
       SignedByAll sig s fp candidate ∧
       s'.channels = update s.channels cid
-        { turnNumRecord := 0, finalizesAt := s.now, stateHash := 0
+        { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
       s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
@@ -316,13 +317,13 @@ def Step (sig : SignatureAssumptions)
           if a.amount = 0 then none
           else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage))
         let outputs := payoutOutputs ++
-          (if remainder = 0 then [] else [(⟨s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])
+          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])
         PoolOwnedSpendStep s.pool s.self assetOutcome.asset
           (s.holdings assetOutcome.asset cid) outputs s'.pool ∧
         s'.holdings = update s.holdings assetOutcome.asset
           (update (s.holdings assetOutcome.asset) cid
             (if remainder = 0 then none
-             else some (commitment s.self assetOutcome.asset remainder))) ∧
+             else some (commitment (Term.val s.self) assetOutcome.asset remainder))) ∧
         s'.channels = update s.channels cid
           { s.channels cid with
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>

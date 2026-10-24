@@ -63,12 +63,12 @@ structure VariablePart where
 /-- The channel id (S4 `0010-states-channels.md`, "Channel IDs"; clause 3).
     `Assumptions.lean`'s `channelIdOf`/`channelIdOf_inj` state what a
     caller cannot do to it. -/
-noncomputable def channelId (fp : FixedPart) : Nat :=
+def channelId (fp : FixedPart) : Term :=
   channelIdOf fp.participants fp.channelNonce fp.appDefinition fp.challengeDuration
 
 /-- The state hash (S4 `0010-states-channels.md`, "State commitments";
     clause 4). -/
-noncomputable def stateHash (fp : FixedPart) (vp : VariablePart) : Nat :=
+def stateHash (fp : FixedPart) (vp : VariablePart) : Term :=
   stateHashOf (channelId fp) vp.appData vp.outcome vp.turnNum vp.isFinal
 
 /-!
@@ -199,14 +199,19 @@ inductive ChannelMode where
 structure ChannelStatus where
   turnNumRecord : Nat
   finalizesAt : Nat
-  stateHash : Nat
-  outcomeHash : Nat
+  stateHash : Term
+  outcomeHash : Term
 
 /-- The empty status every channel starts at (S4 `0040-lifecycle-of-a-
     channel.md`, `_mode`'s code comment, quoted in `Operations.lean`:
     "`_unpackStatus(someRandomChannelId)` returns `(0,0,0)`, which is
-    correct when nobody has written to storage yet."). -/
-def emptyStatus : ChannelStatus := ⟨0, 0, 0, 0⟩
+    correct when nobody has written to storage yet."). `stateHash`/
+    `outcomeHash` read `Term.val 0`, the raw-value embedding of the
+    same `0` the quote names — never a genuine hash term
+    (`Term.val_ne_hash`), so an empty status can never collide with a
+    reachable `stateHash fp vp`/`outcomeHashOf outcome`, both of which
+    are always `Term.hash` terms. -/
+def emptyStatus : ChannelStatus := ⟨0, 0, Term.val 0, Term.val 0⟩
 
 /-- A channel's mode, derived from `finalizesAt` and the current time (S4
     `0040-lifecycle-of-a-channel.md`, "Channel Modes"/"`finalizesAt`",
