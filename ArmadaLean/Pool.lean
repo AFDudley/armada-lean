@@ -199,6 +199,116 @@ theorem applyRecords_preserves_consistency {reg : PreimageRegistry}
     · intro cp' hcp'
       exact hvalid cp' (List.mem_cons_of_mem (c, p) hcp')
 
+/-- `applyRecords` distributes over `++`: folding two batches in sequence is the same
+    as folding their concatenation. -/
+theorem applyRecords_append (reg : PreimageRegistry) (l1 l2 : List (Nat × CommitmentPreimage)) :
+    applyRecords reg (l1 ++ l2) = applyRecords (applyRecords reg l1) l2 := by
+  induction l1 generalizing reg with
+  | nil => rfl
+  | cons hd tl ih =>
+    rw [List.cons_append]
+    obtain ⟨c, p⟩ := hd
+    show applyRecords (recordStep reg c p) (tl ++ l2) = _
+    rw [ih (recordStep reg c p)]
+    rfl
+
+/-- `hashCommitment` is injective: two preimages with the same commitment are the same
+    preimage (collision resistance, `ArmadaLean.Poseidon.poseidon3_inj`, the same
+    assumption `ArmadaLean.TransactOwned.commitment_owner_inj` and
+    `ArmadaLean.Transact.commitment_mpk_inj` already rest on). -/
+theorem hashCommitment_inj {p1 p2 : CommitmentPreimage} (h : hashCommitment p1 = hashCommitment p2) :
+    p1 = p2 := by
+  obtain ⟨h1, h2, h3⟩ := poseidon3_inj h
+  cases p1; cases p2; simp_all
+
+/-- Once `reg` already answers key `c` with `p`, folding a batch through it cannot
+    change that answer, provided every later record touching key `c` agrees with `p` —
+    the invariant `applyRecords_returns` below bootstraps and carries through a whole
+    batch. -/
+theorem applyRecords_preserves_key {reg : PreimageRegistry} {records : List (Nat × CommitmentPreimage)}
+    {c : Nat} {p : CommitmentPreimage} (hreg : reg c = some p)
+    (hagree : ∀ cp ∈ records, cp.1 = c → cp.2 = p) :
+    applyRecords reg records c = some p := by
+  induction records generalizing reg with
+  | nil => exact hreg
+  | cons hd tl ih =>
+    obtain ⟨c', p'⟩ := hd
+    unfold applyRecords
+    refine ih ?_ (fun cp hcp => hagree cp (List.mem_cons_of_mem _ hcp))
+    show recordStep reg c' p' c = some p
+    unfold recordStep
+    by_cases hz : isZeroPreimage p'
+    · rw [if_pos hz]; exact hreg
+    · rw [if_neg hz]
+      by_cases hcc : c = c'
+      · rw [if_pos hcc]
+        have := hagree (c', p') List.mem_cons_self hcc.symm
+        simp only [] at this
+        rw [this]
+      · rw [if_neg hcc]; exact hreg
+
+/-- **A valid, non-zero batch is recoverable from the registry it produces.** If every
+    record in a batch hashes to its own key and is never the zero preimage (so
+    `recordStep` never skips it — `_validatePublicOutputs`'s non-zero requirement), then
+    for any record `(c, p)` in the batch, `applyRecords` settles on `p` at key `c`,
+    whatever else is in the batch: a later record sharing key `c` must, by
+    `hashCommitment_inj`, carry the identical preimage `p`, so even an overwrite leaves
+    the answer unchanged. The key lemma behind `transactOwned_records_all`. -/
+theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Nat × CommitmentPreimage)}
+    (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
+    (hNonZero : ∀ cp ∈ records, ¬ isZeroPreimage cp.2)
+    {c : Nat} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) :
+    applyRecords reg records c = some p := by
+  obtain ⟨pre, post, hsplit⟩ := List.append_of_mem hmem
+  rw [hsplit, applyRecords_append]
+  unfold applyRecords
+  apply applyRecords_preserves_key
+  · unfold recordStep
+    rw [if_neg (hNonZero (c, p) (hsplit ▸ List.mem_append_right pre List.mem_cons_self))]
+    simp
+  · intro cp hcp hcpeq
+    have hcpmem : cp ∈ records := by
+      rw [hsplit]
+      exact List.mem_append_right pre (List.mem_cons_of_mem _ hcp)
+    have hcpval := hvalid cp hcpmem
+    have hpval := hvalid (c, p) hmem
+    rw [hcpeq] at hcpval
+    exact hashCommitment_inj (hcpval.trans hpval.symm)
+
+/-- The `(commitment, preimage)` pair a plain `Transact` output would record, if
+    disclosed — the full candidate batch `Step.transact`'s `records` is a sublist of. -/
+noncomputable def transactOutputRecords {N M : Nat} (w : TransactWitness N M)
+    (pub : TransactPublic N M) : List (Nat × CommitmentPreimage) :=
+  List.ofFn fun j => (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+
+/-- Every candidate record a plain `Transact` could disclose is valid: its commitment
+    key is exactly its own `hashCommitment` (`Constrained.outputs`). -/
+theorem transactOutputRecords_valid {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M}
+    (hC : Constrained w pub) :
+    ∀ cp ∈ transactOutputRecords w pub, hashCommitment cp.2 = cp.1 := by
+  intro cp hcp
+  obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
+  rw [← hj]
+  exact (hC.outputs j).symm
+
+/-- The `(commitment, preimage)` pair an owned `TransactOwned` output records —
+    `transactOwned` discloses every one (`_validatePublicOutputs(requireAll = true)`,
+    TransactModule.sol:630-634), so this is `Step.transactOwned`'s whole batch, not a
+    candidate list a caller trims. -/
+noncomputable def ownedOutputRecords {N M : Nat} (w : TransactOwnedWitness N M)
+    (pub : TransactOwnedPublic N M) : List (Nat × CommitmentPreimage) :=
+  List.ofFn fun j => (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+
+/-- Every owned output's record is valid: its commitment key is exactly its own
+    `hashCommitment` (`OwnedConstrained.outputs`). -/
+theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
+    {pub : TransactOwnedPublic N M} (hC : OwnedConstrained w pub) :
+    ∀ cp ∈ ownedOutputRecords w pub, hashCommitment cp.2 = cp.1 := by
+  intro cp hcp
+  obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
+  rw [← hj]
+  exact (hC.outputs j).symm
+
 /-! ### Pool state -/
 
 /-- The pool's state, at the level this model needs. `live t` is the model's ghost
@@ -334,8 +444,13 @@ inductive Step : PoolState → PoolState → Prop where
       inputs": `hRemove` is licensed by the proof's `Constrained.merkle`/root-history
       facts (soundness: a Merkle-membership proof against a historical root cannot name a
       note the pool never created — Pool module comment), `hNullify` is
-      `_accumulateAndNullify` (TransactModule.sol:373-399). `hValid`/`records` is
-      `_validatePublicOutputs`/`_recordPreimages` (TransactModule.sol:544-604). The
+      `_validatePublicOutputs(requireAll = false)`/`_recordPreimages`
+      (TransactModule.sol:544-604): disclosure is optional, so `records` is any
+      sublist of the outputs' own `(commitment, preimage)` pairs
+      (`transactOutputRecords`), in witness order — never an unrelated list, since
+      `List.Sublist` forces every disclosed entry to be one of the circuit's own
+      outputs (`transactOutputRecords_valid` then gives `hashCommitment` correctness for
+      free, not as a separate hypothesis). The
       balance fact itself is not a hypothesis here: `ArmadaLean.PoolSafety
       .step_preserves_invariant` derives it from `transact_value_conserved hN hM hC`
       at the point it is needed, exactly as the contract's own guarantee rests on the
@@ -368,7 +483,7 @@ inductive Step : PoolState → PoolState → Prop where
       (hUnshieldLen : unshieldTail.length ≤ 1)
       (hRemove : removeAll (s.live w.token) (transactSpentNotes w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
-      (hValid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1) :
+      (hRecords : records.Sublist (transactOutputRecords w pub)) :
       Step s
         { s with
             live := fun t => if t = w.token then newNotes ++ rest else s.live t,
@@ -381,11 +496,13 @@ inductive Step : PoolState → PoolState → Prop where
   /-- `TransactModule.transactOwned` (TransactModule.sol:488-519): the same bookkeeping
       shape as `transact`, with no unshield (`_validateOwnedTransaction` rejects any
       `unshield != NONE`, TransactModule.sol:619-623) and every output's preimage
-      mandatory (`_validatePublicOutputs(requireAll = true)`, TransactModule.sol:630-634
-      — `records` therefore has one entry per new note here, unlike `transact` where it
-      is optional). `hC : OwnedConstrained w pub` is the soundness hypothesis; `caller`/
-      `hCaller` is the authorization check (`msg.sender == address(uint160(uint256
-      (ownerField)))`, TransactModule.sol:636-639) — together these are exactly what
+      mandatory (`_validatePublicOutputs(requireAll = true)`, TransactModule.sol:630-634):
+      every owned output is disclosed, so the registry update is fixed to
+      `ownedOutputRecords w pub` — the circuit's whole output batch, not a candidate
+      list a caller trims (unlike `transact`, where disclosure is optional). `hNonZero`
+      is `_validatePublicOutputs(requireAll = true)`'s own check that no owned output
+      may be the zero preimage (TransactModule.sol:567-571, "Missing public output").
+      `hC : OwnedConstrained w pub` is the soundness hypothesis; `caller`/
       `ArmadaLean.PoolSafety.transactOwned_spends_only_owned`
       (`ArmadaLean.PoolOwned.owned_owner_binding`) needs. `hN`/`hM`: the registered owned
       shapes (`armada-circuits/src/main/main_{1x1,1x2,1x3}_owned.circom`) all have
@@ -401,19 +518,19 @@ inductive Step : PoolState → PoolState → Prop where
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
       (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat)
-      (records : List (Nat × CommitmentPreimage))
       (hEmergency : s.emergencyPaused = false)
       (hWithdrawOnly : s.withdrawOnlyMode = false)
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
-      (hValid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1) :
+      (hNonZero : ∀ j, ¬ isZeroPreimage
+        (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)) :
       Step s
         { s with
             live := fun t => if t = w.token then ownedNewNotes w ++ rest else s.live t,
             spent := spent',
             roots := newRoot :: s.roots,
-            preimageOf := applyRecords s.preimageOf records }
+            preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub) }
   /-- The administrative paths that change neither notes, nullifiers, roots nor custody:
       `setShieldPauseContract`'s three flags, read through `IShieldPauseController
       .shieldsPaused`/`.emergencyPaused`/`.withdrawOnlyMode`. Owner functions that change

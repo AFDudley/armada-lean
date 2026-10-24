@@ -70,7 +70,7 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     · simp only [if_neg ht]
       exact hinv t
   | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
+      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -82,8 +82,8 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
-      hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
+      hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -183,10 +183,10 @@ theorem spent_monotone {s s' : PoolState} (hstep : Step s s') : ∀ n ∈ s.spen
   | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
     exact fun n hn => hn
   | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
+      hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
     exact markSpent_subset hNullify
-  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
-      hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
+      hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
     exact markSpent_subset hNullify
   | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
     exact fun n hn => hn
@@ -299,10 +299,10 @@ theorem roots_grounded {emptyRoot : Nat} {s : PoolState} (h : Reachable emptyRoo
     | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
     | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
+        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
-        hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
+        hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
       exact ⟨newRoot :: pushed, by simp [hpushed]⟩
     | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
       exact ⟨pushed, hpushed⟩
@@ -342,13 +342,38 @@ theorem pool_preimageOf_consistent {emptyRoot : Nat} {s : PoolState}
     | shield token npk grossAmount feeBP newRoot hNotPaused hValue hFeeBP =>
       exact recordStep_preserves_consistency ih rfl
     | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hValid =>
-      exact applyRecords_preserves_consistency ih hValid
-    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot records
-        hEmergency hWithdrawOnly hRoot hRemove hNullify hValid =>
-      exact applyRecords_preserves_consistency ih hValid
+        hEmergency hWithdrawOnly hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+      exact applyRecords_preserves_consistency ih
+        (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
+    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
+        hEmergency hWithdrawOnly hRoot hRemove hNullify hNonZero =>
+      exact applyRecords_preserves_consistency ih (ownedOutputRecords_valid hC)
     | admin shieldsPaused emergencyPaused withdrawOnlyMode =>
       exact ih
+
+/--
+**After an owned transact, the pool's preimage registry returns exactly this output's
+own preimage for its own commitment.** `transactOwned` discloses every output, with no
+zero preimage among them (`_validatePublicOutputs(requireAll = true)`,
+TransactModule.sol:630-634; `Step.transactOwned`'s `hNonZero`), so folding
+`ownedOutputRecords w pub` through `applyRecords` never skips one, and
+`applyRecords_returns` shows the fold settles exactly there, whatever else the batch
+later writes to the same key (never actually different, by `hashCommitment_inj`: two
+outputs sharing a commitment must share a preimage). -/
+theorem transactOwned_records_all {reg : PreimageRegistry} {N M : Nat}
+    {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M}
+    (hC : OwnedConstrained w pub)
+    (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+    (j : Fin M) :
+    applyRecords reg (ownedOutputRecords w pub) (pub.commitmentsOut j) =
+      some (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage) := by
+  apply applyRecords_returns (ownedOutputRecords_valid hC)
+  · intro cp hcp
+    obtain ⟨j', hj'⟩ := List.mem_ofFn.mp hcp
+    rw [← hj']
+    exact hNonZero j'
+  · unfold ownedOutputRecords
+    exact List.mem_ofFn.mpr ⟨j, rfl⟩
 
 /-! ### Can happen -/
 
@@ -529,7 +554,7 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
   refine ⟨_, Step.transact w pub hN hM hC
     (List.ofFn fun j => (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) [] rest spent'
     newRoot [] hEmergency (fun _ => hNotWithdrawOnly) hRoot (by simp [transactAllOutputs, w])
-    (by simp) hLive hMark (by simp)⟩
+    (by simp) hLive hMark (List.nil_sublist _)⟩
 
 /-- **Can happen: an unshield succeeds.** The degenerate single-output shape of
     `transact_can_happen`: a real key holder spends `N` genuinely-held, genuinely-live
@@ -597,7 +622,7 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
   refine ⟨_, Step.transact w pub hN (by omega) hC []
     (List.ofFn fun (_ : Fin 1) => (⟨npkOut, token, valueOut⟩ : CommitmentPreimage)) rest
     spent' newRoot [] hEmergency (fun h => absurd h (by simp)) hRoot
-    (by simp [transactAllOutputs, w]) (by simp) hLive hMark (by simp)⟩
+    (by simp [transactAllOutputs, w]) (by simp) hLive hMark (List.nil_sublist _)⟩
 
 /-- **Can happen: an owned transact succeeds.** Directly wires an owned witness,
     constructed exactly as `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one
@@ -645,7 +670,6 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
       balance := congrArg (· % p) hBalance }
   have hV : VerifyOwnedAccepts pub := hComplete.complete hC
-  have _ := hOutputsNonZero
   obtain ⟨spent', hMark⟩ := markSpent_succeeds
     (by
       have hmap := distinct_leaves_distinct_nullifiers ownerField (List.ofFn leavesIndices)
@@ -659,10 +683,6 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
       rw [← hi]
       exact hFresh i)
   refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-    (List.ofFn fun j => (commitment (npkOut j) token (valueOut j),
-      (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)))
     hEmergency hNotWithdrawOnly hRoot hLive hMark ?_⟩
-  intro cp hcp
-  obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
-  rw [← hj]
-  rfl
+  intro j hz
+  exact hOutputsNonZero j hz.1
