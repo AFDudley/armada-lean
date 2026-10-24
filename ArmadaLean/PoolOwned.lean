@@ -9,8 +9,8 @@
   accepted proof's witness satisfies every circuit constraint" is the named
   hypothesis every theorem below takes (the brief's soundness assumption:
   Poseidon cannot be inverted or collided, and an accepted proof means its
-  circuit constraints hold). Only `owned_spend_can_happen` additionally names
-  `ownedProofCompleteness`, the converse assumption.
+  circuit constraints hold). Only `owned_spend_can_happen` additionally takes
+  an explicit `OwnedProofCompleteness` hypothesis, the converse assumption.
 
   Theorems proved here:
   * `owned_owner_binding` — no one except the owning contract can spend its
@@ -77,15 +77,17 @@ only by `owned_spend_can_happen`. -/
 axiom VerifyOwnedAccepts : {N M : Nat} → TransactOwnedPublic N M → Prop
 
 /--
-CRYPTOGRAPHIC ASSUMPTION (Groth16 completeness) — assumed, not proven, and
-used only by `owned_spend_can_happen`.
-
-For a witness/public pair that together satisfy every TransactOwned.circom
-constraint (`OwnedConstrained`), a prover can build a proof that
+Groth16 completeness, named as an explicit hypothesis rather than a global
+axiom: for a witness/public pair that together satisfy every TransactOwned
+.circom constraint (`OwnedConstrained`), a prover can build a proof that
 `PrivacyPool.verifyOwned` accepts. This is the converse of soundness: the
-owned verifying-key set never rejects a real satisfying witness. -/
-axiom ownedProofCompleteness {N M : Nat} {w : TransactOwnedWitness N M}
-    {pub : TransactOwnedPublic N M} (h : OwnedConstrained w pub) : VerifyOwnedAccepts pub
+owned verifying-key set never rejects a real satisfying witness.
+`owned_spend_can_happen` takes one instance of this record as an explicit
+argument, so the assumption is visible at its call site and nowhere else —
+no other theorem in this file can reach for it. -/
+structure OwnedProofCompleteness where
+  complete : ∀ {N M : Nat} {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M},
+    OwnedConstrained w pub → VerifyOwnedAccepts pub
 
 /-! ### Owner binding (TransactModule.sol:636-639) -/
 
@@ -265,14 +267,14 @@ witness for `N` notes it genuinely holds at Merkle root `root`, re-minted
 into `M` fresh outputs of equal total value. `owned_spend_can_happen`
 clears every pool-level gate this model covers: the circuit constraints
 hold (`OwnedConstrained`, by construction), `verifyOwned` accepts
-(`ownedProofCompleteness`, the one completeness assumption), the caller is
+(`hComplete.complete`, the one completeness assumption), the caller is
 authorized (`hCaller`), every output's preimage is valid and non-zero so
 `_validatePublicOutputs(requireAll = true)` (TransactModule.sol:630-634)
 passes, and the nullifiers are fresh so `_accumulateAndNullify` does not
 revert (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers`
 from ArmadaLean.Nullifier to turn the owner's genuinely-distinct note
 positions into pairwise-distinct nullifiers). -/
-theorem owned_spend_can_happen {N M : Nat}
+theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
     (ownerField token boundParamsHash root : Nat)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Nat × Bool))
@@ -307,7 +309,7 @@ theorem owned_spend_can_happen {N M : Nat}
     { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
       balance := congrArg (· % p) hBalance }
-  refine ⟨w, pub, hConstrained, ownedProofCompleteness hConstrained, hCaller, fun _ => rfl, ?_, ?_⟩
+  refine ⟨w, pub, hConstrained, hComplete.complete hConstrained, hCaller, fun _ => rfl, ?_, ?_⟩
   · intro j hz
     exact hOutputsNonZero j hz.1
   · apply markSpent_succeeds
