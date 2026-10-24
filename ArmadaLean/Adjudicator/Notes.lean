@@ -84,7 +84,12 @@ randomIn[i])` (`TransactOwned.circom:66-70`) — the same derivation
     a preimage owned by `self` (the adjudicator), on `token`, worth
     `amount`. Every other output (private change) is also recorded,
     matching `Step.transact`'s own effect: all `M` outputs join the
-    pool's live set, not only the adjudicator's own. -/
+    pool's live set, not only the adjudicator's own. The adjudicator's
+    OWN output's preimage MUST itself be in `records` (`holdings_never_
+    zero_valued`'s own invariant needs this to read a value back at all
+    — a plain `transact`'s own per-output disclosure is OPTIONAL at the
+    pool level, but the adjudicator cannot read back a holding it never
+    asked the pool to publish). -/
 def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M) (idx : Fin M)
     (after : PoolState) : Prop :=
@@ -100,6 +105,7 @@ def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
     removeAll (before.live w.token) (transactSpentNotes w) = some rest ∧
     markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
     (∀ cp ∈ records, hashCommitment cp.2 = cp.1) ∧
+    (pub.commitmentsOut idx, (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage)) ∈ records ∧
     after = { before with
       live := fun t => if t = w.token then transactAllOutputs w ++ rest else before.live t,
       spent := spent',
@@ -145,7 +151,12 @@ in `heldValue`'s own accuracy. -/
     adjudicator supplies no mechanism and no arithmetic of its own.
     `removeAll` (`Pool.lean`) removes the nullified note by its own
     preimage value (`ArmadaLean.ownedSpentNotes`), matching the Merkle-
-    membership fact `OwnedConstrained.merkle` already names. -/
+    membership fact `OwnedConstrained.merkle` already names. Every output's
+    preimage is disclosed (`preimageOf`'s own update): `transactOwned`'s
+    `_validatePublicOutputs(requireAll = true)` (`Pool.lean`'s own
+    `Step.transactOwned` comment) makes this MANDATORY, not optional like
+    a plain `transact`'s, so the record batch is fixed to exactly
+    `outputPreimages`'s own hashes, not a separately-asserted free list. -/
 def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
     (nullifiedCommitment : Option Nat) (outputPreimages : List CommitmentPreimage)
     (after : PoolState) : Prop :=
@@ -154,7 +165,7 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
     ∃ (w : TransactOwnedWitness 0 outputPreimages.length)
       (pub : TransactOwnedPublic 0 outputPreimages.length)
       (hM : outputPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
-      (spent' : NullifierSet) (newRoot : Nat) (records : List (Nat × CommitmentPreimage)),
+      (spent' : NullifierSet) (newRoot : Nat),
       self = addressOf pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputPreimages ∧
@@ -162,17 +173,16 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
       before.withdrawOnlyMode = false ∧
       pub.merkleRoot ∈ before.roots ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ cp ∈ records, hashCommitment cp.2 = cp.1) ∧
       after = { before with
         live := fun t => if t = token then outputPreimages ++ before.live t else before.live t,
         spent := spent',
-        preimageOf := applyRecords before.preimageOf records }
+        preimageOf := applyRecords before.preimageOf
+          (outputPreimages.map fun pre => (commitment pre.npk token pre.value, pre)) }
   | some c =>
     ∃ (w : TransactOwnedWitness 1 outputPreimages.length)
       (pub : TransactOwnedPublic 1 outputPreimages.length)
       (hM : outputPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
-      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat)
-      (records : List (Nat × CommitmentPreimage)),
+      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Nat),
       self = addressOf pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputPreimages ∧
@@ -180,10 +190,10 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
       pub.merkleRoot ∈ before.roots ∧
       removeAll (before.live token) (ownedSpentNotes pub w) = some rest ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ cp ∈ records, hashCommitment cp.2 = cp.1) ∧
       after = { before with
         live := fun t => if t = token then outputPreimages ++ rest else before.live t,
         spent := spent',
-        preimageOf := applyRecords before.preimageOf records }
+        preimageOf := applyRecords before.preimageOf
+          (outputPreimages.map fun pre => (commitment pre.npk token pre.value, pre)) }
 
 end ArmadaLean.Adjudicator
