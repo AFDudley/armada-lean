@@ -38,6 +38,17 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `transact_no_double_spend` | `Transact` | any valid witness has pairwise-distinct nullifiers | full model | Finding 2, end-to-end |
 | `transact_value_conserved` | `Transact` | any valid witness conserves value over the integers | full model | Finding 1, end-to-end |
 
+### Contract-owned notes (`armada-circuits` `TransactOwned.circom`, `armada-poc` `TransactModule.transactOwned`)
+
+| Lean theorem | Module | Property | Circuit or contract code | Source |
+|---|---|---|---|---|
+| `transactOwned_value_conserved` | `TransactOwned` | any valid owned witness conserves value over the integers | `TransactOwned.circom:111-135` | Finding 1, owned path |
+| `commitment_owner_inj` | `TransactOwned` | a note's commitment determines its owner (`ownerField`) | `TransactOwned.circom:66-76` | owner-binding core |
+| `owned_owner_binding` | `PoolOwned` | no one except the owning contract can spend its note | `TransactModule.sol:636-639` | labbook decision 2 |
+| `owned_no_double_spend` | `PoolOwned` | an accepted call's nullifiers are pairwise distinct and were not already spent | `TransactModule.sol:379-386` | Finding 2, pool-level |
+| `preimageOf_consistent` | `PoolOwned` | every recorded preimage hashes to the commitment it is recorded for | `TransactModule.sol:550-604` | labbook §3a (registry defect) |
+| `owned_spend_can_happen` | `PoolOwned` | the real owner's spend, with an accepted proof, clears every modeled pool gate | `TransactModule.sol:488-519,609-647` | proof completeness |
+
 ### Yield vault (`armada-poc/contracts/yield/ArmadaYieldVault.sol`, issue #365)
 
 | Lean theorem | Module | Property | Contract code |
@@ -77,6 +88,8 @@ ArmadaLean/
   Nullifier.lean          double-spend impossibility
   Merkle.lean             Merkle proof leaf-binding
   Transact.lean           full constraint model of Transact.circom
+  TransactOwned.lean      constraint model of TransactOwned.circom
+  PoolOwned.lean          pool's owned path (TransactModule.transactOwned) and preimage storage
   Vault.lean              #365 attack + mitigation proofs
   Fee.lean                shield-fee reference spec
 docs/

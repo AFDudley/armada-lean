@@ -9,5 +9,7 @@ import ArmadaLean.ValueConservation
 import ArmadaLean.Nullifier
 import ArmadaLean.Merkle
 import ArmadaLean.Transact
+import ArmadaLean.TransactOwned
+import ArmadaLean.PoolOwned
 import ArmadaLean.Vault
 import ArmadaLean.Fee

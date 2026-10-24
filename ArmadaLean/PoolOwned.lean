@@ -1,0 +1,322 @@
+/-
+  ArmadaLean.PoolOwned — the pool contract's owned path and its storage.
+
+  Models `TransactModule.transactOwned` (armada-poc
+  contracts/privacy-pool/modules/TransactModule.sol:488-519) and the state it
+  reads and writes: `PrivacyPoolStorage.nullifiers` (:174), `PrivacyPoolStorage
+  .preimageOf` (:248), and `PrivacyPool.verifyOwned` (PrivacyPool.sol:562-601).
+  Imports `ArmadaLean.TransactOwned` and builds on `OwnedConstrained` — "the
+  accepted proof's witness satisfies every circuit constraint" is the named
+  hypothesis every theorem below takes (the brief's soundness assumption:
+  Poseidon cannot be inverted or collided, and an accepted proof means its
+  circuit constraints hold). Only `owned_spend_can_happen` additionally names
+  `ownedProofCompleteness`, the converse assumption.
+
+  Theorems proved here:
+  * `owned_owner_binding` — no one except the owning contract can spend its
+    note (TransactModule.sol:636-639, the `msg.sender == ownerField` check).
+  * `owned_no_double_spend` — no note is spent twice
+    (`_accumulateAndNullify`, TransactModule.sol:379-386).
+  * `preimageOf_consistent` — every preimage the pool records hashes to the
+    commitment it is recorded for (`_recordPreimages`, TransactModule.sol
+    :590-604, gated by `_validatePublicOutputs`, :550-578).
+  * `owned_spend_can_happen` — an owned spend by the real owner, with an
+    accepted proof, succeeds.
+
+  DEPARTURE (decision 2 of labbook/2026-10-18-contract-owned-notes-and-zk-
+  channel-apps.md, recorded as open in its §3a): the design called for a
+  public `balance[owner]` registry. The merged code never builds one;
+  `preimageOf` (below) is what actually gives a caller the data decision 2
+  wanted — one entry per commitment, not a running balance. `preimageOf_
+  consistent` is the guarantee that entry is trustworthy.
+-/
+import ArmadaLean.TransactOwned
+
+/-- EVM address truncation: `address(uint160(x))`
+    (TransactModule.sol:637, `_validateOwnedTransaction`'s authorization
+    check). -/
+def addressOf (x : Nat) : Nat := x % 2 ^ 160
+
+/-- The data committed into a Merkle leaf for a contract-owned output
+    (`PoolTypes.sol:79-83`, `struct CommitmentPreimage`). `token` abstracts
+    `_getTokenID(token)` the same way `TransactOwnedWitness.token` does
+    (ArmadaLean.TransactOwned). -/
+structure CommitmentPreimage where
+  npk : Nat
+  token : Nat
+  value : Nat
+
+/-- `_hashCommitment` (TransactModule.sol:441-443, ShieldModule.sol:376-378):
+    `PoseidonT4.poseidon([npk, tokenID, value])`, the same 3-argument
+    Poseidon as `commitment` in ArmadaLean.Transact — reused directly, no
+    second commitment hash is defined here. -/
+noncomputable def hashCommitment (pre : CommitmentPreimage) : Nat := commitment pre.npk pre.token pre.value
+
+/-- An output that stays ciphertext-only carries an all-zero preimage
+    (`_isZeroPreimage`, TransactModule.sol:582-585) and is skipped by
+    `_recordPreimages`. -/
+def isZeroPreimage (pre : CommitmentPreimage) : Prop :=
+  pre.npk = 0 ∧ pre.value = 0 ∧ pre.token = 0
+
+instance (pre : CommitmentPreimage) : Decidable (isZeroPreimage pre) := by
+  unfold isZeroPreimage; infer_instance
+
+/-! ### `verifyOwned` acceptance (PrivacyPool.sol:562-601)
+
+Soundness — "an accepted proof's witness satisfies `OwnedConstrained`" — is
+the hypothesis every theorem below already takes directly as
+`OwnedConstrained w pub`, exactly as `ArmadaLean.Transact` takes `Constrained
+w pub`. The reverse direction, completeness, is a separate assumption used
+only by `owned_spend_can_happen`. -/
+
+/-- `VerifyOwnedAccepts pub` holds iff some Groth16 proof over `pub`'s public
+    inputs makes `PrivacyPool.verifyOwned` return `true`
+    (PrivacyPool.sol:562-601). Left abstract: this model does not represent
+    Groth16 proof objects, the same way `EdDSAVerify` is left abstract in
+    ArmadaLean.Transact. -/
+axiom VerifyOwnedAccepts : {N M : Nat} → TransactOwnedPublic N M → Prop
+
+/--
+CRYPTOGRAPHIC ASSUMPTION (Groth16 completeness) — assumed, not proven, and
+used only by `owned_spend_can_happen`.
+
+For a witness/public pair that together satisfy every TransactOwned.circom
+constraint (`OwnedConstrained`), a prover can build a proof that
+`PrivacyPool.verifyOwned` accepts. This is the converse of soundness: the
+owned verifying-key set never rejects a real satisfying witness. -/
+axiom ownedProofCompleteness {N M : Nat} {w : TransactOwnedWitness N M}
+    {pub : TransactOwnedPublic N M} (h : OwnedConstrained w pub) : VerifyOwnedAccepts pub
+
+/-! ### Owner binding (TransactModule.sol:636-639) -/
+
+/--
+**Owner binding**: no one except the owning contract can spend its note.
+
+Take a note truly created for owner `trueOwner` with randomness
+`trueRandom` (its commitment is `commitment (npk trueOwner trueRandom) token
+value`, by construction — ArmadaLean.TransactOwned's `outputs` field, read at
+the transaction that minted it). If an accepted owned spend's input `i`
+opens the same commitment value (`hSameNote`), `commitment_owner_inj` forces
+its `ownerField` to equal `trueOwner`; the pool's own authorization check
+(`msg.sender == address(uint160(uint256(ownerField)))`, TransactModule.sol
+:636-639, `hAuth`) then forces the caller to be `addressOf trueOwner`. A
+caller that is not the owning contract can never satisfy both, so it can
+never produce an accepted spend of that note. -/
+theorem owned_owner_binding {N M : Nat} {w : TransactOwnedWitness N M}
+    {pub : TransactOwnedPublic N M} (_h : OwnedConstrained w pub) (i : Fin N)
+    {trueOwner trueRandom : Nat}
+    (hSameNote :
+      commitment (npk pub.ownerField (w.randomIn i)) w.token (w.valueIn i) =
+      commitment (npk trueOwner trueRandom) w.token (w.valueIn i))
+    {caller : Nat} (hAuth : caller = addressOf pub.ownerField) :
+    caller = addressOf trueOwner := by
+  rw [hAuth, commitment_owner_inj hSameNote]
+
+/-! ### No double spend (`_accumulateAndNullify`, TransactModule.sol:379-386) -/
+
+/-- The pool's spent-nullifier set for one Merkle tree
+    (`PrivacyPoolStorage.sol:174`, `mapping(uint256 => mapping(bytes32 =>
+    bool)) public nullifiers`, one tree's slice). `treeNumber` is a further
+    key of the real mapping that this model elides: the freshness/
+    distinctness argument below holds the same way inside any one tree. -/
+abbrev NullifierSet := List Nat
+
+/-- Marking one call's nullifiers spent (`_accumulateAndNullify`,
+    TransactModule.sol:379-386): each nullifier must not already be in
+    `spent`; the pool reverts the whole call (`"Note already spent"`, :384)
+    the first time one already is, returning `none` here. -/
+def markSpent (spent : NullifierSet) : List Nat → Option NullifierSet
+  | [] => some spent
+  | n :: ns => if n ∈ spent then none else markSpent (n :: spent) ns
+
+/--
+**No note is spent twice.** If a call's nullifier-marking succeeds
+(`markSpent spent ns = some _`, i.e. the pool did not revert), the
+nullifiers `ns` it just marked are pairwise distinct from each other and
+none of them was already in `spent` beforehand. Applied to a whole history
+of calls (each one's `spent` is the previous call's `spent'`), this is
+exactly "no nullifier is ever marked twice": a note's nullifier can only
+ever pass this check once, in the one call that first spends it. -/
+theorem owned_no_double_spend {spent spent' : NullifierSet} {ns : List Nat}
+    (h : markSpent spent ns = some spent') :
+    ns.Pairwise (· ≠ ·) ∧ ∀ n ∈ ns, n ∉ spent := by
+  induction ns generalizing spent with
+  | nil => exact ⟨List.Pairwise.nil, fun n hn => absurd hn List.not_mem_nil⟩
+  | cons n ns ih =>
+    unfold markSpent at h
+    by_cases hn : n ∈ spent
+    · rw [if_pos hn] at h
+      exact absurd h (by simp)
+    · rw [if_neg hn] at h
+      obtain ⟨hpw, hfresh⟩ := ih h
+      refine ⟨List.pairwise_cons.mpr ⟨?_, hpw⟩, ?_⟩
+      · intro a ha heq
+        exact hfresh a ha (List.mem_cons.mpr (Or.inl heq.symm))
+      · intro m hm
+        rcases List.mem_cons.mp hm with hm | hm
+        · exact hm ▸ hn
+        · exact fun hmspent => hfresh m hm (List.mem_cons_of_mem n hmspent)
+
+/-- Converse of `owned_no_double_spend`, used by `owned_spend_can_happen`: a
+    batch of pairwise-distinct, previously-unspent nullifiers always marks
+    cleanly (the pool never reverts `_accumulateAndNullify` on a genuinely
+    fresh batch). -/
+theorem markSpent_succeeds {spent : NullifierSet} {ns : List Nat}
+    (hpw : ns.Pairwise (· ≠ ·)) (hfresh : ∀ n ∈ ns, n ∉ spent) :
+    ∃ spent', markSpent spent ns = some spent' := by
+  induction ns generalizing spent with
+  | nil => exact ⟨spent, rfl⟩
+  | cons n ns ih =>
+    obtain ⟨ha, hpw'⟩ := List.pairwise_cons.mp hpw
+    have hn : n ∉ spent := hfresh n List.mem_cons_self
+    have hfresh' : ∀ m ∈ ns, m ∉ (n :: spent) := by
+      intro m hm hmem
+      rcases List.mem_cons.mp hmem with hmem | hmem
+      · exact ha m hm hmem.symm
+      · exact hfresh m (List.mem_cons_of_mem n hm) hmem
+    obtain ⟨spent', hspent'⟩ := ih hpw' hfresh'
+    refine ⟨spent', ?_⟩
+    unfold markSpent
+    rw [if_neg hn]
+    exact hspent'
+
+/-! ### Preimage consistency (`_recordPreimages`, TransactModule.sol:590-604) -/
+
+/-- The pool's preimage registry (`PrivacyPoolStorage.sol:248`, `mapping
+    (bytes32 => CommitmentPreimage) public preimageOf`): `none` means no
+    preimage was ever recorded for that commitment. -/
+abbrev PreimageRegistry := Nat → Option CommitmentPreimage
+
+/-- The registry invariant: every recorded preimage hashes to the
+    commitment key it is recorded under. -/
+def RegistryConsistent (reg : PreimageRegistry) : Prop :=
+  ∀ c pre, reg c = some pre → hashCommitment pre = c
+
+/-- Recording one output (TransactModule.sol:593-599): a zero preimage is
+    skipped (:594-596); otherwise the registry entry at `c` becomes
+    `preimage` (:598). -/
+def recordStep (reg : PreimageRegistry) (c : Nat) (preimage : CommitmentPreimage) :
+    PreimageRegistry :=
+  fun c' => if isZeroPreimage preimage then reg c' else if c' = c then some preimage else reg c'
+
+/-- Recording every output of one transaction (`_recordPreimages`'s loop,
+    TransactModule.sol:590-604), `commitments` and `publicOutputs` running
+    in parallel, index for index. -/
+def recordPreimages {K : Nat} (commitments : Fin K → Nat)
+    (publicOutputs : Fin K → CommitmentPreimage) (reg : PreimageRegistry) : PreimageRegistry :=
+  (List.finRange K).foldl (fun r i => recordStep r (commitments i) (publicOutputs i)) reg
+
+/-- A property preserved by every step of a left fold is preserved by the
+    whole fold. -/
+theorem foldl_preserves {α β : Type} (f : α → β → α) (P : α → Prop)
+    (hstep : ∀ a b, P a → P (f a b)) : ∀ (l : List β) (a : α), P a → P (l.foldl f a)
+  | [], _, ha => ha
+  | b :: bs, a, ha => foldl_preserves f P hstep bs (f a b) (hstep a b ha)
+
+theorem recordStep_preserves_consistency {reg : PreimageRegistry} (hreg : RegistryConsistent reg)
+    {c : Nat} {preimage : CommitmentPreimage} (hvalid : hashCommitment preimage = c) :
+    RegistryConsistent (recordStep reg c preimage) := by
+  intro c' pre' hc'
+  unfold recordStep at hc'
+  by_cases hz : isZeroPreimage preimage
+  · rw [if_pos hz] at hc'
+    exact hreg c' pre' hc'
+  · rw [if_neg hz] at hc'
+    by_cases heq : c' = c
+    · rw [if_pos heq] at hc'
+      cases hc'
+      rw [heq]
+      exact hvalid
+    · rw [if_neg heq] at hc'
+      exact hreg c' pre' hc'
+
+theorem recordPreimages_preserves_consistency {K : Nat} (commitments : Fin K → Nat)
+    (publicOutputs : Fin K → CommitmentPreimage)
+    (hvalid : ∀ i, hashCommitment (publicOutputs i) = commitments i)
+    {reg : PreimageRegistry} (hreg : RegistryConsistent reg) :
+    RegistryConsistent (recordPreimages commitments publicOutputs reg) := by
+  unfold recordPreimages
+  exact foldl_preserves (fun r i => recordStep r (commitments i) (publicOutputs i)) RegistryConsistent
+    (fun r i hr => recordStep_preserves_consistency hr (hvalid i)) (List.finRange K) reg hreg
+
+/--
+**Preimage consistency**: every preimage the pool records hashes to the
+commitment it is recorded for. `_validatePublicOutputs` (TransactModule.sol
+:550-578) requires `hashCommitment (publicOutputs i) = commitments i` for
+every non-zero entry *before* `_recordPreimages` (:590-604) ever runs
+(`transactOwned`, :500-506); starting from the empty registry (deployment)
+and folding every transaction ever processed through `recordPreimages`
+preserves that one fact by induction, so it holds of the live `preimageOf`
+mapping at every block. -/
+theorem preimageOf_consistent {K : Nat} (commitments : Fin K → Nat)
+    (publicOutputs : Fin K → CommitmentPreimage)
+    (hvalid : ∀ i, hashCommitment (publicOutputs i) = commitments i) :
+    RegistryConsistent (recordPreimages commitments publicOutputs (fun _ => none)) :=
+  recordPreimages_preserves_consistency commitments publicOutputs hvalid
+    (fun _ _ h => by simp at h)
+
+/-! ### Can happen (proof completeness) -/
+
+/--
+**Can happen**: an owned spend by the real owner, with an accepted proof,
+succeeds. `ownerField`, `token`, `randomIn`, `valueIn`, `leavesIndices`,
+`pathElements`, `npkOut`, `valueOut` are the real owner's own data — the
+witness for `N` notes it genuinely holds at Merkle root `root`, re-minted
+into `M` fresh outputs of equal total value. `owned_spend_can_happen`
+clears every pool-level gate this model covers: the circuit constraints
+hold (`OwnedConstrained`, by construction), `verifyOwned` accepts
+(`ownedProofCompleteness`, the one completeness assumption), the caller is
+authorized (`hCaller`), every output's preimage is valid and non-zero so
+`_validatePublicOutputs(requireAll = true)` (TransactModule.sol:630-634)
+passes, and the nullifiers are fresh so `_accumulateAndNullify` does not
+revert (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers`
+from ArmadaLean.Nullifier to turn the owner's genuinely-distinct note
+positions into pairwise-distinct nullifiers). -/
+theorem owned_spend_can_happen {N M : Nat}
+    (ownerField token boundParamsHash root : Nat)
+    (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
+    (pathElements : Fin N → List (Nat × Bool))
+    (npkOut valueOut : Fin M → Nat)
+    (hPathLen : ∀ i, (pathElements i).length = 16)
+    (hMerkle : ∀ i,
+      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i)) (pathElements i)
+        = root)
+    (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
+    (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
+    (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
+    (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
+    (spent : NullifierSet) (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ spent)
+    (hOutputsNonZero : ∀ j, npkOut j ≠ 0)
+    (caller : Nat) (hCaller : caller = addressOf ownerField) :
+    ∃ (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M),
+      OwnedConstrained w pub ∧
+      VerifyOwnedAccepts pub ∧
+      caller = addressOf pub.ownerField ∧
+      (∀ j, hashCommitment ⟨npkOut j, token, valueOut j⟩ = pub.commitmentsOut j) ∧
+      (∀ j, ¬ isZeroPreimage (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) ∧
+      ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
+  let w : TransactOwnedWitness N M :=
+    { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  let pub : TransactOwnedPublic N M :=
+    { merkleRoot := root, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
+      ownerField := ownerField }
+  have hConstrained : OwnedConstrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance }
+  refine ⟨w, pub, hConstrained, ownedProofCompleteness hConstrained, hCaller, fun _ => rfl, ?_, ?_⟩
+  · intro j hz
+    exact hOutputsNonZero j hz.1
+  · apply markSpent_succeeds
+    · have hmap := distinct_leaves_distinct_nullifiers ownerField (List.ofFn leavesIndices)
+        hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
+          = List.ofFn (fun i => nullifier ownerField (leavesIndices i)) := List.map_ofFn
+      rwa [heq] at hmap
+    · intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i
