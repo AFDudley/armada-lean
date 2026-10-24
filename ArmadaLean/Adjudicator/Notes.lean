@@ -337,26 +337,28 @@ adjudicator, so it cannot fit `PoolOwnedSpendStep` above (which requires
 `EdDSAVerify w.publicKey w.signature (msgHashOf pub)` — the root pool
 layer's own signature check, a bare `axiom` this phase does not touch
 (`Assumptions.lean`'s module comment). `EdDSAVerify` alone says nothing
-about when a witness exists; `eddsaCompleteness` below supplies the
-missing half, GATED on the SAME execution-tracked fact `PoolState.
-poolSignedBy` records (coordinator instruction, this session: "Do the
-same for the pool layer's EdDSA authorization of a deposit spend: the
-depositor's signed messages are part of the execution"). Unlike the
-removed `SignatureLiveness`, this is not "any key can sign any message":
-it only fires once the depositor has actually recorded, via
-`Operations.lean`'s `.signNote` `Call`, that THIS key signed THIS
-message — the same unforgeability-by-construction `.sign` uses for the
-Nitro layer (`State.lean`'s module comment). -/
+about when a witness exists; `PoolSignatureLiveness.eddsaCompleteness`
+below supplies the missing half, GATED on the SAME execution-tracked
+fact `PoolState.poolSignedBy` records: it only fires once the depositor
+has actually recorded, via `Operations.lean`'s `.signNote` `Call`, that
+THIS key signed THIS message — the same unforgeability-by-construction
+`.sign` uses for the Nitro layer (`Operations.lean`'s module comment,
+quoting Nitro-2019-219.pdf §3.1 and ForceMove-2018.pdf §3.1.3). A
+theorem relying on this liveness fact takes `PoolSignatureLiveness` as
+an explicit argument, never a bare `axiom` — the same discipline
+`ProofLiveness` above follows. -/
 
-/-- EdDSA completeness, gated on the execution's own signing record: if
-    THIS execution has recorded (`PoolState.poolSignedBy`) that the
-    holder of `pk` signed `msgHash`, some signature verifying under
-    `EdDSAVerify` exists. Standard EdDSA completeness (any held private
-    key can sign any message it is asked to) made SAFE by the gate: a
-    caller cannot make the hypothesis true for a key they do not hold,
-    because `poolSignedBy` only grows through `.signNote`, which (like
-    `.sign`, `State.lean`) only ever adds to the signing key's OWN row. -/
-axiom eddsaCompleteness (s : PoolState) (pk : Nat × Nat) (msgHash : Nat) :
+/-- LIVENESS ASSUMPTION (EdDSA completeness, pool layer) — assumed, not
+    proven. `eddsaCompleteness` says: if THIS execution has recorded
+    (`PoolState.poolSignedBy`) that the holder of `pk` signed `msgHash`,
+    some signature verifying under `EdDSAVerify` exists. Standard EdDSA
+    completeness (any held private key can sign any message it is asked
+    to) made SAFE by the gate: a caller cannot make the hypothesis true
+    for a key they do not hold, because `poolSignedBy` only grows
+    through `.signNote`, whose `Step` case (`Operations.lean`) only
+    succeeds when the ACTOR submitting it holds `pk`. -/
+structure PoolSignatureLiveness where
+  eddsaCompleteness : ∀ (s : PoolState) (pk : Nat × Nat) (msgHash : Nat),
     s.poolSignedBy pk msgHash →
     ∃ signature : Nat × Nat × Nat, EdDSAVerify pk signature msgHash
 
