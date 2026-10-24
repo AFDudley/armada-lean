@@ -578,7 +578,50 @@ theorem challenge_timeout_can_happen
       (s.channels cid).finalizesAt > 0 ∧
       Step sig (consensusRelation sig) actor s (.tick (s.channels cid).finalizesAt) s' ∧
       (s'.channels cid).mode s'.now = .finalized := by
-  sorry
+  let assets : Nat → Prop := fun _ => False
+  let self : Nat := 0
+  let pool0 : PoolState := _root_.genesis 0
+  let fp : FixedPart := ⟨[0], 0, 0, 1⟩
+  let candidate : VariablePart := ⟨[], 0, 0, false⟩
+  let g := genesis assets self pool0
+  let mid : AdjudicatorState := { g with
+    signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ g.signedBy p' d' }
+  have hsignstep : Step sig (consensusRelation sig) (Actor.nitro 0) g (.sign 0 (stateHash fp candidate)) mid :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach0 : Reachable sig (consensusRelation sig) g mid :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
+  let s : AdjudicatorState := { mid with
+    channels := update mid.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome } }
+  have hauth : AuthorizedBy sig mid 0 (stateHash fp candidate) := Or.inl (Or.inl ⟨rfl, rfl⟩)
+  have hcstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid
+      (.challenge fp [] candidate 0) s := by
+    refine ⟨?_, ⟨rfl, ?_⟩, ?_, hauth, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · show candidate.turnNum ≥ (mid.channels (channelId fp)).turnNumRecord
+      simp [mid, g, genesis, emptyStatus]
+    · intro p hp
+      rw [List.mem_singleton] at hp
+      subst hp
+      exact hauth
+    · exact List.mem_singleton.mpr rfl
+  have hreach : Reachable sig (consensusRelation sig) g s :=
+    reachable_step hreach0 hcstep
+  have hfin : (s.channels (channelId fp)).finalizesAt > 0 := by
+    show (update mid.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome }
+      (channelId fp)).finalizesAt > 0
+    unfold update
+    simp [mid, g, fp]
+  let s' : AdjudicatorState := { s with now := (s.channels (channelId fp)).finalizesAt }
+  have htickstep : Step sig (consensusRelation sig) (Actor.nitro 0) s
+      (.tick (s.channels (channelId fp)).finalizesAt) s' :=
+    ⟨Nat.zero_le _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨assets, self, pool0, s, s', channelId fp, Actor.nitro 0, hreach, hfin, htickstep, ?_⟩
+  show (s.channels (channelId fp)).mode (s.channels (channelId fp)).finalizesAt = .finalized
+  unfold ChannelStatus.mode
+  simp [show (s.channels (channelId fp)).finalizesAt ≠ 0 from by omega]
 
 /-- A conclude can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — a `.sign` call for every one of
