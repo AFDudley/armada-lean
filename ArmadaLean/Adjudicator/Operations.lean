@@ -391,6 +391,13 @@ def Step (sig : SignatureAssumptions)
   nothing debited anywhere, which this model does not follow. No
   signature or proof check, so this case does not use `sig`, and
   `actor` is unconstrained (clause 28 names no caller restriction).
+  `compute_reclaim_effects` (`MultiAssetHolder.sol:341-390`) reverts
+  unless it actually finds an allocation for `left` and one for `right`
+  (`require(foundLeft)`/`require(foundRight)`, `:385-386`) — the
+  `hfoundLeft`/`hfoundRight` conjuncts below restate that precondition;
+  `reallocateGuarantee` (`Outcome.lean`) itself credits the FIRST match
+  only, matching the contract's own `foundLeft`/`foundRight`-flag loop
+  (`:371-380`).
   -/
   | .reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
       targetOutcome targetAssetIndex claimedTargetStateHash => fun s' =>
@@ -407,6 +414,10 @@ def Step (sig : SignatureAssumptions)
        (s.channels targetChannelId).outcomeHash = outcomeHashOf targetOutcome ∧
        ∃ hta : targetAssetIndex < targetOutcome.length,
        (targetOutcome.get ⟨targetAssetIndex, hta⟩).asset = (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).asset ∧
+       (∃ a ∈ (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.eraseIdx indexOfTargetInSource,
+         a.destination = left) ∧
+       (∃ a ∈ (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.eraseIdx indexOfTargetInSource,
+         a.destination = right) ∧
        ∃ a0 a1 : Nat,
          (targetOutcome.get ⟨targetAssetIndex, hta⟩).allocations.length ≥ 2 ∧
          a0 = ((targetOutcome.get ⟨targetAssetIndex, hta⟩).allocations.getD 0 Allocation.default).amount ∧
