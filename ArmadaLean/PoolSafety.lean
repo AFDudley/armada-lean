@@ -10,7 +10,7 @@ import ArmadaLean.Pool
 def HeldInvariant (s : PoolState) : Prop :=
   ∀ t, s.held t = listSum ((s.live t).map CommitmentPreimage.value)
 
-theorem genesis_invariant (emptyRoot : Term) : HeldInvariant (genesis emptyRoot) := by
+theorem genesis_invariant : HeldInvariant genesis := by
   intro t
   simp [genesis, listSum]
 
@@ -60,7 +60,7 @@ theorem transactOwned_balance {N M : Nat} {w : TransactOwnedWitness N M}
 theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     (hstep : Step s s') : HeldInvariant s' := by
   cases hstep with
-  | shield token grossAmount feeBP npk newRoot hNotPaused hValue hFeeBP =>
+  | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity =>
     intro t
     by_cases ht : t = token
     · simp only [ht, if_pos]
@@ -69,8 +69,8 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-      hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+  | transact w pub hN hM hC newNotes unshieldTail rest spent' records
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -82,8 +82,8 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-      hRoot hRemove hNullify hNonZero =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent'
+      hRoot hRemove hNullify hNonZero hCapacity =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -109,10 +109,10 @@ trivially satisfies it (no tokens, no notes), and `step_preserves_invariant` sho
 derive from `transact_value_conserved`/`transactOwned_value_conserved` under the
 registered-shape bound `hN`/`hM`, not an assumed hypothesis) for
 `transact`/`transactOwned`, and direct construction for `shield`. -/
-theorem core_invariant {emptyRoot : Term} {s : PoolState} (h : Reachable emptyRoot s) :
+theorem core_invariant {s : PoolState} (h : Reachable s) :
     HeldInvariant s := by
   induction h with
-  | genesis => exact genesis_invariant emptyRoot
+  | genesis => exact genesis_invariant
   | step _ hstep ih => exact step_preserves_invariant ih hstep
 
 /-! ### Ownership: a spend can only touch notes its spender derives keys for -/
@@ -178,16 +178,17 @@ theorem transact_cannot_be_blocked {s : PoolState} (b : Bool)
     {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
     (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
     (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
-    (newRoot : Term) (records : List (Term × CommitmentPreimage))
+    (records : List (Term × CommitmentPreimage))
     (hRoot : pub.merkleRoot ∈ s.roots)
     (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
     (hUnshieldLen : unshieldTail.length ≤ 1)
     (hRemove : removeAll (s.live w.token) (transactSpentNotes w) = some rest)
     (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
-    (hRecords : records.Sublist (transactOutputRecords w pub)) :
+    (hRecords : records.Sublist (transactOutputRecords w pub))
+    (hCapacity : s.leaves.length + newNotes.length ≤ 2 ^ TreeDepth) :
     ∃ s', Step { s with shieldsPaused := b } s' :=
-  ⟨_, Step.transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-    hRoot hSplit hUnshieldLen hRemove hNullify hRecords⟩
+  ⟨_, Step.transact w pub hN hM hC newNotes unshieldTail rest spent' records
+    hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity⟩
 
 /-- The owned-path counterpart of `transact_cannot_be_blocked`: no step any caller can
     take, the owner included, can make an otherwise-valid `transactOwned` fail. Same
@@ -197,15 +198,16 @@ theorem transactOwned_cannot_be_blocked {s : PoolState} (b : Bool)
     {N M : Nat} (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M)
     (hN : N ≤ 8) (hM : M ≤ 4) (hC : OwnedConstrained w pub)
     (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
-    (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Term)
+    (rest : List CommitmentPreimage) (spent' : NullifierSet)
     (hRoot : pub.merkleRoot ∈ s.roots)
     (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
     (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
     (hNonZero : ∀ j, ¬ isZeroPreimage
-      (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)) :
+      (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+    (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
     ∃ s', Step { s with shieldsPaused := b } s' :=
-  ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-    hRoot hRemove hNullify hNonZero⟩
+  ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent'
+    hRoot hRemove hNullify hNonZero hCapacity⟩
 
 /-! ### No double spend across transactions -/
 
@@ -229,13 +231,13 @@ theorem markSpent_subset {spent spent' : NullifierSet} {ns : List Term}
 /-- One step never un-spends a nullifier. -/
 theorem spent_monotone {s s' : PoolState} (hstep : Step s s') : ∀ n ∈ s.spent, n ∈ s'.spent := by
   cases hstep with
-  | shield token grossAmount feeBP npk newRoot hNotPaused hValue hFeeBP =>
+  | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity =>
     exact fun n hn => hn
-  | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-      hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+  | transact w pub hN hM hC newNotes unshieldTail rest spent' records
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity =>
     exact markSpent_subset hNullify
-  | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-      hRoot hRemove hNullify hNonZero =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent'
+      hRoot hRemove hNullify hNonZero hCapacity =>
     exact markSpent_subset hNullify
   | admin shieldsPaused =>
     exact fun n hn => hn
@@ -267,8 +269,8 @@ freshness check covers `transact` and `transactOwned`, since both call
 `_accumulateAndNullify`, TransactModule.sol:379-386). S-RG, "RAILGUN Core System &
 Protocol": "The contract checks to make sure: ... That it hasn't seen the nullifiers
 before, eliminating any double spends." -/
-theorem pool_no_double_spend {emptyRoot : Term} {s0 s : PoolState}
-    (_h0 : Reachable emptyRoot s0) (hfrom : ReachableFrom s0 s)
+theorem pool_no_double_spend {s0 s : PoolState}
+    (_h0 : Reachable s0) (hfrom : ReachableFrom s0 s)
     {n : Term} (hn0 : n ∈ s0.spent) {ns : List Term} {spent' : NullifierSet}
     (hmark : markSpent s.spent ns = some spent') : n ∉ ns := by
   intro hmem
@@ -323,56 +325,67 @@ note is created (see the module comment on the departure from the brief's design
 from the design labbook). S-RG, "RAILGUN Core System & Protocol": "Then the smart
 contract transfers tokens from the user wallet to itself, if a deposit amount is
 specified ... The hashes of the output UTXOs are then added to the Merkle tree." -/
-theorem shield_creates_exactly {s : PoolState} (token grossAmount feeBP : Nat) (npk newRoot : Term)
+theorem shield_creates_exactly {s : PoolState} (token grossAmount feeBP : Nat) (npk : Term)
     (hNotPaused : s.shieldsPaused = false) (hValue : 0 < grossAmount)
-    (hFeeBP : feeBP ≤ BASIS) :
+    (hFeeBP : feeBP ≤ BASIS) (hCapacity : s.leaves.length + 1 ≤ 2 ^ TreeDepth) :
     ∃ s', Step s s' ∧
       s'.live token =
         (⟨npk, token, shieldBase feeBP grossAmount⟩ : CommitmentPreimage) :: s.live token ∧
       s'.held token = s.held token + shieldBase feeBP grossAmount ∧
       (∀ t, t ≠ token → s'.live t = s.live t ∧ s'.held t = s.held t) :=
-  ⟨_, Step.shield token grossAmount feeBP npk newRoot hNotPaused hValue hFeeBP,
+  ⟨_, Step.shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity,
     by simp, by simp, fun t ht => ⟨by simp [ht], by simp [ht]⟩⟩
 
 /-! ### A transact names only a root the pool actually produced -/
 
-/-- Every reachable state's root history is the genesis root with zero or more roots the
+/-- One step either leaves `roots` unchanged (`Step.admin`) or prepends exactly one new
+    root (`shield`/`transact`/`transactOwned`) — the structural fact `roots_grounded`
+    needs, stated without naming the pushed root's value, since each constructor
+    computes a different one from `ArmadaLean.Merkle.treeRoot`. -/
+theorem step_roots_shape {s s' : PoolState} (hstep : Step s s') :
+    s'.roots = s.roots ∨ ∃ r, s'.roots = r :: s.roots := by
+  cases hstep with
+  | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity =>
+    exact Or.inr ⟨_, rfl⟩
+  | transact w pub hN hM hC newNotes unshieldTail rest spent' records
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity =>
+    exact Or.inr ⟨_, rfl⟩
+  | transactOwned w pub hN hM hC caller hCaller rest spent'
+      hRoot hRemove hNullify hNonZero hCapacity =>
+    exact Or.inr ⟨_, rfl⟩
+  | admin shieldsPaused =>
+    exact Or.inl rfl
+
+/-- Every reachable state's root history is `genesis.roots` with zero or more roots the
     pool itself pushed, prepended. -/
-theorem roots_grounded {emptyRoot : Term} {s : PoolState} (h : Reachable emptyRoot s) :
-    ∃ pushed : List Term, s.roots = pushed ++ [emptyRoot] := by
+theorem roots_grounded {s : PoolState} (h : Reachable s) :
+    ∃ pushed : List Term, s.roots = pushed ++ genesis.roots := by
   induction h with
-  | genesis => exact ⟨[], by simp [genesis]⟩
+  | genesis => exact ⟨[], rfl⟩
   | step _ hstep ih =>
     obtain ⟨pushed, hpushed⟩ := ih
-    cases hstep with
-    | shield token grossAmount feeBP npk newRoot hNotPaused hValue hFeeBP =>
-      exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-        hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
-      exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-        hRoot hRemove hNullify hNonZero =>
-      exact ⟨newRoot :: pushed, by simp [hpushed]⟩
-    | admin shieldsPaused =>
-      exact ⟨pushed, hpushed⟩
+    rcases step_roots_shape hstep with heq | ⟨r, heq⟩
+    · exact ⟨pushed, heq.trans hpushed⟩
+    · exact ⟨r :: pushed, by rw [heq, hpushed, List.cons_append]⟩
 
 /--
 **A transact names only a root the pool actually produced.** `roots_grounded` shows
-`s.roots`, for any reachable `s`, is built from the genesis root by prepending values the
+`s.roots`, for any reachable `s`, is built from `genesis.roots` by prepending values the
 pool itself pushed at earlier `shield`/`transact`/`transactOwned` steps — never anything
 else. A `transact`/`transactOwned`/`shield` step's own `hRoot : pub.merkleRoot ∈ s.roots`
 precondition then means the named root is one of those pushed values, or the genesis
 root — never a caller's invention. S-RG, "RAILGUN Core System & Protocol": "The contract
 checks to make sure: ... The Merkle root is the current or a previous Merkle root, to
 prevent users from making up UTXOs." -/
-theorem transact_root_was_produced {emptyRoot : Term} {s : PoolState}
-    (h : Reachable emptyRoot s) {root : Term} (hRoot : root ∈ s.roots) :
-    root = emptyRoot ∨ ∃ pushed : List Term, root ∈ pushed ∧ s.roots = pushed ++ [emptyRoot] := by
+theorem transact_root_was_produced {s : PoolState}
+    (h : Reachable s) {root : Term} (hRoot : root ∈ s.roots) :
+    root ∈ genesis.roots ∨
+      ∃ pushed : List Term, root ∈ pushed ∧ s.roots = pushed ++ genesis.roots := by
   obtain ⟨pushed, hpushed⟩ := roots_grounded h
   rw [hpushed] at hRoot
   rcases List.mem_append.mp hRoot with h1 | h2
   · exact Or.inr ⟨pushed, h1, hpushed⟩
-  · exact Or.inl (by simpa using h2)
+  · exact Or.inl h2
 
 /-! ### The preimage registry -/
 
@@ -382,20 +395,20 @@ theorem transact_root_was_produced {emptyRoot : Term} {s : PoolState}
 lifting `ArmadaLean.PoolOwned.preimageOf_consistent` from one transaction's batch
 (`recordPreimages`) to the pool's whole history (`applyRecords`, at every
 `shield`/`transact`/`transactOwned` step). -/
-theorem pool_preimageOf_consistent {emptyRoot : Term} {s : PoolState}
-    (h : Reachable emptyRoot s) : RegistryConsistent s.preimageOf := by
+theorem pool_preimageOf_consistent {s : PoolState}
+    (h : Reachable s) : RegistryConsistent s.preimageOf := by
   induction h with
   | genesis => intro c pre hc; simp [genesis] at hc
   | step _ hstep ih =>
     cases hstep with
-    | shield token grossAmount feeBP npk newRoot hNotPaused hValue hFeeBP =>
+    | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity =>
       exact recordStep_preserves_consistency ih rfl
-    | transact w pub hN hM hC newNotes unshieldTail rest spent' newRoot records
-        hRoot hSplit hUnshieldLen hRemove hNullify hRecords =>
+    | transact w pub hN hM hC newNotes unshieldTail rest spent' records
+        hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity =>
       exact applyRecords_preserves_consistency ih
         (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
-    | transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-        hRoot hRemove hNullify hNonZero =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent'
+        hRoot hRemove hNullify hNonZero hCapacity =>
       exact applyRecords_preserves_consistency ih (ownedOutputRecords_valid hC)
     | admin shieldsPaused =>
       exact ih
@@ -531,10 +544,11 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
 /-- **Can happen: a shield succeeds.** Any positive amount, at any fee rate up to 100%,
     while shields are not paused, creates a note (`shield_creates_exactly`). No proof, no
     honest-prover assumption: shield carries no SNARK. -/
-theorem shield_can_happen {s : PoolState} (token grossAmount feeBP : Nat) (npk newRoot : Term)
+theorem shield_can_happen {s : PoolState} (token grossAmount feeBP : Nat) (npk : Term)
     (hNotPaused : s.shieldsPaused = false) (hValue : 0 < grossAmount)
-    (hFeeBP : feeBP ≤ BASIS) : ∃ s', Step s s' :=
-  ⟨_, Step.shield token grossAmount feeBP npk newRoot hNotPaused hValue hFeeBP⟩
+    (hFeeBP : feeBP ≤ BASIS) (hCapacity : s.leaves.length + 1 ≤ 2 ^ TreeDepth) :
+    ∃ s', Step s s' :=
+  ⟨_, Step.shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity⟩
 
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` genuinely-held, genuinely-live notes, re-minting them into `M` fresh
@@ -550,7 +564,7 @@ theorem shield_can_happen {s : PoolState} (token grossAmount feeBP : Nat) (npk n
     optional (TransactModule.sol:556-561), so no contract-owned output is needed here. -/
 theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N M : Nat} (publicKey : Nat × Nat)
-    (nullifyingKey token boundParamsHash : Nat) (root newRoot : Term)
+    (nullifyingKey token boundParamsHash : Nat) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
@@ -571,7 +585,8 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
         (List.ofFn fun i =>
           (⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn i), token, valueIn i⟩ :
             CommitmentPreimage))
-        = some rest) :
+        = some rest)
+    (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
     ∃ s', Step s s' := by
   let pub : TransactPublic N M :=
     { merkleRoot := root, boundParamsHash := boundParamsHash,
@@ -603,8 +618,8 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
       exact hFresh i)
   refine ⟨_, Step.transact w pub hN hM hC
     (List.ofFn fun j => (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) [] rest spent'
-    newRoot [] hRoot (by simp [transactAllOutputs, w])
-    (by simp) hLive hMark (List.nil_sublist _)⟩
+    [] hRoot (by simp [transactAllOutputs, w])
+    (by simp) hLive hMark (List.nil_sublist _) (by rwa [List.length_ofFn])⟩
 
 /-- **Can happen: an unshield succeeds.** The degenerate single-output shape of
     `transact_can_happen`: a real key holder spends `N` genuinely-held, genuinely-live
@@ -615,7 +630,7 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     as the payout amount. -/
 theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N : Nat} (publicKey : Nat × Nat)
-    (nullifyingKey token boundParamsHash : Nat) (root newRoot : Term)
+    (nullifyingKey token boundParamsHash : Nat) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Term) (valueOut : Nat)
     (hN : N ≤ 8)
@@ -636,7 +651,8 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
         (List.ofFn fun i =>
           (⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn i), token, valueIn i⟩ :
             CommitmentPreimage))
-        = some rest) :
+        = some rest)
+    (hCapacity : s.leaves.length ≤ 2 ^ TreeDepth) :
     ∃ s', Step s s' := by
   let pub : TransactPublic N 1 :=
     { merkleRoot := root, boundParamsHash := boundParamsHash,
@@ -671,8 +687,8 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
       exact hFresh i)
   refine ⟨_, Step.transact w pub hN (by omega) hC []
     (List.ofFn fun (_ : Fin 1) => (⟨npkOut, token, valueOut⟩ : CommitmentPreimage)) rest
-    spent' newRoot [] hRoot
-    (by simp [transactAllOutputs, w]) (by simp) hLive hMark (List.nil_sublist _)⟩
+    spent' [] hRoot
+    (by simp [transactAllOutputs, w]) (by simp) hLive hMark (List.nil_sublist _) (by simpa)⟩
 
 /-- **Can happen: an owned transact succeeds.** Directly wires an owned witness,
     constructed exactly as `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one
@@ -684,7 +700,7 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     (`ArmadaLean.PoolSafety.transactOwned_spends_only_owned` is the matching safety
     theorem). -/
 theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofCompleteness)
-    {N M : Nat} (ownerField token boundParamsHash : Nat) (root newRoot : Term)
+    {N M : Nat} (ownerField token boundParamsHash : Nat) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
@@ -704,7 +720,8 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
     (hLive : removeAll (s.live token)
         (List.ofFn fun i =>
           (⟨npk (Term.val ownerField) (randomIn i), token, valueIn i⟩ : CommitmentPreimage))
-        = some rest) :
+        = some rest)
+    (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
     ∃ s', Step s s' := by
   let w : TransactOwnedWitness N M :=
     { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
@@ -731,7 +748,156 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
       exact hFresh i)
-  refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' newRoot
-    hRoot hLive hMark ?_⟩
+  refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent'
+    hRoot hLive hMark ?_ hCapacity⟩
   intro j hz
   exact hOutputsNonZero j hz.1
+
+/-! ### Every inserted leaf has a Merkle witness to a root the pool produced -/
+
+/-- One step either leaves `leaves`/`roots` both unchanged (`Step.admin`) or appends to
+    `leaves` and pushes exactly `ArmadaLean.Merkle.treeRoot TreeDepth` of the new list
+    (`shield`/`transact`/`transactOwned`) — the structural fact
+    `reachable_root_matches_leaves` and `reachable_leaves_capacity` both need, stated
+    without naming the appended leaves, since each constructor appends a different
+    list. -/
+theorem step_leaves_root_shape {s s' : PoolState} (hstep : Step s s') :
+    (s'.leaves = s.leaves ∧ s'.roots = s.roots) ∨
+      s'.roots = treeRoot TreeDepth s'.leaves :: s.roots := by
+  cases hstep with
+  | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity =>
+    exact Or.inr rfl
+  | transact w pub hN hM hC newNotes unshieldTail rest spent' records
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity =>
+    exact Or.inr rfl
+  | transactOwned w pub hN hM hC caller hCaller rest spent'
+      hRoot hRemove hNullify hNonZero hCapacity =>
+    exact Or.inr rfl
+  | admin shieldsPaused =>
+    exact Or.inl ⟨rfl, rfl⟩
+
+/-- **The root the pool most recently pushed always matches its actual leaf list.**
+    Every reachable state's head root is `ArmadaLean.Merkle.treeRoot TreeDepth` of its
+    own `leaves` — never a free choice (`Step`'s construction, `step_leaves_root_shape`),
+    proved by induction on `Reachable`. -/
+theorem reachable_root_matches_leaves {s : PoolState} (h : Reachable s) :
+    treeRoot TreeDepth s.leaves ∈ s.roots := by
+  induction h with
+  | genesis => simp [genesis]
+  | step hs hstep ih =>
+    rcases step_leaves_root_shape hstep with ⟨hleaves, hroots⟩ | hroots
+    · rw [hleaves, hroots]; exact ih
+    · rw [hroots]; exact List.mem_cons_self
+
+/-- **The pool's leaf list never exceeds the one tree's capacity.** Every reachable
+    state's `leaves` has at most `2 ^ TreeDepth` entries — the invariant each `Step`
+    constructor's own `hCapacity` hypothesis maintains (the one-tree-only departure,
+    `ArmadaLean.Merkle`'s module comment): a step that would overflow the tree simply
+    has no witness. -/
+theorem reachable_leaves_capacity {s : PoolState} (h : Reachable s) :
+    s.leaves.length ≤ 2 ^ TreeDepth := by
+  induction h with
+  | genesis => simp [genesis]
+  | step hs hstep ih =>
+    cases hstep with
+    | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hCapacity =>
+      simpa using hCapacity
+    | transact w pub hN hM hC newNotes unshieldTail rest spent' records
+        hRoot hSplit hUnshieldLen hRemove hNullify hRecords hCapacity =>
+      simpa using hCapacity
+    | transactOwned w pub hN hM hC caller hCaller rest spent'
+        hRoot hRemove hNullify hNonZero hCapacity =>
+      simpa [ownedNewNotes] using hCapacity
+    | admin shieldsPaused =>
+      simpa using ih
+
+/--
+**Every leaf the pool has ever inserted has a real Merkle witness to a root the pool
+produced.** For any reachable state `s` and any in-range leaf position `i`, the path
+`ArmadaLean.Merkle.treePath TreeDepth s.leaves i` is a genuine membership proof: folding
+it from the leaf at position `i` reconstructs `treeRoot TreeDepth s.leaves`
+(`treePath_correct`, `reachable_leaves_capacity` for the depth bound), and that root is
+itself one of the pool's own, `s.roots` (`reachable_root_matches_leaves`) — the current
+root, in the sense of "the one current when the leaf was inserted, or a later one",
+since `roots` never expires an entry (`PrivacyPoolStorage.rootHistory`,
+PrivacyPoolStorage.sol:171) and every later step only ever prepends to it
+(`step_roots_shape`): the witness built from the LATEST leaf list and root always
+verifies against a root the contract still accepts, for every leaf inserted so far,
+not only the ones inserted in the step that produced that exact root. -/
+theorem leaf_has_merkle_witness {s : PoolState} (h : Reachable s)
+    {i : Nat} (hi : i < s.leaves.length) :
+    merkleRoot (s.leaves.getD i (Term.val 0)) (treePath TreeDepth s.leaves i) =
+        treeRoot TreeDepth s.leaves ∧
+      treeRoot TreeDepth s.leaves ∈ s.roots := by
+  have hcap := reachable_leaves_capacity h
+  exact ⟨treePath_correct TreeDepth s.leaves i (by omega), reachable_root_matches_leaves h⟩
+
+/-! ### A live owned note with a recorded preimage has a constructible spend witness -/
+
+/--
+**A live owned note with a recorded preimage has a constructible `OwnedConstrained`
+spend witness, built entirely from public data except one value the owning contract
+must retain itself.** Given `N` input notes whose recorded preimages (`preimages`,
+exactly what `PoolState.preimageOf` records for every disclosed output — public: every
+entry there came from a `shield`/`transact`/`transactOwned` event, PrivacyPoolStorage
+.preimageOf, PrivacyPoolStorage.sol:248) sit at known leaf positions in the pool's
+actual leaf list (`hLeafValue`, public: every leaf is a commitment the pool has itself
+emitted), a satisfying `OwnedConstrained` witness/public pair exists — its Merkle path
+is `ArmadaLean.Merkle.treePath TreeDepth leaves`, computed, not a free choice, and
+`treePath_correct` is exactly what proves it satisfies `OwnedConstrained.merkle`.
+
+**One non-public value is still required: `randomIn`.** `npk = Poseidon(ownerField,
+randomIn i)` (TransactOwned.circom:66-70) is a hash; `CommitmentPreimage` records only
+the hash's OUTPUT (`npk`, a `Term` — `ArmadaLean.PoolOwned.CommitmentPreimage`'s three
+fields are `npk`, `token`, `value`, never a random input), and the pool's public
+`preimageOf` registry carries nothing more. There is no way to recover `randomIn` from
+any data the pool publishes. This is not a gap specific to the owned path: a plain
+`Transact` spender needs their own private `randomIn` for exactly the same reason
+(`ArmadaLean.Transact.TransactWitness.randomIn`), and the pool does not store that
+either. The owning contract must retain `randomIn` itself, the same way any UTXO
+holder retains their own note secrets — this theorem takes it as an explicit
+hypothesis rather than deriving it, precisely because it cannot be derived. -/
+theorem owned_spend_witness_exists {N M : Nat}
+    (ownerField token boundParamsHash : Nat)
+    (preimages : Fin N → CommitmentPreimage) (randomIn : Fin N → Nat)
+    (leavesIndices : Fin N → Nat) (leaves : List Term)
+    (hToken : ∀ i, (preimages i).token = token)
+    (hNpk : ∀ i, (preimages i).npk = npk (Term.val ownerField) (randomIn i))
+    (hLeafIndex : ∀ i, leavesIndices i < 2 ^ TreeDepth)
+    (hLeafValue : ∀ i, leaves.getD (leavesIndices i) (Term.val 0) = hashCommitment (preimages i))
+    (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
+    (hRangeIn : ∀ i, RangeChecked120 (preimages i).value)
+    (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
+    (hBalance : listSum (List.ofFn fun i => (preimages i).value) = listSum (List.ofFn valueOut)) :
+    ∃ (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M),
+      OwnedConstrained w pub ∧
+      pub.merkleRoot = treeRoot TreeDepth leaves ∧
+      pub.ownerField = ownerField ∧
+      w.token = token ∧
+      (∀ i, w.valueIn i = (preimages i).value) := by
+  let w : TransactOwnedWitness N M :=
+    { token := token, randomIn := randomIn, valueIn := fun i => (preimages i).value,
+      pathElements := fun i => treePath TreeDepth leaves (leavesIndices i),
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  let pub : TransactOwnedPublic N M :=
+    { merkleRoot := treeRoot TreeDepth leaves, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
+      ownerField := ownerField }
+  have hcommit : ∀ i : Fin N, hashCommitment (preimages i) =
+      commitment (npk (Term.val ownerField) (randomIn i)) token ((preimages i).value) := by
+    intro i
+    unfold hashCommitment
+    rw [hNpk i, hToken i]
+  have hmerkle : ∀ i : Fin N,
+      merkleRoot
+        (commitment (npk (Term.val ownerField) (randomIn i)) token ((preimages i).value))
+        (treePath TreeDepth leaves (leavesIndices i)) = treeRoot TreeDepth leaves := by
+    intro i
+    rw [← hcommit i, ← hLeafValue i]
+    exact treePath_correct TreeDepth leaves (leavesIndices i) (hLeafIndex i)
+  have hC : OwnedConstrained w pub :=
+    { pathLen := fun i => treePath_length TreeDepth leaves (leavesIndices i),
+      merkle := hmerkle, nullifiers := fun _ => rfl, outputs := fun _ => rfl,
+      rangeIn := hRangeIn, rangeOut := hRangeOut, balance := congrArg (· % p) hBalance }
+  exact ⟨w, pub, hC, rfl, rfl, rfl, fun _ => rfl⟩

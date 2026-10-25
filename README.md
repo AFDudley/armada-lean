@@ -71,6 +71,8 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `transact_can_happen` | `PoolSafety` | a private transfer by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | transact can happen |
 | `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | unshield can happen |
 | `owned_transact_can_happen` | `PoolSafety` | an owned transact by the real owner, with an accepted proof, succeeds | `TransactModule.sol:488-519` | owned transact can happen |
+| `leaf_has_merkle_witness` | `PoolSafety` | every leaf the pool has ever inserted has a real Merkle path to a root the pool produced | `MerkleModule.sol:54-121` | tree is computed, not chosen |
+| `owned_spend_witness_exists` | `PoolSafety` | a live owned note with a recorded preimage has a constructible `OwnedConstrained` spend witness from public data (plus one private value, see theorem doc) | `TransactOwned.circom:66-87` | spend-construction |
 
 ### Yield vault (`armada-poc/contracts/yield/ArmadaYieldVault.sol`, issue #365)
 
@@ -114,7 +116,7 @@ ArmadaLean/
   RangeCheck.lean         Num2Bits(120) semantics
   ValueConservation.lean  no-wraparound minting theorem
   Nullifier.lean          double-spend impossibility
-  Merkle.lean             Merkle proof leaf-binding
+  Merkle.lean             Merkle proof leaf-binding + the incremental tree (root, path)
   Transact.lean           full constraint model of Transact.circom
   TransactOwned.lean      constraint model of TransactOwned.circom
   PoolOwned.lean          pool's owned path (TransactModule.transactOwned) and preimage storage

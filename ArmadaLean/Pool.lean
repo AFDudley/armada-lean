@@ -32,18 +32,22 @@
   A spend's circuit-level facts (Merkle membership, nullifier derivation, value
   conservation) come from `ArmadaLean.Transact.Constrained` /
   `ArmadaLean.TransactOwned.OwnedConstrained`, exactly as ArmadaLean.PoolOwned already
-  takes them. This model does not additionally reconstruct the incremental Merkle tree
-  that `MerkleModule.insertLeaves` builds (MerkleModule.sol:54-121): `PoolState.roots`
-  tracks only *which* terms the pool has produced as a root (so a proof cannot name a
-  root the pool never computed — `transact_root_was_produced` below), the same way
-  ArmadaLean.Merkle's `merkleRoot_inj_leaf` binds one membership proof to one leaf without
-  modelling the whole tree. ABDK's 2021-04-01 audit of Railgun's `Commitments.sol`
+  takes them. `PoolState.leaves` is the pool's actual Merkle tree, as the contract builds
+  it: the ordered list of every commitment `MerkleModule.insertLeaves`
+  (MerkleModule.sol:54-121) has ever inserted, public exactly as the real leaves are
+  (`Shield`/`Transact`/`TransactOwned` events carry every commitment hash). Every root a
+  `Step` pushes onto `roots` is `ArmadaLean.Merkle.treeRoot TreeDepth leaves`, computed
+  from this list, not chosen — so a step cannot name a root that does not match what it
+  actually inserted, and `ArmadaLean.PoolSafety.leaf_has_merkle_witness` proves every
+  inserted leaf has a real Merkle path to a root the pool produced. ABDK's 2021-04-01
+  audit of Railgun's `Commitments.sol`
   (`.scratch/rewrite-B/sources/railgun-audit-2021-04-01-ABDK.pdf`, sha256
   `3b2129ab6440272f8dbe70f843a8a9e61068d644d1a860b61c36ce93339e380a`) spends findings
   CVF-33, CVF-34, CVF-41 and CVF-42 entirely on the gas-optimized incremental-insertion
   algorithm (the same `filledSubTrees`/rollover shape `MerkleModule.insertLeaves` uses);
-  every one of those findings is about gas, not soundness, which is the same conclusion
-  this model reaches by not re-deriving that algorithm.
+  every one of those findings is about gas, not soundness — `ArmadaLean.Merkle.treeRoot`
+  computes the same final value that algorithm does, non-incrementally (see
+  `ArmadaLean.Merkle`'s module comment for the one-tree-only departure this requires).
 
   S-RG: RAILGUN Project Whitepaper, 2021-07-14.
   <https://resources.cryptocompare.com/asset-management/1823/1674569706520.pdf>,
@@ -341,33 +345,39 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
     marked, so `live` here is the model's own "not yet spent" bookkeeping, not a second
     on-chain list). `spent` is the nullifier set
     (`ArmadaLean.PoolOwned.NullifierSet`, one tree's slice, as that module already
-    documents). `roots` is every Merkle root the pool itself has produced
+    documents). `leaves` is the pool's real Merkle tree: every commitment
+    `MerkleModule.insertLeaves` has ever inserted, in insertion order — public data
+    (module comment). `roots` is every Merkle root the pool itself has produced
     (`PrivacyPoolStorage.rootHistory`, PrivacyPoolStorage.sol:171, flattened across
-    trees the same way `NullifierSet` is). `held t` is the pool's own custody of token
-    `t` — not `IERC20.balanceOf`, which a caller can inflate with a raw, pool-unmediated
-    `transfer` that credits no note (sibling labbook entry §3a, the surplus/R4 discussion);
-    `held` is the ledger the three modeled operations maintain, which is exactly what the
-    core invariant is about. `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`.
-    `shieldsPaused` mirrors `IShieldPauseController.shieldsPaused`, read by
-    `ShieldModule._requireShieldsNotPaused` — the one freeze the Armada design keeps,
-    and it gates `Step.shield` alone (module comment, freeze-removal departure). -/
+    trees the same way `NullifierSet` is) — always `ArmadaLean.Merkle.treeRoot
+    TreeDepth leaves` at the point it was pushed, never a free choice. `held t` is the
+    pool's own custody of token `t` — not `IERC20.balanceOf`, which a caller can
+    inflate with a raw, pool-unmediated `transfer` that credits no note (sibling
+    labbook entry §3a, the surplus/R4 discussion); `held` is the ledger the three
+    modeled operations maintain, which is exactly what the core invariant is about.
+    `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`. `shieldsPaused` mirrors
+    `IShieldPauseController.shieldsPaused`, read by `ShieldModule
+    ._requireShieldsNotPaused` — the one freeze the Armada design keeps, and it gates
+    `Step.shield` alone (module comment, freeze-removal departure). -/
 structure PoolState where
   live : Nat → List CommitmentPreimage
   spent : NullifierSet
+  leaves : List Term
   roots : List Term
   held : Nat → Nat
   preimageOf : PreimageRegistry
   shieldsPaused : Bool
 
 /-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
-    which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): no notes, no
-    spent nullifiers, the one root of the empty tree, no custody, an empty registry,
-    not paused. `emptyRoot` stands for whatever `initializeMerkle` computes from
-    `ZERO_VALUE` (PrivacyPoolStorage.sol:150); this model does not recompute that hash
-    (see the module comment on `roots`). -/
-def genesis (emptyRoot : Term) : PoolState :=
-  { live := fun _ => [], spent := [], roots := [emptyRoot], held := fun _ => 0,
-    preimageOf := fun _ => none, shieldsPaused := false }
+    which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): no leaves, no
+    spent nullifiers, the one root of the empty tree (`ArmadaLean.Merkle.treeRoot
+    TreeDepth []`, computed — not a free parameter standing for the real pinned
+    `ZERO_VALUE`-derived constant, PrivacyPoolStorage.sol:150; see the module comment on
+    `Term.val 0` as this model's stand-in zero value), no custody, an empty registry,
+    not paused. -/
+def genesis : PoolState :=
+  { live := fun _ => [], spent := [], leaves := [], roots := [treeRoot TreeDepth []],
+    held := fun _ => 0, preimageOf := fun _ => none, shieldsPaused := false }
 
 /-! ### Deriving notes from a witness
 
@@ -418,31 +428,39 @@ hypothesis rather than a global fact. -/
 
 /-- One valid transition of the pool. -/
 inductive Step : PoolState → PoolState → Prop where
-  /-- Local shield (`ShieldModule.shield`, ShieldModule.sol:45-90). One `ShieldRequest`
-      creates exactly one note of the shielded amount minus the fee
+  /-- Local `ShieldModule.shield` (ShieldModule.sol:45-90).
+      One `ShieldRequest` creates exactly one note of the shielded amount minus the fee
       (`_transferTokenIn`/`_getFee`, ShieldModule.sol:277-371, reusing
       `ArmadaLean.Fee.shieldBase`); see the module comment for why no second, fee, note
       is created. `npk` is the shielded note's public key, a term the caller supplies
       directly (the shield circuit does not derive it — the recipient computes their own
       `npk` off-chain and the shielder just names it, same role as `npkOut` in a
-      `transact`). `newRoot` is the Merkle root the shield produces. `hNotPaused` is
-      `_requireShieldsNotPaused` (ShieldModule.sol:393-397). `hValue` is
-      `_validateCommitmentPreimage`'s `_note.value > 0` check (ShieldModule.sol:243-244)
-      — the blocklist and field-range checks on the same line are elided (Pool module
-      comment: they gate *which* shields succeed, not the value invariant). S-RG,
-      "RAILGUN Core System & Protocol": "Then the smart contract transfers tokens from
-      the user wallet to itself, if a deposit amount is specified ... The hashes of the
-      output UTXOs are then added to the Merkle tree so they can be spent in the
-      future." -/
-  | shield {s : PoolState} (token grossAmount feeBP : Nat) (npk newRoot : Term)
+      `transact`). The note's commitment is appended to `leaves`
+      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121) and the pushed root is
+      `ArmadaLean.Merkle.treeRoot TreeDepth` of the result — computed, not a free
+      parameter — so a shield cannot name a root that does not match the leaf it just
+      inserted. `hCapacity` is the one-tree capacity bound (`ArmadaLean.Merkle`'s
+      module comment, the rollover departure): the tree holds at most `2 ^ TreeDepth`
+      leaves. `hNotPaused` is `_requireShieldsNotPaused` (ShieldModule.sol:393-397).
+      `hValue` is `_validateCommitmentPreimage`'s `_note.value > 0` check
+      (ShieldModule.sol:243-244) — the blocklist and field-range checks on the same line
+      are elided (Pool module comment: they gate *which* shields succeed, not the value
+      invariant). S-RG, "RAILGUN Core System & Protocol": "Then the smart contract
+      transfers tokens from the user wallet to itself, if a deposit amount is specified
+      ... The hashes of the output UTXOs are then added to the Merkle tree so they can
+      be spent in the future." -/
+  | shield {s : PoolState} (token grossAmount feeBP : Nat) (npk : Term)
       (hNotPaused : s.shieldsPaused = false)
-      (hValue : 0 < grossAmount) (hFeeBP : feeBP ≤ BASIS) :
+      (hValue : 0 < grossAmount) (hFeeBP : feeBP ≤ BASIS)
+      (hCapacity : s.leaves.length + 1 ≤ 2 ^ TreeDepth) :
       Step s
         (let note : CommitmentPreimage := ⟨npk, token, shieldBase feeBP grossAmount⟩
+         let leaves' := s.leaves ++ [hashCommitment note]
          { s with
              live := fun t => if t = token then note :: s.live t else s.live t,
              held := fun t => if t = token then s.held t + note.value else s.held t,
-             roots := newRoot :: s.roots,
+             leaves := leaves',
+             roots := treeRoot TreeDepth leaves' :: s.roots,
              preimageOf := recordStep s.preimageOf (hashCommitment note) note })
   /-- Local `TransactModule.transact` (TransactModule.sol:43-96), covering both a pure
       transfer and a transfer with a local unshield. `w`/`pub` are the proof's own
@@ -494,7 +512,12 @@ inductive Step : PoolState → PoolState → Prop where
       marking a transaction processed before any token moves; `_accumulateAndNullify`
       already runs for every transaction in the batch (TransactModule.sol:63-73) before
       any unshield payout (TransactModule.sol:76-80) — `hNullify` is taken before `held`
-      changes below for the same reason.
+      changes below for the same reason. `newNotes` alone are appended to `leaves`
+      (`_accumulateAndNullify`'s "excluding unshield output" loop,
+      TransactModule.sol:391-396) and the pushed root is `ArmadaLean.Merkle.treeRoot
+      TreeDepth` of the result — computed, not a free parameter.
+      `hCapacity` is the one-tree capacity bound (`ArmadaLean.Merkle`'s module comment,
+      the rollover departure).
 
       DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
       `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before every `transact`
@@ -510,22 +533,25 @@ inductive Step : PoolState → PoolState → Prop where
   | transact {s : PoolState} {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
       (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
       (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
-      (newRoot : Term) (records : List (Term × CommitmentPreimage))
+      (records : List (Term × CommitmentPreimage))
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
       (hUnshieldLen : unshieldTail.length ≤ 1)
       (hRemove : removeAll (s.live w.token) (transactSpentNotes w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
-      (hRecords : records.Sublist (transactOutputRecords w pub)) :
+      (hRecords : records.Sublist (transactOutputRecords w pub))
+      (hCapacity : s.leaves.length + newNotes.length ≤ 2 ^ TreeDepth) :
       Step s
-        { s with
+        (let leaves' := s.leaves ++ newNotes.map hashCommitment
+         { s with
             live := fun t => if t = w.token then newNotes ++ rest else s.live t,
             spent := spent',
             held := fun t => if t = w.token
                 then s.held t - listSum (unshieldTail.map CommitmentPreimage.value)
                 else s.held t,
-            roots := newRoot :: s.roots,
-            preimageOf := applyRecords s.preimageOf records }
+            leaves := leaves',
+            roots := treeRoot TreeDepth leaves' :: s.roots,
+            preimageOf := applyRecords s.preimageOf records })
   /-- `TransactModule.transactOwned` (TransactModule.sol:488-519): the same bookkeeping
       shape as `transact`, with no unshield (`_validateOwnedTransaction` rejects any
       `unshield != NONE`, TransactModule.sol:619-623) and every output's preimage
@@ -544,7 +570,11 @@ inductive Step : PoolState → PoolState → Prop where
       `N = 1 ≤ 8` and `M ≤ 3 ≤ 4`, well inside the bound
       `transactOwned_value_conserved` needs; this model uses the same `N ≤ 8 ∧ M ≤ 4`
       bound as the plain path rather than the tighter true one, since that is the bound
-      the existing proof already supplies.
+      the existing proof already supplies. Every output is appended to `leaves`
+      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121) and the pushed root is
+      `ArmadaLean.Merkle.treeRoot TreeDepth` of the result — computed, not a free
+      parameter. `hCapacity` is the one-tree capacity bound (`ArmadaLean.Merkle`'s
+      module comment, the rollover departure).
 
       DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
       `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before `transactOwned` too
@@ -560,18 +590,21 @@ inductive Step : PoolState → PoolState → Prop where
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
-      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Term)
+      (rest : List CommitmentPreimage) (spent' : NullifierSet)
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hNonZero : ∀ j, ¬ isZeroPreimage
-        (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)) :
+        (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+      (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
       Step s
-        { s with
+        (let leaves' := s.leaves ++ (ownedNewNotes w).map hashCommitment
+         { s with
             live := fun t => if t = w.token then ownedNewNotes w ++ rest else s.live t,
             spent := spent',
-            roots := newRoot :: s.roots,
-            preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub) }
+            leaves := leaves',
+            roots := treeRoot TreeDepth leaves' :: s.roots,
+            preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub) })
   /-- The one remaining administrative path that changes pool state at all:
       `setShieldPauseContract` installs a controller whose `IShieldPauseController
       .shieldsPaused` this model reads (`ShieldModule._requireShieldsNotPaused`,
@@ -587,8 +620,10 @@ inductive Step : PoolState → PoolState → Prop where
       Step s { s with shieldsPaused := shieldsPaused }
 
 /-- Every state the pool can reach from deployment, by any sequence of calls from any
-    caller — the quantifier the brief's four promises range over. -/
-inductive Reachable (emptyRoot : Term) : PoolState → Prop where
-  | genesis : Reachable emptyRoot (genesis emptyRoot)
-  | step {s s' : PoolState} (hs : Reachable emptyRoot s) (hstep : Step s s') :
-      Reachable emptyRoot s'
+    caller — the quantifier the brief's four promises range over. `genesis` is now a
+    concrete value (the empty-tree root is computed, not a free parameter — see
+    `genesis`'s doc comment), so `Reachable` no longer needs to be indexed by it. -/
+inductive Reachable : PoolState → Prop where
+  | genesis : Reachable genesis
+  | step {s s' : PoolState} (hs : Reachable s) (hstep : Step s s') :
+      Reachable s'
