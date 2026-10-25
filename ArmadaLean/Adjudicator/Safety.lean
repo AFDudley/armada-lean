@@ -1924,7 +1924,22 @@ theorem heldValue_zero_iff_no_collateral
     heldValue s asset cid = 0 ↔
       s.holdings asset cid = none ∨
       ∃ c, s.holdings asset cid = some c ∧ s.pool.preimageOf c = none := by
-  sorry
+  unfold heldValue
+  rcases hc : s.holdings asset cid with _ | c
+  · simp [hc]
+  · simp only [hc]
+    rcases hp : s.pool.preimageOf c with _ | pre
+    · simp [hp]
+    · simp only [hp, Option.map_some, Option.getD_some]
+      constructor
+      · intro hv
+        exact absurd hv (holdings_never_zero_valued sig appRel assets self pool0 s asset cid c pre
+          hreach hc hp)
+      · rintro (h1 | ⟨c2, hc2, hp2⟩)
+        · exact absurd h1 (by simp)
+        · have hceq : c = c2 := Option.some.inj hc2
+          rw [hceq, hp2] at hp
+          exact absurd hp (by simp)
 
 /-- Closes the constructor's `configuredAssets[...] = true` miss
     (`armada-nitro@5519526c:docs/tasks/
