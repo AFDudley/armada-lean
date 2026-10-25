@@ -105,11 +105,13 @@ def bulkTransferFold (self : Nat) (cid : Term) :
      let (newAllocs, exitAllocs, totalPayouts) := transferEffects exit.allocations held []
      (∀ a ∈ exitAllocs, a.allocationType ≠ .guarantee) ∧
      newExit = { exit with allocations := newAllocs } ∧
-     (let remainder := held - totalPayouts
+    (let remainder := held - totalPayouts
       let payoutOutputs := exitAllocs.filterMap (fun a =>
         if a.amount = 0 then none else some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage))
+      ∃ r : Nat,
       let remainderOutputs : List CommitmentPreimage :=
-        if remainder = 0 then [] else [(⟨Term.val self, exit.asset, remainder⟩ : CommitmentPreimage)]
+        if remainder = 0 then [] else [(⟨npk (Term.val self) r, exit.asset, remainder⟩ :
+          CommitmentPreimage)]
       ∃ midPool,
         PoolOwnedSpendStep pool self exit.asset (holdings exit.asset cid) payoutOutputs remainderOutputs
           midPool ∧
@@ -117,7 +119,7 @@ def bulkTransferFold (self : Nat) (cid : Term) :
           (update (holdings exit.asset) cid
             (if remainder = 0 then none
              else some (pool.leaves.length + (payoutOutputs ++ remainderOutputs).length - 1,
-               commitment (Term.val self) exit.asset remainder)))
+               commitment (npk (Term.val self) r) exit.asset remainder)))
          bulkTransferFold self cid rest midPool midHoldings newRest poolF holdingsF)))
   | _, _, _, _, _, _ => False
 
@@ -352,8 +354,9 @@ def Step (sig : SignatureAssumptions)
         let payoutOutputs := exitAllocs.filterMap (fun a =>
           if a.amount = 0 then none
           else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage))
+        ∃ r : Nat,
         let remainderOutputs : List CommitmentPreimage :=
-          if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ :
+          if remainder = 0 then [] else [(⟨npk (Term.val s.self) r, assetOutcome.asset, remainder⟩ :
             CommitmentPreimage)]
         let outputs := payoutOutputs ++ remainderOutputs
         PoolOwnedSpendStep s.pool s.self assetOutcome.asset
@@ -362,7 +365,7 @@ def Step (sig : SignatureAssumptions)
           (update (s.holdings assetOutcome.asset) cid
             (if remainder = 0 then none
              else some (s.pool.leaves.length + outputs.length - 1,
-               commitment (Term.val s.self) assetOutcome.asset remainder))) ∧
+               commitment (npk (Term.val s.self) r) assetOutcome.asset remainder))) ∧
         s'.channels = update s.channels cid
           { s.channels cid with
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
