@@ -35,10 +35,12 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
     entry states the pool-wide invariant this specializes: "The pool's
     core invariant is that value in the pool exists only as notes:
     every token the pool holds backs exactly one unspent note, and the
-    only moves are shield, transact and unshield." `holdings` is
-    modeled as `Option Nat`, `none` for no collateral — see
-    `heldValue`'s doc comment for how the armada-nitro rule fixes the
-    rest of this field's encoding. Every other comment in this model
+    only moves are shield, transact and unshield." A holding names
+    exactly one note by its Merkle leaf position (`Nat`), with its
+    commitment carried alongside as a check against the pool's own
+    `leaves` record (`Pool.lean`'s `PoolState.leaves`) — `Option (Nat ×
+    Term)`, `none` for no collateral — see `heldValue`'s doc comment for
+    the rest of this field's encoding. Every other comment in this model
     that relies on the armada-nitro rule cites it by name, not this
     quote a second time. The
     hub's configured asset list (`ArmadaNitroAdjudicator.configuredAssets`),
@@ -57,7 +59,7 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
 structure AdjudicatorState where
   pool : PoolState
   channels : Term → ChannelStatus
-  holdings : Nat → Term → Option Term
+  holdings : Nat → Term → Option (Nat × Term)
   configuredAssets : Nat → Prop
   self : Nat
   now : Nat
@@ -104,15 +106,19 @@ valued` states and grounds this precisely, checking `.deposit`/
     consistent` (`PoolOwned.lean`) proves trustworthy: every preimage
     the pool records hashes to the commitment it is recorded for, so
     no caller can make a commitment read back a value the pool did
-    not itself attest. The `match ... | none => 0` branch below is
-    where the rule becomes a value-level fact: a caller cannot make
-    an empty commitment read as a positive holding, and (over
-    REACHABLE states, `holdings_never_zero_valued`) no reachable
-    holding's own preimage reads back as a `0`-value note either. -/
+    not itself attest. A holding names a leaf position with its
+    commitment as a check (`AdjudicatorState.holdings`'s own doc
+    comment); `heldValue` reads off the commitment half, the position
+    is for `PoolIsLive`/the spend witness (`Notes.lean`). The
+    `match ... | none => 0` branch below is where the rule becomes a
+    value-level fact: a caller cannot make an empty commitment read as
+    a positive holding, and (over REACHABLE states,
+    `holdings_never_zero_valued`) no reachable holding's own preimage
+    reads back as a `0`-value note either. -/
 def heldValue (s : AdjudicatorState) (asset : Nat) (channelId : Term) : Nat :=
   match s.holdings asset channelId with
   | none => 0
-  | some c => (s.pool.preimageOf c).map CommitmentPreimage.value |>.getD 0
+  | some (_, c) => (s.pool.preimageOf c).map CommitmentPreimage.value |>.getD 0
 
 /-- Whether `asset` is on the hub's configured list
     (`ArmadaNitroAdjudicator.isAsset`). Stated as a field of
