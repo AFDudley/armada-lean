@@ -380,6 +380,25 @@ theorem mapIdx_get {α : Type} (l : List α) (f : Nat → α → α) (i : Nat) (
   simp only [Option.map_some] at e1
   exact (Option.some.inj e1).symm
 
+/-- `mapIdx` under an UPDATE that never touches `.asset` leaves the
+    outcome's own asset-per-index PROJECTION unchanged: `.transfer`'s
+    own `newAllocations`-only rewrite, and `.reclaim`'s own
+    `reallocateGuarantee`-only rewrite, BOTH have this shape. What the
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` interleaving
+    invariant needs to carry its own `curOutcome.map .asset =
+    candidate.outcome.map .asset` tracked fact across a call touching a
+    DIFFERENT index than the one it is watching. -/
+theorem mapIdx_asset_preserved (l : List SingleAssetExit) (f : Nat → SingleAssetExit →
+    SingleAssetExit) (hf : ∀ i a, (f i a).asset = a.asset) :
+    (l.mapIdx f).map SingleAssetExit.asset = l.map SingleAssetExit.asset := by
+  apply List.ext_getElem?
+  intro i
+  rw [List.getElem?_map, List.getElem?_map, List.getElem?_mapIdx]
+  cases h : l[i]? with
+  | none => rfl
+  | some a => simp [hf i a]
+
+
 /-- `reallocateGuarantee`'s own effect at the reallocated asset itself,
     unfolded past the `mapIdx`/`.getD` machinery: the SAME asset's
     allocations become the two sequential `creditFirst` calls on its

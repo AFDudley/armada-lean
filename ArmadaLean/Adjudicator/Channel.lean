@@ -66,6 +66,21 @@ structure VariablePart where
 def channelId (fp : FixedPart) : Term :=
   channelIdOf fp.participants fp.channelNonce fp.appDefinition fp.challengeDuration
 
+/-- `channelId` is injective on the WHOLE `FixedPart` record, not just its
+    4 raw fields: `channelIdOf_inj` gives the 4 fields equal, and
+    `FixedPart` has no other field to differ on. What any `Safety.lean`
+    step case naming an ARBITRARY `fp'` needs once it learns `channelId
+    fp' = channelId fp`: the FULL record identity, so `SignedByAll`/
+    `stateHash`/`candidate.turnNum` facts stated over `fp'` read as facts
+    over `fp` directly. -/
+theorem channelId_inj {fp1 fp2 : FixedPart} (h : channelId fp1 = channelId fp2) :
+    fp1 = fp2 := by
+  obtain ⟨h1, h2, h3, h4⟩ := channelIdOf_inj h
+  calc fp1 = ⟨fp1.participants, fp1.channelNonce, fp1.appDefinition, fp1.challengeDuration⟩ := rfl
+    _ = ⟨fp2.participants, fp2.channelNonce, fp2.appDefinition, fp2.challengeDuration⟩ := by
+      rw [h1, h2, h3, h4]
+    _ = fp2 := rfl
+
 /-- The state hash (S4 `0010-states-channels.md`, "State commitments";
     clause 4). -/
 def stateHash (fp : FixedPart) (vp : VariablePart) : Term :=
