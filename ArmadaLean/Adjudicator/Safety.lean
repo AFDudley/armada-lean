@@ -981,9 +981,33 @@ theorem reclaim_value_neutral
            listSum (((reallocateGuarantee sourceOutcome sourceAssetIndex indexOfTargetInSource
                left right a0 a1).getD sourceAssetIndex ⟨0, []⟩).allocations.map Allocation.amount) =
              listSum ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.map Allocation.amount))) := by
-  sorry
-
-
+  obtain ⟨hmodeSrc, _hohSrc, hsa, hidx1, hguarantee, hrest, hpool, hholdings, _, _, _, _, _⟩ := hstep
+  obtain ⟨htgtMode, _htgtSh, _htgtOh, hta, hassetEq, hfoundLeft, hfoundRight, a0, a1, _hlen2, ha0,
+    ha1, hsum, hchan⟩ := hrest
+  refine ⟨hmodeSrc, hpool, hholdings, hsa, hidx1, hguarantee, htgtMode, hta, hassetEq, a0, a1, ha0,
+    ha1, hsum, ?_, ?_⟩
+  · have hceq := congrFun hchan sourceChannelId
+    rw [hceq]; unfold update; rw [if_pos rfl]
+  · rw [reallocateGuarantee_getD sourceOutcome sourceAssetIndex indexOfTargetInSource hsa _ _ a0 a1
+      ⟨0, []⟩]
+    simp only
+    have hleftSum := creditFirst_sum
+      ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.eraseIdx indexOfTargetInSource)
+      (decodeGuarantee ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.get
+        ⟨indexOfTargetInSource, hidx1⟩).metadata).1 a0 hfoundLeft
+    have hrightFound := creditFirst_mono
+      ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.eraseIdx indexOfTargetInSource)
+      (decodeGuarantee ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.get
+        ⟨indexOfTargetInSource, hidx1⟩).metadata).1 a0 _ hfoundRight
+    have hrightSum := creditFirst_sum
+      (creditFirst ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.eraseIdx
+        indexOfTargetInSource)
+        (decodeGuarantee ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.get
+          ⟨indexOfTargetInSource, hidx1⟩).metadata).1 a0) _ a1 hrightFound
+    have herase := listSum_eraseIdx_add (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations
+      indexOfTargetInSource hidx1
+    rw [hrightSum, hleftSum]
+    omega
 
 /-- A-13 — channel value leaves only through a `.transfer`/bulk payout of
     a finalized channel: whenever a `Step` lowers a channel's own held
