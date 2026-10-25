@@ -2433,6 +2433,7 @@ theorem unbeatable_pays
     (h : Nat) (assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length)
     (destIdx : Nat) (x : Nat) (dest : Allocation)
+    (hReachPool : _root_.Reachable pool0)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
     (hfinal : candidate.isFinal = true)
     (hduration : 0 < fp.challengeDuration)
@@ -2504,6 +2505,7 @@ theorem unbeatable_pays_after_timeout
     (assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length)
     (destIdx : Nat) (x : Nat) (dest : Allocation)
+    (hReachPool : _root_.Reachable pool0)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
     (hregistered : (s.channels (channelId fp)).mode s.now = .challenge ∧
       (s.channels (channelId fp)).stateHash = stateHash fp candidate ∧

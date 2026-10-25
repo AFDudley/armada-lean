@@ -841,6 +841,169 @@ theorem reachable_preserves {sig : SignatureAssumptions}
   obtain ⟨calls, happ⟩ := hreach
   exact appliesAll_preserves hstep hbase happ
 
+/-- `bulkTransferFold`'s own pool-level lift: `_root_.Reachable` carries
+    forward across the WHOLE fold, one asset's own `PoolOwnedSpendStep` —
+    itself `_root_.Step.transactOwned` — at a time. What
+    `adjudicator_pool_step` needs for its own two bulk `Call` cases. -/
+theorem bulkTransferFold_pool_reachable (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    _root_.Reachable pool → _root_.Reachable poolF := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold hreach
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hpoolEq, _hholdEq⟩ := hfold
+      rw [hpoolEq]; exact hreach
+    | cons _ _ => unfold bulkTransferFold at hfold; exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold hreach
+    cases newOutcome with
+    | nil => unfold bulkTransferFold at hfold; exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguarantee, _hnewExit, r0, midPool, hmatch, hrec⟩ := hfold
+      refine ih newRest midPool poolF _ holdingsF hrec ?_
+      rcases hh : holdings exit.asset cid with _ | c0
+      · rw [hh] at hmatch
+        obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
+          hroot, hmark, hRandomOut, heq⟩ := hmatch
+        rw [heq]
+        -- BLOCKED on pool-model fix (Main, 2026-10-26): Step.transactOwned's own
+        -- hRandomOut demands disclosure for every output, but PoolOwnedSpendStep's own
+        -- payoutPreimages are user-keyed, not owner-disclosable. Awaiting the new
+        -- pool-model sha mapping ownedPreimages/randomOut onto a trimmed owned-records
+        -- list (Step.transact's own shape).
+        sorry
+      · obtain ⟨pos0, c1⟩ := c0
+        rw [hh] at hmatch
+        obtain ⟨w, pub, hM, hC, rest', spent', randomOut, hNonZero, hCapacity, hown, htoken,
+          hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+        rw [heq]
+        sorry
+
+
+/-- One adjudicator `Step`'s own pool-level effect is exactly a pool-model
+    `_root_.Step`, so `_root_.Reachable` carries forward across it:
+    trivially for every `Call` case that leaves `s.pool` unchanged;
+    `.deposit`'s own `DepositStep` is `_root_.Step.transact` with
+    `unshieldTail := []` (the adjudicator never unshields its own
+    deposit), `newNotes := transactAllOutputs w` (the whole output batch
+    stays live, matching `DepositStep`'s own `live` field exactly);
+    `.deposit`'s own merge (`DepositMergeStep`) is a SECOND
+    `_root_.Step.transactOwned`, chained after the first; `.transfer`
+    and both bulk calls are `PoolOwnedSpendStep`, itself
+    `_root_.Step.transactOwned` (same `live`/`spent`/`leaves`/`roots`/
+    `preimageOf`/`ownedRandomOf` shape, `caller := addressOf pub
+    .ownerField` matching `self = addressOf pub.ownerField`). What lets
+    `unbeatable_pays`'s own strategy invoke `leaf_has_merkle_witness`/
+    `owned_spend_witness_exists` at an ARBITRARY reachable `mid`, not
+    only at the deployment pool. -/
+theorem adjudicator_pool_step (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hstep : Step sig appRel actor s call s')
+    (hreach : _root_.Reachable s.pool) : _root_.Reachable s'.pool := by
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
+    obtain ⟨r0, hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent', records,
+      hCapacity, hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    have hmidReach : _root_.Reachable midPool := by
+      rw [heq]
+      have hstepw := _root_.Step.transact w pub hN hM hC (transactAllOutputs w) [] rest spent'
+        records [(pub.commitmentsOut idx, (⟨s.self, r0⟩ : OwnedDisclosure))]
+        hRoot (by simp) (by simp) hRemove hNullify hSublist
+        (fun cd hcd => by
+          rw [List.mem_singleton] at hcd
+          exact hcd ▸ ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hidxrec, hown.symm⟩)
+        (by unfold transactAllOutputs; rw [List.length_ofFn]; exact hCapacity)
+      apply _root_.Reachable.step hreach
+      convert hstepw using 2
+      funext t
+      simp
+    rcases hh : s.holdings asset channelId with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _hholdseq⟩ := hmatch
+      rw [hpoolEq]; exact hmidReach
+    · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
+      rw [hh] at hmatch
+      obtain ⟨merged, mergedPos, hmerge, _hholdseq⟩ := hmatch
+      obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r', randomOut', hNonZero', hCapacity',
+        hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
+        hremove', hnullify', hrandomOut', heq'⟩ := hmerge
+      rw [heq']
+      exact _root_.Reachable.step hmidReach
+        (_root_.Step.transactOwned w' pub' (by decide) (by decide) hC' s.self hown' rest'
+          spent'' (fun _ => randomOut') hroot' (by rw [htoken']; exact hremove') hnullify'
+          (fun j => by have : j = 0 := Fin.ext (by omega); rw [this]; exact hNonZero')
+          (fun j => by have : j = 0 := Fin.ext (by omega); rw [this]; exact hrandomOut') hCapacity')
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r0, hmatch, _hholdseq, _hchanseq⟩ := hrest
+    rcases hh : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c0
+    · rw [hh] at hmatch
+      obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
+        hroot, hmark, hRandomOut, heq⟩ := hmatch
+      rw [heq]
+      -- BLOCKED on pool-model fix (Main, 2026-10-26), see bulkTransferFold_pool_reachable.
+      sorry
+    · obtain ⟨pos0, c1⟩ := c0
+      rw [hh] at hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', randomOut, hNonZero, hCapacity, hown, htoken,
+        hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+      rw [heq]
+      sorry
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _hsa, _hidx1, _h5, _h6, hpoolEq, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_pool_reachable s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold hreach
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_pool_reachable s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold hreach
+  | tick newNow =>
+    obtain ⟨_, _, hpoolEq, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | sign p d =>
+    obtain ⟨_, _, hpoolEq, _, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpoolEq, _, _hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+
+/-- The reachable-set form of `adjudicator_pool_step`: the pool component
+    of every adjudicator-reachable state is itself pool-reachable from
+    `pool0`. -/
+theorem adjudicator_pool_reachable (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+    (hReachPool : _root_.Reachable pool0) (s : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets self pool0) s) :
+    _root_.Reachable s.pool :=
+  reachable_preserves (P := fun s'' => _root_.Reachable s''.pool) hReachPool
+    (fun actor call s1 s2 hP hstep => adjudicator_pool_step sig appRel actor s1 s2 call hstep hP)
+    hreach
+
 /-! ## One Step-level fact every call case keeps: the configured-asset list -/
 
 /-- Every `Step` case leaves `configuredAssets` untouched (`Operations.lean`):
