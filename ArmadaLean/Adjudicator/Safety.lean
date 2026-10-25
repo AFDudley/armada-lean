@@ -661,39 +661,24 @@ theorem holdings_point_to_live_notes
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-    (s : AdjudicatorState) (asset : Nat) (cid c : Term)
+    (s : AdjudicatorState) (asset : Nat) (cid : Term) (pos : Nat) (c : Term)
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
-    (hholds : s.holdings asset cid = some c) :
+    (hholds : s.holdings asset cid = some (pos, c)) :
     PoolIsLive s.pool c := by
   have hinv := reachable_preserves
-    (P := fun s => (∀ qasset qcid qc, s.holdings qasset qcid = some qc →
-        ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) ∧
-      (∀ asset (pre : CommitmentPreimage) (L : List Term), L.Nodup →
-        (∀ cid ∈ L, s.holdings asset cid = some (hashCommitment pre)) →
-        (0 < L.length → pre.npk = Term.val s.self ∨ ∃ r, pre.npk = npk (Term.val s.self) r) ∧
-        L.length ≤ List.count pre (s.pool.live asset)))
-    (And.intro
-      (by intro qasset qcid qc hc; exact absurd hc (by simp [genesis]))
-      (by
-        intro asset pre L hnodup hmem
-        rcases L with _ | ⟨cid0, L'⟩
-        · simp
-        · exact absurd (hmem cid0 List.mem_cons_self) (by simp [genesis])))
+    (P := fun s => ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      (∃ pre, (qpos, pre) ∈ s.pool.live qasset ∧ hashCommitment pre = qc ∧
+        (pre.npk = Term.val s.self ∨ ∃ r, pre.npk = npk (Term.val s.self) r)) ∧
+      qpos < s.pool.leaves.length ∧
+      (∀ qasset' qcid' qpos' qc', s.holdings qasset' qcid' = some (qpos', qc') →
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos))
+    (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
     (fun actor call s s' hP hstep =>
-      ⟨holdings_preimage_nonzero_step sig appRel actor s s' call hP.1 hstep,
-       (step_self sig appRel actor s s' call hstep ▸
-         holdings_live_count_step sig appRel actor s s' call hP.1 hP.2 hstep : _)⟩)
+      (step_self sig appRel actor s s' call hstep ▸
+        holdings_position_live_step sig appRel actor s s' call hP hstep : _))
     hreach
-  obtain ⟨pre, hpre, _hval, hconsist⟩ := hinv.1 asset cid c hholds
-  have hmem : ∀ cid' ∈ [cid], s.holdings asset cid' = some (hashCommitment pre) := by
-    intro cid' hcid'
-    rw [List.mem_singleton] at hcid'
-    rw [hcid', hholds, hconsist]
-  have hbound := (hinv.2 asset pre [cid]
-    (List.nodup_cons.mpr ⟨by simp, List.nodup_nil⟩) hmem).2
-  simp only [List.length_cons, List.length_nil] at hbound
-  have hlive : pre ∈ s.pool.live asset := List.count_pos_iff.mp (by omega)
-  exact ⟨asset, pre, hlive, hconsist⟩
+  obtain ⟨⟨pre, hpre, hval, _⟩, _, _⟩ := hinv asset cid pos c hholds
+  exact ⟨asset, pos, pre, hpre, hval⟩
 
 /-!
 ## A concrete app, for the can-happen theorems only
@@ -1221,13 +1206,14 @@ theorem challenge_can_happen
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
       (challenger : Nat) (actor : Actor),
+      _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       Step sig (consensusRelation sig) actor s
         (.challenge fp [] candidate challenger) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
   let assets : Nat → Prop := fun _ => False
   let self : Nat := 0
-  let pool0 : PoolState := _root_.genesis (Term.val 0)
+  let pool0 : PoolState := _root_.genesis
   let fp : FixedPart := ⟨[0], 0, 0, 1⟩
   let candidate : VariablePart := ⟨[], 0, 0, false⟩
   let g := genesis assets self pool0
@@ -1252,7 +1238,8 @@ theorem challenge_can_happen
       subst hp
       exact hauth
     · exact List.mem_singleton.mpr rfl
-  refine ⟨assets, self, pool0, mid, s', fp, candidate, 0, Actor.nitro 0, hreach, hstep, ?_⟩
+  refine ⟨assets, self, pool0, mid, s', fp, candidate, 0, Actor.nitro 0,
+    _root_.Reachable.genesis, hreach, hstep, ?_⟩
   show ((update mid.channels (channelId fp)
       { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
         stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome })
@@ -1269,13 +1256,14 @@ theorem challenge_timeout_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (cid : Term) (actor : Actor),
+      _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       (s.channels cid).finalizesAt > 0 ∧
       Step sig (consensusRelation sig) actor s (.tick (s.channels cid).finalizesAt) s' ∧
       (s'.channels cid).mode s'.now = .finalized := by
   let assets : Nat → Prop := fun _ => False
   let self : Nat := 0
-  let pool0 : PoolState := _root_.genesis (Term.val 0)
+  let pool0 : PoolState := _root_.genesis
   let fp : FixedPart := ⟨[0], 0, 0, 1⟩
   let candidate : VariablePart := ⟨[], 0, 0, false⟩
   let g := genesis assets self pool0
@@ -1313,7 +1301,8 @@ theorem challenge_timeout_can_happen
   have htickstep : Step sig (consensusRelation sig) (Actor.nitro 0) s
       (.tick (s.channels (channelId fp)).finalizesAt) s' :=
     ⟨Nat.zero_le _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  refine ⟨assets, self, pool0, s, s', channelId fp, Actor.nitro 0, hreach, hfin, htickstep, ?_⟩
+  refine ⟨assets, self, pool0, s, s', channelId fp, Actor.nitro 0,
+    _root_.Reachable.genesis, hreach, hfin, htickstep, ?_⟩
   show (s.channels (channelId fp)).mode (s.channels (channelId fp)).finalizesAt = .finalized
   unfold ChannelStatus.mode
   simp [show (s.channels (channelId fp)).finalizesAt ≠ 0 from by omega]
@@ -1331,12 +1320,13 @@ theorem conclude_can_happen
     (hashA : HashAssumptions) (sig : SignatureAssumptions) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
       (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart) (actor : Actor),
+      _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       Step sig (consensusRelation sig) actor s (.conclude fp candidate) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
   let assets : Nat → Prop := fun _ => False
   let self : Nat := 0
-  let pool0 : PoolState := _root_.genesis (Term.val 0)
+  let pool0 : PoolState := _root_.genesis
   let fp : FixedPart := ⟨[], 0, 0, 0⟩
   let candidate : VariablePart := ⟨[], 0, 0, true⟩
   let g := genesis assets self pool0
@@ -1354,7 +1344,8 @@ theorem conclude_can_happen
     · simp [mid, g, genesis, ChannelStatus.mode, emptyStatus]
     · intro p hp
       exact absurd hp List.not_mem_nil
-  refine ⟨assets, self, pool0, mid, s', fp, candidate, Actor.nitro 0, hreach, hstep, ?_⟩
+  refine ⟨assets, self, pool0, mid, s', fp, candidate, Actor.nitro 0,
+    _root_.Reachable.genesis, hreach, hstep, ?_⟩
   show ((update mid.channels (channelId fp)
       { turnNumRecord := 0, finalizesAt := mid.now, stateHash := Term.val 0,
         outcomeHash := outcomeHashOf candidate.outcome }) (channelId fp)).mode mid.now
@@ -1647,6 +1638,7 @@ theorem reclaim_can_happen
       (s s' : AdjudicatorState) (sourceChannelId : Term) (sourceOutcome : Outcome)
       (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
       (targetAssetIndex : Nat) (claimedTargetStateHash : Term) (actor : Actor),
+      _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       Step sig (consensusRelation sig) actor s (.reclaim sourceChannelId sourceOutcome
         sourceAssetIndex indexOfTargetInSource targetOutcome targetAssetIndex
@@ -1654,7 +1646,7 @@ theorem reclaim_can_happen
       s'.channels sourceChannelId ≠ s.channels sourceChannelId := by
   let assets : Nat → Prop := fun _ => False
   let self : Nat := 0
-  let pool0 : PoolState := _root_.genesis (Term.val 0)
+  let pool0 : PoolState := _root_.genesis
   let fp1 : FixedPart := ⟨[], 0, 0, 0⟩
   let fp2 : FixedPart := ⟨[], 1, 0, 0⟩
   let sourceChannelId : Term := channelId fp1
@@ -1770,7 +1762,7 @@ theorem reclaim_can_happen
     have : reallocateGuarantee sourceOutcome 0 0 left right a0 a1 = sourceOutcome := houtcome
     simp [reallocateGuarantee, sourceOutcome, guaranteeAlloc] at this
   exact ⟨assets, self, pool0, mid3, s', sourceChannelId, sourceOutcome, 0, 0, targetOutcome,
-    0, Term.val 0, Actor.nitro 0, hreach4, hstep_r, hneq⟩
+    0, Term.val 0, Actor.nitro 0, _root_.Reachable.genesis, hreach4, hstep_r, hneq⟩
 
 /-!
 ## E. Behavior-brief statements, on top of the three questions
@@ -1862,14 +1854,14 @@ theorem value_exists_only_as_notes
     (s : AdjudicatorState) (asset : Nat) (cid : Term)
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
-    ∃ c, s.holdings asset cid = some c ∧ PoolIsLive s.pool c ∧
+    ∃ pos c, s.holdings asset cid = some (pos, c) ∧ PoolIsLive s.pool c ∧
       (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
   unfold heldValue at hheld
-  rcases hc : s.holdings asset cid with _ | cm
+  rcases hc : s.holdings asset cid with _ | ⟨pos, cm⟩
   · simp only [hc] at hheld; omega
-  · refine ⟨cm, ?_, ?_, ?_⟩
+  · refine ⟨pos, cm, ?_, ?_, ?_⟩
     · rfl
-    · exact holdings_point_to_live_notes sig appRel assets self pool0 s asset cid cm hreach hc
+    · exact holdings_point_to_live_notes sig appRel assets self pool0 s asset cid pos cm hreach hc
     · simp only [hc] at hheld
       rcases hp : s.pool.preimageOf cm with _ | pre
       · rw [hp] at hheld; simp at hheld; omega
