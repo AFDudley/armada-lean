@@ -217,6 +217,51 @@ theorem step_configuredAssets (sig : SignatureAssumptions)
     obtain ⟨_, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
 
+/-! ## Another Step-level fact every call case keeps: `signedBy` only grows -/
+
+/-- `signedBy` only grows across a single `Step`: only `.sign` adds to it,
+    and only ever to the signer's own row (`Operations.lean`'s `.sign`
+    case); every other call leaves it unchanged. The tool
+    `finalized_outcome_was_concluded_or_challenged` (`Safety.lean`) needs
+    to carry a `SignedByAll` fact, established at one `.conclude` call,
+    forward across every LATER step up to the state actually queried. -/
+theorem step_signedBy_mono (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hstep : Step sig appRel actor s call s') :
+    ∀ p d, s.signedBy p d → s'.signedBy p d := by
+  cases call with
+  | deposit cid expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | bulkTransferAllAssets cid outcome claimedStateHash => exact hstep.elim
+  | bulkConcludeAndTransferAllAssets fp candidate => exact hstep.elim
+  | tick newNow =>
+    obtain ⟨_, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]; exact fun p d hp => hp
+  | sign p d =>
+    obtain ⟨_, h⟩ := hstep
+    rw [h.1]; exact fun p' d' hp => Or.inr hp
+  | signNote pk msgHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h]; exact fun p d hp => hp
+
 /-- Marking a single nullifier spent: it fails iff the nullifier is already
     spent, and otherwise prepends it (`ArmadaLean.markSpent`, `PoolOwned.lean`). -/
 theorem markSpent_single (spent : NullifierSet) (n : Term) :
