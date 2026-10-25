@@ -1848,7 +1848,17 @@ theorem checkpoint_can_happen
 
 
 set_option maxRecDepth 2000 in
-/-- A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
+/-- The real construction behind `deposit_can_happen`, below, carrying
+    three extra facts its own build already has on hand — the pre-deposit
+    state's `channels`/`holdings` equal `genesis`'s own, and its own
+    `channelId` is `channelId fp1` for the specific `fp1` this
+    construction picks. A-12 (`guarantee_reallocation_order_dependent`)
+    needs those to build `.conclude` calls on top without re-deriving the
+    deposit circuit; `deposit_can_happen` itself is NOT restated here —
+    it stays the audit-approved text, proved below by dropping these three
+    down to the plain existence claim.
+
+    A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
     `PoolSignatureLiveness`, there is an execution from
     `genesis` — with a pool state `pool0` that already holds the
     deposit succeeds (Nitro-2019-219.pdf §3.1: "There are no
@@ -1860,7 +1870,7 @@ set_option maxRecDepth 2000 in
     `Notes.lean`) needs. Unrelated to owned notes: `.deposit` uses the
     BASE `Transact` circuit (EdDSA), not `ArmadaLean.OwnedConstrained`,
     so no `OwnedProofCompleteness` argument is needed here. -/
-theorem deposit_can_happen
+theorem deposit_can_happen_witness
     (hashA : HashAssumptions) (sig : SignatureAssumptions)
     (poolSigLive : PoolSignatureLiveness) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
@@ -2000,6 +2010,32 @@ theorem deposit_can_happen
   exact ⟨assets, self, pool0, mid, s', channelId, 0, token, amount, Actor.pool publicKey,
     hReachPool, hreach, rfl, rfl, rfl, hstep⟩
 
+/-- A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
+    `PoolSignatureLiveness`, there is an execution from
+    `genesis` — with a pool state `pool0` that already holds the
+    deposit succeeds (Nitro-2019-219.pdf §3.1: "There are no
+    restrictions on who can deposit coins for an address"; the
+    armada-nitro rule, `State.lean`, specializes the deposited coins to
+    a note). `PoolSignatureLiveness.
+    eddsaCompleteness` turns the recorded signing fact into the
+    `EdDSAVerify` witness `Constrained` (`DepositStep`,
+    `Notes.lean`) needs. Unrelated to owned notes: `.deposit` uses the
+    BASE `Transact` circuit (EdDSA), not `ArmadaLean.OwnedConstrained`,
+    so no `OwnedProofCompleteness` argument is needed here. -/
+theorem deposit_can_happen
+    (hashA : HashAssumptions) (sig : SignatureAssumptions)
+    (poolSigLive : PoolSignatureLiveness) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (channelId : Term) (expectedHeld asset amount : Nat) (actor : Actor),
+      _root_.Reachable pool0 ∧
+      Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig (consensusRelation sig) actor s
+        (.deposit channelId expectedHeld asset amount) s' := by
+  obtain ⟨assets, self, pool0, s, s', channelId, expectedHeld, asset, amount, actor,
+    hReachPool, hReach, _, _, _, hstep⟩ := deposit_can_happen_witness hashA sig poolSigLive
+  exact ⟨assets, self, pool0, s, s', channelId, expectedHeld, asset, amount, actor,
+    hReachPool, hReach, hstep⟩
+
 /-- A-12 — guarantee reallocation can change a later transfer's payout:
     there is a reachable state `s` and a real `.reclaim` `Step` from `s`
     to `s1` on `cid`, after which `cid`'s own outcome hash is some
@@ -2042,7 +2078,7 @@ theorem guarantee_reallocation_order_dependent
           (heldValue s1 asset cid) [dIdx]).2.2 := by
   obtain ⟨assets, self, pool0, sPre, sPost, cid, expectedHeld, asset, amount, actor0,
     hReachPool, hReachPre, hChanPre, hHoldPre, hCidEq, hDepStep⟩ :=
-    deposit_can_happen hashA sig poolSigLive
+    deposit_can_happen_witness hashA sig poolSigLive
   have hamtPos : 0 < amount := hDepStep.2.2.2.1
   have hde := deposit_effect sig (consensusRelation sig) assets self pool0 actor0 sPre sPost cid
     expectedHeld asset amount hReachPre hDepStep
@@ -3335,7 +3371,8 @@ theorem bulk_transfer_all_assets_effect
     ∃ newOutcome : Outcome,
       bulkTransferFold s.self cid outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
       s'.channels = update s.channels cid { s.channels cid with outcomeHash := outcomeHashOf newOutcome } := by
-  sorry
+  obtain ⟨hmode, hsh, hoh, newOutcome, hfold, hchan, _, _, _, _⟩ := hstep
+  exact ⟨hmode, hsh, hoh, newOutcome, hfold, hchan⟩
 
 /-- B4 — `bulkConcludeAndTransferAllAssets` has EXACTLY `concludeAndTransferAllAssets`'s
     own documented effect (`DOC/0080:77`, quoted above): `.conclude`'s own
@@ -3357,7 +3394,8 @@ theorem bulk_conclude_and_transfer_all_assets_effect
       s'.channels = update s.channels (channelId fp)
         { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0,
           outcomeHash := outcomeHashOf newOutcome } := by
-  sorry
+  obtain ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan, _, _, _, _, _⟩ := hstep
+  exact ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan⟩
 
 /-- B4 — a bulk conclude-and-transfer can happen: for all
     `HashAssumptions`/`SignatureAssumptions`, there is an execution from
