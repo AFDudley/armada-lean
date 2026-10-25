@@ -257,22 +257,40 @@ reclaims a two-party guarantee.
     "it recovers the two addresses the guarantee's creator encoded". -/
 axiom decodeGuarantee : Nat → Term × Term
 
+/-- Credits `amt` to the FIRST allocation in `allocs` whose own
+    `destination` equals `dest`, leaving every other entry UNCHANGED —
+    `MultiAssetHolder.sol:341-390`'s `compute_reclaim_effects`
+    (`src/nitro`, vendored upstream), the `foundLeft`/`foundRight`-flag
+    loop at `:371-380`: each destination is matched AT MOST ONCE, so a
+    later allocation that happens to share the same destination is left
+    alone. -/
+def creditFirst (allocs : List Allocation) (dest : Term) (amt : Nat) : List Allocation :=
+  match allocs with
+  | [] => []
+  | a :: rest =>
+    if a.destination = dest then { a with amount := a.amount + amt } :: rest
+    else a :: creditFirst rest dest amt
+
 /-- `reclaim`'s effect on the source (ledger) channel's own outcome (S3
     §2.4, Listing 2, "Reclaim": `o_ledger[left] += o_target[0]`;
     `o_ledger[right] += o_target[1]`; `delete o_ledger[targetChannelId]` —
     i.e. drop the guarantee and credit its two reprioritized destinations by
-    the target's first two allocation amounts). Every other asset's exit,
-    and every other allocation of the named asset, is unchanged. -/
+    the target's first two allocation amounts). Each credit lands on the
+    FIRST matching allocation only (`creditFirst`, above) — running `left`
+    then `right` in sequence reproduces `compute_reclaim_effects`'s own
+    SINGLE-PASS `foundLeft`/`foundRight` loop (`MultiAssetHolder.sol:
+    371-380`) exactly, INCLUDING `left = right`: the second pass's own
+    first match is the SAME entry the first pass already credited, so it
+    receives both credits, matching the contract's two separate `if`s on
+    one entry. Every other asset's exit, and every other allocation of
+    the named asset, is unchanged. -/
 def reallocateGuarantee (outcome : Outcome) (assetIndex allocIndex : Nat)
     (left right : Term) (amtLeft amtRight : Nat) : Outcome :=
   outcome.mapIdx fun i exit =>
     if i ≠ assetIndex then exit
     else { exit with
-      allocations :=
-        (exit.allocations.eraseIdx allocIndex).map fun a =>
-          if a.destination = left then { a with amount := a.amount + amtLeft }
-          else if a.destination = right then { a with amount := a.amount + amtRight }
-          else a }
+      allocations := creditFirst (creditFirst (exit.allocations.eraseIdx allocIndex) left amtLeft)
+        right amtRight }
 
 /-!
 ## An outcome derived from an earlier one by `transfer`/`reclaim`
@@ -308,13 +326,17 @@ inductive OutcomeDerivedFrom : Outcome → Outcome → Prop where
       not a free rewrite: `allocIndex` must name a `.guarantee`
       allocation (`guarantee.allocationType = .guarantee`); the credited
       destinations are `decodeGuarantee`'s OWN output on that
-      guarantee's OWN metadata, not independently chosen; and the two
+      guarantee's OWN metadata, not independently chosen; the two
       credited amounts must SUM TO EXACTLY the guarantee's own amount
       (`a0 + a1 = guarantee.amount`, `Operations.lean`'s `.reclaim`
-      case) — so this step can only erase a guarantee ALREADY present
-      in `mid` and redistribute EXACTLY its own amount to the two
-      destinations its OWN metadata names, never an arbitrary allocation
-      or an arbitrary destination/amount. -/
+      case); and EACH destination must match some OTHER allocation
+      already in the list, matching `compute_reclaim_effects`'s own
+      `require(foundLeft)`/`require(foundRight)` (`MultiAssetHolder.sol:
+      385-386`) — so this step can only erase a guarantee ALREADY
+      present in `mid` and redistribute EXACTLY its own amount to two
+      destinations that ALREADY hold an allocation, never an arbitrary
+      allocation, an arbitrary destination/amount, or a destination with
+      nothing to credit. -/
   | reclaimStep {o mid : Outcome} (assetIndex allocIndex : Nat)
       (h1 : assetIndex < mid.length)
       (h2 : allocIndex < (mid.get ⟨assetIndex, h1⟩).allocations.length)
@@ -323,6 +345,12 @@ inductive OutcomeDerivedFrom : Outcome → Outcome → Prop where
       (amtLeft amtRight : Nat)
       (hsum : amtLeft + amtRight =
         ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).amount)
+      (hfoundLeft : ∃ a ∈ ((mid.get ⟨assetIndex, h1⟩).allocations.eraseIdx allocIndex),
+        a.destination = (decodeGuarantee
+          ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).metadata).1)
+      (hfoundRight : ∃ a ∈ ((mid.get ⟨assetIndex, h1⟩).allocations.eraseIdx allocIndex),
+        a.destination = (decodeGuarantee
+          ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).metadata).2)
       (hmid : OutcomeDerivedFrom o mid) :
       OutcomeDerivedFrom o (reallocateGuarantee mid assetIndex allocIndex
         (decodeGuarantee ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).metadata).1
@@ -346,13 +374,16 @@ theorem OutcomeDerivedFrom_cons (head : SingleAssetExit) {rest newRest : Outcome
       heldBefore indices ih
     rw [List.mapIdx_cons] at hstep
     simpa [List.get_cons_succ] using hstep
-  | @reclaimStep mid assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight hsum hmid ih =>
+  | @reclaimStep mid assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight hsum hfoundLeft
+      hfoundRight hmid ih =>
     have h1' : assetIndex + 1 < (head :: mid).length := by simpa using h1
     have h2' : allocIndex < ((head :: mid).get ⟨assetIndex + 1, h1'⟩).allocations.length := by
       simpa [List.get_cons_succ] using h2
     have hstep := OutcomeDerivedFrom.reclaimStep (o := head :: rest) (assetIndex + 1) allocIndex h1' h2'
       (by simpa [List.get_cons_succ] using hguarantee) amtLeft amtRight
-      (by simpa [List.get_cons_succ] using hsum) ih
+      (by simpa [List.get_cons_succ] using hsum)
+      (by simpa [List.get_cons_succ] using hfoundLeft) (by simpa [List.get_cons_succ] using hfoundRight)
+      ih
     unfold reallocateGuarantee at hstep ⊢
     rw [List.mapIdx_cons] at hstep
     simpa [List.get_cons_succ] using hstep
@@ -370,9 +401,11 @@ theorem OutcomeDerivedFrom.trans {o1 o2 o3 : Outcome}
   | refl => exact h12
   | @transferStep mid assetIndex hidx heldBefore indices hmid ih =>
     exact OutcomeDerivedFrom.transferStep assetIndex hidx heldBefore indices ih
-  | @reclaimStep mid assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight hsum hmid ih =>
+  | @reclaimStep mid assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight hsum hfoundLeft
+      hfoundRight hmid ih =>
     exact OutcomeDerivedFrom.reclaimStep assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight
-      hsum ih
+      hsum hfoundLeft hfoundRight ih
+
 
 
 

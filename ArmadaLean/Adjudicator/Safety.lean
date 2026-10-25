@@ -272,8 +272,8 @@ theorem finalized_outcome_was_concluded_or_challenged
           targetAssetIndex claimedTargetStateHash =>
         have hstep2 := hstep
         obtain ⟨hmodeSrc, hohSrc, hsa, hidx1, hguarantee, hrest, _, _, _, _, _, _, _⟩ := hstep
-        obtain ⟨_htgtMode, _htgtSh, _htgtOh, hta, _hassetEq, a0, a1, _hlen2, _ha0, _ha1, hsum,
-          hchan⟩ := hrest
+        obtain ⟨_htgtMode, _htgtSh, _htgtOh, hta, _hassetEq, hfoundLeft, hfoundRight, a0, a1,
+          _hlen2, _ha0, _ha1, hsum, hchan⟩ := hrest
         by_cases hcc : sourceChannelId = cid'
         · subst hcc
           rw [hchan]
@@ -290,12 +290,12 @@ theorem finalized_outcome_was_concluded_or_challenged
             exact Or.inl ⟨fp, candidate, hc, hfi,
               SignedByAll_mono sig appRel actor s1 s2 _ hstep2 fp candidate hsb, _,
               OutcomeDerivedFrom.reclaimStep sourceAssetIndex indexOfTargetInSource hsa hidx1
-                hguarantee a0 a1 hsum hod, rfl⟩
+                hguarantee a0 a1 hsum hfoundLeft hfoundRight hod, rfl⟩
           · have hoeq : o = sourceOutcome := outcomeHashOf_inj (hoh.trans hohSrc)
             rw [hoeq] at hod
             exact Or.inr ⟨fp, proof, candidate, challenger, actor0, s0, s1', hc, hreach0, hstep0, hsh,
               _, OutcomeDerivedFrom.reclaimStep sourceAssetIndex indexOfTargetInSource hsa hidx1
-                hguarantee a0 a1 hsum hod, rfl⟩
+                hguarantee a0 a1 hsum hfoundLeft hfoundRight hod, rfl⟩
         · rw [hchan]
           unfold update
           rw [if_neg (fun h => hcc h.symm)]
@@ -595,7 +595,7 @@ theorem turn_number_record_monotone
   | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
       targetAssetIndex claimedTargetStateHash =>
     obtain ⟨_, _, _, _, _, hrest, _, _, _, _, _, _, _⟩ := hstep
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hchan⟩ := hrest
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hchan⟩ := hrest
     refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
     · rw [hchan]; unfold update; by_cases hcc : cid = sourceChannelId <;> simp [hcc]
     · intro fp proof candidate heq; exact absurd heq (by simp)
@@ -731,8 +731,8 @@ theorem finalization_permanent
       | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
           targetAssetIndex claimedTargetStateHash =>
         obtain ⟨hmodeSrc, hohSrc, hsa, hidx1, hguarantee, hrest, _, _, _, _, hnow, _, _⟩ := hstep
-        obtain ⟨_htgtMode, _htgtSh, _htgtOh, hta, _hassetEq, a0, a1, _hlen2, _ha0, _ha1, hsum,
-          hchan⟩ := hrest
+        obtain ⟨_htgtMode, _htgtSh, _htgtOh, hta, _hassetEq, hfoundLeft, hfoundRight, a0, a1,
+          _hlen2, _ha0, _ha1, hsum, hchan⟩ := hrest
         by_cases hcc : sourceChannelId = cid
         · subst hcc
           have hshEq : (s2.channels sourceChannelId).stateHash = (s1.channels sourceChannelId).stateHash := by
@@ -750,7 +750,7 @@ theorem finalization_permanent
           · have hoeq : o1 = sourceOutcome := outcomeHashOf_inj (hoh1.symm.trans hohSrc)
             rw [hoeq] at hod1
             exact ⟨_, OutcomeDerivedFrom.reclaimStep sourceAssetIndex indexOfTargetInSource hsa hidx1
-              hguarantee a0 a1 hsum hod1, by rw [hchan]; unfold update; rw [if_pos rfl]⟩
+              hguarantee a0 a1 hsum hfoundLeft hfoundRight hod1, by rw [hchan]; unfold update; rw [if_pos rfl]⟩
         · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
       | bulkTransferAllAssets channelId0 outcome claimedStateHash =>
         obtain ⟨hmodeB, _hsh, hohB, newOutcome, hfold, hchan, _, _, hnow, _, _⟩ := hstep
@@ -2682,7 +2682,9 @@ theorem reclaim_can_happen
   let left : Term := (decodeGuarantee guaranteeMetadata).1
   let right : Term := (decodeGuarantee guaranteeMetadata).2
   let guaranteeAlloc : Allocation := ⟨targetChannelId, 2, .guarantee, guaranteeMetadata⟩
-  let sourceOutcome : Outcome := [⟨asset, [guaranteeAlloc]⟩]
+  let allocLeft : Allocation := ⟨left, 0, .simple, 0⟩
+  let allocRight : Allocation := ⟨right, 0, .simple, 0⟩
+  let sourceOutcome : Outcome := [⟨asset, [guaranteeAlloc, allocLeft, allocRight]⟩]
   let alloc0 : Allocation := ⟨left, 1, .simple, 0⟩
   let alloc1 : Allocation := ⟨right, 1, .simple, 0⟩
   let targetOutcome : Outcome := [⟨asset, [alloc0, alloc1]⟩]
@@ -2764,8 +2766,10 @@ theorem reclaim_can_happen
           (reallocateGuarantee sourceOutcome 0 0 left right a0 a1) } }
   have hstep_r : Step sig (consensusRelation sig) (Actor.nitro 0) mid3
       (.reclaim sourceChannelId sourceOutcome 0 0 targetOutcome 0 (Term.val 0)) s' := by
-    refine ⟨hsrc_fin, ?_, hsa, hidx, rfl, ⟨htgt_fin, ?_, ?_, hta, rfl, a0, a1, (by decide),
-      rfl, rfl, (by decide), rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    refine ⟨hsrc_fin, ?_, hsa, hidx, rfl, ⟨htgt_fin, ?_, ?_, hta, rfl,
+      ⟨allocLeft, List.mem_cons_self, rfl⟩,
+      ⟨allocRight, List.mem_cons_of_mem allocLeft List.mem_cons_self, rfl⟩,
+      a0, a1, (by decide), rfl, rfl, (by decide), rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · rw [hsrc_eq]
     · show (mid3.channels targetChannelId).stateHash = Term.val 0
       rw [htgt_eq]
@@ -2782,7 +2786,8 @@ theorem reclaim_can_happen
     intro heq
     have houtcome := outcomeHashOf_inj (congrArg ChannelStatus.outcomeHash heq)
     have : reallocateGuarantee sourceOutcome 0 0 left right a0 a1 = sourceOutcome := houtcome
-    simp [reallocateGuarantee, sourceOutcome, guaranteeAlloc] at this
+    simp [reallocateGuarantee, sourceOutcome, guaranteeAlloc, creditFirst, allocLeft, allocRight] at this
+    split at this <;> simp_all
   exact ⟨assets, self, pool0, mid3, s', sourceChannelId, sourceOutcome, 0, 0, targetOutcome,
     0, Term.val 0, Actor.nitro 0, _root_.Reachable.genesis, hreach4, hstep_r, hneq⟩
 
