@@ -681,6 +681,86 @@ theorem step_signedBy_mono (sig : SignatureAssumptions)
     obtain ⟨_, _, _, _, _, _, _, _, h⟩ := hstep
     rw [h]; exact fun p d hp => hp
 
+/-- `signedBy` at one participant's OWN row is untouched by a `Step`
+    taken under any OTHER identity: only `.sign q d` by actor `.nitro q`
+    itself ever adds to row `q`, and every other call leaves `signedBy`
+    unchanged entirely (`step_signedBy_mono`'s own case list). What
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` need to carry `h`'s
+    own `AuthorizedBy` fact across an `interleaved` sequence that never
+    acts as `h`. -/
+theorem step_signedBy_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hstep : Step sig appRel actor s call s') (q : Nat) (hactor : actor ≠ Actor.nitro q) :
+    s'.signedBy q = s.signedBy q := by
+  cases call with
+  | deposit cid expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h, _⟩ := hstep
+    rw [h]
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h, _⟩ := hstep
+    rw [h]
+  | tick newNow =>
+    obtain ⟨_, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.1]
+  | sign p d =>
+    obtain ⟨hp, h⟩ := hstep
+    rw [h.1]
+    funext d'
+    dsimp only
+    have hpneq : p ≠ q := fun heq => hactor (heq ▸ hp)
+    have hiff : (q = p ∧ d' = d ∨ s.signedBy q d') ↔ s.signedBy q d' := by
+      constructor
+      · rintro (⟨heq, _⟩ | hsb)
+        · exact absurd heq (fun h => hpneq h.symm)
+        · exact hsb
+      · exact Or.inr
+    exact propext hiff
+  | signNote pk msgHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h]
+
+/-- `step_signedBy_frame` across a whole `interleaved` sequence: if no
+    step in it ever acts as `.nitro q`, `q`'s own `signedBy` row is
+    exactly what it was before the sequence ran. -/
+theorem appliesAll_signedBy_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (q : Nat) :
+    ∀ {calls : List (Actor × Call)} {s s' : AdjudicatorState},
+      AppliesAll sig appRel s calls s' →
+      (∀ actor call, (actor, call) ∈ calls → actor ≠ Actor.nitro q) →
+      s'.signedBy q = s.signedBy q
+  | [], s, s', happ, _ => by rw [show s' = s from happ]
+  | (actor, call) :: rest, s, s', happ, hexcl => by
+    obtain ⟨mid, hstep, hrest⟩ := happ
+    have h1 : mid.signedBy q = s.signedBy q :=
+      step_signedBy_frame sig appRel actor s mid call hstep q
+        (hexcl actor call (List.mem_cons_self ..))
+    have h2 : s'.signedBy q = mid.signedBy q :=
+      appliesAll_signedBy_frame sig appRel q hrest
+        (fun actor' call' hc => hexcl actor' call' (List.mem_cons_of_mem _ hc))
+    rw [h2, h1]
+
+
 
 /-- `SignedByAll` carries forward across one more `Step`: `AuthorizedBy`
     is `s.signedBy p d ∨ sig.contractAuthorizes p d` (`State.lean`), and
