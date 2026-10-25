@@ -148,6 +148,40 @@ theorem transferEffects_exit_provenance (allocs : List Allocation) (surplus : Na
   · rw [if_neg hsel] at hfa
     exact absurd hfa (by simp)
 
+/-- `transferEffects`'s `newAllocations` (`.1`) at a SELECTED index is the
+    old amount minus `afford`'s own payout there; at an UNSELECTED index
+    it is the old amount, unchanged — `transfer_pays_only_the_finalized_
+    outcome` (A-01, `Safety.lean`) made explicit per index. -/
+theorem transferEffects_newAllocations_getD (allocs : List Allocation) (surplus : Nat)
+    (indices : List Nat) (i : Nat) (hi : i < allocs.length) :
+    ((transferEffects allocs surplus indices).1.getD i Allocation.default).amount =
+      if indices.isEmpty || i ∈ indices then
+        (allocs.getD i Allocation.default).amount - (afford allocs surplus).getD i 0
+      else (allocs.getD i Allocation.default).amount := by
+  have hlen : (afford allocs surplus).length = allocs.length := afford_length allocs surplus
+  have hrange : (List.range allocs.length)[i]? = some i := List.getElem?_range hi
+  have halloc : allocs[i]? = some (allocs.getD i Allocation.default) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : allocs[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some a => simp
+  have hpaid : (afford allocs surplus)[i]? = some ((afford allocs surplus).getD i 0) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : (afford allocs surplus)[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some p => simp
+  have hzip1 := (List.getElem?_zip_eq_some
+    (z := (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0))).mpr ⟨halloc, hpaid⟩
+  have hzip2 := (List.getElem?_zip_eq_some
+    (z := (i, (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0)))).mpr
+    ⟨hrange, hzip1⟩
+  unfold transferEffects
+  dsimp only
+  rw [List.getD_eq_getElem?_getD, List.getElem?_map, hzip2]
+  simp only [Option.map_some, Option.getD_some]
+  split <;> rfl
+
+
 /-! ## A reusable induction principle over the reachable set -/
 
 /-- A property preserved by every single `Step` holds at every state
