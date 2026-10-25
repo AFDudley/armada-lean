@@ -274,4 +274,30 @@ def reallocateGuarantee (outcome : Outcome) (assetIndex allocIndex : Nat)
           else if a.destination = right then { a with amount := a.amount + amtRight }
           else a }
 
+/-!
+## An outcome derived from an earlier one by `transfer`/`reclaim`
+
+Once a channel is finalized, `.transfer` and `.reclaim`
+(`Operations.lean`) both go on rewriting that channel's OWN
+`outcomeHash`, holding its `stateHash` fixed — a `.transfer` call
+reduces one asset's allocations by `transferEffects`'s own
+`newAllocations`, and a `.reclaim` call replaces an asset's allocations
+via `reallocateGuarantee`. `OutcomeDerivedFrom o o'` says `o'` is `o`,
+or some chain of these two kinds of rewrite away from it —
+`finalized_outcome_was_concluded_or_challenged` (`Safety.lean`) needs
+this to state that a finalized channel's CURRENT outcome need not be
+the signed/challenged outcome ITSELF, only derived from it this way.
+-/
+inductive OutcomeDerivedFrom : Outcome → Outcome → Prop where
+  | refl (o : Outcome) : OutcomeDerivedFrom o o
+  | transferStep {o mid : Outcome} (assetIndex : Nat) (h : assetIndex < mid.length)
+      (heldBefore : Nat) (indices : List Nat) (hmid : OutcomeDerivedFrom o mid) :
+      OutcomeDerivedFrom o
+        (mid.mapIdx fun i exit => if i ≠ assetIndex then exit else
+          { exit with allocations :=
+              (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 })
+  | reclaimStep {o mid : Outcome} (assetIndex allocIndex : Nat) (left right : Term)
+      (amtLeft amtRight : Nat) (hmid : OutcomeDerivedFrom o mid) :
+      OutcomeDerivedFrom o (reallocateGuarantee mid assetIndex allocIndex left right amtLeft amtRight)
+
 end ArmadaLean.Adjudicator
