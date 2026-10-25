@@ -45,6 +45,40 @@ theorem afford_le (allocs : List Allocation) (surplus : Nat) :
     · subst h; exact Nat.min_le_left _ _
     · exact ih (surplus - min a.amount surplus) _ h
 
+/-- `afford_le`, per index: `afford`'s own payout at `k` never exceeds
+    allocation `k`'s own recorded amount — for `k` past the list's own
+    end, both sides read `0` by `getD`'s own default. What A-14 needs to
+    turn `transferEffects`'s own subtraction into a running total that
+    never goes negative. -/
+theorem afford_le_getD (allocs : List Allocation) (surplus : Nat) (k : Nat) :
+    (afford allocs surplus).getD k 0 ≤ (allocs.getD k Allocation.default).amount := by
+  by_cases hk : k < allocs.length
+  · have hlen : (afford allocs surplus).length = allocs.length := afford_length allocs surplus
+    have h1 : allocs[k]? = some (allocs.getD k Allocation.default) := by
+      rw [List.getD_eq_getElem?_getD]
+      cases h : allocs[k]? with
+      | none => rw [List.getElem?_eq_none_iff] at h; omega
+      | some a => simp
+    have h2 : (afford allocs surplus)[k]? = some ((afford allocs surplus).getD k 0) := by
+      rw [List.getD_eq_getElem?_getD]
+      cases h : (afford allocs surplus)[k]? with
+      | none => rw [List.getElem?_eq_none_iff] at h; omega
+      | some p => simp
+    have hzip := (List.getElem?_zip_eq_some
+      (z := (allocs.getD k Allocation.default, (afford allocs surplus).getD k 0))).mpr ⟨h1, h2⟩
+    have hmem : (allocs.getD k Allocation.default, (afford allocs surplus).getD k 0) ∈
+        allocs.zip (afford allocs surplus) := List.mem_iff_getElem?.mpr ⟨k, hzip⟩
+    exact afford_le allocs surplus _ hmem
+  ·
+    have h1 : allocs.getD k Allocation.default = Allocation.default := by
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+    have h2 : (afford allocs surplus).getD k 0 = 0 := by
+      have hlen := afford_length allocs surplus
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+    rw [h1, h2]
+    exact Nat.zero_le _
+
+
 /-! ## Summing a filtered sublist never exceeds summing the whole list -/
 
 /-- Dropping entries from a list never increases the sum of a `Nat`-valued
@@ -180,6 +214,20 @@ theorem transferEffects_newAllocations_getD (allocs : List Allocation) (surplus 
   rw [List.getD_eq_getElem?_getD, List.getElem?_map, hzip2]
   simp only [Option.map_some, Option.getD_some]
   split <;> rfl
+
+/-- `transferEffects`'s `newAllocations` (`.1`) carries one entry per
+    input allocation — `List.range`/`.zip`/`.map` all preserve length,
+    and `afford_length` keeps the zipped `paidAt` list the same length
+    as `allocs`. Lets A-14 handle an index past the list's own end
+    uniformly with `transferEffects_newAllocations_getD`. -/
+theorem transferEffects_newAllocations_length (allocs : List Allocation) (surplus : Nat)
+    (indices : List Nat) :
+    (transferEffects allocs surplus indices).1.length = allocs.length := by
+  unfold transferEffects
+  dsimp only
+  rw [List.length_map, List.length_zip, List.length_zip, List.length_range,
+    afford_length allocs surplus]
+  omega
 
 
 /-! ## A reusable induction principle over the reachable set -/
