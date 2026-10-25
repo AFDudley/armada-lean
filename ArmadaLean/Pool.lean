@@ -484,7 +484,7 @@ structure PoolState where
     kept apart so a one-step claim about this sum does not silently lean on
     reachability to hold. -/
 def PoolState.notedValue (s : PoolState) (token : Nat) : Nat :=
-  listSum ((s.live token).map CommitmentPreimage.value)
+  listSum ((s.live token).map (fun p => p.2.value))
 
 /-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
     which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): no leaves, no

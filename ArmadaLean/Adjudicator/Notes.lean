@@ -6,7 +6,7 @@
   and their safety theorems (the core invariant, no double spend, preimage
   consistency, ownership binding, value conservation from a real,
   shape-bounded circuit witness) — lives in the root `ArmadaLean.Pool`/
-  `ArmadaLean.PoolSafety` modules (branch `pool-model`, commit `af91ab2`).
+  `ArmadaLean.PoolSafety` modules (branch `pool-model`, commit `5d8a5f7`).
   The adjudicator is an ORDINARY caller of that pool: it defines no pool
   state, no live-note ledger and no preimage registry of its own.
   `AdjudicatorState` (`State.lean`) embeds `ArmadaLean.PoolState` directly.
@@ -15,30 +15,54 @@
   adjudicator uses, each an instance of `ArmadaLean.Pool`'s own
   `Step.transact`/`Step.transactOwned` SHAPE (same witness fields, same
   `N ≤ 8`/`M ≤ 4` registered-circuit bound, same `removeAll`/`markSpent`/
-  `applyRecords` bookkeeping, via `ArmadaLean.transactSpentNotes`/
-  `transactAllOutputs`/`ownedSpentNotes`/`ownedNewNotes`): the adjudicator
-  derives no SEPARATE balance or removal rule of its own; it builds the
-  exact pool state `Step.transact`/`Step.transactOwned` would produce for
-  the SAME witness, so every pool-level fact about that constructor
-  (`transact_balance`, `transactOwned_balance`, `transact_spends_only_
-  owned`) applies unchanged — the adjudicator never re-derives, and never
-  separately trusts, a balance or removal fact the pool step already
-  proves from the witness alone. Neither `DepositStep` nor
+  `applyRecords`/`applyOwnedRecords` bookkeeping, via `ArmadaLean.
+  transactSpentPositions`/`transactAllOutputs`/`ownedSpentPositions`/
+  `ownedNewNotes`): the adjudicator derives no SEPARATE balance or removal
+  rule of its own; it builds the exact pool state `Step.transact`/`Step.
+  transactOwned` would produce for the SAME witness, so every pool-level
+  fact about that constructor (`transact_balance`, `transactOwned_balance`,
+  `transact_spends_only_owned`) applies unchanged. Neither `DepositStep` nor
   `PoolOwnedSpendStep`/`DepositMergeStep` carries a pause check any more:
   `pool-model`'s `30d7a65` removed the owner's power to block a spend —
   `Step.transact`/`Step.transactOwned` take no `emergencyPaused`/
-  `withdrawOnlyMode` condition (those two fields no longer exist on
-  `PoolState` at all; `shieldsPaused` gates `Step.shield` alone).
+  `withdrawOnlyMode` condition.
+
+  A note is identified by its Merkle LEAF POSITION, not by its content
+  (`Pool.lean`'s module comment): the circuit derives a spend's nullifier
+  from the leaf position a proof names, never from a scan for a matching
+  value, and two live notes can carry the identical preimage without ever
+  sharing a position. `AdjudicatorState.holdings` (`State.lean`) follows the
+  same rule: a channel's holding names exactly one note by its leaf
+  position, with the commitment carried alongside as a check. `DepositStep`
+  reports the position its own output landed at (`before.leaves.length +
+  idx`, the exact position `withPositionsFrom` tags it with);
+  `PoolOwnedSpendStep`'s "some" branch nullifies the position a holding
+  already names, and reports the position its own merged/remainder output
+  lands at, the same way.
 
   Commitments, note public keys (`npk`) and Merkle roots are `Term`s
-  (`ArmadaLean.Poseidon`, the symbolic Dolev-Yao hash model `pool-model`'s
-  `af91ab2` introduced); `self`/`token`/`amount` stay plain `Nat`s. The
-  adjudicator's own note key, wherever this file mints one, is `npk
-  (Term.val self) r` — `self` is a raw address, embedded `Term.val` before
-  hashing, exactly the convention `ArmadaLean.TransactOwned`'s own
-  `ownerField` uses (`TransactOwned.lean`'s `user_npk_ne_contract_npk`,
-  which separates a user's hash-rooted `npk` from a contract's value-rooted
-  one, rests on this).
+  (`ArmadaLean.Poseidon`, the symbolic Dolev-Yao hash model); `self`/
+  `token`/`amount` stay plain `Nat`s. The adjudicator's own note key,
+  wherever this file mints one, is `npk (Term.val self) r` — `self` is a
+  raw address, embedded `Term.val` before hashing, exactly the convention
+  `ArmadaLean.TransactOwned`'s own `ownerField` uses (`TransactOwned.lean`'s
+  `user_npk_ne_contract_npk`, which separates a user's hash-rooted `npk`
+  from a contract's value-rooted one, rests on this).
+
+  `DepositStep` DISCLOSES its own output as contract-owned, through the
+  pool's `ownedRecords` (`Step.transact`'s approved-design optional extra,
+  `Pool.lean`'s module comment on `OwnedDisclosure`): the random `r` its own
+  `∃r, w.npkOut idx = npk (Term.val self) r` existential names is exactly
+  what `ownedRecords` supplies, alongside `self` as the owner field — this
+  is what later lets `ArmadaLean.owned_spend_witness_exists` reconstruct a
+  spend witness for this note from public data alone
+  (`ArmadaLean.PoolSafety.pool_ownedRandomOf_consistent`), with no secret
+  carried by this theorem's own hypotheses. `PoolOwnedSpendStep`'s own
+  `transactOwned` call discloses every output this way UNCONDITIONALLY
+  (the pool's own `requireAll = true` rule for the owned path), so every
+  note the adjudicator ever holds — fresh from a deposit, or minted by a
+  merge or a transfer's own remainder — is contract-owned on the public
+  record from the moment it is minted.
 
   Naming the witness explicitly — not hiding behind an opaque `Pool.Step`
   hypothesis — is what lets a deposit's OWN condition (the adjudicator-
@@ -49,9 +73,7 @@
   `.deposit` could be satisfied by a value-creating `shield` instead.
   `DepositStep`'s witness obeys the registered-shape bound (`hN : N ≤ 8`,
   `hM : M ≤ 4`) the pool's own `transact_value_conserved`/`transact_
-  balance` need — the old unbounded `∃ N M` (an earlier revision of this
-  file) is what made `notedValue_conserved`'s `.deposit` case unprovable;
-  the bound closes that gap.
+  balance` need.
 
   `PoolOwnedSpendStep`'s own adjudicator condition is that the witness's
   own outputs (`ArmadaLean.ownedNewNotes w`) ARE EXACTLY the payout notes
@@ -69,17 +91,18 @@
   `Operations.lean`'s own `remainder`/`totalPayouts` construction) AND the
   circuit's balance (whose total is the spent note's TRUE Merkle-tree
   value) — the step would simply not exist, which is the safe outcome,
-  not a fact this file needs to assume. -/
+  not a fact this file needs to assume.
+-/
 import ArmadaLean.PoolSafety
 
 namespace ArmadaLean.Adjudicator
 
-/-- `c` is currently a live (unspent) note of some token: the pool's own
-    ghost bookkeeping (`PoolState.live`, `Pool.lean`) records a preimage
-    for it. The adjudicator-level reading of "a channel's holding is a
-    note the pool still backs". -/
+/-- `c` is currently a live (unspent) note of some token at some leaf
+    position: the pool's own ghost bookkeeping (`PoolState.live`,
+    `Pool.lean`) records a preimage for it. The adjudicator-level reading
+    of "a channel's holding is a note the pool still backs". -/
 def PoolIsLive (s : PoolState) (c : Term) : Prop :=
-  ∃ t pre, pre ∈ s.live t ∧ hashCommitment pre = c
+  ∃ t pos pre, (pos, pre) ∈ s.live t ∧ hashCommitment pre = c
 
 /-!
 ## Deposit: a plain, EdDSA-signed spend with one contract-owned output
@@ -87,47 +110,59 @@ def PoolIsLive (s : PoolState) (c : Term) : Prop :=
 Builds exactly the pool state `ArmadaLean.Step.transact` (`Pool.lean`)
 produces for this witness, with `unshieldTail := []` (a plain funding
 deposit keeps every output live; no unshield payout) — naming which one
-of its outputs is the adjudicator's own. `npk` derivation reuses
-`ArmadaLean.TransactOwned`'s own formula, `npk[i] = Poseidon(ownerField,
-randomIn[i])` (`TransactOwned.circom:66-70`) — the same derivation
-`transactOwned`'s owner uses. -/
+of its outputs is the adjudicator's own, at which leaf position. `npk`
+derivation reuses `ArmadaLean.TransactOwned`'s own formula, `npk[i] =
+Poseidon(ownerField, randomIn[i])` (`TransactOwned.circom:66-70`) — the
+same derivation `transactOwned`'s owner uses.
+-/
 
 /-- One adjudicator-funding `pool.transact` call: the depositor's own
     `N`-note, EdDSA-signed spend (`ArmadaLean.Constrained`, the base
     circuit, registered-shape bound `hN`/`hM` — `ArmadaLean.Pool.
     Step.transact`'s own bound), with one of its `M` outputs disclosed as
     a preimage owned by `self` (the adjudicator), on `token`, worth
-    `amount`. Every other output (private change) is also recorded,
-    matching `Step.transact`'s own effect: all `M` outputs join the
-    pool's live set, not only the adjudicator's own. `records` is a
-    sublist of `ArmadaLean.transactOutputRecords w pub` — `Step.
-    transact`'s own convention, now that the pool models `_validate
-    PublicOutputs(requireAll = false)` exactly — which already gives
-    `hashCommitment` correctness for every disclosed entry
+    `amount`, landing at leaf position `position`. Every other output
+    (private change) is also recorded, matching `Step.transact`'s own
+    effect: all `M` outputs join the pool's live set, each at its own
+    sequential position (`ArmadaLean.withPositionsFrom`), not only the
+    adjudicator's own. `records` is a sublist of `ArmadaLean.
+    transactOutputRecords w pub` — `Step.transact`'s own convention — which
+    already gives `hashCommitment` correctness for every disclosed entry
     (`ArmadaLean.transactOutputRecords_valid`), no separate hypothesis
     needed. The adjudicator's OWN output's preimage MUST itself be in
-    `records` (`holdings_never_zero_valued`'s own invariant needs this
-    to read a value back at all — the pool's own per-output disclosure
-    is OPTIONAL, but the adjudicator cannot read back a holding it
-    never asked the pool to publish). -/
+    `records` (`holdings_never_zero_valued`'s own invariant needs this to
+    read a value back at all), and this output is ADDITIONALLY disclosed
+    as contract-owned through `ownedRecords`, with the same random `r` the
+    holding's own `npk` names — this is what lets
+    `ArmadaLean.owned_spend_witness_exists` build a later spend witness
+    for it from public data alone. -/
 def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M) (idx : Fin M)
-    (after : PoolState) : Prop :=
-  (∃ r, w.npkOut idx = npk (Term.val self) r) ∧
+    (position : Nat) (after : PoolState) : Prop :=
+  ∃ r, w.npkOut idx = npk (Term.val self) r ∧
   pub.commitmentsOut idx = commitment (w.npkOut idx) token amount ∧
   w.token = token ∧
+  position = before.leaves.length + idx.val ∧
   ∃ (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
-    (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Term)
-    (records : List (Term × CommitmentPreimage)),
+    (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
+    (records : List (Term × CommitmentPreimage))
+    (hCapacity : before.leaves.length + M ≤ 2 ^ TreeDepth),
     pub.merkleRoot ∈ before.roots ∧
-    removeAll (before.live w.token) (transactSpentNotes w) = some rest ∧
+    removeAll (before.live w.token) (transactSpentPositions w) = some rest ∧
     markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
     records.Sublist (transactOutputRecords w pub) ∧
     (pub.commitmentsOut idx, (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage)) ∈ records ∧
     after = { before with
-      live := fun t => if t = w.token then transactAllOutputs w ++ rest else before.live t,
+      live := fun t => if t = w.token
+        then withPositionsFrom before.leaves.length (transactAllOutputs w) ++ rest
+        else before.live t,
       spent := spent',
-      preimageOf := applyRecords before.preimageOf records }
+      leaves := before.leaves ++ (transactAllOutputs w).map hashCommitment,
+      roots := treeRoot TreeDepth (before.leaves ++ (transactAllOutputs w).map hashCommitment) ::
+        before.roots,
+      preimageOf := applyRecords before.preimageOf records,
+      ownedRandomOf := applyOwnedRecords before.ownedRandomOf
+        [(pub.commitmentsOut idx, (⟨self, r⟩ : OwnedDisclosure))] }
 
 /-- LIVENESS ASSUMPTION (EdDSA completeness, pool layer) — assumed, not
     proven. `eddsaCompleteness` says: if an execution's own ghost signing
@@ -152,72 +187,99 @@ structure PoolSignatureLiveness where
 ones (the adjudicator, as an ORDINARY caller of `ArmadaLean.PoolOwned`)
 
 Builds exactly the pool state `ArmadaLean.Step.transactOwned` (`Pool.lean`)
-produces for this witness: no unshield, every output mandatory. The
-adjudicator's OWN condition is that the witness's own outputs
-(`ownedNewNotes w`) ARE EXACTLY the payout notes and remainder note its
-own rule computed (`outputPreimages`) — see this file's module comment for
-why this is what lets `notedValue_conserved` hold with no separate trust
-in `heldValue`'s own accuracy. -/
+produces for this witness: no unshield, every output mandatory, every
+output disclosed contract-owned through `ownedRandomOf`. The adjudicator's
+OWN condition is that the witness's own outputs (`ownedNewNotes w`) ARE
+EXACTLY the payout notes and remainder note its own rule computed
+(`outputPreimages`) — see this file's module comment for why this is what
+lets `notedValue_conserved` hold with no separate trust in `heldValue`'s
+own accuracy.
+-/
 
-/-- One adjudicator-initiated `pool.transactOwned` call: nullifies at most
-    one of the adjudicator's own previously-owned commitments and mints
-    exactly `outputPreimages`, read off the circuit's own witness
-    (`ArmadaLean.ownedNewNotes`). Requires the pool's OWN owner-
+/-- One adjudicator-initiated `pool.transactOwned` call: nullifies, by leaf
+    position, at most one of the adjudicator's own previously-owned
+    commitments and mints exactly `outputPreimages`, read off the
+    circuit's own witness (`ArmadaLean.ownedNewNotes`), landing at
+    sequential positions starting at `before.leaves.length`
+    (`ArmadaLean.withPositionsFrom`). Requires the pool's OWN owner-
     authorization convention (`self = ArmadaLean.addressOf pub.ownerField`,
     matching `ArmadaLean.owned_owner_binding`'s `caller = addressOf
     ownerField`) and the registered-shape bound (`hM`,
     `ArmadaLean.transactOwned_value_conserved`'s own requirement) — the
     adjudicator supplies no mechanism and no arithmetic of its own.
-    `removeAll` (`Pool.lean`) removes the nullified note by its own
-    preimage value (`ArmadaLean.ownedSpentNotes`), matching the Merkle-
-    membership fact `OwnedConstrained.merkle` already names. Every output's
-    preimage is disclosed (`preimageOf`'s own update): `transactOwned`'s
-    `_validatePublicOutputs(requireAll = true)` (`Pool.lean`'s own
-    `Step.transactOwned` comment) makes this MANDATORY, not optional like
-    a plain `transact`'s, so the registry update is fixed to
-    `ArmadaLean.ownedOutputRecords w pub` directly — the pool's own
-    batch, not a separately-asserted list. `hNonZero` carries the same
-    check's rejection of a zero preimage (`Step.transactOwned`'s own
-    hypothesis); `ArmadaLean.transactOwned_records_all` is what lets
-    `holdings_never_zero_valued` read each output's own preimage back,
-    with no bespoke `applyRecords` argument needed here. `nullifiedCommitment`,
-    when `some c`, is a `Term` — the commitment being spent. -/
+    `removeAll` (`Pool.lean`) removes the nullified note by its own leaf
+    position (`ArmadaLean.ownedSpentPositions`), matching the Merkle-
+    membership fact `OwnedConstrained.merkle` already names; the "some"
+    branch's `hPos` ties the witness's own `leavesIndices 0` to the
+    position the caller names. Every output's preimage is disclosed
+    (`preimageOf`'s own update): `transactOwned`'s `_validatePublicOutputs
+    (requireAll = true)` (`Pool.lean`'s own `Step.transactOwned` comment)
+    makes this MANDATORY, matching `ArmadaLean.ownedOutputRecords w pub`
+    directly. `randomOut`/`hRandomOut` are the matching mandatory
+    `ownedRandomOf` disclosure (`Step.transactOwned`'s own hypotheses) —
+    every note this call mints is contract-owned on the public record from
+    the moment it exists. `hNonZero` carries the same check's rejection of
+    a zero preimage; `ArmadaLean.transactOwned_records_all` is what lets
+    `holdings_never_zero_valued` read each output's own preimage back.
+    `nullified`, when `some (pos, c)`, names both the position and the
+    commitment being spent — the commitment is a check against the
+    holding's own recorded value. -/
 def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
-    (nullifiedCommitment : Option Term) (outputPreimages : List CommitmentPreimage)
+    (nullified : Option (Nat × Term)) (outputPreimages : List CommitmentPreimage)
     (after : PoolState) : Prop :=
-  match nullifiedCommitment with
+  match nullified with
   | none =>
     ∃ (w : TransactOwnedWitness 0 outputPreimages.length)
       (pub : TransactOwnedPublic 0 outputPreimages.length)
       (hM : outputPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
-      (spent' : NullifierSet) (newRoot : Term)
-      (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
+      (spent' : NullifierSet) (randomOut : Fin outputPreimages.length → Nat)
+      (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+      (hCapacity : before.leaves.length + outputPreimages.length ≤ 2 ^ TreeDepth),
       self = addressOf pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputPreimages ∧
       pub.merkleRoot ∈ before.roots ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
+      (∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j) ∧
       after = { before with
-        live := fun t => if t = token then outputPreimages ++ before.live t else before.live t,
+        live := fun t => if t = token
+          then withPositionsFrom before.leaves.length outputPreimages ++ before.live t
+          else before.live t,
         spent := spent',
-        preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub) }
-  | some c =>
+        leaves := before.leaves ++ outputPreimages.map hashCommitment,
+        roots := treeRoot TreeDepth (before.leaves ++ outputPreimages.map hashCommitment) ::
+          before.roots,
+        preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
+        ownedRandomOf := applyOwnedRecords before.ownedRandomOf
+          (List.ofFn fun j => (pub.commitmentsOut j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) }
+  | some (pos, c) =>
     ∃ (w : TransactOwnedWitness 1 outputPreimages.length)
       (pub : TransactOwnedPublic 1 outputPreimages.length)
       (hM : outputPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
-      (rest : List CommitmentPreimage) (spent' : NullifierSet) (newRoot : Term)
-      (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
+      (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
+      (randomOut : Fin outputPreimages.length → Nat)
+      (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+      (hCapacity : before.leaves.length + outputPreimages.length ≤ 2 ^ TreeDepth),
       self = addressOf pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputPreimages ∧
+      w.leavesIndices 0 = pos ∧
       commitment (npk (Term.val pub.ownerField) (w.randomIn 0)) w.token (w.valueIn 0) = c ∧
       pub.merkleRoot ∈ before.roots ∧
-      removeAll (before.live token) (ownedSpentNotes pub w) = some rest ∧
+      removeAll (before.live token) (ownedSpentPositions pub w) = some rest ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
+      (∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j) ∧
       after = { before with
-        live := fun t => if t = token then outputPreimages ++ rest else before.live t,
+        live := fun t => if t = token
+          then withPositionsFrom before.leaves.length outputPreimages ++ rest
+          else before.live t,
         spent := spent',
-        preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub) }
+        leaves := before.leaves ++ outputPreimages.map hashCommitment,
+        roots := treeRoot TreeDepth (before.leaves ++ outputPreimages.map hashCommitment) ::
+          before.roots,
+        preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
+        ownedRandomOf := applyOwnedRecords before.ownedRandomOf
+          (List.ofFn fun j => (pub.commitmentsOut j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) }
 
 /-!
 ## Deposit top-up: merge the old holding with a fresh deposit note
@@ -226,43 +288,55 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
 holding with a fresh note worth only the new `amount` (that would discard
 the prior value — see `Lemmas.lean`'s `deposit_sets_heldValue`), nor let the
 two notes sit side by side (`AdjudicatorState.holdings` names at most one
-commitment per `(asset, channelId)`). When a channel already holds a note,
-a top-up MERGES the old holding and the fresh deposit note into one note of
+note per `(asset, channelId)`). When a channel already holds a note, a
+top-up MERGES the old holding and the fresh deposit note into one note of
 their sum, via `ArmadaLean.Pool.Step.transactOwned` with `N = 2` nullified
 inputs and `M = 1` minted output.
 -/
 
 /-- One `pool.transactOwned` merge call: nullifies the channel's old
-    holding note and the freshly deposited note (`oldHolding`/`newNote`,
-    their commitments — `Term`s), and mints exactly one merged note,
-    `merged` (also a `Term`), read off the circuit's own public output
-    (`DepositStep`'s own convention for its deposit note, not a
-    separately-asserted value). The pool's own balance check
-    (`OwnedConstrained.balance`, `ArmadaLean.transactOwned_value_
-    conserved`) ties `merged`'s value to the sum of the two spent notes'
-    true Merkle-tree values — no separate arithmetic hypothesis is needed
-    here for that. `npk = npk (Term.val self) r` for some secret `r`: the
-    same convention `DepositStep`'s own holding note uses, since this is
-    still a deposit-side note, not `.transfer`'s remainder (`npk =
-    Term.val self` directly). -/
+    holding note (at leaf position `oldPos`, commitment `oldHolding`) and
+    the freshly deposited note (at leaf position `newPos`, commitment
+    `newNote`), and mints exactly one merged note, `merged` (a `Term`),
+    at leaf position `mergedPos`, read off the circuit's own public
+    output. The pool's own balance check (`OwnedConstrained.balance`,
+    `ArmadaLean.transactOwned_value_conserved`) ties `merged`'s value to
+    the sum of the two spent notes' true Merkle-tree values. `npk = npk
+    (Term.val self) r` for some secret `r`: the same convention
+    `DepositStep`'s own holding note uses, since this is still a
+    deposit-side note, not `.transfer`'s remainder (`npk = Term.val self`
+    directly). -/
 def DepositMergeStep (before : PoolState) (self token : Nat)
-    (oldHolding newNote merged : Term) (after : PoolState) : Prop :=
+    (oldPos : Nat) (oldHolding : Term) (newPos : Nat) (newNote : Term)
+    (merged : Term) (mergedPos : Nat) (after : PoolState) : Prop :=
+  mergedPos = before.leaves.length ∧
   ∃ (w : TransactOwnedWitness 2 1) (pub : TransactOwnedPublic 2 1)
     (hC : OwnedConstrained w pub)
-    (rest : List CommitmentPreimage) (spent' : NullifierSet) (r : Nat)
-    (hNonZero : ¬ isZeroPreimage (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage)),
+    (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet) (r randomOut : Nat)
+    (hNonZero : ¬ isZeroPreimage (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage))
+    (hCapacity : before.leaves.length + 1 ≤ 2 ^ TreeDepth),
     self = addressOf pub.ownerField ∧
     w.token = token ∧
     w.npkOut 0 = npk (Term.val self) r ∧
     merged = pub.commitmentsOut 0 ∧
+    w.leavesIndices 0 = oldPos ∧
+    w.leavesIndices 1 = newPos ∧
     commitment (npk (Term.val pub.ownerField) (w.randomIn 0)) w.token (w.valueIn 0) = oldHolding ∧
     commitment (npk (Term.val pub.ownerField) (w.randomIn 1)) w.token (w.valueIn 1) = newNote ∧
     pub.merkleRoot ∈ before.roots ∧
-    removeAll (before.live token) (ownedSpentNotes pub w) = some rest ∧
+    removeAll (before.live token) (ownedSpentPositions pub w) = some rest ∧
     markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
+    npk (Term.val pub.ownerField) randomOut = w.npkOut 0 ∧
     after = { before with
-      live := fun t => if t = token then (ownedNewNotes w) ++ rest else before.live t,
+      live := fun t => if t = token
+        then withPositionsFrom before.leaves.length (ownedNewNotes w) ++ rest
+        else before.live t,
       spent := spent',
-      preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub) }
+      leaves := before.leaves ++ (ownedNewNotes w).map hashCommitment,
+      roots := treeRoot TreeDepth (before.leaves ++ (ownedNewNotes w).map hashCommitment) ::
+        before.roots,
+      preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
+      ownedRandomOf := applyOwnedRecords before.ownedRandomOf
+        [(pub.commitmentsOut 0, (⟨pub.ownerField, randomOut⟩ : OwnedDisclosure))] }
 
 end ArmadaLean.Adjudicator

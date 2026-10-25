@@ -508,21 +508,23 @@ theorem notedValue_conserved
   cases call with
   | deposit cid expectedHeld asset amount =>
     obtain ⟨_hcfg1, _hheld, _hext, _hpos, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨N, M, w, pub, idx, midPool, hdstep, hmatch⟩ := hinner
-    obtain ⟨_hown, _hcommit, _htoken, hN, hM, hC, rest, spent', newRoot, records,
-      _hRoot, hRemove, _hNullify, _hValid, _hidxrec, heq⟩ := hdstep
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+    obtain ⟨_r, _hown, _hcommit, _htoken, _hposition, hN, hM, hC, rest, spent', records, _hCapacity,
+      _hRoot, hRemove, _hNullify, _hSublist, _hidxrec, heq⟩ := hdstep
     have hmidConserved : midPool.notedValue token = s.pool.notedValue token := by
       unfold PoolState.notedValue
       rw [heq]
-      show listSum ((if token = w.token then transactAllOutputs w ++ rest else s.pool.live token).map
-          CommitmentPreimage.value) = listSum ((s.pool.live token).map CommitmentPreimage.value)
+      show listSum ((if token = w.token then
+          withPositionsFrom s.pool.leaves.length (transactAllOutputs w) ++ rest
+          else s.pool.live token).map (fun p => p.2.value)) =
+        listSum ((s.pool.live token).map (fun p => p.2.value))
       by_cases ht : token = w.token
       · rw [if_pos ht, ht]
         have hbal := transact_balance hN hM hC (newNotes := transactAllOutputs w)
           (unshieldTail := []) (by simp)
         simp only [List.map_nil, listSum] at hbal
-        have hsum := removeAll_sum hRemove
-        simp only [List.map_append, listSum_append]
+        have hsum := removeAll_sum (fun p => p.2.value) hRemove
+        simp only [List.map_append, listSum_append, withPositionsFrom_map]
         omega
       · rw [if_neg ht]
     rcases hh : s.holdings asset cid with _ | oldHolding
@@ -530,20 +532,24 @@ theorem notedValue_conserved
       obtain ⟨hpoolEq, _⟩ := hmatch
       rw [hpoolEq]
       exact hmidConserved
-    · rw [hh] at hmatch
-      obtain ⟨merged, hmerge, _⟩ := hmatch
-      obtain ⟨w', pub', hC', rest', spent'', r', hNonZero', hown', htoken', hnpkOut',
-        hmergedEq, hcommitOld, hcommitNew, hroot', hremove', hnullify', heq'⟩ := hmerge
+    · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
+      rw [hh] at hmatch
+      obtain ⟨merged, mergedPos, hmerge, _⟩ := hmatch
+      obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r', randomOut', hNonZero', hCapacity',
+        hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
+        hremove', hnullify', _hrandomOut', heq'⟩ := hmerge
       have hmergeConserved : s'.pool.notedValue token = midPool.notedValue token := by
         unfold PoolState.notedValue
         rw [heq']
-        show listSum ((if token = asset then (ownedNewNotes w') ++ rest' else midPool.live token).map
-            CommitmentPreimage.value) = listSum ((midPool.live token).map CommitmentPreimage.value)
+        show listSum ((if token = asset then
+            withPositionsFrom midPool.leaves.length (ownedNewNotes w') ++ rest'
+            else midPool.live token).map (fun p => p.2.value)) =
+          listSum ((midPool.live token).map (fun p => p.2.value))
         by_cases ht : token = asset
         · rw [if_pos ht, ht]
           have hbal := transactOwned_balance (by decide) (by decide) hC'
-          have hsum := removeAll_sum hremove'
-          simp only [List.map_append, listSum_append] at hsum ⊢
+          have hsum := removeAll_sum (fun p => p.2.value) hremove'
+          simp only [List.map_append, listSum_append, withPositionsFrom_map] at hsum ⊢
           omega
         · rw [if_neg ht]
       rw [hmergeConserved]
@@ -556,13 +562,13 @@ theorem notedValue_conserved
     by_cases ht : token = (outcome.get ⟨assetIndex, hidx⟩).asset
     · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
-          _hroot, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+          hnewnotes, _hroot, _hmarkspent, _hRandomOut, heq⟩ := hmatch
         have hbal := transactOwned_balance (Nat.zero_le 8) hM hC
-        have hspent0 : listSum ((ownedSpentNotes pub w).map CommitmentPreimage.value) = 0 := by
-          have hnil : ownedSpentNotes pub w = [] := by
+        have hspent0 : listSum ((ownedSpentPositions pub w).map (fun p => p.2.value)) = 0 := by
+          have hnil : ownedSpentPositions pub w = [] := by
             apply List.eq_nil_of_length_eq_zero
-            unfold ownedSpentNotes
+            unfold ownedSpentPositions
             simp
           rw [hnil]; rfl
         rw [hspent0] at hbal
@@ -570,35 +576,35 @@ theorem notedValue_conserved
         dsimp only
         rw [← hnewnotes]
         rw [if_pos ht, ht]
-        simp only [List.map_append, listSum_append]
+        simp only [List.map_append, listSum_append, withPositionsFrom_map]
         omega
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
-          _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+          hnewnotes, _hleaf0, _hceq, _hroot, hremove, _hmarkspent, _hRandomOut, heq⟩ := hmatch
         have hbal := transactOwned_balance (by decide) hM hC
-        have hsum := removeAll_sum hremove
+        have hsum := removeAll_sum (fun p => p.2.value) hremove
         rw [heq]
         dsimp only
         rw [← hnewnotes]
         rw [if_pos ht, ht]
-        simp only [List.map_append, listSum_append] at hsum ⊢
+        simp only [List.map_append, listSum_append, withPositionsFrom_map] at hsum ⊢
         omega
     · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
-          _hroot, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+          hnewnotes, _hroot, _hmarkspent, _hRandomOut, heq⟩ := hmatch
         rw [heq]
         show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
-            else s.pool.live token).map CommitmentPreimage.value) =
-          listSum ((s.pool.live token).map CommitmentPreimage.value)
+            else s.pool.live token).map (fun p => p.2.value)) =
+          listSum ((s.pool.live token).map (fun p => p.2.value))
         rw [if_neg ht]
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, hnewnotes,
-          _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+          hnewnotes, _hleaf0, _hceq, _hroot, hremove, _hmarkspent, _hRandomOut, heq⟩ := hmatch
         rw [heq]
         show listSum ((if token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
-            else s.pool.live token).map CommitmentPreimage.value) =
-          listSum ((s.pool.live token).map CommitmentPreimage.value)
+            else s.pool.live token).map (fun p => p.2.value)) =
+          listSum ((s.pool.live token).map (fun p => p.2.value))
         rw [if_neg ht]
   | challenge fp proof candidate challenger =>
     obtain ⟨_, _, _, _, _, hpool, _, _, _, _, _⟩ := hstep

@@ -142,19 +142,19 @@ def Step (sig : SignatureAssumptions)
       ¬ isExternal channelId ∧
       0 < amount ∧
       (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
-          (idx : Fin M) (midPool : PoolState),
-        DepositStep s.pool s.self asset amount w pub idx midPool ∧
+          (idx : Fin M) (position : Nat) (midPool : PoolState),
+        DepositStep s.pool s.self asset amount w pub idx position midPool ∧
         (match s.holdings asset channelId with
          | none =>
            s'.pool = midPool ∧
            s'.holdings = update s.holdings asset
-             (update (s.holdings asset) channelId (some (pub.commitmentsOut idx)))
-         | some oldHolding =>
-           ∃ merged : Term,
-             DepositMergeStep midPool s.self asset oldHolding (pub.commitmentsOut idx)
-               merged s'.pool ∧
+             (update (s.holdings asset) channelId (some (position, pub.commitmentsOut idx)))
+         | some (oldPos, oldHolding) =>
+           ∃ (merged : Term) (mergedPos : Nat),
+             DepositMergeStep midPool s.self asset oldPos oldHolding position
+               (pub.commitmentsOut idx) merged mergedPos s'.pool ∧
              s'.holdings = update s.holdings asset
-               (update (s.holdings asset) channelId (some merged)))) ∧
+               (update (s.holdings asset) channelId (some (mergedPos, merged))))) ∧
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
       s'.self = s.self ∧
@@ -323,7 +323,8 @@ def Step (sig : SignatureAssumptions)
         s'.holdings = update s.holdings assetOutcome.asset
           (update (s.holdings assetOutcome.asset) cid
             (if remainder = 0 then none
-             else some (commitment (Term.val s.self) assetOutcome.asset remainder))) ∧
+             else some (s.pool.leaves.length + outputs.length - 1,
+               commitment (Term.val s.self) assetOutcome.asset remainder))) ∧
         s'.channels = update s.channels cid
           { s.channels cid with
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
