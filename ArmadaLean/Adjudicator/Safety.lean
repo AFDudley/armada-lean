@@ -1469,7 +1469,11 @@ caller can BLOCK another caller's operation, only interleave with it.
     unspendable by anyone. "Getting money owed" is a live note in the
     pool, matching this model's note-based payment (`Notes.lean`): `h`
     can later spend it with their own key, which is the Armada-layer
-    meaning of "paid" — the armada-nitro rule (`State.lean`). -/
+    meaning of "paid" — the armada-nitro rule (`State.lean`). `0 < x`:
+    a zero payment carries no content, and no call mints a note for a
+    zero payout (`zero_payout_mints_nothing`), so `x = 0` would need a
+    DIFFERENT, pre-existing note at `dest.destination` no hypothesis
+    here supplies. -/
 theorem unbeatable_pays
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -1488,6 +1492,7 @@ theorem unbeatable_pays
       a.allocationType ≠ .guarantee)
     (pk : Nat × Nat) (nk : Nat) (r : Nat)
     (hh_dest : dest.destination = npk (masterPublicKey pk nk) r)
+    (hxpos : 0 < x)
     (haffordable : x ≤ (afford (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations
       (heldValue s (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))).getD destIdx 0)
     (hhonest : ∀ candidate', candidate'.isFinal = true →
@@ -1529,7 +1534,9 @@ theorem unbeatable_pays
     adversary finalizing the channel early, by `.conclude`, with a
     DIFFERENT final state `h` once signed. The payout note's own key is
     restated the same way `unbeatable_pays` restates it, for the same
-    reason. -/
+    reason. `0 < x`, for the same reason `unbeatable_pays` needs it:
+    no call mints a note for a zero payout
+    (`zero_payout_mints_nothing`). -/
 theorem unbeatable_pays_after_timeout
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -1549,6 +1556,7 @@ theorem unbeatable_pays_after_timeout
       a.allocationType ≠ .guarantee)
     (pk : Nat × Nat) (nk : Nat) (r : Nat)
     (hh_dest : dest.destination = npk (masterPublicKey pk nk) r)
+    (hxpos : 0 < x)
     (haffordable : x ≤ (afford (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations
       (heldValue s (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))).getD destIdx 0)
     (hhonest : ∀ candidate', candidate'.isFinal = true →
