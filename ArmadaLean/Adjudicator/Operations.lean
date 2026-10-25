@@ -85,6 +85,42 @@ inductive Call where
   | sign (p : Nat) (d : Term)
   | signNote (pk : Nat × Nat) (msgHash : Term)
 
+
+/-- `bulkTransferFold self cid outcome pool holdings` is `bulkTransferAllAssets`'s
+    own effect: pay EVERY asset of `outcome` out of channel `cid`, each in
+    full (`indices := []` — DOC/0080:77, "transferring for every asset"),
+    one asset at a time, using the SAME per-asset owned-spend
+    `.transfer`'s own case uses. `newOutcome` collects each asset's own
+    rewritten allocations (mirroring `.transfer`'s own `newAllocs`); the
+    final `(poolF, holdingsF)` is the pool/holdings state after every
+    asset's own spend. -/
+def bulkTransferFold (self : Nat) (cid : Term) :
+    Outcome → PoolState → (Nat → Term → Option (Nat × Term)) →
+    Outcome → PoolState → (Nat → Term → Option (Nat × Term)) → Prop
+  | [], pool, holdings, [], poolF, holdingsF => poolF = pool ∧ holdingsF = holdings
+  | exit :: rest, pool, holdings, newExit :: newRest, poolF, holdingsF =>
+    (let held := match holdings exit.asset cid with
+      | none => 0
+      | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0
+     let (newAllocs, exitAllocs, totalPayouts) := transferEffects exit.allocations held []
+     (∀ a ∈ exitAllocs, a.allocationType ≠ .guarantee) ∧
+     newExit = { exit with allocations := newAllocs } ∧
+     (let remainder := held - totalPayouts
+      let payoutOutputs := exitAllocs.filterMap (fun a =>
+        if a.amount = 0 then none else some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage))
+      let remainderOutputs : List CommitmentPreimage :=
+        if remainder = 0 then [] else [(⟨Term.val self, exit.asset, remainder⟩ : CommitmentPreimage)]
+      ∃ midPool,
+        PoolOwnedSpendStep pool self exit.asset (holdings exit.asset cid) payoutOutputs remainderOutputs
+          midPool ∧
+        (let midHoldings := update holdings exit.asset
+          (update (holdings exit.asset) cid
+            (if remainder = 0 then none
+             else some (pool.leaves.length + (payoutOutputs.length + remainderOutputs.length) - 1,
+               commitment (Term.val self) exit.asset remainder)))
+         bulkTransferFold self cid rest midPool midHoldings newRest poolF holdingsF)))
+  | _, _, _, _, _, _ => False
+
 /-- One call's effect: `s` steps to `s'` under `call`, taken by `actor`,
     given the signature assumptions (`sig`) and the application rule
     (`appRel`) the call's checks may need. Each case is a conjunction of
@@ -385,28 +421,54 @@ def Step (sig : SignatureAssumptions)
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `bulkTransferAllAssets`, `bulkConcludeAndTransferAllAssets` —
-  Armada's own rule: revert
+  MultiAssetHolder.sol (trusted, vendored `src/nitro`); S4
+  `0080-defunding-a-channel.md:77`
 
-  Armada's own rule, stated directly (no paper covers it): once
-  `holdings` stores a `bytes32` commitment per asset per channel instead
-  of a raw `uint256` (the armada-nitro rule, `State.lean`), the inherited bulk
-  finalization path's raw arithmetic no longer applies to it, so
-  `ArmadaNitroAdjudicator` overrides `transferAllAssets` and
-  `concludeAndTransferAllAssets` to revert with a use-`transfer` message
-  instead of running that inherited bulk path; a caller that wants a
-  payout calls `transfer(assetIndex, ...)` once per asset instead.
-  DEPARTURE (`departures-found.md` item 5, "N3 absent"): the current
-  `ArmadaNitroAdjudicator.sol` has NO such override — `transferAllAssets`
-  and `concludeAndTransferAllAssets` are inherited unchanged and run the
-  base `_transferAllAssetsBody`, which subtracts from a `bytes32`
-  commitment as if it were a raw `uint256` AND mints brand-new owned
-  commitments via `PoolSpend.mintPayoutCommitmentsNoChannel` with no
-  nullifier at all — pure value creation with no debit anywhere. This
-  model does not give these two calls any way to succeed, matching the
-  INTENDED design, not the current code.
+  `DOC/0080:77` (statement A-??, the bulk-payout statements below):
+  "There is a convenience method concludeAndTransferAllAssets which
+  combines concluding with transferring for every asset — batching them
+  to save gas." `bulkTransferAllAssets` is the OTHER half the name
+  implies: `transferAllAssets` alone, on an ALREADY-finalized channel —
+  the same per-asset owned-spend `.transfer` uses
+  (`ArmadaLean.PoolOwnedSpendStep`), applied to EVERY asset of the
+  claimed outcome in order (`bulkTransferFold`, above), each paying
+  `indices := []` (everything). `bulkConcludeAndTransferAllAssets`
+  conclude's its own `fp`/`candidate` FIRST (the exact precondition and
+  effect `.conclude` uses), then runs the same per-asset fold over
+  `candidate.outcome`, from the just-finalized state — stated directly,
+  not via a nested `Step` call to itself, since `Step`'s own definition
+  cannot recurse on `Call` without a decreasing measure.
+  DEPARTURE (`departures-found.md` item 5, "N3 absent"): the DEPLOYED
+  `ArmadaNitroAdjudicator.sol` has NO working override — inherited
+  `transferAllAssets`/`concludeAndTransferAllAssets` run the base
+  `_transferAllAssetsBody`, which subtracts from a `bytes32` commitment
+  as if it were a raw `uint256` AND mints brand-new owned commitments
+  via `PoolSpend.mintPayoutCommitmentsNoChannel` with no nullifier at
+  all — pure value creation with no debit anywhere. This model follows
+  the INTENDED design (the same owned-spend `.transfer` itself uses),
+  not the current code.
   -/
-  | .bulkTransferAllAssets _ _ _ => fun _ => False
-  | .bulkConcludeAndTransferAllAssets _ _ => fun _ => False
+  | .bulkTransferAllAssets cid outcome claimedStateHash => fun s' =>
+      (s.channels cid).mode s.now = .finalized ∧
+      (s.channels cid).stateHash = claimedStateHash ∧
+      (s.channels cid).outcomeHash = outcomeHashOf outcome ∧
+      ∃ newOutcome : Outcome,
+        bulkTransferFold s.self cid outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
+        s'.channels = update s.channels cid { s.channels cid with outcomeHash := outcomeHashOf newOutcome } ∧
+        s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+        s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
+  | .bulkConcludeAndTransferAllAssets fp candidate => fun s' =>
+      let cid := channelId fp
+      (s.channels cid).mode s.now ≠ .finalized ∧
+      candidate.isFinal = true ∧
+      SignedByAll sig s fp candidate ∧
+      ∃ newOutcome : Outcome,
+        bulkTransferFold s.self cid candidate.outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
+        s'.channels = update s.channels cid
+          { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0,
+            outcomeHash := outcomeHashOf newOutcome } ∧
+        s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+        s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `tick` — the passive timeout transition
 
