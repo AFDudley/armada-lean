@@ -54,6 +54,18 @@ def masterPublicKey (pk : Nat × Nat) (nk : Nat) : Term :=
     randomness value, embedded as `Term.val`. -/
 def npk (mpk : Term) (r : Nat) : Term := Term.hash2 mpk (Term.val r)
 
+/-- `npk` is injective in both arguments: two note public keys built from
+    the same Poseidon hash (`Term.hash2_inj`) share the same master key and
+    the same random value. What lets a note's own key, once known
+    adjudicator-owned (`npk (Term.val self) r`), pin down `r` uniquely —
+    so two disclosures of the same commitment can never name a different
+    random for it. -/
+theorem npk_inj {mpk1 mpk2 : Term} {r1 r2 : Nat} (h : npk mpk1 r1 = npk mpk2 r2) :
+    mpk1 = mpk2 ∧ r1 = r2 := by
+  unfold npk at h
+  obtain ⟨h1, h2⟩ := Term.hash2_inj h
+  exact ⟨h1, Term.val.inj h2⟩
+
 /-- Note commitment = Poseidon(npk, token, value)
     (Transact.circom:80-84 for inputs, :105-113 for outputs). `npk` is already
     a `Term`; `token`/`value` are raw numbers (a token ID field element and a

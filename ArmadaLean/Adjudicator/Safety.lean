@@ -2439,6 +2439,8 @@ theorem unbeatable_pays
     (hnotfinal : (s.channels (channelId fp)).mode s.now ≠ .finalized)
     (hsigned : SignedByAll sig s fp candidate)
     (hdest : (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations[destIdx]? = some dest)
+    (hassetunique : ∀ i (hi : i < candidate.outcome.length), i ≠ assetIndex →
+      (candidate.outcome.get ⟨i, hi⟩).asset ≠ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset)
     (hnoguarantee : ∀ a ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations,
       a.allocationType ≠ .guarantee)
     (pk : Nat × Nat) (nk : Nat) (r : Nat)
@@ -2508,6 +2510,8 @@ theorem unbeatable_pays_after_timeout
       (s.channels (channelId fp)).outcomeHash = outcomeHashOf candidate.outcome)
     (hduration : 0 < fp.challengeDuration)
     (hdest : (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations[destIdx]? = some dest)
+    (hassetunique : ∀ i (hi : i < candidate.outcome.length), i ≠ assetIndex →
+      (candidate.outcome.get ⟨i, hi⟩).asset ≠ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset)
     (hnoguarantee : ∀ a ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations,
       a.allocationType ≠ .guarantee)
     (pk : Nat × Nat) (nk : Nat) (r : Nat)

@@ -343,6 +343,38 @@ theorem recordOwnedStep_preserves_consistency {reg : PreimageRegistry} {rreg : O
   · rw [if_neg heq] at hc'
     exact hconsistent c' d' hc'
 
+
+/-- `recordOwnedStep` preserves an already-known entry, given the new
+    disclosure's own commitment check (`hvalid0`, the step-level shape
+    every caller of this lemma already has to hand): a NEW record at the
+    SAME key `c` as the known one must, by `reg`'s own preimage being a
+    function and `npk_inj`, carry the IDENTICAL `⟨self, r⟩` pair back —
+    two disclosures of the same commitment can never disagree. What lets
+    an adjudicator-owned note's own disclosure survive a LATER unrelated
+    disclosure that happens to name the same key, the `OwnedRandomOf`
+    sibling of `applyRecords_preserves_known`. -/
+theorem recordOwnedStep_preserves_known {reg : PreimageRegistry} {rreg : OwnedRandomRegistry}
+    {c0 : Term} {d0 : OwnedDisclosure}
+    (hvalid0 : ∃ pre, reg c0 = some pre ∧ npk (Term.val d0.ownerField) d0.random = pre.npk)
+    {c : Term} {self r : Nat} {pre : CommitmentPreimage}
+    (hknown : rreg c = some ⟨self, r⟩) (hreg : reg c = some pre)
+    (hnpk : pre.npk = npk (Term.val self) r) :
+    recordOwnedStep rreg c0 d0 c = some ⟨self, r⟩ := by
+  unfold recordOwnedStep
+  by_cases heq : c = c0
+  · obtain ⟨pre0, hreg0, hnpk0⟩ := hvalid0
+    rw [heq] at hreg
+    rw [hreg] at hreg0
+    cases hreg0
+    rw [hnpk] at hnpk0
+    obtain ⟨hmpk, hrand⟩ := npk_inj hnpk0
+    have hd0 : d0 = ⟨self, r⟩ := by
+      have hmpk' : d0.ownerField = self := Term.val.inj hmpk
+      cases d0
+      simp_all
+    rw [if_pos heq, hd0]
+  · rw [if_neg heq]; exact hknown
+
 /-! ### Can happen (proof completeness) -/
 
 /--
