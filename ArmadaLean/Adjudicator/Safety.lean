@@ -198,9 +198,11 @@ theorem transfer_pays_only_the_finalized_outcome
     DIFFERENT entries of the same finalized asset outcome, in either
     order (two `.transfer` calls, same channel, same asset, no
     `.deposit`/`.reclaim` on it in between — each possible order
-    reaching its own final state), leaves the SAME held value behind.
-    Two-call instance of the general claim: "calling transfers out of
-    order does not affect the ultimate result."
+    reaching its own final state), pays entry `i` the SAME amount
+    either way, pays entry `j` the SAME amount either way, and leaves
+    the SAME held value behind overall. Two-call instance of the
+    general claim: "calling transfers out of order does not affect the
+    ultimate result."
     Quotes: `N19:842-843` "It is also easy to see that calling
     transfers out of order does not affect the ultimate result."
     `FM:1814-1816` "The resolution at this point would attempt to give
@@ -215,15 +217,27 @@ theorem transfer_order_independent_for_simple_allocations
     (s mid1 fin1 mid1' fin1' : AdjudicatorState)
     (assetIndex : Nat) (cid claimedStateHash claimedStateHash' claimedStateHash'' : Term)
     (outcome outcome1 outcome2 : Outcome) (i j : Nat) (hij : i ≠ j)
-    (h : assetIndex < outcome.length)
+    (h : assetIndex < outcome.length) (h1 : assetIndex < outcome1.length)
+    (h2 : assetIndex < outcome2.length)
     (hnog : ∀ a ∈ (outcome.get ⟨assetIndex, h⟩).allocations, a.allocationType ≠ .guarantee)
     (hstep1 : Step sig appRel actor1 s (.transfer assetIndex cid claimedStateHash outcome [i]) mid1)
     (hstep2 : Step sig appRel actor2 mid1 (.transfer assetIndex cid claimedStateHash' outcome1 [j]) fin1)
     (hstep1' : Step sig appRel actor1' s (.transfer assetIndex cid claimedStateHash outcome [j]) mid1')
     (hstep2' : Step sig appRel actor2' mid1' (.transfer assetIndex cid claimedStateHash'' outcome2 [i]) fin1') :
+    -- entry i is paid the same amount whether it goes first (`hstep1`) or second (`hstep2'`)
+    (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).2.2 =
+      (transferEffects (outcome2.get ⟨assetIndex, h2⟩).allocations
+        (heldValue mid1' (outcome2.get ⟨assetIndex, h2⟩).asset cid) [i]).2.2 ∧
+    -- entry j is paid the same amount whether it goes second (`hstep2`) or first (`hstep1'`)
+    (transferEffects (outcome1.get ⟨assetIndex, h1⟩).allocations
+        (heldValue mid1 (outcome1.get ⟨assetIndex, h1⟩).asset cid) [j]).2.2 =
+      (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).2.2 ∧
     heldValue fin1 (outcome.get ⟨assetIndex, h⟩).asset cid =
       heldValue fin1' (outcome.get ⟨assetIndex, h⟩).asset cid := by
   sorry
+
 
 /-- A-03 — the turn-number record never decreases on a live channel: a
     `challenge`/`checkpoint`/`conclude` step either raises `fp`'s own
@@ -253,9 +267,14 @@ theorem turn_number_record_monotone
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (cid : Term)
     (hstep : Step sig appRel actor s call s') :
-    (s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord ∨
-    (s'.channels cid).turnNumRecord = (s.channels cid).turnNumRecord ∨
-    ((s'.channels cid).turnNumRecord = 0 ∧ (s'.channels cid).mode s'.now = .finalized) := by
+    ((s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord ∨
+      (s'.channels cid).turnNumRecord = (s.channels cid).turnNumRecord ∨
+      ((s'.channels cid).turnNumRecord = 0 ∧ (s'.channels cid).mode s'.now = .finalized)) ∧
+    (∀ fp proof candidate, call = .checkpoint fp proof candidate → channelId fp = cid →
+      (s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord) ∧
+    (∀ fp proof candidate challenger, call = .challenge fp proof candidate challenger →
+      channelId fp = cid → (s.channels cid).mode s.now = .challenge →
+      (s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord) := by
   sorry
 
 /-- A-04 — finalization is permanent and fixes the state: once `cid` is
@@ -390,11 +409,15 @@ theorem transfer_never_pays_guarantee
 
 /-- A-11 — `reclaim` only reallocates a finalized guarantee, value-
     neutral: both the source and target channel are finalized, the
-    named entry is a `.guarantee`, and `s'.pool`/`s'.holdings` are
-    UNCHANGED — `reclaim` moves value between OUTCOME entries only,
-    never into or out of the pool (the model does NOT follow the
-    deployed `_settleReclaimExit`, which mints a brand-new commitment;
-    departure item 2, `Ops:351-355`).
+    named entry is a `.guarantee`, the target's own asset matches the
+    source's, the two credited amounts sum to EXACTLY the guarantee's
+    own amount, the source channel's NEW outcome is `reallocateGuarantee`
+    of the OLD one with the guarantee's own decoded destinations, that
+    asset's OWN total is unchanged by the reallocation, and
+    `s'.pool`/`s'.holdings` are UNCHANGED — `reclaim` moves value
+    between OUTCOME entries only, never into or out of the pool (the
+    model does NOT follow the deployed `_settleReclaimExit`, which
+    mints a brand-new commitment; departure item 2, `Ops:351-355`).
     Quotes: `SATP:344-364` Listing 2: `require(0 < ledgerStatus.
     finalizesAt <= now)`, `require(0 < targetStatus.finalizesAt <=
     now)`, `require(isGuarantee(guarantee))`, `o_ledger[left] +=
@@ -421,9 +444,25 @@ theorem reclaim_value_neutral
     s'.holdings = s.holdings ∧
     (∃ hsa : sourceAssetIndex < sourceOutcome.length,
       ∃ hidx : indexOfTargetInSource < (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.length,
-        ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.get
-          ⟨indexOfTargetInSource, hidx⟩).allocationType = .guarantee) := by
+        let guarantee := (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.get
+          ⟨indexOfTargetInSource, hidx⟩
+        guarantee.allocationType = .guarantee ∧
+        (let (left, right) := decodeGuarantee guarantee.metadata
+         (s.channels guarantee.destination).mode s.now = .finalized ∧
+         ∃ hta : targetAssetIndex < targetOutcome.length,
+         (targetOutcome.get ⟨targetAssetIndex, hta⟩).asset =
+           (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).asset ∧
+         ∃ a0 a1 : Nat,
+           a0 = ((targetOutcome.get ⟨targetAssetIndex, hta⟩).allocations.getD 0 Allocation.default).amount ∧
+           a1 = ((targetOutcome.get ⟨targetAssetIndex, hta⟩).allocations.getD 1 Allocation.default).amount ∧
+           a0 + a1 = guarantee.amount ∧
+           (s'.channels sourceChannelId).outcomeHash = outcomeHashOf
+             (reallocateGuarantee sourceOutcome sourceAssetIndex indexOfTargetInSource left right a0 a1) ∧
+           listSum (((reallocateGuarantee sourceOutcome sourceAssetIndex indexOfTargetInSource
+               left right a0 a1).getD sourceAssetIndex ⟨0, []⟩).allocations.map Allocation.amount) =
+             listSum ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.map Allocation.amount))) := by
   sorry
+
 
 
 /-- A-13 — channel value leaves only through a `.transfer`/bulk payout of
@@ -469,22 +508,32 @@ theorem value_leaves_only_via_transfer_of_finalized_channel
     from `o` by `.transfer` rewrites only, no `.reclaim` in between —
     what A-14 needs ("no `reclaim` on `c`"), since `.reclaimStep` is the
     one rewrite that can INCREASE an entry's own amount (crediting a
-    guarantee's two destinations), breaking monotone decrease. -/
-inductive TransferOnlyDerivedFrom : Outcome → Outcome → Prop where
-  | refl (o : Outcome) : TransferOnlyDerivedFrom o o
-  | transferStep {o mid : Outcome} (assetIndex : Nat) (h : assetIndex < mid.length)
-      (heldBefore : Nat) (indices : List Nat) (hmid : TransferOnlyDerivedFrom o mid) :
+    guarantee's two destinations), breaking monotone decrease.
+    Carries a THIRD index, `paid`: `paid i k` is the TOTAL amount asset
+    `i`'s allocation `k` has been paid across the whole chain so far —
+    the OLD-minus-NEW amount of the touched entry, accumulated at every
+    `.transferStep`, zero at every entry `.transfer` never touches. -/
+inductive TransferOnlyDerivedFrom : Outcome → Outcome → (Nat → Nat → Nat) → Prop where
+  | refl (o : Outcome) : TransferOnlyDerivedFrom o o (fun _ _ => 0)
+  | transferStep {o mid : Outcome} {paid : Nat → Nat → Nat} (assetIndex : Nat)
+      (h : assetIndex < mid.length) (heldBefore : Nat) (indices : List Nat)
+      (hmid : TransferOnlyDerivedFrom o mid paid) :
       TransferOnlyDerivedFrom o
         (mid.mapIdx fun i exit => if i ≠ assetIndex then exit else
           { exit with allocations :=
               (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 })
+        (fun i k => paid i k + (if i = assetIndex then
+            ((mid.get ⟨assetIndex, h⟩).allocations.getD k Allocation.default).amount -
+            ((transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1.getD
+              k Allocation.default).amount
+          else 0))
 
 /-- A-14 — cumulative payout to an entry never exceeds its allocation:
     across any `.transfer`-only call sequence from a finalized outcome
     `o` (no `.reclaim` in between — `TransferOnlyDerivedFrom`, above),
-    every entry's CURRENT recorded amount is at most its ORIGINAL amount
-    in `o` — so the TOTAL this entry has been paid, across every
-    `.transfer` call in the sequence, is at most what `o` allocated it.
+    entry `k`'s CURRENT remaining amount plus the TOTAL `paid i k` it
+    has been paid across the whole sequence equals its ORIGINAL amount
+    in `o` — so the total paid is at most what `o` allocated it.
     Quotes: `N19:836-837` "it is impossible to find a strategy that
     gives any node a value higher than allocated by this algorithm."
     `N19:770` T "Reduces the amount owed to B in the outcome of A by
@@ -492,10 +541,13 @@ inductive TransferOnlyDerivedFrom : Outcome → Outcome → Prop where
     `Adjudicator.withdrawnAmounts[k] += amount`. Contract:
     `MAH.sol:173,205` (amount reduced, fingerprint rewritten). -/
 theorem cumulative_payout_never_exceeds_allocation
-    (o o' : Outcome) (hder : TransferOnlyDerivedFrom o o') (i k : Nat) :
-    ((o'.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount ≤
-      ((o.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount := by
+    (o o' : Outcome) (paid : Nat → Nat → Nat) (hder : TransferOnlyDerivedFrom o o' paid)
+    (i k : Nat) :
+    ((o'.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount + paid i k =
+      ((o.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount ∧
+    paid i k ≤ ((o.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount := by
   sorry
+
 
 
 
@@ -956,10 +1008,13 @@ theorem checkpoint_can_happen
   sorry
 
 /-- A-12 — guarantee reallocation can change a later transfer's payout:
-    there is a reachable state from which two call orders — pay a
-    destination `d` and reclaim a guarantee, in either order — leave
-    `d` holding a DIFFERENT amount. This bounds A-02: order independence
-    holds only for simple allocations, not once a guarantee is in play.
+    there is a reachable state from which transferring to a destination
+    `d` pays a DIFFERENT amount before a guarantee is reclaimed than
+    after (the amount each order's `.transfer` call pays `d`, read off
+    `transferEffects`'s own total-payout component, `reclaim` itself
+    being value-neutral on the pool, `A-11`). This bounds A-02: order
+    independence holds only for simple allocations, not once a
+    guarantee is in play.
     Quotes: `N19:1148-1151` "it is possible to construct situations
     where the same outcome can lead to different values, depending on
     the order in which guarantees are claimed." `N19:1152-1154,1174-1177`
@@ -972,33 +1027,27 @@ theorem checkpoint_can_happen
     outcome `[5,0]`. `transfer d` first pays `d` 5. `reclaim` first
     gives `[A:5, B:0, d:5]`, then `transfer d` pays 0.] -/
 theorem guarantee_reallocation_order_dependent
-    (hashA : HashAssumptions) (sig : SignatureAssumptions)
-    (poolSigLive : PoolSignatureLiveness) (ownedComplete : OwnedProofCompleteness) :
+    (hashA : HashAssumptions) (sig : SignatureAssumptions) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s : AdjudicatorState) (d : Allocation)
-      (actor1a actor1b actor2a actor2b : Actor)
-      (call1a call1b call2a call2b : Call)
-      (mid1 fin1 mid2 fin2 : AdjudicatorState),
+      (s : AdjudicatorState) (cid : Term) (asset : Nat)
+      (outcome : Outcome) (assetIndex guaranteeIdx dIdx : Nat)
+      (left right : Term) (a0 a1 : Nat),
       _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
-      Step sig (consensusRelation sig) actor1a s call1a mid1 ∧
-      Step sig (consensusRelation sig) actor1b mid1 call1b fin1 ∧
-      Step sig (consensusRelation sig) actor2a s call2a mid2 ∧
-      Step sig (consensusRelation sig) actor2b mid2 call2b fin2 ∧
-      ∃ pre1 pre2 : CommitmentPreimage,
-        PoolIsLive fin1.pool (commitment pre1.npk pre1.token pre1.value) ∧
-        pre1.npk = d.destination ∧
-        PoolIsLive fin2.pool (commitment pre2.npk pre2.token pre2.value) ∧
-        pre2.npk = d.destination ∧
-        pre1.value ≠ pre2.value := by
+      (outcome.getD assetIndex ⟨0, []⟩).asset = asset ∧
+      ((outcome.getD assetIndex ⟨0, []⟩).allocations.getD guaranteeIdx
+        Allocation.default).allocationType = .guarantee ∧
+      (transferEffects (outcome.getD assetIndex ⟨0, []⟩).allocations
+          (heldValue s asset cid) [dIdx]).2.2 ≠
+      (transferEffects ((reallocateGuarantee outcome assetIndex guaranteeIdx left right a0 a1).getD
+          assetIndex ⟨0, []⟩).allocations (heldValue s asset cid) [dIdx]).2.2 := by
   sorry
+
 
 set_option maxRecDepth 2000 in
 /-- A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
     `PoolSignatureLiveness`, there is an execution from
     `genesis` — with a pool state `pool0` that already holds the
-    depositor's spendable note, and a `.signNote` call recording that the
-    depositor's key signed the deposit's message hash — in which a
     deposit succeeds (Nitro-2019-219.pdf §3.1: "There are no
     restrictions on who can deposit coins for an address"; the
     armada-nitro rule, `State.lean`, specializes the deposited coins to
