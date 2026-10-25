@@ -709,11 +709,18 @@ inductive Step : PoolState → PoolState → Prop where
       (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121). The pushed root is
       `ArmadaLean.Merkle.treeRoot TreeDepth` of the result — computed, not a free
       parameter. `hCapacity` is the one-tree capacity bound (`ArmadaLean.Merkle`'s
-      module comment, the rollover departure). `randomOut`/`hRandomOut` are the
-      approved design's mandatory owned-random disclosure, matching the owned path's
-      existing `requireAll = true`: every output's random is supplied and checked
-      against its own `npk`, then recorded into `ownedRandomOf` alongside `pub
-      .ownerField` (`ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure`).
+      module comment, the rollover departure). `ownedOutputs`/`hOwnedOutputs` are the
+      approved design's owned-random disclosure, applied per output, the same way
+      `Step.transact`'s `ownedRecords` applies it: an owned spend legitimately pays
+      OUT to a recipient's own note key, not only re-mints notes to itself (an
+      adjudicator's payout output is one such case), so the random disclosure cannot
+      be mandatory for every output the way the preimage itself is
+      (`ownedOutputRecords w pub`, `requireAll = true`, unaffected). For each `(j,
+      ownerField, random)` the caller lists, output `j`'s own `npkOut` must equal
+      `npk (ownerField) random`; that output is then recorded into `ownedRandomOf`
+      alongside the `ownerField` claimed for it. An output whose index is not listed
+      is a plain user note — no owned disclosure, same as a `transact` output nobody
+      claims as owned.
 
       DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
       `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before `transactOwned` too
@@ -729,13 +736,14 @@ inductive Step : PoolState → PoolState → Prop where
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
-      (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet) (randomOut : Fin M → Nat)
+      (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
+      (ownedOutputs : List (Fin M × OwnedDisclosure))
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hRemove : removeAll (s.live w.token) (ownedSpentPositions pub w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hNonZero : ∀ j, ¬ isZeroPreimage
         (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-      (hRandomOut : ∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j)
+      (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk (Term.val x.2.ownerField) x.2.random = w.npkOut x.1)
       (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
       Step s
         (let leaves' := s.leaves ++ (ownedNewNotes w).map hashCommitment
@@ -747,8 +755,7 @@ inductive Step : PoolState → PoolState → Prop where
             roots := treeRoot TreeDepth leaves' :: s.roots,
             preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub),
             ownedRandomOf := applyOwnedRecords s.ownedRandomOf
-              (List.ofFn fun j =>
-                (pub.commitmentsOut j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) })
+              (ownedOutputs.map fun x => (pub.commitmentsOut x.1, x.2)) })
   /-- The one remaining administrative path that changes pool state at all:
       `setShieldPauseContract` installs a controller whose `IShieldPauseController
       .shieldsPaused` this model reads (`ShieldModule._requireShieldsNotPaused`,

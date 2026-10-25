@@ -282,13 +282,17 @@ approved design changes this: when a note is created for a contract owner, the c
 additionally supplies `ownerField` and `random` alongside the preimage; the pool checks
 `npk (Term.val ownerField) random = npk` and records `random` (paired with `ownerField`,
 so a reader can tell which owner it is claimed for) in a second, public registry. This
-applies to every owned-path output (`Step.transactOwned`, mandatory, matching
-`_validatePublicOutputs(requireAll = true)`'s existing mandatory disclosure) and to any
-plain-`transact` output additionally disclosed as contract-owned (`Step.transact`,
-optional — a deposit to the adjudicator is one such output). Any later caller who knows
-its own `ownerField` can then read this registry and the ordinary `preimageOf` registry
-and construct a spend witness entirely from public data
-(`ArmadaLean.PoolSafety.owned_spend_witness_exists`). -/
+applies to any owned-path output the caller lists as staying contract-owned
+(`Step.transactOwned`'s `ownedOutputs`, one entry per such output — optional per output,
+unlike the note's own preimage, which `_validatePublicOutputs(requireAll = true)` still
+discloses for every output unconditionally: an owned spend legitimately pays OUT to a
+recipient's own note key, not only re-mints notes to itself, so the random disclosure
+cannot be mandatory for an output that is not staying contract-owned) and to any plain-
+`transact` output additionally disclosed as contract-owned (`Step.transact`'s
+`ownedRecords`, likewise optional — a deposit to the adjudicator is one such output on
+either path). Any later caller who knows its own `ownerField` can then read this
+registry and the ordinary `preimageOf` registry and construct a spend witness entirely
+from public data (`ArmadaLean.PoolSafety.owned_spend_witness_exists`). -/
 
 /-- One contract-owned note's recorded random, alongside the owner it was disclosed for
     — `PoolState.ownedRandomOf`'s value type. -/

@@ -94,8 +94,8 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       omega
     · simp only [if_neg ht]
       exact hinv t
-  | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-      hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+      hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
     intro t
     by_cases ht : t = w.token
     · subst ht
@@ -216,17 +216,18 @@ theorem transactOwned_cannot_be_blocked {s : PoolState} (b : Bool)
     {N M : Nat} (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M)
     (hN : N ≤ 8) (hM : M ≤ 4) (hC : OwnedConstrained w pub)
     (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
-    (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet) (randomOut : Fin M → Nat)
+    (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
+    (ownedOutputs : List (Fin M × OwnedDisclosure))
     (hRoot : pub.merkleRoot ∈ s.roots)
     (hRemove : removeAll (s.live w.token) (ownedSpentPositions pub w) = some rest)
     (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
     (hNonZero : ∀ j, ¬ isZeroPreimage
       (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-    (hRandomOut : ∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j)
+    (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk (Term.val x.2.ownerField) x.2.random = w.npkOut x.1)
     (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
     ∃ s', Step { s with shieldsPaused := b } s' :=
-  ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-    hRoot hRemove hNullify hNonZero hRandomOut hCapacity⟩
+  ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+    hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity⟩
 
 /-! ### No double spend across transactions -/
 
@@ -255,8 +256,8 @@ theorem spent_monotone {s s' : PoolState} (hstep : Step s s') : ∀ n ∈ s.spen
   | transact w pub hN hM hC newNotes unshieldTail rest spent' records ownedRecords
       hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords hCapacity =>
     exact markSpent_subset hNullify
-  | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-      hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+      hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
     exact markSpent_subset hNullify
   | admin shieldsPaused =>
     exact fun n hn => hn
@@ -396,8 +397,8 @@ theorem step_roots_shape {s s' : PoolState} (hstep : Step s s') :
   | transact w pub hN hM hC newNotes unshieldTail rest spent' records ownedRecords
       hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords hCapacity =>
     exact Or.inr ⟨_, rfl⟩
-  | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-      hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+      hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
     exact Or.inr ⟨_, rfl⟩
   | admin shieldsPaused =>
     exact Or.inl rfl
@@ -453,8 +454,8 @@ theorem pool_preimageOf_consistent {s : PoolState}
         hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords hCapacity =>
       exact applyRecords_preserves_consistency ih
         (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
-    | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-        hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+        hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
       exact applyRecords_preserves_consistency ih (ownedOutputRecords_valid hC)
     | admin shieldsPaused =>
       exact ih
@@ -489,10 +490,12 @@ reconstructs the matching `preimageOf` entry's `npk` — lifting
 `ArmadaLean.PoolOwned.recordOwnedStep_preserves_consistency` to the pool's whole
 history. `Step.shield`/`.admin` leave `ownedRandomOf` untouched (`applyRecords
 _preserves_other`/`recordStep_preserves_other` show their own `preimageOf` writes
-cannot disturb an already-established entry); `Step.transactOwned`'s own `hRandomOut`
-check is exactly what `applyOwnedRecords_preserves_consistency` needs for its
-mandatory, full-batch disclosure; `Step.transact`'s `hOwnedRecords` is exactly what the
-same lemma needs for its optional, caller-chosen disclosure, using
+cannot disturb an already-established entry); `Step.transactOwned`'s own
+`hOwnedOutputs` check is exactly what `applyOwnedRecords_preserves_consistency` needs
+for its optional, per-output disclosure (every output's PREIMAGE stays mandatory,
+`transactOwned_records_all`; only the random is optional, since an owned spend can pay
+out to a recipient's own note key); `Step.transact`'s `hOwnedRecords` is exactly what
+the same lemma needs for its own optional, caller-chosen disclosure, using
 `npk_preimage_not_zero` to show the record it points at in `records` was never
 skipped by `applyRecords`. -/
 theorem pool_ownedRandomOf_consistent {s : PoolState} (h : Reachable s) :
@@ -519,20 +522,21 @@ theorem pool_ownedRandomOf_consistent {s : PoolState} (h : Reachable s) :
         refine ⟨pre, ?_, hnpk⟩
         exact applyRecords_returns (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
           hpre (npk_preimage_not_zero hnpk)
-    | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-        hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+        hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
       apply applyOwnedRecords_preserves_consistency
       · intro c d hc
         obtain ⟨pre, hreg, hnpk⟩ := ih c d hc
         exact ⟨pre, applyRecords_preserves_other (ownedOutputRecords_valid hC)
           (pool_preimageOf_consistent hs c pre hreg) hreg, hnpk⟩
       · intro cd hcd
-        obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcd
+        obtain ⟨x, hx, hxeq⟩ := List.mem_map.mp hcd
+        obtain ⟨j, d⟩ := x
         refine ⟨⟨w.npkOut j, w.token, w.valueOut j⟩, ?_, ?_⟩
-        · rw [← hj]
+        · rw [← hxeq]
           exact transactOwned_records_all hC hNonZero j
-        · rw [← hj]
-          exact hRandomOut j
+        · rw [← hxeq]
+          exact hOwnedOutputs (j, d) hx
     | admin shieldsPaused =>
       exact ih
 
@@ -802,14 +806,16 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     it minted for them, and where), `hN`/`hM` the registered-shape bound,
     `caller`/`hCaller` the authorization check
     (`ArmadaLean.PoolSafety.transactOwned_spends_only_owned` is the matching safety
-    theorem). `randomOut`/`hRandomOut` supply the approved design's mandatory
-    owned-random disclosure for the new outputs; the real owner, having just minted
-    them, already knows each one's own random. -/
+    theorem). An owned transact can pay out to any recipient's own note key, not only
+    re-mint notes to itself (module comment, `Step.transactOwned`), so this witness
+    supplies no owned-random disclosure for the new outputs (`ownedOutputs := []`) —
+    a disclosed, contract-owned output is a separate, later act
+    (`ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure`), not a precondition
+    for the spend itself to succeed. -/
 theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofCompleteness)
     {N M : Nat} (ownerField token boundParamsHash : Nat) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
-    (randomOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
     (hRoot : root ∈ s.roots)
     (hPathLen : ∀ i, (pathElements i).length = 16)
@@ -822,7 +828,6 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
     (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ s.spent)
     (hOutputsNonZero : ∀ j, npkOut j ≠ Term.val 0)
-    (hRandomOut : ∀ j, npk (Term.val ownerField) (randomOut j) = npkOut j)
     (caller : Nat) (hCaller : caller = addressOf ownerField)
     {rest : List (Nat × CommitmentPreimage)}
     (hLive : removeAll (s.live token)
@@ -857,8 +862,8 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
       exact hFresh i)
-  refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-    hRoot hLive hMark ?_ hRandomOut hCapacity⟩
+  refine ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' []
+    hRoot hLive hMark ?_ (fun x hx => absurd hx (List.not_mem_nil)) hCapacity⟩
   intro j hz
   exact hOutputsNonZero j hz.1
 
@@ -879,8 +884,8 @@ theorem step_leaves_root_shape {s s' : PoolState} (hstep : Step s s') :
   | transact w pub hN hM hC newNotes unshieldTail rest spent' records ownedRecords
       hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords hCapacity =>
     exact Or.inr rfl
-  | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-      hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+  | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+      hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
     exact Or.inr rfl
   | admin shieldsPaused =>
     exact Or.inl ⟨rfl, rfl⟩
@@ -914,8 +919,8 @@ theorem reachable_leaves_capacity {s : PoolState} (h : Reachable s) :
     | transact w pub hN hM hC newNotes unshieldTail rest spent' records ownedRecords
         hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords hCapacity =>
       simpa using hCapacity
-    | transactOwned w pub hN hM hC caller hCaller rest spent' randomOut
-        hRoot hRemove hNullify hNonZero hRandomOut hCapacity =>
+    | transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
+        hRoot hRemove hNullify hNonZero hOwnedOutputs hCapacity =>
       simpa [ownedNewNotes] using hCapacity
     | admin shieldsPaused =>
       simpa using ih
