@@ -2121,8 +2121,164 @@ theorem unbeatablePaysInv_step
       · left; exact ⟨hmode, (hSBAiff s s' hsbeq.symm).mp hsigned, haff⟩
       · right; left; exact hA1
       · right; right; exact hA2carry hA2
-  | bulkTransferAllAssets cid outcome claimedStateHash => sorry
-  | bulkConcludeAndTransferAllAssets fp' candidate' => sorry
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨hmodeBulk, hshBulk, hohBulk, newOutcome, hfold, hchan, _hcfg, _hself, hnow, hsb⟩ := hstep
+    have hsbeq := hsb.1
+    have hpreimageInv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+        ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc :=
+      reachable_preserves
+        (P := fun s'' => ∀ qasset qcid qpos qc, s''.holdings qasset qcid = some (qpos, qc) →
+          ∃ pre, s''.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+        (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
+        (fun actor call s1 s2 hP hstep => holdings_preimage_nonzero_step sig appRel actor s1 s2
+          call hP hstep)
+        hreach
+    by_cases hcc : cid = channelId fp
+    · subst hcc
+      rcases hinv with ⟨hmodeB, _, _⟩ | hA1 | hA2
+      · exact absurd hmodeBulk hmodeB
+      · obtain ⟨curOutcome, hci, hfin, hoh, hassetprojA1, hnogA1, hasset, hallocD, haffA1⟩ := hA1
+        have houtcome_eq : outcome = curOutcome := outcomeHashOf_inj (hohBulk.symm.trans hoh)
+        right; right
+        have hidxO : assetIndex < outcome.length := by rw [houtcome_eq]; exact hci
+        have hentryEq : outcome.get ⟨assetIndex, hidxO⟩ = curOutcome.get ⟨assetIndex, hci⟩ := by
+          have hmap : outcome[assetIndex]? = curOutcome[assetIndex]? := by rw [houtcome_eq]
+          rw [List.getElem?_eq_getElem hidxO, List.getElem?_eq_getElem hci] at hmap
+          simpa [List.get_eq_getElem] using Option.some.inj hmap
+        have hassetEq : (outcome.get ⟨assetIndex, hidxO⟩).asset =
+            (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset := by rw [hentryEq]; exact hasset
+        have hallocDEq : (outcome.get ⟨assetIndex, hidxO⟩).allocations.getD destIdx
+            Allocation.default = dest := by rw [hentryEq]; exact hallocD
+        have hidxN : assetIndex < newOutcome.length := by
+          rw [bulkTransferFold_length s.self (channelId fp) outcome newOutcome s.pool s'.pool
+            s.holdings s'.holdings hfold]
+          exact hidxO
+        have hassetuniqueFold : ∀ j (hj : j < outcome.length), j ≠ assetIndex →
+            (outcome.get ⟨j, hj⟩).asset ≠ (outcome.get ⟨assetIndex, hidxO⟩).asset := by
+          intro j hj hjne
+          have hjC : j < curOutcome.length := by rw [← houtcome_eq]; exact hj
+          have hentryEqJ : outcome.get ⟨j, hj⟩ = curOutcome.get ⟨j, hjC⟩ := by
+            have hmap : outcome[j]? = curOutcome[j]? := by rw [houtcome_eq]
+            rw [List.getElem?_eq_getElem hj, List.getElem?_eq_getElem hjC] at hmap
+            simpa [List.get_eq_getElem] using Option.some.inj hmap
+          have hjCand : j < candidate.outcome.length := by
+            have hlen : curOutcome.length = candidate.outcome.length := by
+              have := congrArg List.length hassetprojA1; simpa using this
+            omega
+          have hentryEqJCand : (curOutcome.get ⟨j, hjC⟩).asset =
+              (candidate.outcome.get ⟨j, hjCand⟩).asset := by
+            have hmap : (curOutcome.map SingleAssetExit.asset)[j]? =
+                (candidate.outcome.map SingleAssetExit.asset)[j]? := by rw [hassetprojA1]
+            rw [List.getElem?_map, List.getElem?_map, List.getElem?_eq_getElem hjC,
+              List.getElem?_eq_getElem hjCand] at hmap
+            simpa [List.get_eq_getElem] using Option.some.inj hmap
+          rw [hentryEqJ, hentryEqJCand, hassetEq]
+          exact hassetunique j hjCand (by omega)
+        obtain ⟨_heqNewOutcome, hpayoutExists⟩ :=
+          bulkTransferFold_index_payout s.self (channelId fp) outcome newOutcome s.pool s'.pool
+            s.holdings s'.holdings hfold hpreimageInv assetIndex hidxO hassetuniqueFold hidxN
+        have haffAtDest : x ≤ (afford (outcome.get ⟨assetIndex, hidxO⟩).allocations
+            (heldValue s (outcome.get ⟨assetIndex, hidxO⟩).asset (channelId fp))).getD destIdx 0 := by
+          rw [hentryEq, hasset]; exact haffA1
+        have hpayoutNe : (afford (outcome.get ⟨assetIndex, hidxO⟩).allocations
+            (heldValue s (outcome.get ⟨assetIndex, hidxO⟩).asset (channelId fp))).getD destIdx 0 ≠ 0 := by
+          omega
+        obtain ⟨pos, hlivemem⟩ := hpayoutExists destIdx hpayoutNe
+        refine ⟨⟨(outcome.get ⟨assetIndex, hidxO⟩).allocations.getD destIdx
+          Allocation.default |>.destination, (outcome.get ⟨assetIndex, hidxO⟩).asset,
+          (afford (outcome.get ⟨assetIndex, hidxO⟩).allocations
+            (heldValue s (outcome.get ⟨assetIndex, hidxO⟩).asset (channelId fp))).getD destIdx 0⟩,
+          ?_, hassetEq, haffAtDest, ?_⟩
+        · rw [hallocDEq]
+        · exact ⟨(outcome.get ⟨assetIndex, hidxO⟩).asset, pos, _, hlivemem, rfl⟩
+      · right; right; exact hA2carry hA2
+    · have hchanEq : s'.channels (channelId fp) = s.channels (channelId fp) := by
+        rw [hchan]; unfold update; rw [if_neg (fun heq => hcc heq.symm)]
+      have hheldEqAny : ∀ qasset, heldValue s' qasset (channelId fp) =
+          heldValue s qasset (channelId fp) := by
+        intro qasset
+        unfold heldValue
+        exact bulkTransferFold_heldValue_frame_cid s.self cid outcome newOutcome s.pool s'.pool
+          s.holdings s'.holdings hfold hpreimageInv qasset (channelId fp)
+          (fun heq => hcc heq.symm)
+      rw [hchanEq, hnow]
+      rcases hinv with ⟨hmode, hsigned, haff⟩ | hA1 | hA2
+      · left; refine ⟨hmode, (hSBAiff s s' hsbeq.symm).mp hsigned, ?_⟩
+        rw [hheldEqAny]; exact haff
+      · right; left
+        obtain ⟨curOutcome, hci, hfin, hoh, hassetprojA1, hnogA1, hasset, hallocD, haffA1⟩ := hA1
+        refine ⟨curOutcome, hci, hfin, hoh, hassetprojA1, hnogA1, hasset, hallocD, ?_⟩
+        rw [hheldEqAny]; exact haffA1
+      · right; right; exact hA2carry hA2
+  | bulkConcludeAndTransferAllAssets fp' candidate' =>
+    obtain ⟨hprecond, hisfinal, hcsigned, newOutcome, hfold, hchan, _hcfg, _hself, hnow, hsb⟩ := hstep
+    have hsbeq := hsb.1
+    have hpreimageInv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+        ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc :=
+      reachable_preserves
+        (P := fun s'' => ∀ qasset qcid qpos qc, s''.holdings qasset qcid = some (qpos, qc) →
+          ∃ pre, s''.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+        (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
+        (fun actor call s1 s2 hP hstep => holdings_preimage_nonzero_step sig appRel actor s1 s2
+          call hP hstep)
+        hreach
+    by_cases hcc : channelId fp' = channelId fp
+    · have hfpeq : fp' = fp := channelId_inj hcc
+      rw [hfpeq] at hchan hcsigned hprecond hfold
+      rcases hinv with ⟨hmodeB, hsigned, haffB⟩ | hA1 | hA2
+      · right; right
+        have hcsigned0 : AuthorizedBy sig s0 h (stateHash fp candidate') := by
+          have hc := hcsigned h hp
+          unfold AuthorizedBy at hc ⊢
+          rwa [hsrow] at hc
+        have hsheq := hhonest candidate' hisfinal hcsigned0
+        have houtcome_eq : candidate'.outcome = candidate.outcome := (stateHashOf_inj hsheq).2.2.1
+        rw [houtcome_eq] at hfold
+        have hassetuniqueFold : ∀ j (hj : j < candidate.outcome.length), j ≠ assetIndex →
+            (candidate.outcome.get ⟨j, hj⟩).asset ≠
+              (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset :=
+          hassetunique
+        have hidxN : assetIndex < newOutcome.length := by
+          rw [bulkTransferFold_length s.self (channelId fp) candidate.outcome newOutcome s.pool
+            s'.pool s.holdings s'.holdings hfold]
+          exact hAssetIdx
+        obtain ⟨_heqNewOutcome, hpayoutExists⟩ :=
+          bulkTransferFold_index_payout s.self (channelId fp) candidate.outcome newOutcome s.pool
+            s'.pool s.holdings s'.holdings hfold hpreimageInv assetIndex hAssetIdx
+            hassetuniqueFold hidxN
+        have hpayoutNe : (afford (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations
+            (heldValue s (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
+              (channelId fp))).getD destIdx 0 ≠ 0 := by omega
+        obtain ⟨pos, hlivemem⟩ := hpayoutExists destIdx hpayoutNe
+        refine ⟨⟨(candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations.getD destIdx
+          Allocation.default |>.destination, (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset,
+          (afford (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations
+            (heldValue s (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
+              (channelId fp))).getD destIdx 0⟩, ?_, rfl, haffB, ?_⟩
+        · rw [List.getD_eq_getElem?_getD, hdest]; rfl
+        · exact ⟨(candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset, pos, _, hlivemem, rfl⟩
+      · exfalso
+        obtain ⟨curOutcome, hci, hfin, _, _, _, _, _, _⟩ := hA1
+        exact hprecond hfin
+      · right; right; exact hA2carry hA2
+    · have hchanEq : s'.channels (channelId fp) = s.channels (channelId fp) := by
+        rw [hchan]; unfold update; rw [if_neg (fun heq => hcc heq.symm)]
+      have hheldEqAny : ∀ qasset, heldValue s' qasset (channelId fp) =
+          heldValue s qasset (channelId fp) := by
+        intro qasset
+        unfold heldValue
+        exact bulkTransferFold_heldValue_frame_cid s.self (channelId fp') candidate'.outcome
+          newOutcome s.pool s'.pool s.holdings s'.holdings hfold hpreimageInv qasset (channelId fp)
+          (fun heq => hcc heq.symm)
+      rw [hchanEq, hnow]
+      rcases hinv with ⟨hmode, hsigned, haff⟩ | hA1 | hA2
+      · left; refine ⟨hmode, (hSBAiff s s' hsbeq.symm).mp hsigned, ?_⟩
+        rw [hheldEqAny]; exact haff
+      · right; left
+        obtain ⟨curOutcome, hci, hfin, hoh, hassetprojA1, hnogA1, hasset, hallocD, haffA1⟩ := hA1
+        refine ⟨curOutcome, hci, hfin, hoh, hassetprojA1, hnogA1, hasset, hallocD, ?_⟩
+        rw [hheldEqAny]; exact haffA1
+      · right; right; exact hA2carry hA2
 
 /-- `unbeatablePaysInv_step` across a whole `interleaved` sequence. -/
 theorem unbeatablePaysInv_appliesAll

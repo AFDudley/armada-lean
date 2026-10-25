@@ -59,10 +59,9 @@ inductive Actor where
 /-- Every entry point this model's adjudicator exposes, with the public
     parameters a caller supplies (mirroring each function's own signature,
     quoted at its `Step` case below). `bulkTransferAllAssets` and
-    `bulkConcludeAndTransferAllAssets` are included and always fail — see
-    their `Step` case — to state N3's "revert" behavior as a positive fact
-    about the call, not an omission a reader might mistake for an
-    oversight. `transfer` carries `indices` (clause 24: `transfer(
+    `bulkConcludeAndTransferAllAssets` follow the INTENDED design (their own
+    `Step` case's module comment, below), not the deployed contract's N3
+    "absent" override gap. `transfer` carries `indices` (clause 24: `transfer(
     assetIndex, fromChannelId, outcomeBytes, stateHash, indices)`), since a
     caller chooses which destinations to pay out now. `sign`/`signNote`
     are not go-nitro/Armada entry points — they name the off-chain act of
