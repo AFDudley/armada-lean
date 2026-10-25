@@ -1429,8 +1429,8 @@ caller can BLOCK another caller's operation, only interleave with it.
     another caller runs first — formalizing §4.3's two assumptions
     (unimpeded, cannot be front-run) as "no interleaving can make the
     strategy's own `Step` preconditions false". `hnotActor` excludes `h`'s
-    OWN actor identities (the Nitro identity `h`, and the pool key
-    `hPoolKey` if `h` has one) from `interleaved`: without it,
+    OWN actor identities (the Nitro identity `h`, and the pool key `pk`
+    `dest.destination` names) from `interleaved`: without it,
     `interleaved` could contain a step only `h` themselves could take
     (`.sign h d` for an arbitrary `d` `h` never chose, `Operations.lean`'s
     actor check) and have it count as "the adversary's" doing, when it is
@@ -1473,13 +1473,42 @@ caller can BLOCK another caller's operation, only interleave with it.
     a zero payment carries no content, and no call mints a note for a
     zero payout (`zero_payout_mints_nothing`), so `x = 0` would need a
     DIFFERENT, pre-existing note at `dest.destination` no hypothesis
-    here supplies. -/
+    here supplies. `actor ≠ Actor.pool pk`: another `.transfer` can
+    legitimately pay `destIdx` itself before `h`'s own calls run (clause
+    24 names no caller restriction); when it does, the minted note is
+    THIS theorem's own witness directly. The ONE further gap a MODEL FIX
+    closes (found proving this theorem): `.deposit`'s own witness, left
+    unconstrained beyond the abstract `EdDSAVerify`, could otherwise
+    nullify that note's position by merely CLAIMING its npk/value, since
+    nothing tied the claim back to a real prior signing
+    (`Operations.lean`'s `.deposit` case, "MODEL FIX" comment). The fix
+    gates `.deposit` on `s.poolSignedBy w.publicKey (msgHashOf pub)`,
+    grown only by `.signNote` taken AS `.pool pk` (the module comment on
+    `.sign`/`.signNote`); excluding `actor ≠ Actor.pool pk` from
+    `interleaved` then means NO step in it can newly authorize that
+    key's spend (`poolSignedBy_frame`), and `deposit_spend_requires_
+    signer` (`Lemmas.lean`) shows a `.deposit` under any OTHER key could
+    not have named this note's position in the first place — together,
+    once minted, the note survives the rest of `interleaved` untouched,
+    PROVIDED `pk` had not ALREADY signed a spend of it before `s`, which
+    neither lemma rules out on its own (`poolSignedBy_frame` only shows
+    `pk`'s row cannot GROW during `interleaved`; it says nothing about
+    what the row already held at `s`, and `s` is chosen before the note
+    even exists). `hhonestPool` is the pool-layer half of the SAME
+    honest-participant condition `hhonest` states for the Nitro layer:
+    an honest `h` signs a pool spend only for a transaction it actually
+    means to make, so at `s`, key `pk` has signed no transaction whose
+    witness nullifies a note keyed to `dest.destination` — the one fact
+    `deposit_spend_requires_signer`/`poolSignedBy_frame` need together
+    with `hhonestPool` to rule out EVERY `.deposit` in `interleaved`
+    spending this note, not just ones authorized DURING it. -/
+
 theorem unbeatable_pays
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
-    (h : Nat) (hPoolKey : Option (Nat × Nat)) (assetIndex : Nat)
+    (h : Nat) (assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length)
     (destIdx : Nat) (x : Nat) (dest : Allocation)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
@@ -1497,11 +1526,16 @@ theorem unbeatable_pays
       (heldValue s (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))).getD destIdx 0)
     (hhonest : ∀ candidate', candidate'.isFinal = true →
       AuthorizedBy sig s h (stateHash fp candidate') →
-      stateHash fp candidate' = stateHash fp candidate) :
+      stateHash fp candidate' = stateHash fp candidate)
+    (hhonestPool : ∀ m, s.poolSignedBy pk m →
+      ∀ {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M),
+      msgHashOf pub = m → Constrained w pub → w.publicKey = pk →
+      ∀ i : Fin N, (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i),
+        w.token, w.valueIn i⟩ : CommitmentPreimage).npk ≠ dest.destination) :
     ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
       AppliesAll sig appRel s interleaved mid →
       (∀ actor call, (actor, call) ∈ interleaved →
-        actor ≠ Actor.nitro h ∧ ∀ pk', hPoolKey = some pk' → actor ≠ Actor.pool pk') →
+        actor ≠ Actor.nitro h ∧ actor ≠ Actor.pool pk) →
       (∀ actor newNow, (actor, Call.tick newNow) ∉ interleaved) →
       ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
         AppliesAll sig appRel mid payCalls final ∧
@@ -1542,7 +1576,7 @@ theorem unbeatable_pays_after_timeout
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (s : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
-    (candidate : VariablePart) (challenger h : Nat) (hPoolKey : Option (Nat × Nat))
+    (candidate : VariablePart) (challenger h : Nat)
     (assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length)
     (destIdx : Nat) (x : Nat) (dest : Allocation)
@@ -1561,11 +1595,16 @@ theorem unbeatable_pays_after_timeout
       (heldValue s (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))).getD destIdx 0)
     (hhonest : ∀ candidate', candidate'.isFinal = true →
       AuthorizedBy sig s h (stateHash fp candidate') →
-      stateHash fp candidate' = stateHash fp candidate) :
+      stateHash fp candidate' = stateHash fp candidate)
+    (hhonestPool : ∀ m, s.poolSignedBy pk m →
+      ∀ {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M),
+      msgHashOf pub = m → Constrained w pub → w.publicKey = pk →
+      ∀ i : Fin N, (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i),
+        w.token, w.valueIn i⟩ : CommitmentPreimage).npk ≠ dest.destination) :
     ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
       AppliesAll sig appRel s interleaved mid →
       (∀ actor call, (actor, call) ∈ interleaved →
-        actor ≠ Actor.nitro h ∧ ∀ pk', hPoolKey = some pk' → actor ≠ Actor.pool pk') →
+        actor ≠ Actor.nitro h ∧ actor ≠ Actor.pool pk) →
       (∀ actor newNow, (actor, Call.tick newNow) ∉ interleaved) →
       (∀ (pre post : List (Actor × Call)) (st : AdjudicatorState),
         interleaved = pre ++ post → AppliesAll sig appRel s pre st →
@@ -1606,7 +1645,7 @@ theorem notedValue_conserved
   cases call with
   | deposit cid expectedHeld asset amount =>
     obtain ⟨_hcfg1, _hheld, _hext, _hpos, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
     obtain ⟨_r, _hown, _hcommit, _htoken, _hposition, hN, hM, hC, rest, spent', records, _hCapacity,
       _hRoot, hRemove, _hNullify, _hSublist, _hidxrec, heq⟩ := hdstep
     have hmidConserved : midPool.notedValue token = s.pool.notedValue token := by
@@ -2120,7 +2159,7 @@ theorem deposit_can_happen_witness
   have hstep : Step sig (consensusRelation sig) (Actor.pool publicKey) mid
       (.deposit channelId 0 token amount) s' := by
     refine ⟨rfl, rfl, channelId_not_external fp1, (by decide),
-      ⟨1, 1, w, pub, 0, 1, s'.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w, pub, 0, 1, s'.pool, ?_, hsigned, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep
     · exact ⟨rfl, rfl⟩
   exact ⟨assets, self, pool0, mid, s', channelId, 0, token, amount, Actor.pool publicKey,
@@ -2559,7 +2598,7 @@ theorem topup_can_happen
   have hstep_d1 : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
       (.deposit cid 0 token amt1) mid2 := by
     refine ⟨rfl, rfl, channelId_not_external fp1, (by decide),
-      ⟨1, 1, w_d1, pub_d1, 0, 2, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w_d1, pub_d1, 0, 2, mid2.pool, ?_, Or.inr hsigned1, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep1
     · exact ⟨rfl, rfl⟩
   have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
@@ -2748,7 +2787,7 @@ theorem topup_can_happen
   have hstep_d2 : Step sig (consensusRelation sig) (Actor.pool publicKey) mid2
       (.deposit cid amt1 token amt2) s' := by
     refine ⟨rfl, hheld2, channelId_not_external fp1, (by decide),
-      ⟨1, 1, w_d2, pub_d2, 0, 3, midPool2, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w_d2, pub_d2, 0, 3, midPool2, ?_, hsigned2, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep2
     · rw [hmid2holds]
       exact ⟨mergedCommitment, 4, hdstep_merge, rfl⟩
@@ -3086,7 +3125,7 @@ theorem payout_can_happen
   have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
       (.deposit cid 0 token amount) mid2 := by
     refine ⟨rfl, rfl, channelId_not_external fp, (by decide),
-      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, hsigned, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep
     · exact ⟨rfl, rfl⟩
   have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
@@ -3660,7 +3699,7 @@ theorem bulk_conclude_and_transfer_can_happen
   have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
       (.deposit cid 0 token amount) mid2 := by
     refine ⟨rfl, rfl, channelId_not_external fp, (by decide),
-      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, hsigned, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep
     · exact ⟨rfl, rfl⟩
   have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
@@ -3966,7 +4005,7 @@ theorem transfer_after_transfer_can_happen
   have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
       (.deposit cid 0 token amount) mid2 := by
     refine ⟨rfl, rfl, channelId_not_external fp, (by decide),
-      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, hsigned, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep
     · exact ⟨rfl, rfl⟩
   have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
