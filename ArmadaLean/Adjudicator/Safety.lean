@@ -659,7 +659,35 @@ theorem holdings_point_to_live_notes
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
     (hholds : s.holdings asset cid = some c) :
     PoolIsLive s.pool c := by
-  sorry
+  have hinv := reachable_preserves
+    (P := fun s => (∀ qasset qcid qc, s.holdings qasset qcid = some qc →
+        ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) ∧
+      (∀ asset (pre : CommitmentPreimage) (L : List Term), L.Nodup →
+        (∀ cid ∈ L, s.holdings asset cid = some (hashCommitment pre)) →
+        (0 < L.length → pre.npk = Term.val s.self ∨ ∃ r, pre.npk = npk (Term.val s.self) r) ∧
+        L.length ≤ List.count pre (s.pool.live asset)))
+    (And.intro
+      (by intro qasset qcid qc hc; exact absurd hc (by simp [genesis]))
+      (by
+        intro asset pre L hnodup hmem
+        rcases L with _ | ⟨cid0, L'⟩
+        · simp
+        · exact absurd (hmem cid0 List.mem_cons_self) (by simp [genesis])))
+    (fun actor call s s' hP hstep =>
+      ⟨holdings_preimage_nonzero_step sig appRel actor s s' call hP.1 hstep,
+       (step_self sig appRel actor s s' call hstep ▸
+         holdings_live_count_step sig appRel actor s s' call hP.1 hP.2 hstep : _)⟩)
+    hreach
+  obtain ⟨pre, hpre, _hval, hconsist⟩ := hinv.1 asset cid c hholds
+  have hmem : ∀ cid' ∈ [cid], s.holdings asset cid' = some (hashCommitment pre) := by
+    intro cid' hcid'
+    rw [List.mem_singleton] at hcid'
+    rw [hcid', hholds, hconsist]
+  have hbound := (hinv.2 asset pre [cid]
+    (List.nodup_cons.mpr ⟨by simp, List.nodup_nil⟩) hmem).2
+  simp only [List.length_cons, List.length_nil] at hbound
+  have hlive : pre ∈ s.pool.live asset := List.count_pos_iff.mp (by omega)
+  exact ⟨asset, pre, hlive, hconsist⟩
 
 /-!
 ## A concrete app, for the can-happen theorems only
@@ -1830,7 +1858,16 @@ theorem value_exists_only_as_notes
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
     ∃ c, s.holdings asset cid = some c ∧ PoolIsLive s.pool c ∧
       (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
-  sorry
+  unfold heldValue at hheld
+  rcases hc : s.holdings asset cid with _ | cm
+  · simp only [hc] at hheld; omega
+  · refine ⟨cm, ?_, ?_, ?_⟩
+    · rfl
+    · exact holdings_point_to_live_notes sig appRel assets self pool0 s asset cid cm hreach hc
+    · simp only [hc] at hheld
+      rcases hp : s.pool.preimageOf cm with _ | pre
+      · rw [hp] at hheld; simp at hheld; omega
+      · rw [hp] at hheld; simp at hheld; simp [hheld]
 
 /-!
 ## F. R1 mutation-test misses
