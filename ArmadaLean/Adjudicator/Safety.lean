@@ -142,15 +142,34 @@ theorem finalized_outcome_was_concluded_or_challenged
 
 /-- Which harm this rules out: a caller cannot name an `outcome`/`indices`
     to `transfer` that pays a destination the finalized outcome did not
-    name, or more than the finalized outcome allocated. This is `Step`'s
-    `transfer` case made explicit as a theorem: the `outcome`/
-    `claimedStateHash` a `transfer` call supplies must already equal the
-    channel's stored `(stateHash, outcomeHash)` (`Operations.lean`'s
-    `.transfer` case, mirroring `MultiAssetHolder._requireMatchingFingerprint`,
-    `MultiAssetHolder.sol:506-516`), and every allocation this call actually
-    pays now (`transferEffects`'s `exitAllocations`, clause 24,
-    `MultiAssetHolder.sol:135-191`) shares its destination with, and is paid
-    no more than, some allocation already recorded in that outcome. -/
+    name, or a different amount than priority-order affordability gives
+    it. This is `Step`'s `transfer` case made explicit as a theorem: the
+    `outcome`/`claimedStateHash` a `transfer` call supplies must already
+    equal the channel's stored `(stateHash, outcomeHash)`
+    (`Operations.lean`'s `.transfer` case, mirroring
+    `MultiAssetHolder._requireMatchingFingerprint`,
+    `MultiAssetHolder.sol:506-516`), and every SELECTED allocation is
+    reduced by EXACTLY its own `afford`-computed amount, an UNSELECTED
+    allocation keeps its full recorded amount, and the total paid never
+    exceeds the channel's held value — A-01, `statement-candidates.md`.
+    STRENGTHENED from `paid ≤ amount`: `N19:747-751` "The allocation is
+    in priority order, so that if the channel does not hold enough funds
+    to pay all the coins that are due, then the addresses at the
+    beginning of the allocation will receive funds first. We say that
+    'A can afford x for B', if B would receive at least x coins, were
+    the coins currently held by A to be paid out in priority order."
+    `N19:765-770` T(A,B,x) "Reduces the funds held in channel A by x.
+    Increases the funds held by B by x. Reduces the amount owed to B in
+    the outcome of A by x." `FM:1845-1849` `pending := sum(r[i] - w[i];
+    i < k)`; `amount := min(owed - w[k], Adjudicator.balance - pending)`.
+    `DOC/0060:54` "If a channel were to finalize and be liquidated when
+    underfunded ... the funds would be paid out in priority order."
+    `SATP:377-379` (fn 9) "the order may also dictate which destinations
+    receive priority in case the channel is insufficiently funded."
+    Contract: `MAH.sol:157-190` (`affordsForDestination = min(amount,
+    surplus)` at :167, `surplus -= affordsForDestination` at :189, run
+    for EVERY index whether selected or not — `transferEffects`'s own
+    `afford` call, `Outcome.lean`). -/
 theorem transfer_pays_only_the_finalized_outcome
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -160,14 +179,312 @@ theorem transfer_pays_only_the_finalized_outcome
       (.transfer assetIndex cid claimedStateHash outcome indices) s')
     (h : assetIndex < outcome.length) :
     ChannelFinalizedWith s cid claimedStateHash (outcomeHashOf outcome) ∧
-    ∀ paid ∈ (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+    (let allocs := (outcome.get ⟨assetIndex, h⟩).allocations
+     let held := heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid
+     let selected (i : Nat) : Bool := indices.isEmpty || i ∈ indices
+     let paidAt := afford allocs held
+     let newAllocs := (transferEffects allocs held indices).1
+     ∀ i, i < allocs.length →
+       (selected i → (newAllocs.getD i Allocation.default).amount =
+         (allocs.getD i Allocation.default).amount - paidAt.getD i 0) ∧
+       (¬ selected i → (newAllocs.getD i Allocation.default).amount =
+         (allocs.getD i Allocation.default).amount)) ∧
+    (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 ≤
+      heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
+  sorry
+
+/-- A-02 — order does not change a simple-allocation payout: paying two
+    DIFFERENT entries of the same finalized asset outcome, in either
+    order (two `.transfer` calls, same channel, same asset, no
+    `.deposit`/`.reclaim` on it in between — each possible order
+    reaching its own final state), leaves the SAME held value behind.
+    Two-call instance of the general claim: "calling transfers out of
+    order does not affect the ultimate result."
+    Quotes: `N19:842-843` "It is also easy to see that calling
+    transfers out of order does not affect the ultimate result."
+    `FM:1814-1816` "The resolution at this point would attempt to give
+    aResolution to Alice and bResolution to Bob, paying out Alice
+    first, allowing her to recover her funds even if Bob does not
+    deposit." Contract: `MAH.sol:161-190` (surplus is consumed for
+    every index, selected or not). -/
+theorem transfer_order_independent_for_simple_allocations
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor1 actor2 actor1' actor2' : Actor)
+    (s mid1 fin1 mid1' fin1' : AdjudicatorState)
+    (assetIndex : Nat) (cid claimedStateHash claimedStateHash' claimedStateHash'' : Term)
+    (outcome outcome1 outcome2 : Outcome) (i j : Nat) (hij : i ≠ j)
+    (h : assetIndex < outcome.length)
+    (hnog : ∀ a ∈ (outcome.get ⟨assetIndex, h⟩).allocations, a.allocationType ≠ .guarantee)
+    (hstep1 : Step sig appRel actor1 s (.transfer assetIndex cid claimedStateHash outcome [i]) mid1)
+    (hstep2 : Step sig appRel actor2 mid1 (.transfer assetIndex cid claimedStateHash' outcome1 [j]) fin1)
+    (hstep1' : Step sig appRel actor1' s (.transfer assetIndex cid claimedStateHash outcome [j]) mid1')
+    (hstep2' : Step sig appRel actor2' mid1' (.transfer assetIndex cid claimedStateHash'' outcome2 [i]) fin1') :
+    heldValue fin1 (outcome.get ⟨assetIndex, h⟩).asset cid =
+      heldValue fin1' (outcome.get ⟨assetIndex, h⟩).asset cid := by
+  sorry
+
+/-- A-03 — the turn-number record never decreases on a live channel: a
+    `challenge`/`checkpoint`/`conclude` step either raises `fp`'s own
+    `turnNumRecord`, leaves it the same, or (only `conclude`) drops it
+    to `0` while finalizing the channel in the same step; no other call
+    touches it at all.
+    Quotes: `DOC/0020:11` "Each state has a version number, with
+    greater version numbers superceding lesser ones." `DOC/0020:19-21`
+    "The only things enforced by the core protocol are: the rule that
+    higher turn numbers take precedence over lower ones." `DOC/0010:138`
+    "The turn number is the mechanism by which newer states take
+    precedence over older ones." `DOC/0040:150-151` "turnNumRecord is
+    the highest turn number that is known to the chain to be supported
+    by a full set of signatures. The exception to this rule is that it
+    is set to 0 when the channel is concluded via a conclude call."
+    `DOC/0070:66` checkpoint establishes "a new and higher
+    turnNumRecord." `SATP:308` `require(supportedStateVars.version >=
+    adjudicatorStatus.version)`. `FM:1377-1381` "each of these
+    responses lead to an increase in the turnNum ... this prevents the
+    game from stalling indefinitely." `FM:1543-1545` "store the turnNum
+    of the response state in the adjudicator. Only allow new
+    force-moves if their response will increase this stored turnNum."
+    Contract: `FM.sol:48-55`, `FM.sol:100`, `FM.sol:277-294`,
+    `FM.sol:160-167`. -/
+theorem turn_number_record_monotone
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call) (cid : Term)
+    (hstep : Step sig appRel actor s call s') :
+    (s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord ∨
+    (s'.channels cid).turnNumRecord = (s.channels cid).turnNumRecord ∨
+    ((s'.channels cid).turnNumRecord = 0 ∧ (s'.channels cid).mode s'.now = .finalized) := by
+  sorry
+
+/-- A-04 — finalization is permanent and fixes the state: once `cid` is
+    finalized at `s`, it stays finalized at every state `AppliesAll`
+    reaches from `s`, with the SAME `stateHash`/`finalizesAt`; only its
+    `outcomeHash` can still change, and only by an `OutcomeDerivedFrom`
+    rewrite (`.transfer`/`.reclaim`).
+    Quotes: `N19:301-302` "it is crucial that the rules of operation
+    only allow one outcome to be finalized for each channel."
+    `N19:612-614` "The definition of finalizability excludes the case
+    where two different finalizable outcomes are held by different
+    participants." `FM:1262-1265` "the game transitions into the
+    Terminated mode. In this mode, no further play is possible."
+    `SATP:294-303` `isOpen` and `require(isOpen(adjudicatorStatus))` in
+    `challenge`. `DOC/0040:104-110` the mode diagram has no edge out of
+    `Finalized`. Contract: `FM.sol:54`, `FM.sol:99`, `FM.sol:147`,
+    `FM.sol:301-303`; `MAH.sol:205,409-413` (fingerprint rewrite
+    only). -/
+theorem finalization_permanent
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (s s' : AdjudicatorState) (cid : Term) (o : Outcome)
+    (hfin : (s.channels cid).mode s.now = .finalized)
+    (hoh : (s.channels cid).outcomeHash = outcomeHashOf o)
+    (calls : List (Actor × Call))
+    (happ : AppliesAll sig appRel s calls s') :
+    (s'.channels cid).mode s'.now = .finalized ∧
+    (s'.channels cid).stateHash = (s.channels cid).stateHash ∧
+    (s'.channels cid).finalizesAt = (s.channels cid).finalizesAt ∧
+    ∃ o', OutcomeDerivedFrom o o' ∧ (s'.channels cid).outcomeHash = outcomeHashOf o' := by
+  sorry
+
+/-- A-05 — only an authorized challenger can register a challenge: a
+    successful `.challenge` call's `challenger` is always one of `fp`'s
+    own participants, and always authorized `candidate`'s own
+    `stateHash` — restates `.challenge`'s own `Step` precondition
+    (`Operations.lean`) as a theorem.
+    Quotes: `DOC/0070:52-56` "The challenger needs to sign this data:
+    keccak256(abi.encode(challengeStateHash, 'forceMove')) ... This
+    mechanism allows the challenge to be authorized only by a channel
+    participant." `FM:1546-1548` "Add a certificate argument to the
+    force-move operation, to identify the challenger ... Require that
+    the challenger is one of the participants." Contract: `FM.sol:63`,
+    `FM.sol:184-197`. -/
+theorem challenge_requires_authorized_challenger
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (fp : FixedPart) (proof : List VariablePart)
+    (candidate : VariablePart) (challenger : Nat)
+    (hstep : Step sig appRel actor s (.challenge fp proof candidate challenger) s') :
+    challenger ∈ fp.participants ∧ AuthorizedBy sig s challenger (stateHash fp candidate) := by
+  sorry
+
+/-- A-06 — a deposit to an external destination fails: `.deposit` has no
+    successful `Step` when its own `channelId` argument is an external
+    address.
+    Quotes: `DOC/0060:16` "Firstly, destination must NOT be an external
+    destination." `DOC/0060:18` "The first rule prevents funds being
+    escrowed against something other than a channelId." Contract:
+    `ANA.sol:96`. Model: `Ops:142`. -/
+theorem deposit_external_destination_fails
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (expectedHeld asset amount : Nat)
+    (hext : isExternal cid) :
+    ¬ Step sig appRel actor s (.deposit cid expectedHeld asset amount) s' := by
+  sorry
+
+/-- A-07 — a deposit with a wrong `expectedHeld` fails: `.deposit` has
+    no successful `Step` when its own `expectedHeld` argument disagrees
+    with the channel's CURRENT held value — this is what keeps a
+    front-run depositor from losing funds.
+    Quotes: `DOC/0060:16` "Secondly, the on-chain holdings for
+    destination must be equal to expectedHeld." `DOC/0060:18` "The
+    second rule prevents loss of funds: since holdings are paid out in
+    preferential order, depositing before a counterparty has deposited
+    implies that they can withdraw your funds." Contract:
+    `ANA.sol:102,112`. Model: `Ops:141`. -/
+theorem deposit_wrong_expected_held_fails
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (expectedHeld asset amount : Nat)
+    (hwrong : heldValue s asset cid ≠ expectedHeld) :
+    ¬ Step sig appRel actor s (.deposit cid expectedHeld asset amount) s' := by
+  sorry
+
+/-- A-08 — a deposit adds exactly its amount to one channel, and touches
+    nothing else: promotes `deposit_sets_heldValue`/
+    `deposit_merge_sets_heldValue` (`Lemmas.lean`) to a full statement,
+    adding the frame condition those two theorems do not state — every
+    OTHER `(asset, channel)` held value is unchanged, and no channel
+    status changes.
+    Quotes: `N19:165-168` "The deposit operation, DA(x), is an on-chain
+    operation used to increase A's balance by x coins. There are no
+    restrictions on who can deposit coins for an address, but the
+    transaction must always include a transfer of x coins into the
+    adjudicator." `N19:785-787` "a deposit into the system cannot
+    reduce the value of any address and cannot increase the value of
+    any address by more than the value of the deposit." Contract:
+    `ANA.sol:86,111-112`. -/
+theorem deposit_effect
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (expectedHeld asset amount : Nat)
+    (hstep : Step sig appRel actor s (.deposit cid expectedHeld asset amount) s') :
+    heldValue s' asset cid = heldValue s asset cid + amount ∧
+    (∀ asset' cid', (asset', cid') ≠ (asset, cid) →
+      heldValue s' asset' cid' = heldValue s asset' cid') ∧
+    s'.channels = s.channels := by
+  sorry
+
+
+/-- A-10 — `transfer` never pays a guarantee allocation: restates
+    `.transfer`'s own `Step` precondition (`Operations.lean`, `Ops:314`)
+    as a theorem.
+    Quotes: `DOC/0030:41` "When allocationType is set to guarantee,
+    funds cannot be transferred in the usual way. Instead, they may be
+    moved to another channel on chain using the reclaim method."
+    Contract: `MAH.sol:169-170` `revert('cannot transfer a
+    guarantee')`. -/
+theorem transfer_never_pays_guarantee
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex : Nat) (cid claimedStateHash : Term)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig appRel actor s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (h : assetIndex < outcome.length) :
+    ∀ a ∈ (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.1,
-      ∃ original ∈ (outcome.get ⟨assetIndex, h⟩).allocations,
-        paid.destination = original.destination ∧ paid.amount ≤ original.amount := by
-  obtain ⟨_hidx, hmode, hsh, hoh, _hstrict, _hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-  exact ⟨⟨hmode, hsh, hoh⟩,
-    transferEffects_exit_provenance (outcome.get ⟨assetIndex, h⟩).allocations
-      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices⟩
+      a.allocationType ≠ .guarantee := by
+  sorry
+
+/-- A-11 — `reclaim` only reallocates a finalized guarantee, value-
+    neutral: both the source and target channel are finalized, the
+    named entry is a `.guarantee`, and `s'.pool`/`s'.holdings` are
+    UNCHANGED — `reclaim` moves value between OUTCOME entries only,
+    never into or out of the pool (the model does NOT follow the
+    deployed `_settleReclaimExit`, which mints a brand-new commitment;
+    departure item 2, `Ops:351-355`).
+    Quotes: `SATP:344-364` Listing 2: `require(0 < ledgerStatus.
+    finalizesAt <= now)`, `require(0 < targetStatus.finalizesAt <=
+    now)`, `require(isGuarantee(guarantee))`, `o_ledger[left] +=
+    o_target[0]`, `o_ledger[right] += o_target[1]`, `delete
+    o_ledger[targetChannelId]`. `N19:1072-1074` "The funds held in a
+    guarantee channel can only be paid out once the outcome of the
+    target channel is finalized." `DOC/0080:143` "the parent and child
+    channels must both be finalized on chain. If the child channel is
+    funded with a guarantee, funds may be transferred from the child
+    channel to the parent channel using reclaim." Contract:
+    `MAH.sol:307,317-322,329-330,384-387`. -/
+theorem reclaim_value_neutral
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState)
+    (sourceChannelId : Term) (sourceOutcome : Outcome)
+    (sourceAssetIndex indexOfTargetInSource : Nat) (targetOutcome : Outcome)
+    (targetAssetIndex : Nat) (claimedTargetStateHash : Term)
+    (hstep : Step sig appRel actor s (.reclaim sourceChannelId sourceOutcome
+      sourceAssetIndex indexOfTargetInSource targetOutcome targetAssetIndex
+      claimedTargetStateHash) s') :
+    (s.channels sourceChannelId).mode s.now = .finalized ∧
+    s'.pool = s.pool ∧
+    s'.holdings = s.holdings ∧
+    (∃ hsa : sourceAssetIndex < sourceOutcome.length,
+      ∃ hidx : indexOfTargetInSource < (sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.length,
+        ((sourceOutcome.get ⟨sourceAssetIndex, hsa⟩).allocations.get
+          ⟨indexOfTargetInSource, hidx⟩).allocationType = .guarantee) := by
+  sorry
+
+
+/-- A-13 — channel value leaves only through `.transfer` of a finalized
+    channel: whenever a `Step` lowers a channel's own held value, that
+    step is a `.transfer` on that SAME channel, and the channel was
+    already finalized when it ran. No other call can ever lower a
+    channel's collateral.
+    Quotes: `N19:227-229` "funds can only be withdrawn from participant
+    addresses - and only by a party who knows the private key."
+    `DOC/0080:5` "Defunding can only happen after a channel finalizes."
+    `SATP:284-286` "assets deposited into an adjudicator contract are
+    released only when given explicit consent on the final outcome by
+    the channel's participants." `FM:1718-1726` "Once the game has
+    ended ... a game's adjudicator should release funds";
+    `Require(Adjudicator.isTerminated(channelId))`. Contract: holdings
+    change only at `MAH.sol:228`, `ANA.sol:168`, `ANA.sol:199`
+    (reclaim, departure) and `NA.sol:95` (bulk path, departure). -/
+theorem value_leaves_only_via_transfer_of_finalized_channel
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call) (asset : Nat) (cid : Term)
+    (hstep : Step sig appRel actor s call s')
+    (hdec : heldValue s' asset cid < heldValue s asset cid) :
+    (∃ assetIndex claimedStateHash outcome indices,
+      call = .transfer assetIndex cid claimedStateHash outcome indices) ∧
+    (s.channels cid).mode s.now = .finalized := by
+  sorry
+
+/-- Like `OutcomeDerivedFrom`, but excluding `.reclaimStep`: reached
+    from `o` by `.transfer` rewrites only, no `.reclaim` in between —
+    what A-14 needs ("no `reclaim` on `c`"), since `.reclaimStep` is the
+    one rewrite that can INCREASE an entry's own amount (crediting a
+    guarantee's two destinations), breaking monotone decrease. -/
+inductive TransferOnlyDerivedFrom : Outcome → Outcome → Prop where
+  | refl (o : Outcome) : TransferOnlyDerivedFrom o o
+  | transferStep {o mid : Outcome} (assetIndex : Nat) (h : assetIndex < mid.length)
+      (heldBefore : Nat) (indices : List Nat) (hmid : TransferOnlyDerivedFrom o mid) :
+      TransferOnlyDerivedFrom o
+        (mid.mapIdx fun i exit => if i ≠ assetIndex then exit else
+          { exit with allocations :=
+              (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 })
+
+/-- A-14 — cumulative payout to an entry never exceeds its allocation:
+    across any `.transfer`-only call sequence from a finalized outcome
+    `o` (no `.reclaim` in between — `TransferOnlyDerivedFrom`, above),
+    every entry's CURRENT recorded amount is at most its ORIGINAL amount
+    in `o` — so the TOTAL this entry has been paid, across every
+    `.transfer` call in the sequence, is at most what `o` allocated it.
+    Quotes: `N19:836-837` "it is impossible to find a strategy that
+    gives any node a value higher than allocated by this algorithm."
+    `N19:770` T "Reduces the amount owed to B in the outcome of A by
+    x." `FM:1843,1850` `w := Adjudicator.withdrawnAmounts`;
+    `Adjudicator.withdrawnAmounts[k] += amount`. Contract:
+    `MAH.sol:173,205` (amount reduced, fingerprint rewritten). -/
+theorem cumulative_payout_never_exceeds_allocation
+    (o o' : Outcome) (hder : TransferOnlyDerivedFrom o o') (i k : Nat) :
+    ((o'.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount ≤
+      ((o.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount := by
+  sorry
+
+
 
 /-!
 ## B. No caller can stop someone from getting money they are owed
@@ -596,6 +913,72 @@ eddsaCompleteness`, gated on `.signNote`; `appRel` by substituting
 only (the one can-happen theorem whose witnessed execution includes a
 `.transfer` call).
 -/
+
+/-- A-09 — a checkpoint can happen, and clears a challenge back to Open:
+    there is a reachable challenged channel and a `.checkpoint` call
+    that moves it to `.open` mode, with `turnNumRecord` raised to the
+    checkpoint's own turn and `finalizesAt` cleared to `0`. The only
+    lifecycle edge with no prior can-happen theorem.
+    Quotes: `DOC/0070:66` "The checkpoint method allows anyone with a
+    supported off-chain state to establish a new and higher
+    turnNumRecord on chain, and leave the resulting channel in the
+    'Open' mode. It can be used to clear a challenge." `DOC/0040:105,108`
+    `Open --> Open: checkpoint`; `Challenge--> Open: checkpoint`.
+    `DOC/0070:35` "This delay allows the challenge to be cleared by a
+    timely and well-formed respond or checkpoint transaction."
+    `FM:1266-1269` "If a valid response is received, the game returns
+    to the Collaborative mode." Contract: `FM.sol:90-119`. Model:
+    `Ops:227-237`. -/
+theorem checkpoint_can_happen
+    (hashA : HashAssumptions) (sig : SignatureAssumptions) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart) (actor : Actor),
+      _root_.Reachable pool0 ∧
+      Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
+      (s.channels (channelId fp)).mode s.now = .challenge ∧
+      Step sig (consensusRelation sig) actor s (.checkpoint fp [] candidate) s' ∧
+      (s'.channels (channelId fp)).mode s'.now = .open ∧
+      (s'.channels (channelId fp)).turnNumRecord = candidate.turnNum ∧
+      (s'.channels (channelId fp)).finalizesAt = 0 := by
+  sorry
+
+/-- A-12 — guarantee reallocation can change a later transfer's payout:
+    there is a reachable state from which two call orders — pay a
+    destination `d` and reclaim a guarantee, in either order — leave
+    `d` holding a DIFFERENT amount. This bounds A-02: order independence
+    holds only for simple allocations, not once a guarantee is in play.
+    Quotes: `N19:1148-1151` "it is possible to construct situations
+    where the same outcome can lead to different values, depending on
+    the order in which guarantees are claimed." `N19:1152-1154,1174-1177`
+    lower bounds only ("participant I will receive their 5 coins, even
+    though we cannot say anything about how the remaining 5 coins will
+    be distributed"). [INFERENCE from `MAH.sol:359-387` and
+    `:161-190`, not a source quote: the source states this for Nitro
+    2019 `claim`; the same effect exists with `reclaim` — example:
+    outcome `[A:0, B:0, d:5, G:5(left=A,right=B)]`, held 5, target
+    outcome `[5,0]`. `transfer d` first pays `d` 5. `reclaim` first
+    gives `[A:5, B:0, d:5]`, then `transfer d` pays 0.] -/
+theorem guarantee_reallocation_order_dependent
+    (hashA : HashAssumptions) (sig : SignatureAssumptions)
+    (poolSigLive : PoolSignatureLiveness) (ownedComplete : OwnedProofCompleteness) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s : AdjudicatorState) (d : Allocation)
+      (actor1a actor1b actor2a actor2b : Actor)
+      (call1a call1b call2a call2b : Call)
+      (mid1 fin1 mid2 fin2 : AdjudicatorState),
+      _root_.Reachable pool0 ∧
+      Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig (consensusRelation sig) actor1a s call1a mid1 ∧
+      Step sig (consensusRelation sig) actor1b mid1 call1b fin1 ∧
+      Step sig (consensusRelation sig) actor2a s call2a mid2 ∧
+      Step sig (consensusRelation sig) actor2b mid2 call2b fin2 ∧
+      ∃ pre1 pre2 : CommitmentPreimage,
+        PoolIsLive fin1.pool (commitment pre1.npk pre1.token pre1.value) ∧
+        pre1.npk = d.destination ∧
+        PoolIsLive fin2.pool (commitment pre2.npk pre2.token pre2.value) ∧
+        pre2.npk = d.destination ∧
+        pre1.value ≠ pre2.value := by
+  sorry
 
 set_option maxRecDepth 2000 in
 /-- A deposit can happen: for all `HashAssumptions`, `SignatureAssumptions`,
