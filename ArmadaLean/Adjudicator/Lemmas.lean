@@ -3637,6 +3637,357 @@ theorem bulkTransferFold_heldValue_frame_cid (self : Nat) (cid : Term) :
       exact (ih newRest midPool poolF _ holdingsF hrec hinv' qasset qcid hne).trans hframe
 
 
+/-- `PoolOwnedSpendStep`'s own `preimageOf` update, stated without any
+    `holdings` indexing (the bare registry fact `PoolOwnedSpend_update_
+    preimage_nonzero`'s own internal `hrelated`/`hunrelated` case split
+    already establishes, exposed here on its own): an already-known,
+    consistent preimage survives the step. What chains a `bulkTransferFold`
+    induction's own `ih` call forward across each asset's own spend,
+    alongside `PoolOwnedSpendStep_ownedRandom_known`. -/
+theorem PoolOwnedSpendStep_preimageOf_known
+    (pool pool' : PoolState) (self asset : Nat) (cid : Term) (remainder r : Nat)
+    (payoutOutputs : List CommitmentPreimage)
+    (holdings : Nat → Term → Option (Nat × Term))
+    (htokPayout : ∀ pre ∈ payoutOutputs, pre.token = asset)
+    (hmatch : PoolOwnedSpendStep pool self asset (holdings asset cid) payoutOutputs
+      (if remainder = 0 then [] else [(⟨npk (Term.val self) r, asset, remainder⟩ : CommitmentPreimage)])
+      pool')
+    (qc : Term) (pre : CommitmentPreimage) (hpre : pool.preimageOf qc = some pre)
+    (hconsist : hashCommitment pre = qc) :
+    pool'.preimageOf qc = some pre := by
+  have hvalid_outputs : ∀ cp ∈ (payoutOutputs ++
+      (if remainder = 0 then [] else [(⟨npk (Term.val self) r, asset, remainder⟩ :
+        CommitmentPreimage)])).map
+      (fun pre => (commitment pre.npk asset pre.value, pre)), hashCommitment cp.2 = cp.1 := by
+    intro cp hcp
+    obtain ⟨pre0, hmem, hcpeq⟩ := List.mem_map.mp hcp
+    have htok : pre0.token = asset := by
+      rcases List.mem_append.mp hmem with hc1 | hc2
+      · exact htokPayout pre0 hc1
+      · by_cases hrem : remainder = 0
+        · rw [if_pos hrem] at hc2; exact absurd hc2 (List.not_mem_nil)
+        · rw [if_neg hrem] at hc2
+          rw [List.mem_singleton] at hc2
+          exact hc2 ▸ rfl
+    rw [← hcpeq]
+    show hashCommitment pre0 = commitment pre0.npk asset pre0.value
+    rw [← htok]
+    rfl
+  rcases hc0 : holdings asset cid with _ | c0
+  · simp only [hc0] at hmatch
+    obtain ⟨w, pub, _hM, hC, _spent', _randomOut, _hNonZero, _hCapacity, _hown, htoken, hnewnotes,
+      _hroot, _hmark, _hRandomOut, heq⟩ := hmatch
+    have hrecordseq : ownedOutputRecords w pub = (payoutOutputs ++
+        (if remainder = 0 then [] else [(⟨npk (Term.val self) r, asset, remainder⟩ :
+          CommitmentPreimage)])).map
+        (fun pre => (commitment pre.npk asset pre.value, pre)) := by
+      have hstep1 := congrArg
+        (List.map (fun pre => (commitment pre.npk asset pre.value, pre))) hnewnotes
+      rw [← hstep1]
+      unfold ownedOutputRecords ownedNewNotes
+      rw [List.map_ofFn]
+      congr 1
+      funext j
+      congr 1
+      exact (hC.outputs j).trans (by rw [htoken])
+    rw [heq]; dsimp only; rw [hrecordseq]
+    exact applyRecords_preserves_known hvalid_outputs pool.preimageOf qc pre hpre hconsist
+  · simp only [hc0] at hmatch
+    obtain ⟨w, pub, _hM, hC, _rest, _spent', _randomOut, _hNonZero, _hCapacity, _hown, htoken,
+      hnewnotes, _hleavesIdx, _hcommit, _hroot, _hremove, _hmark, _hRandomOut, heq⟩ := hmatch
+    have hrecordseq : ownedOutputRecords w pub = (payoutOutputs ++
+        (if remainder = 0 then [] else [(⟨npk (Term.val self) r, asset, remainder⟩ :
+          CommitmentPreimage)])).map
+        (fun pre => (commitment pre.npk asset pre.value, pre)) := by
+      have hstep1 := congrArg
+        (List.map (fun pre => (commitment pre.npk asset pre.value, pre))) hnewnotes
+      rw [← hstep1]
+      unfold ownedOutputRecords ownedNewNotes
+      rw [List.map_ofFn]
+      congr 1
+      funext j
+      congr 1
+      exact (hC.outputs j).trans (by rw [htoken])
+    rw [heq]; dsimp only; rw [hrecordseq]
+    exact applyRecords_preserves_known hvalid_outputs pool.preimageOf qc pre hpre hconsist
+
+
+/-- `bulkTransferFold`'s own `ownedRandomOf` update, the `bulkTransferFold`
+    lift of `PoolOwnedSpendStep_ownedRandom_known`'s own first half: an
+    already-known adjudicator-owned disclosure survives the WHOLE fold,
+    one asset's own spend at a time, the same way
+    `bulkTransferFold_heldValue_frame_cid` lifts `PoolOwnedSpendStep_
+    frame`. What `unbeatable_pays`'s own strategy needs to carry the
+    channel's held note's own disclosure across a bulk call elsewhere in
+    `interleaved`. -/
+theorem bulkTransferFold_ownedRandom_known (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
+      ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
+    ∀ qc pre r, pool.preimageOf qc = some pre → hashCommitment pre = qc →
+      pre.npk = npk (Term.val self) r → pool.ownedRandomOf qc = some ⟨self, r⟩ →
+      poolF.ownedRandomOf qc = some ⟨self, r⟩ := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold _hinv qc pre r _hpre _hconsist _hnpk hknown
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hpoolEq, _hholdEq⟩ := hfold
+      rw [hpoolEq]; exact hknown
+    | cons _ _ => unfold bulkTransferFold at hfold; exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold hinv qc pre r hpre hconsist hnpk hknown
+    cases newOutcome with
+    | nil => unfold bulkTransferFold at hfold; exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguarantee, _hnewExit, r0, midPool, hmatch, hrec⟩ := hfold
+      have htokPayout : ∀ pre ∈ (transferEffects exit.allocations (match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1
+          |>.filterMap (fun a => if a.amount = 0 then none else
+            some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)),
+          pre.token = exit.asset := by
+        intro pre hpre
+        obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+        by_cases hamt : a.amount = 0
+        · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+        · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl
+      have hinv' := PoolOwnedSpend_update_preimage_nonzero pool midPool self exit.asset cid
+        ((match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) -
+          (transferEffects exit.allocations (match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.2) r0
+        ((transferEffects exit.allocations (match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1.filterMap
+          (fun a => if a.amount = 0 then none else
+            some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)))
+        holdings htokPayout hmatch hinv
+      have hOwnedKnown := (PoolOwnedSpendStep_ownedRandom_known pool midPool self exit.asset cid
+        ((match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) -
+          (transferEffects exit.allocations (match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.2) r0
+        ((transferEffects exit.allocations (match holdings exit.asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1.filterMap
+          (fun a => if a.amount = 0 then none else
+            some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)))
+        holdings htokPayout hmatch).1 qc pre r hpre hconsist hnpk hknown
+      have hpre_mid : midPool.preimageOf qc = some pre :=
+        PoolOwnedSpendStep_preimageOf_known pool midPool self exit.asset cid
+          ((match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) -
+            (transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.2) r0
+          ((transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1.filterMap
+            (fun a => if a.amount = 0 then none else
+              some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)))
+          holdings htokPayout hmatch qc pre hpre hconsist
+      exact ih newRest midPool poolF _ holdingsF hrec hinv' qc pre r hpre_mid hconsist hnpk hOwnedKnown
+
+
+
+
+
+/-- The reachability-level lift of `PoolOwnedSpendStep_ownedRandom_known`'s
+    own "already known survives" half, one `Step` at a time, bundled with
+    the preimage-nonzero invariant it needs at every intermediate state
+    (`holdings_preimage_nonzero_step`'s own fact, threaded alongside since
+    this lemma's own `.transfer`/bulk cases need it too): an already-
+    known, consistent, adjudicator-owned commitment's own `ownedRandomOf`
+    disclosure survives EVERY `Call` — trivially for every case that
+    leaves `s.pool` unchanged, via `PoolOwnedSpendStep_ownedRandom_known`
+    for `.transfer`, via `bulkTransferFold_ownedRandom_known` for the two
+    bulk calls. What `unbeatable_pays`'s own strategy needs to carry the
+    channel's held note's own disclosure from the anchor `s` to an
+    ARBITRARY reachable `mid`, so `owned_spend_witness_exists`'s own
+    `hOwned` hypothesis can be built there. -/
+theorem ownedRandom_known_step (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hinv : (∀ qc pre r, s.pool.preimageOf qc = some pre → hashCommitment pre = qc →
+        pre.npk = npk (Term.val s.self) r → s.pool.ownedRandomOf qc = some ⟨s.self, r⟩) ∧
+      (∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+        ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc))
+    (hstep : Step sig appRel actor s call s') :
+    (∀ qc pre r, s.pool.preimageOf qc = some pre → hashCommitment pre = qc →
+        pre.npk = npk (Term.val s.self) r → s'.pool.ownedRandomOf qc = some ⟨s.self, r⟩) ∧
+      (∀ qasset qcid qpos qc, s'.holdings qasset qcid = some (qpos, qc) →
+        ∃ pre, s'.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) := by
+  obtain ⟨hinvOwned, hinvPre⟩ := hinv
+  have hinvPre' := holdings_preimage_nonzero_step sig appRel actor s s' call hinvPre hstep
+  refine ⟨?_, hinvPre'⟩
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
+    rcases hh : s.holdings asset channelId with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _hholdseq⟩ := hmatch
+      obtain ⟨r0, hown, hcommit, htoken, _hposition, _hN, _hM, hC, _rest, _spent', records,
+        _hCapacity, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+      have hvalid_outputs : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+        fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+      intro qc pre r hpre hconsist hnpk
+      have h1 := hinvOwned qc pre r hpre hconsist hnpk
+      have hpre_mid : applyRecords s.pool.preimageOf records qc = some pre :=
+        applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre hpre hconsist
+      rw [hpoolEq]
+      have hnz0 : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
+        rw [htoken]; exact npk_preimage_not_zero hown.symm
+      have hread0 := applyRecords_reads hvalid_outputs s.pool.preimageOf _ _ hidxrec hnz0
+      rw [heq]; dsimp only
+      show applyOwnedRecords s.pool.ownedRandomOf
+        [(pub.commitmentsOut idx, (⟨s.self, r0⟩ : OwnedDisclosure))] qc = some ⟨s.self, r⟩
+      exact applyOwnedRecords_preserves_known (reg := applyRecords s.pool.preimageOf records)
+        (fun cd hcd => by
+          rw [List.mem_singleton] at hcd
+          refine hcd ▸ ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, ?_⟩
+          rw [htoken]; exact hown.symm) s.pool.ownedRandomOf qc s.self r pre h1 hpre_mid hnpk
+    · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
+      rw [hh] at hmatch
+      obtain ⟨merged, mergedPos, hmerge, _hholdseq⟩ := hmatch
+      obtain ⟨r0, hown, hcommit, htoken, _hposition, _hN, _hM, hC, _rest, _spent', records,
+        _hCapacity, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+      have hvalid_outputs : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+        fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+      intro qc pre r hpre hconsist hnpk
+      have hpre_mid : midPool.preimageOf qc = some pre := by
+        rw [heq]; dsimp only
+        exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre hpre hconsist
+      have h1 := hinvOwned qc pre r hpre hconsist hnpk
+      have hnz0' : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
+        rw [htoken]; exact npk_preimage_not_zero hown.symm
+      have hread0 := applyRecords_reads hvalid_outputs s.pool.preimageOf _ _ hidxrec hnz0'
+      have hpre_s_applied : applyRecords s.pool.preimageOf records qc = some pre :=
+        applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre hpre hconsist
+      have h1mid : midPool.ownedRandomOf qc = some ⟨s.self, r⟩ := by
+        rw [heq]; dsimp only
+        exact applyOwnedRecords_preserves_known (reg := applyRecords s.pool.preimageOf records)
+          (fun cd hcd => by
+          rw [List.mem_singleton] at hcd
+          refine hcd ▸ ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, ?_⟩
+          rw [htoken]; exact hown.symm) s.pool.ownedRandomOf qc s.self r pre h1 hpre_s_applied hnpk
+      obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r', randomOut', hNonZero', hCapacity',
+        hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
+        hremove', hnullify', hrandomOut', heq'⟩ := hmerge
+      have hvalid_outputs' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
+        ownedOutputRecords_valid hC'
+      have hmemrec : (pub'.commitmentsOut (0 : Fin 1),
+          (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage)) ∈
+          ownedOutputRecords w' pub' := by
+        unfold ownedOutputRecords
+        exact List.mem_ofFn.mpr ⟨0, rfl⟩
+      have hnz0 : ¬ isZeroPreimage (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) :=
+        npk_preimage_not_zero hnpkOut'.symm
+      have hread' := applyRecords_reads hvalid_outputs' midPool.preimageOf _ _ hmemrec hnz0
+      have hvalid' : applyRecords midPool.preimageOf (ownedOutputRecords w' pub')
+          (pub'.commitmentsOut (0 : Fin 1)) =
+          some (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) := hread'
+      rw [heq']
+      show applyOwnedRecords midPool.ownedRandomOf
+        [(pub'.commitmentsOut (0 : Fin 1), (⟨pub'.ownerField, randomOut'⟩ : OwnedDisclosure))] qc =
+        some ⟨s.self, r⟩
+      have hpre_mid_applied : applyRecords midPool.preimageOf (ownedOutputRecords w' pub') qc =
+          some pre := applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre
+        hpre_mid hconsist
+      exact applyOwnedRecords_preserves_known (reg := applyRecords midPool.preimageOf
+        (ownedOutputRecords w' pub')) (fun cd hcd => by
+        rw [List.mem_singleton] at hcd
+        exact hcd ▸ ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩, hvalid', hrandomOut'⟩)
+        midPool.ownedRandomOf qc s.self r pre h1mid hpre_mid_applied hnpk
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r0, hmatch, _hholdseq, _hchanseq⟩ := hrest
+    change PoolOwnedSpendStep s.pool s.self (outcome.get ⟨assetIndex, hidx⟩).asset
+      (s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid)
+      ((transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.1.filterMap (fun a =>
+        if a.amount = 0 then none
+        else some (⟨a.destination, (outcome.get ⟨assetIndex, hidx⟩).asset, a.amount⟩ : CommitmentPreimage)))
+      (if heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+          (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+            (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
+       then []
+       else [(⟨npk (Term.val s.self) r0, (outcome.get ⟨assetIndex, hidx⟩).asset,
+         heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+           (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+             (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2⟩ : CommitmentPreimage)])
+      s'.pool at hmatch
+    generalize hAO : outcome.get ⟨assetIndex, hidx⟩ = assetOutcome at hmatch
+    generalize hPayoutDef : (transferEffects assetOutcome.allocations
+        (heldValue s assetOutcome.asset cid) indices).2.1.filterMap (fun a =>
+          if a.amount = 0 then none
+          else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage)) =
+      payoutOutputs at hmatch
+    generalize hRemDef : heldValue s assetOutcome.asset cid -
+      (transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.2 =
+      remainder at hmatch
+    intro qc pre r hpre hconsist hnpk
+    exact (PoolOwnedSpendStep_ownedRandom_known s.pool s'.pool s.self assetOutcome.asset cid
+      remainder r0 payoutOutputs s.holdings
+      (fun pre hpre => by
+        rw [← hPayoutDef] at hpre
+        obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+        by_cases hamt : a.amount = 0
+        · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+        · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl)
+      hmatch).1 qc pre r hpre hconsist hnpk (hinvOwned qc pre r hpre hconsist hnpk)
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _hsa, _hidx1, _h5, _h6, hpoolEq, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    exact bulkTransferFold_ownedRandom_known s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold hinvPre qc pre r hpre hconsist hnpk (hinvOwned qc pre r hpre hconsist hnpk)
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    exact bulkTransferFold_ownedRandom_known s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold hinvPre qc pre r hpre hconsist hnpk
+      (hinvOwned qc pre r hpre hconsist hnpk)
+  | tick newNow =>
+    obtain ⟨_, _, hpoolEq, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
+  | sign p d =>
+    obtain ⟨_, _, hpoolEq, _, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpoolEq, _, _hholdEq, _⟩ := hstep
+    intro qc pre r hpre hconsist hnpk
+    rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
 
 
 /-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
