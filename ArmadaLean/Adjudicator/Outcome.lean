@@ -368,6 +368,18 @@ theorem mapIdx_getD {α : Type} (l : List α) (f : Nat → α → α) (i : Nat) 
   rw [List.getD_eq_getElem?_getD, List.getElem?_mapIdx, List.getElem?_eq_getElem h]
   rfl
 
+/-- `mapIdx_getD` restated for `.get`: A-02 needs this to read off
+    `outcome1.get ⟨assetIndex, h1⟩` once `outcome1` is known (via
+    `outcomeHashOf_inj`) to BE `outcome.mapIdx f`, without threading a
+    throwaway `.getD` default through the rest of its own proof. -/
+theorem mapIdx_get {α : Type} (l : List α) (f : Nat → α → α) (i : Nat) (h : i < l.length)
+    (h' : i < (l.mapIdx f).length) : (l.mapIdx f).get ⟨i, h'⟩ = f i (l.get ⟨i, h⟩) := by
+  have e1 : (l.mapIdx f)[i]? = some ((l.mapIdx f).get ⟨i, h'⟩) := List.getElem?_eq_getElem h'
+  have e2 : l[i]? = some (l.get ⟨i, h⟩) := List.getElem?_eq_getElem h
+  rw [List.getElem?_mapIdx, e2] at e1
+  simp only [Option.map_some] at e1
+  exact (Option.some.inj e1).symm
+
 /-- `reallocateGuarantee`'s own effect at the reallocated asset itself,
     unfolded past the `mapIdx`/`.getD` machinery: the SAME asset's
     allocations become the two sequential `creditFirst` calls on its

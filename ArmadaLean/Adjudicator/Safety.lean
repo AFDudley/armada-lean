@@ -481,7 +481,115 @@ theorem transfer_order_independent_for_simple_allocations
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).2.2 ∧
     heldValue fin1 (outcome.get ⟨assetIndex, h⟩).asset cid =
       heldValue fin1' (outcome.get ⟨assetIndex, h⟩).asset cid := by
-  sorry
+  have houtcome1 : outcome1 = outcome.mapIdx (fun idx exit =>
+      if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1 }) := by
+    apply outcomeHashOf_inj
+    obtain ⟨_, _, _, _, _, hinner1, _, _, _, _⟩ := hstep1
+    obtain ⟨_, hrest1⟩ := hinner1
+    obtain ⟨_, _, hchan1⟩ := hrest1
+    obtain ⟨_, _, _, hoh2, _, _, _, _, _, _⟩ := hstep2
+    rw [← hoh2, hchan1]
+    unfold update
+    rw [if_pos rfl]
+    rfl
+  subst houtcome1
+  have houtcome2 : outcome2 = outcome.mapIdx (fun idx exit =>
+      if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1 }) := by
+    apply outcomeHashOf_inj
+    obtain ⟨_, _, _, _, _, hinner1', _, _, _, _⟩ := hstep1'
+    obtain ⟨_, hrest1'⟩ := hinner1'
+    obtain ⟨_, _, hchan1'⟩ := hrest1'
+    obtain ⟨_, _, _, hoh2', _, _, _, _, _, _⟩ := hstep2'
+    rw [← hoh2', hchan1']
+    unfold update
+    rw [if_pos rfl]
+    rfl
+  subst houtcome2
+  have hget1 := mapIdx_get outcome (fun idx exit => if idx ≠ assetIndex then exit
+    else { exit with allocations :=
+      (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1 }) assetIndex h h1
+  have hget2 := mapIdx_get outcome (fun idx exit => if idx ≠ assetIndex then exit
+    else { exit with allocations :=
+      (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1 }) assetIndex h h2
+  simp only [ne_eq, not_true_eq_false, if_false] at hget1 hget2
+  have hasset1 : ((outcome.mapIdx (fun idx exit => if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1 })).get ⟨assetIndex, h1⟩).asset
+      = (outcome.get ⟨assetIndex, h⟩).asset := by rw [hget1]
+  have hasset2 : ((outcome.mapIdx (fun idx exit => if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1 })).get ⟨assetIndex, h2⟩).asset
+      = (outcome.get ⟨assetIndex, h⟩).asset := by rw [hget2]
+  have hallocs1 : ((outcome.mapIdx (fun idx exit => if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1 })).get ⟨assetIndex, h1⟩).allocations
+      = (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1 := by rw [hget1]
+  have hallocs2 : ((outcome.mapIdx (fun idx exit => if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1 })).get ⟨assetIndex, h2⟩).allocations
+      = (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1 := by rw [hget2]
+  rw [hasset1, hallocs1, hasset2, hallocs2]
+  have hheld1 := transfer_sets_heldValue sig appRel actor1 s mid1 assetIndex cid claimedStateHash
+    outcome [i] hstep1 h
+  have hheld1' := transfer_sets_heldValue sig appRel actor1' s mid1' assetIndex cid claimedStateHash
+    outcome [j] hstep1' h
+  have htp_i := transferEffects_totalPayouts_single (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) i
+  have htp_j := transferEffects_totalPayouts_single (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) j
+  rw [htp_i] at hheld1
+  rw [htp_j] at hheld1'
+  have htp_j' := transferEffects_totalPayouts_single
+    (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1
+    (heldValue mid1 (outcome.get ⟨assetIndex, h⟩).asset cid) j
+  have htp_i' := transferEffects_totalPayouts_single
+    (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1
+    (heldValue mid1' (outcome.get ⟨assetIndex, h⟩).asset cid) i
+  rw [hheld1] at htp_j'
+  rw [hheld1'] at htp_i'
+  have hexch_j := afford_exchange (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) i j hij
+  have hexch_i := afford_exchange (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) j i (Ne.symm hij)
+  have hpay_j := htp_j'.trans hexch_j
+  have hpay_i := htp_i'.trans hexch_i
+  have hheld2 := transfer_sets_heldValue sig appRel actor2 mid1 fin1 assetIndex cid claimedStateHash'
+    (outcome.mapIdx (fun idx exit => if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [i]).1 })) [j] hstep2 h1
+  have hheld2' := transfer_sets_heldValue sig appRel actor2' mid1' fin1' assetIndex cid claimedStateHash''
+    (outcome.mapIdx (fun idx exit => if idx ≠ assetIndex then exit
+      else { exit with allocations :=
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) [j]).1 })) [i] hstep2' h2
+  rw [hasset1] at hheld2
+  rw [hasset2] at hheld2'
+  rw [hallocs1] at hheld2
+  rw [hallocs2] at hheld2'
+  rw [hheld1, hpay_j] at hheld2
+  rw [hheld1', hpay_i] at hheld2'
+  refine ⟨?_, ?_, ?_⟩
+  · rw [htp_i, hheld1', hpay_i]
+  · rw [hheld1, hpay_j, htp_j]
+  · rw [hheld2, hheld2']
+    omega
 
 
 /-- A-03 — the turn-number record never decreases on a live channel: a
