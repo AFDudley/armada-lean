@@ -138,7 +138,243 @@ theorem finalized_outcome_was_concluded_or_challenged
       Step sig appRel actor0 s0 (.challenge fp proof candidate challenger) s1 ∧
       stateHash fp candidate = stateH ∧
       ∃ o, OutcomeDerivedFrom candidate.outcome o ∧ outcomeHashOf o = outcomeH) := by
-  sorry
+  have hinv := reachable_preserves
+    (P := fun s' => Reachable sig appRel (genesis assets self pool0) s' ∧
+      ∀ cid', (s'.channels cid').finalizesAt ≠ 0 →
+      (∃ fp candidate, channelId fp = cid' ∧ candidate.isFinal = true ∧
+        SignedByAll sig s' fp candidate ∧
+        ∃ o, OutcomeDerivedFrom candidate.outcome o ∧
+          outcomeHashOf o = (s'.channels cid').outcomeHash) ∨
+      (∃ fp proof candidate challenger actor0 s0 s1,
+        channelId fp = cid' ∧
+        Reachable sig appRel (genesis assets self pool0) s0 ∧
+        Step sig appRel actor0 s0 (.challenge fp proof candidate challenger) s1 ∧
+        stateHash fp candidate = (s'.channels cid').stateHash ∧
+        ∃ o, OutcomeDerivedFrom candidate.outcome o ∧
+          outcomeHashOf o = (s'.channels cid').outcomeHash))
+    ⟨reachable_refl sig appRel (genesis assets self pool0),
+      by intro cid' h; simp [genesis, emptyStatus] at h⟩
+    (by
+      intro actor call s1 s2 hP hstep
+      refine ⟨reachable_step hP.1 hstep, ?_⟩
+      have hlift : ∀ cid'',
+          ((∃ fp candidate, channelId fp = cid'' ∧ candidate.isFinal = true ∧
+              SignedByAll sig s1 fp candidate ∧
+              ∃ o, OutcomeDerivedFrom candidate.outcome o ∧
+                outcomeHashOf o = (s1.channels cid'').outcomeHash) ∨
+            (∃ fp proof candidate challenger actor0 s0 s1', channelId fp = cid'' ∧
+              Reachable sig appRel (genesis assets self pool0) s0 ∧
+              Step sig appRel actor0 s0 (.challenge fp proof candidate challenger) s1' ∧
+              stateHash fp candidate = (s1.channels cid'').stateHash ∧
+              ∃ o, OutcomeDerivedFrom candidate.outcome o ∧
+                outcomeHashOf o = (s1.channels cid'').outcomeHash)) →
+          ((∃ fp candidate, channelId fp = cid'' ∧ candidate.isFinal = true ∧
+              SignedByAll sig s2 fp candidate ∧
+              ∃ o, OutcomeDerivedFrom candidate.outcome o ∧
+                outcomeHashOf o = (s1.channels cid'').outcomeHash) ∨
+            (∃ fp proof candidate challenger actor0 s0 s1', channelId fp = cid'' ∧
+              Reachable sig appRel (genesis assets self pool0) s0 ∧
+              Step sig appRel actor0 s0 (.challenge fp proof candidate challenger) s1' ∧
+              stateHash fp candidate = (s1.channels cid'').stateHash ∧
+              ∃ o, OutcomeDerivedFrom candidate.outcome o ∧
+                outcomeHashOf o = (s1.channels cid'').outcomeHash)) := by
+        intro cid'' h
+        rcases h with ⟨fp, candidate, hc, hfi, hsb, o, hod, hoh⟩ | hright
+        · exact Or.inl ⟨fp, candidate, hc, hfi,
+            SignedByAll_mono sig appRel actor s1 s2 call hstep fp candidate hsb, o, hod, hoh⟩
+        · exact Or.inr hright
+      intro cid'
+      cases call with
+      | deposit channelId0 expectedHeld asset amount =>
+        obtain ⟨_, _, _, _, _, hchan, _, _, _, _, _⟩ := hstep
+        rw [hchan]
+        intro hne
+        exact hlift cid' (hP.2 cid' hne)
+      | challenge fp proof candidate challenger =>
+        have hstep2 := hstep
+        obtain ⟨hmodeC, _, _, _, hchan, _, _, _, _, _, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro _
+          exact Or.inr ⟨fp, proof, candidate, challenger, actor, s1, s2, rfl, hP.1,
+            hstep2, rfl, candidate.outcome, OutcomeDerivedFrom.refl _, rfl⟩
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | checkpoint fp proof candidate =>
+        obtain ⟨_, _, _, hchan, _, _, _, _, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro hz; exact absurd rfl hz
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | conclude fp candidate =>
+        have hstep2 := hstep
+        obtain ⟨_, hfi, hsb, hchan, _, _, _, _, _, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro _
+          exact Or.inl ⟨fp, candidate, rfl, hfi,
+            SignedByAll_mono sig appRel actor s1 s2 _ hstep2 fp candidate hsb,
+            candidate.outcome, OutcomeDerivedFrom.refl _, rfl⟩
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | transfer assetIndex cid0 claimedStateHash outcome indices =>
+        have hstep2 := hstep
+        obtain ⟨hidx, hmodeT, hshT, hohT, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+        obtain ⟨_hguarantee, hrest⟩ := hinner
+        obtain ⟨_hmatch, _hholdseq, hchan⟩ := hrest
+        by_cases hcc : cid0 = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro _
+          have hzne : (s1.channels cid0).finalizesAt ≠ 0 := fun hz => by
+            simp [ChannelStatus.mode, hz] at hmodeT
+          rcases hP.2 cid0 hzne with
+              ⟨fp, candidate, hc, hfi, hsb, o, hod, hoh⟩ | ⟨fp, proof, candidate, challenger, actor0,
+                s0, s1', hc, hreach0, hstep0, hsh, o, hod, hoh⟩
+          · have hoeq : o = outcome := outcomeHashOf_inj (hoh.trans hohT)
+            rw [hoeq] at hod
+            exact Or.inl ⟨fp, candidate, hc, hfi,
+              SignedByAll_mono sig appRel actor s1 s2 _ hstep2 fp candidate hsb, _,
+              OutcomeDerivedFrom.transferStep assetIndex hidx
+                (heldValue s1 (outcome.get ⟨assetIndex, hidx⟩).asset cid0) indices hod, rfl⟩
+          · have hoeq : o = outcome := outcomeHashOf_inj (hoh.trans hohT)
+            rw [hoeq] at hod
+            exact Or.inr ⟨fp, proof, candidate, challenger, actor0, s0, s1', hc, hreach0, hstep0,
+              hsh, _, OutcomeDerivedFrom.transferStep assetIndex hidx
+                (heldValue s1 (outcome.get ⟨assetIndex, hidx⟩).asset cid0) indices hod, rfl⟩
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+          targetAssetIndex claimedTargetStateHash =>
+        have hstep2 := hstep
+        obtain ⟨hmodeSrc, hohSrc, hsa, hidx1, hguarantee, hrest, _, _, _, _, _, _, _⟩ := hstep
+        obtain ⟨_htgtMode, _htgtSh, _htgtOh, hta, _hassetEq, a0, a1, _hlen2, _ha0, _ha1, hsum,
+          hchan⟩ := hrest
+        by_cases hcc : sourceChannelId = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro _
+          have hzne : (s1.channels sourceChannelId).finalizesAt ≠ 0 := fun hz => by
+            simp [ChannelStatus.mode, hz] at hmodeSrc
+          rcases hP.2 sourceChannelId hzne with
+              ⟨fp, candidate, hc, hfi, hsb, o, hod, hoh⟩ | ⟨fp, proof, candidate, challenger, actor0,
+                s0, s1', hc, hreach0, hstep0, hsh, o, hod, hoh⟩
+          · have hoeq : o = sourceOutcome := outcomeHashOf_inj (hoh.trans hohSrc)
+            rw [hoeq] at hod
+            exact Or.inl ⟨fp, candidate, hc, hfi,
+              SignedByAll_mono sig appRel actor s1 s2 _ hstep2 fp candidate hsb, _,
+              OutcomeDerivedFrom.reclaimStep sourceAssetIndex indexOfTargetInSource hsa hidx1
+                hguarantee a0 a1 hsum hod, rfl⟩
+          · have hoeq : o = sourceOutcome := outcomeHashOf_inj (hoh.trans hohSrc)
+            rw [hoeq] at hod
+            exact Or.inr ⟨fp, proof, candidate, challenger, actor0, s0, s1', hc, hreach0, hstep0, hsh,
+              _, OutcomeDerivedFrom.reclaimStep sourceAssetIndex indexOfTargetInSource hsa hidx1
+                hguarantee a0 a1 hsum hod, rfl⟩
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | bulkTransferAllAssets channelId0 outcome claimedStateHash =>
+        have hstep2 := hstep
+        obtain ⟨hmodeB, _hsh, hohB, newOutcome, hfold, hchan, _, _, _, _, _⟩ := hstep
+        by_cases hcc : channelId0 = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro _
+          have hzne : (s1.channels channelId0).finalizesAt ≠ 0 := fun hz => by
+            simp [ChannelStatus.mode, hz] at hmodeB
+          have hderived := bulkTransferFold_outcomeDerivedFrom s1.self channelId0 outcome newOutcome
+            s1.pool s2.pool s1.holdings s2.holdings hfold
+          rcases hP.2 channelId0 hzne with
+              ⟨fp, candidate, hc, hfi, hsb, o, hod, hoh⟩ | ⟨fp, proof, candidate, challenger, actor0,
+                s0, s1', hc, hreach0, hstep0, hsh, o, hod, hoh⟩
+          · have hoeq : o = outcome := outcomeHashOf_inj (hoh.trans hohB)
+            rw [hoeq] at hod
+            exact Or.inl ⟨fp, candidate, hc, hfi,
+              SignedByAll_mono sig appRel actor s1 s2 _ hstep2 fp candidate hsb, newOutcome,
+              hod.trans hderived, rfl⟩
+          · have hoeq : o = outcome := outcomeHashOf_inj (hoh.trans hohB)
+            rw [hoeq] at hod
+            exact Or.inr ⟨fp, proof, candidate, challenger, actor0, s0, s1', hc, hreach0, hstep0, hsh,
+              newOutcome, hod.trans hderived, rfl⟩
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | bulkConcludeAndTransferAllAssets fp candidate =>
+        have hstep2 := hstep
+        obtain ⟨_hnotfinal, hfi, hsb, newOutcome, hfold, hchan, _, _, _, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid'
+        · subst hcc
+          rw [hchan]
+          unfold update
+          rw [if_pos rfl]
+          intro _
+          have hderived := bulkTransferFold_outcomeDerivedFrom s1.self (channelId fp) candidate.outcome
+            newOutcome s1.pool s2.pool s1.holdings s2.holdings hfold
+          exact Or.inl ⟨fp, candidate, rfl, hfi,
+            SignedByAll_mono sig appRel actor s1 s2 _ hstep2 fp candidate hsb, newOutcome, hderived,
+            rfl⟩
+        · rw [hchan]
+          unfold update
+          rw [if_neg (fun h => hcc h.symm)]
+          intro hne
+          exact hlift cid' (hP.2 cid' hne)
+      | tick newNow =>
+        obtain ⟨_, _, _, _, hchan, _, _, _, _⟩ := hstep
+        rw [hchan]
+        intro hne
+        exact hlift cid' (hP.2 cid' hne)
+      | sign p d =>
+        obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+        rw [hchan]
+        intro hne
+        exact hlift cid' (hP.2 cid' hne)
+      | signNote pk msgHash =>
+        obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+        rw [hchan]
+        intro hne
+        exact hlift cid' (hP.2 cid' hne))
+    hreach
+  have hfz : (s.channels cid).finalizesAt ≠ 0 := fun hz => by
+    unfold ChannelFinalizedWith at hfin
+    simp [ChannelStatus.mode, hz] at hfin
+  rcases hinv.2 cid hfz with
+      ⟨fp, candidate, hc, hfi, hsb, o, hod, hoh⟩ | ⟨fp, proof, candidate, challenger, actor0, s0, s1,
+        hc, hreach0, hstep0, hsh, o, hod, hoh⟩
+  · exact Or.inl ⟨fp, candidate, hc, hfi, hsb, o, hod, hfin.2.2 ▸ hoh⟩
+  · exact Or.inr ⟨fp, proof, candidate, challenger, actor0, s0, s1, hc, hreach0, hstep0,
+      hfin.2.1 ▸ hsh, o, hod, hfin.2.2 ▸ hoh⟩
 
 /-- Which harm this rules out: a caller cannot name an `outcome`/`indices`
     to `transfer` that pays a destination the finalized outcome did not

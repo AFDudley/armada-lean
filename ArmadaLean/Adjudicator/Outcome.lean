@@ -329,4 +329,51 @@ inductive OutcomeDerivedFrom : Outcome → Outcome → Prop where
         (decodeGuarantee ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).metadata).2
         amtLeft amtRight)
 
+/-- `OutcomeDerivedFrom` is unaffected by a FIXED head entry: if `rest` is
+    derived into `newRest`, prepending the SAME `head` to both sides is
+    still a valid derivation — each step just moves one index further
+    into the list (`List.mapIdx_cons`). What `bulkTransferFold_outcomeDerivedFrom`
+    (`Lemmas.lean`) needs to chain its own per-asset rewrites, one list
+    element at a time, into a single `OutcomeDerivedFrom` fact. -/
+theorem OutcomeDerivedFrom_cons (head : SingleAssetExit) {rest newRest : Outcome}
+    (h : OutcomeDerivedFrom rest newRest) :
+    OutcomeDerivedFrom (head :: rest) (head :: newRest) := by
+  induction h with
+  | refl => exact OutcomeDerivedFrom.refl (head :: rest)
+  | @transferStep mid assetIndex hidx heldBefore indices hmid ih =>
+    have hidx' : assetIndex + 1 < (head :: mid).length := by simpa using hidx
+    have hstep := OutcomeDerivedFrom.transferStep (o := head :: rest) (assetIndex + 1) hidx'
+      heldBefore indices ih
+    rw [List.mapIdx_cons] at hstep
+    simpa [List.get_cons_succ] using hstep
+  | @reclaimStep mid assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight hsum hmid ih =>
+    have h1' : assetIndex + 1 < (head :: mid).length := by simpa using h1
+    have h2' : allocIndex < ((head :: mid).get ⟨assetIndex + 1, h1'⟩).allocations.length := by
+      simpa [List.get_cons_succ] using h2
+    have hstep := OutcomeDerivedFrom.reclaimStep (o := head :: rest) (assetIndex + 1) allocIndex h1' h2'
+      (by simpa [List.get_cons_succ] using hguarantee) amtLeft amtRight
+      (by simpa [List.get_cons_succ] using hsum) ih
+    unfold reallocateGuarantee at hstep ⊢
+    rw [List.mapIdx_cons] at hstep
+    simpa [List.get_cons_succ] using hstep
+
+/-- `OutcomeDerivedFrom` is transitive: a chain of rewrites onto a chain
+    of rewrites is one longer chain. What the bulk-call cases of
+    `finalized_outcome_was_concluded_or_challenged` (`Safety.lean`) need
+    to extend an EARLIER derivation (`candidate.outcome` to the channel's
+    outcome BEFORE this step) by `bulkTransferFold`'s own derivation
+    (that outcome to the one AFTER this step). -/
+theorem OutcomeDerivedFrom.trans {o1 o2 o3 : Outcome}
+    (h12 : OutcomeDerivedFrom o1 o2) (h23 : OutcomeDerivedFrom o2 o3) :
+    OutcomeDerivedFrom o1 o3 := by
+  induction h23 with
+  | refl => exact h12
+  | @transferStep mid assetIndex hidx heldBefore indices hmid ih =>
+    exact OutcomeDerivedFrom.transferStep assetIndex hidx heldBefore indices ih
+  | @reclaimStep mid assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight hsum hmid ih =>
+    exact OutcomeDerivedFrom.reclaimStep assetIndex allocIndex h1 h2 hguarantee amtLeft amtRight
+      hsum ih
+
+
+
 end ArmadaLean.Adjudicator

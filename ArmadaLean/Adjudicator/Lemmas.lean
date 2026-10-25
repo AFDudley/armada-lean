@@ -315,6 +315,25 @@ theorem step_signedBy_mono (sig : SignatureAssumptions)
     obtain ⟨_, _, _, _, _, _, _, _, h⟩ := hstep
     rw [h]; exact fun p d hp => hp
 
+
+/-- `SignedByAll` carries forward across one more `Step`: `AuthorizedBy`
+    is `s.signedBy p d ∨ sig.contractAuthorizes p d` (`State.lean`), and
+    only the FIRST disjunct can depend on `s` at all — `step_signedBy_mono`
+    gives that one, the second survives unchanged. What
+    `finalized_outcome_was_concluded_or_challenged` needs to carry a
+    `SignedByAll` fact, established at one `.conclude` call, forward to
+    the state actually queried. -/
+theorem SignedByAll_mono (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hstep : Step sig appRel actor s call s')
+    (fp : FixedPart) (vp : VariablePart) (h : SignedByAll sig s fp vp) :
+    SignedByAll sig s' fp vp := by
+  intro p hp
+  rcases h p hp with hsb | hca
+  · exact Or.inl (step_signedBy_mono sig appRel actor s s' call hstep p (stateHash fp vp) hsb)
+  · exact Or.inr hca
+
 /-- Marking a single nullifier spent: it fails iff the nullifier is already
     spent, and otherwise prepends it (`ArmadaLean.markSpent`, `PoolOwned.lean`). -/
 theorem markSpent_single (spent : NullifierSet) (n : Term) :
@@ -1378,6 +1397,54 @@ theorem bulkTransferFold_notedValue_conserved (self : Nat) (cid : Term) :
       obtain ⟨_hguarantee, _hnewExit, midPool, hmatch, hrec⟩ := hfold
       rw [ih newRest midPool poolF _ holdingsF hrec token]
       exact PoolOwnedSpendStep_notedValue_conserved pool midPool self exit.asset _ _ _ hmatch token
+
+/-- `bulkTransferFold`'s own effect on an outcome is `OutcomeDerivedFrom`
+    its starting outcome: each asset's own `transferEffects`-rewrite,
+    chained down the list via `OutcomeDerivedFrom_cons` (`Outcome.lean`)
+    for the entries not yet reached, then one more `.transferStep` at
+    the list's own head index. What `finalized_outcome_was_concluded_or_challenged`
+    needs for the bulk-call cases, mirroring `.transfer`'s own single-asset
+    `OutcomeDerivedFrom.transferStep` use. -/
+theorem bulkTransferFold_outcomeDerivedFrom (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    OutcomeDerivedFrom outcome newOutcome := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold
+    cases newOutcome with
+    | nil => exact OutcomeDerivedFrom.refl []
+    | cons _ _ =>
+      unfold bulkTransferFold at hfold
+      exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguarantee, hnewExit, midPool, hmatch, hrec⟩ := hfold
+      have hrestDerived := ih newRest midPool poolF _ holdingsF hrec
+      have hconsDerived := OutcomeDerivedFrom_cons exit hrestDerived
+      rw [hnewExit]
+      have hid : newRest.mapIdx (fun (i : Nat) (e : SingleAssetExit) => e) = newRest := by
+        rw [List.mapIdx_eq_iff]
+        intro i
+        simp
+      have hstep := OutcomeDerivedFrom.transferStep (o := exit :: rest) 0 (by simp)
+        (match holdings exit.asset cid with
+          | none => 0
+          | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0)
+        [] hconsDerived
+      rw [List.mapIdx_cons] at hstep
+      simp only [List.get_cons_zero, ne_eq, not_true_eq_false, if_false,
+        Nat.succ_ne_zero, not_false_eq_true, if_true] at hstep
+      rwa [hid] at hstep
+
 
 /-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
     (`Safety.lean`) need, one `Step` at a time: a holding names exactly one leaf
