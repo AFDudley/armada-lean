@@ -511,8 +511,13 @@ theorem value_leaves_only_via_transfer_of_finalized_channel
     guarantee's two destinations), breaking monotone decrease.
     Carries a THIRD index, `paid`: `paid i k` is the TOTAL amount asset
     `i`'s allocation `k` has been paid across the whole chain so far —
-    the OLD-minus-NEW amount of the touched entry, accumulated at every
-    `.transferStep`, zero at every entry `.transfer` never touches. -/
+    at each `.transferStep`, the amount `.transfer` ACTUALLY pays entry
+    `k` is the `afford`-computed amount at `k` when `k` is selected
+    (the same value `A-01` uses), zero when `k` is not selected or the
+    step touches a different asset. This is independent of
+    `transferEffects`'s own old-minus-new arithmetic, so the theorem
+    below is a real claim about what `.transfer` computes, not a
+    restatement of subtraction. -/
 inductive TransferOnlyDerivedFrom : Outcome → Outcome → (Nat → Nat → Nat) → Prop where
   | refl (o : Outcome) : TransferOnlyDerivedFrom o o (fun _ _ => 0)
   | transferStep {o mid : Outcome} {paid : Nat → Nat → Nat} (assetIndex : Nat)
@@ -522,11 +527,10 @@ inductive TransferOnlyDerivedFrom : Outcome → Outcome → (Nat → Nat → Nat
         (mid.mapIdx fun i exit => if i ≠ assetIndex then exit else
           { exit with allocations :=
               (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 })
-        (fun i k => paid i k + (if i = assetIndex then
-            ((mid.get ⟨assetIndex, h⟩).allocations.getD k Allocation.default).amount -
-            ((transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1.getD
-              k Allocation.default).amount
+        (fun i k => paid i k + (if i = assetIndex ∧ (indices = [] ∨ k ∈ indices) then
+            (afford (mid.get ⟨assetIndex, h⟩).allocations heldBefore).getD k 0
           else 0))
+
 
 /-- A-14 — cumulative payout to an entry never exceeds its allocation:
     across any `.transfer`-only call sequence from a finalized outcome
@@ -1008,11 +1012,14 @@ theorem checkpoint_can_happen
   sorry
 
 /-- A-12 — guarantee reallocation can change a later transfer's payout:
-    there is a reachable state from which transferring to a destination
-    `d` pays a DIFFERENT amount before a guarantee is reclaimed than
-    after (the amount each order's `.transfer` call pays `d`, read off
-    `transferEffects`'s own total-payout component, `reclaim` itself
-    being value-neutral on the pool, `A-11`). This bounds A-02: order
+    there is a reachable state `s` and a real `.reclaim` `Step` from `s`
+    to `s1` on `cid`, after which `cid`'s own outcome hash is some
+    `outcome'`, such that transferring to a destination `dIdx` pays a
+    DIFFERENT amount computed from `outcome` at `heldValue s` than
+    computed from `outcome'` at `heldValue s1` — `heldValue s1 =
+    heldValue s` by `A-11` (`reclaim` is value-neutral on the pool), so
+    this isolates the OUTCOME rewrite itself as the source of the
+    difference, not a held-value change. This bounds A-02: order
     independence holds only for simple allocations, not once a
     guarantee is in play.
     Quotes: `N19:1148-1151` "it is possible to construct situations
@@ -1029,18 +1036,21 @@ theorem checkpoint_can_happen
 theorem guarantee_reallocation_order_dependent
     (hashA : HashAssumptions) (sig : SignatureAssumptions) :
     ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-      (s : AdjudicatorState) (cid : Term) (asset : Nat)
-      (outcome : Outcome) (assetIndex guaranteeIdx dIdx : Nat)
-      (left right : Term) (a0 a1 : Nat),
+      (s s1 : AdjudicatorState) (cid : Term) (asset : Nat)
+      (outcome outcome' targetOutcome : Outcome)
+      (assetIndex indexOfTargetInSource targetAssetIndex dIdx : Nat)
+      (claimedTargetStateHash : Term) (actor : Actor),
       _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       (outcome.getD assetIndex ⟨0, []⟩).asset = asset ∧
-      ((outcome.getD assetIndex ⟨0, []⟩).allocations.getD guaranteeIdx
-        Allocation.default).allocationType = .guarantee ∧
+      Step sig (consensusRelation sig) actor s
+        (.reclaim cid outcome assetIndex indexOfTargetInSource
+          targetOutcome targetAssetIndex claimedTargetStateHash) s1 ∧
+      (s1.channels cid).outcomeHash = outcomeHashOf outcome' ∧
       (transferEffects (outcome.getD assetIndex ⟨0, []⟩).allocations
           (heldValue s asset cid) [dIdx]).2.2 ≠
-      (transferEffects ((reallocateGuarantee outcome assetIndex guaranteeIdx left right a0 a1).getD
-          assetIndex ⟨0, []⟩).allocations (heldValue s asset cid) [dIdx]).2.2 := by
+      (transferEffects (outcome'.getD assetIndex ⟨0, []⟩).allocations
+          (heldValue s1 asset cid) [dIdx]).2.2 := by
   sorry
 
 
