@@ -857,8 +857,14 @@ theorem notedValue_conserved
   | reclaim a b c d e f g =>
     obtain ⟨_, _, _, _, _, _, hpool, _, _, _, _, _, _⟩ := hstep
     rw [hpool]
-  | bulkTransferAllAssets a b c => sorry
-  | bulkConcludeAndTransferAllAssets a b => sorry
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_notedValue_conserved s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold token
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_notedValue_conserved s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold token
   | tick newNow =>
     obtain ⟨_, _, hpool, _, _, _, _, _, _⟩ := hstep
     rw [hpool]

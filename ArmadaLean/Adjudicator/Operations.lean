@@ -116,7 +116,7 @@ def bulkTransferFold (self : Nat) (cid : Term) :
         (let midHoldings := update holdings exit.asset
           (update (holdings exit.asset) cid
             (if remainder = 0 then none
-             else some (pool.leaves.length + (payoutOutputs.length + remainderOutputs.length) - 1,
+             else some (pool.leaves.length + (payoutOutputs ++ remainderOutputs).length - 1,
                commitment (Term.val self) exit.asset remainder)))
          bulkTransferFold self cid rest midPool midHoldings newRest poolF holdingsF)))
   | _, _, _, _, _, _ => False
