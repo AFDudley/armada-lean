@@ -258,12 +258,18 @@ reclaims a two-party guarantee.
 axiom decodeGuarantee : Nat → Term × Term
 
 /-- Credits `amt` to the FIRST allocation in `allocs` whose own
-    `destination` equals `dest`, leaving every other entry UNCHANGED —
+    `destination` equals `dest`, leaving every other entry UNCHANGED.
+    S3 Listing 2 (lines 344-364) defines reclaim's own credit and
+    delete steps over an outcome modeled as a DICTIONARY keyed by
+    destination — one entry per destination, no duplicates possible by
+    construction. S2 §5.1 (2019) requires an implementation whose own
+    outcome is a LIST, not a dictionary, to ignore every destination
+    after its first occurrence — the rule this function encodes.
     `MultiAssetHolder.sol:341-390`'s `compute_reclaim_effects`
-    (`src/nitro`, vendored upstream), the `foundLeft`/`foundRight`-flag
-    loop at `:371-380`: each destination is matched AT MOST ONCE, so a
-    later allocation that happens to share the same destination is left
-    alone. -/
+    (`src/nitro`, vendored upstream) follows the same rule with its own
+    `foundLeft`/`foundRight`-flag loop at `:371-380`: each destination
+    is matched AT MOST ONCE, so a later allocation that happens to
+    share the same destination is left alone. -/
 def creditFirst (allocs : List Allocation) (dest : Term) (amt : Nat) : List Allocation :=
   match allocs with
   | [] => []
@@ -283,7 +289,14 @@ def creditFirst (allocs : List Allocation) (dest : Term) (amt : Nat) : List Allo
     first match is the SAME entry the first pass already credited, so it
     receives both credits, matching the contract's two separate `if`s on
     one entry. Every other asset's exit, and every other allocation of
-    the named asset, is unchanged. -/
+    the named asset, is unchanged. S3's own Listing 2 ASSUMES, with no
+    on-chain check, that `left` and `right` already have an entry in
+    `o_ledger` (a dictionary write to an absent key is silently well
+    defined there) and that the target's first two allocation amounts
+    sum to the guarantee's own amount; go-nitro ENFORCES both,
+    reverting otherwise (`MultiAssetHolder.sol:384-387`). The `Step`
+    case below (`Operations.lean`) and `OutcomeDerivedFrom.reclaimStep`
+    follow go-nitro and require both. -/
 def reallocateGuarantee (outcome : Outcome) (assetIndex allocIndex : Nat)
     (left right : Term) (amtLeft amtRight : Nat) : Outcome :=
   outcome.mapIdx fun i exit =>
@@ -291,6 +304,107 @@ def reallocateGuarantee (outcome : Outcome) (assetIndex allocIndex : Nat)
     else { exit with
       allocations := creditFirst (creditFirst (exit.allocations.eraseIdx allocIndex) left amtLeft)
         right amtRight }
+
+/-- `creditFirst` only ever changes the `.amount` field of the ONE entry
+    it credits — every entry's own `.destination` survives unchanged, so
+    a destination that had a match before still has one after. What
+    chains the two `creditFirst` calls inside `reallocateGuarantee`:
+    `right`'s own match (`hfoundRight`, from `.reclaim`'s own
+    precondition) is stated against the list BEFORE `left`'s credit;
+    this carries it across. -/
+theorem creditFirst_mono (allocs : List Allocation) (dest : Term) (amt : Nat) (d : Term)
+    (h : ∃ a ∈ allocs, a.destination = d) :
+    ∃ a ∈ creditFirst allocs dest amt, a.destination = d := by
+  induction allocs with
+  | nil => exact absurd h (by simp)
+  | cons a rest ih =>
+    unfold creditFirst
+    by_cases hd : a.destination = dest
+    · rw [if_pos hd]
+      rcases h with ⟨a', ha'mem, ha'd⟩
+      rcases List.mem_cons.mp ha'mem with heq | hmem
+      · exact ⟨{ a with amount := a.amount + amt }, List.mem_cons_self, heq ▸ ha'd⟩
+      · exact ⟨a', List.mem_cons_of_mem _ hmem, ha'd⟩
+    · rw [if_neg hd]
+      rcases h with ⟨a', ha'mem, ha'd⟩
+      rcases List.mem_cons.mp ha'mem with heq | hmem
+      · exact ⟨a, List.mem_cons_self, heq ▸ ha'd⟩
+      · obtain ⟨a'', ha''mem, ha''d⟩ := ih ⟨a', hmem, ha'd⟩
+        exact ⟨a'', List.mem_cons_of_mem _ ha''mem, ha''d⟩
+
+/-- Crediting the first match adds EXACTLY `amt` to the asset's own
+    total — the erased guarantee's own amount flows straight back in
+    through the two `creditFirst` calls, never more (duplicated) or
+    less (dropped), PROVIDED a match exists (`h`, from `.reclaim`'s own
+    `hfoundLeft`/`hfoundRight`). What A-11 needs for its own `listSum`
+    conjunct. -/
+theorem creditFirst_sum (allocs : List Allocation) (dest : Term) (amt : Nat)
+    (h : ∃ a ∈ allocs, a.destination = dest) :
+    listSum ((creditFirst allocs dest amt).map Allocation.amount) =
+      listSum (allocs.map Allocation.amount) + amt := by
+  induction allocs with
+  | nil => exact absurd h (by simp)
+  | cons a rest ih =>
+    unfold creditFirst
+    by_cases hd : a.destination = dest
+    · rw [if_pos hd]
+      simp only [List.map_cons, listSum]
+      omega
+    · rw [if_neg hd]
+      rcases h with ⟨a', ha'mem, ha'd⟩
+      rcases List.mem_cons.mp ha'mem with heq | hmem
+      · exact absurd (heq ▸ ha'd) hd
+      · have := ih ⟨a', hmem, ha'd⟩
+        simp only [List.map_cons, listSum]
+        omega
+
+/-- `List.mapIdx` at an in-range index is just applying `f` to that
+    index and the original element there — core carries
+    `getElem?_mapIdx`/`getElem?_eq_getElem` for the `[i]?`/`[i]` forms;
+    this restates it for `.getD`, what `reallocateGuarantee`'s own
+    `.getD` (A-11's statement) needs. -/
+theorem mapIdx_getD {α : Type} (l : List α) (f : Nat → α → α) (i : Nat) (h : i < l.length)
+    (default : α) : (l.mapIdx f).getD i default = f i (l.get ⟨i, h⟩) := by
+  rw [List.getD_eq_getElem?_getD, List.getElem?_mapIdx, List.getElem?_eq_getElem h]
+  rfl
+
+/-- `reallocateGuarantee`'s own effect at the reallocated asset itself,
+    unfolded past the `mapIdx`/`.getD` machinery: the SAME asset's
+    allocations become the two sequential `creditFirst` calls on its
+    old allocations with the named allocation erased. -/
+theorem reallocateGuarantee_getD (outcome : Outcome) (assetIndex allocIndex : Nat)
+    (h : assetIndex < outcome.length) (left right : Term) (amtLeft amtRight : Nat)
+    (default : SingleAssetExit) :
+    (reallocateGuarantee outcome assetIndex allocIndex left right amtLeft amtRight).getD
+        assetIndex default =
+      { outcome.get ⟨assetIndex, h⟩ with
+        allocations := creditFirst (creditFirst
+          ((outcome.get ⟨assetIndex, h⟩).allocations.eraseIdx allocIndex) left amtLeft)
+          right amtRight } := by
+  unfold reallocateGuarantee
+  rw [mapIdx_getD outcome _ assetIndex h default]
+  simp
+
+/-- Erasing an allocation and setting its own amount aside, then
+    summing both, recovers the ORIGINAL total — what A-11 needs to
+    connect the erased guarantee's own amount to the pre-reclaim sum.
+-/
+theorem listSum_eraseIdx_add (allocs : List Allocation) (idx : Nat) (h : idx < allocs.length) :
+    listSum ((allocs.eraseIdx idx).map Allocation.amount) + (allocs.get ⟨idx, h⟩).amount =
+      listSum (allocs.map Allocation.amount) := by
+  induction allocs generalizing idx with
+  | nil => exact absurd h (by simp)
+  | cons a rest ih =>
+    cases idx with
+    | zero =>
+      have hget : (a :: rest).get ⟨0, h⟩ = a := rfl
+      simp only [List.eraseIdx_cons_zero, hget, List.map_cons, listSum]
+      omega
+    | succ n =>
+      have hn : n < rest.length := by simpa using h
+      simp only [List.eraseIdx_cons_succ, List.map_cons, listSum, List.get_cons_succ]
+      have := ih n hn
+      omega
 
 /-!
 ## An outcome derived from an earlier one by `transfer`/`reclaim`

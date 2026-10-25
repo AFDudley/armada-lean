@@ -397,7 +397,13 @@ def Step (sig : SignatureAssumptions)
   `hfoundLeft`/`hfoundRight` conjuncts below restate that precondition;
   `reallocateGuarantee` (`Outcome.lean`) itself credits the FIRST match
   only, matching the contract's own `foundLeft`/`foundRight`-flag loop
-  (`:371-380`).
+  (`:371-380`). S3 Listing 2 (lines 344-364) itself models `o_ledger`
+  as a dictionary (`left`/`right` always have an entry to credit by
+  construction) and ASSUMES, with no on-chain check, that the target's
+  first two allocation amounts sum to the guarantee's own amount;
+  go-nitro enforces both of these as a `require` (`:384-387`), which
+  `hfoundLeft`/`hfoundRight` and `a0 + a1 = guarantee.amount` below
+  follow.
   -/
   | .reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
       targetOutcome targetAssetIndex claimedTargetStateHash => fun s' =>
