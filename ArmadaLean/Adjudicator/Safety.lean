@@ -406,11 +406,38 @@ caller can BLOCK another caller's operation, only interleave with it.
     (`.sign h d` for an arbitrary `d` `h` never chose, `Operations.lean`'s
     actor check) and have it count as "the adversary's" doing, when it is
     really `h`'s own action. `h`'s own steps belong only
-    in the witnessed `payCalls`, never in `interleaved`. `hsigned` reads
-    unanimous signing at `s`; since `.sign` only ever adds to `signedBy`,
-    and only in the ACTING participant's own row, `interleaved` (now
-    excluding `h`'s own actor) cannot UN-sign anything, so `SignedByAll`
-    still holds at `mid`. "Getting money owed" is a live note in the
+    in the witnessed `payCalls`, never in `interleaved`. `hnotick`
+    excludes a `.tick` from `interleaved` too: a `.tick` is nobody's
+    signed action, so `hnotActor` alone does not rule it out, but an
+    adversary ticking the clock forward could otherwise time a stale
+    challenge into `.finalized` mode with the WRONG outcome before `h`'s
+    own strategy runs; `h`'s own strategy may still tick the clock, in
+    `payCalls`, if its own `conclude` needs one. `hduration` and
+    `hnotfinal` are what make the no-tick exclusion sufficient: a fresh
+    `.challenge` registered during `interleaved` always sets `finalizesAt
+    > now` (`0 < fp.challengeDuration`), so it cannot finalize the
+    channel without a further tick, and the channel is not ALREADY
+    finalized (with some stale outcome) at `s` to begin with. `hhonest`
+    closes the one remaining way an adversary could still finalize the
+    channel with the WRONG outcome during `interleaved`, via `.conclude`:
+    `h` may, in an earlier round, have signed some OTHER final state for
+    this same channel (a stale offer, since withdrawn) that still
+    satisfies `AuthorizedBy` at `s`; `hhonest` says `h` never signed any
+    final state for `fp` OTHER than `candidate` itself, so no adversary-
+    assembled `SignedByAll` for a different final state can ever succeed.
+    `hsigned` reads unanimous signing at `s`; since `.sign` only ever
+    adds to `signedBy`, and only in the ACTING participant's own row,
+    `interleaved` (now excluding `h`'s own actor) cannot UN-sign
+    anything, so `SignedByAll` still holds at `mid`. The payout note's
+    own key, `dest.destination`, is restated as a USER note key
+    (`npk (masterPublicKey pk nk) r`) rather than a raw address:
+    `pk`/`nk`/`r` are `h`'s own keys and the random `h` chose when the
+    outcome was signed (the same convention `DepositStep`'s own witness
+    uses, `Notes.lean`), so the note this theorem mints is one `h` can
+    actually spend — a RAW address (`Term.val h`, the original text)
+    names a note no `npk` derivation can ever equal (`Term`'s
+    `val`/`hash` constructors are disjoint), so a payout to one would be
+    unspendable by anyone. "Getting money owed" is a live note in the
     pool, matching this model's note-based payment (`Notes.lean`): `h`
     can later spend it with their own key, which is the Armada-layer
     meaning of "paid" — the armada-nitro rule (`State.lean`). -/
@@ -423,16 +450,24 @@ theorem unbeatable_pays
     (hAssetIdx : assetIndex < candidate.outcome.length)
     (owed : Nat) (dest : Allocation)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
+    (hfinal : candidate.isFinal = true)
+    (hduration : 0 < fp.challengeDuration)
+    (hnotfinal : (s.channels (channelId fp)).mode s.now ≠ .finalized)
     (hsigned : SignedByAll sig s fp candidate)
     (hdest : dest ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations)
-    (hh_dest : dest.destination = Term.val h) (howed : dest.amount = owed) :
+    (pk : Nat × Nat) (nk : Nat) (r : Nat)
+    (hh_dest : dest.destination = npk (masterPublicKey pk nk) r) (howed : dest.amount = owed)
+    (hhonest : ∀ candidate', candidate'.isFinal = true →
+      AuthorizedBy sig s h (stateHash fp candidate') →
+      stateHash fp candidate' = stateHash fp candidate) :
     ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
       AppliesAll sig appRel s interleaved mid →
       (∀ actor call, (actor, call) ∈ interleaved →
-        actor ≠ Actor.nitro h ∧ ∀ pk, hPoolKey = some pk → actor ≠ Actor.pool pk) →
+        actor ≠ Actor.nitro h ∧ ∀ pk', hPoolKey = some pk' → actor ≠ Actor.pool pk') →
+      (∀ actor newNow, (actor, Call.tick newNow) ∉ interleaved) →
       ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
         AppliesAll sig appRel mid payCalls final ∧
-        ∃ pre : CommitmentPreimage, pre.npk = Term.val h ∧
+        ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
@@ -449,8 +484,19 @@ theorem unbeatable_pays
     for the non-cooperative case (Nitro-2019-219.pdf §4.4 Figure 11's
     other universally finalizable point and S4
     `0040-lifecycle-of-a-channel.md`'s `Challenge --timeout--> Finalized'`).
-    `hnotActor` excludes `h`'s own actor identities from `interleaved`,
-    for the same reason `unbeatable_pays` does. -/
+    `hregistered` replaces the weaker, pre-existing `hsupported`/
+    `hchallenger`/`hauth`/`hfinalizing` quartet: it states directly that
+    `fp`'s own channel is, right now, challenged with `candidate`'s own
+    `stateHash`/`outcomeHash` — not merely that SOME challenge fired for
+    SOME state, which left the registered candidate unconstrained
+    against `candidate` itself. `hnotActor` excludes `h`'s own actor
+    identities from `interleaved`, `hnotick` excludes a `.tick` from it
+    too, and `hduration`/`hhonest` play the same role as in
+    `unbeatable_pays`, for the same reason it needs them: ruling out an
+    adversary finalizing the channel early, by `.conclude`, with a
+    DIFFERENT final state `h` once signed. The payout note's own key is
+    restated the same way `unbeatable_pays` restates it, for the same
+    reason. -/
 theorem unbeatable_pays_after_timeout
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -460,27 +506,33 @@ theorem unbeatable_pays_after_timeout
     (assetIndex : Nat)
     (hAssetIdx : assetIndex < candidate.outcome.length) (owed : Nat) (dest : Allocation)
     (hreach : Reachable sig appRel (genesis assets self pool0) s) (hp : h ∈ fp.participants)
-    (hsupported : appRel s fp proof candidate)
-    (hchallenger : challenger ∈ fp.participants)
-    (hauth : AuthorizedBy sig s challenger (stateHash fp candidate))
-    (hfinalizing : (s.channels (channelId fp)).finalizesAt > 0)
+    (hregistered : (s.channels (channelId fp)).mode s.now = .challenge ∧
+      (s.channels (channelId fp)).stateHash = stateHash fp candidate ∧
+      (s.channels (channelId fp)).outcomeHash = outcomeHashOf candidate.outcome)
+    (hduration : 0 < fp.challengeDuration)
     (hdest : dest ∈ (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations)
-    (hh_dest : dest.destination = Term.val h) (howed : dest.amount = owed) :
+    (pk : Nat × Nat) (nk : Nat) (r : Nat)
+    (hh_dest : dest.destination = npk (masterPublicKey pk nk) r) (howed : dest.amount = owed)
+    (hhonest : ∀ candidate', candidate'.isFinal = true →
+      AuthorizedBy sig s h (stateHash fp candidate') →
+      stateHash fp candidate' = stateHash fp candidate) :
     ∀ (interleaved : List (Actor × Call)) (mid : AdjudicatorState),
       AppliesAll sig appRel s interleaved mid →
       (∀ actor call, (actor, call) ∈ interleaved →
-        actor ≠ Actor.nitro h ∧ ∀ pk, hPoolKey = some pk → actor ≠ Actor.pool pk) →
+        actor ≠ Actor.nitro h ∧ ∀ pk', hPoolKey = some pk' → actor ≠ Actor.pool pk') →
+      (∀ actor newNow, (actor, Call.tick newNow) ∉ interleaved) →
       (∀ highTurn, highTurn ≤ candidate.turnNum ∨
         ¬ ∃ (anyActor : Actor) (s'' : AdjudicatorState), Step sig appRel anyActor mid
           (.challenge fp proof ⟨candidate.outcome, candidate.appData, highTurn, candidate.isFinal⟩
             challenger) s'') →
       ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
         AppliesAll sig appRel mid payCalls final ∧
-        ∃ pre : CommitmentPreimage, pre.npk = Term.val h ∧
+        ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           pre.value = owed ∧
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
   sorry
+
 
 /-!
 ## C. No caller can create or destroy value in the pool
