@@ -2648,6 +2648,38 @@ theorem PoolOwnedSpendStep_preserves_user_note {pool pool' : PoolState} (self to
     · show (pos, pre) ∈ (if t = token then _ else pool.live t)
       rw [if_neg ht]; exact hmem
 
+
+/-- A `PoolOwnedSpendStep` touches `.live` ONLY at its own `token`: ANY
+    note already live at a DIFFERENT token stays live, regardless of
+    who owns it. The token-disjoint sibling of
+    `PoolOwnedSpendStep_preserves_user_note` (that one additionally
+    handles `t = token` for a user-keyed note specifically); this one
+    needs no ownership fact at all. What `bulkTransferFold_index_
+    payout` (`unbeatable_pays`/`unbeatable_pays_after_timeout`) needs
+    to carry a just-minted note at ONE asset's own token through every
+    LATER asset's own spend in the same bulk call. -/
+theorem PoolOwnedSpendStep_live_frame {pool pool' : PoolState} (self token : Nat)
+    (nullified : Option (Nat × Term))
+    (payoutPreimages ownedPreimages : List CommitmentPreimage)
+    (hstep : PoolOwnedSpendStep pool self token nullified payoutPreimages ownedPreimages pool')
+    (t pos : Nat) (pre : CommitmentPreimage) (ht : t ≠ token)
+    (hmem : (pos, pre) ∈ pool.live t) :
+    (pos, pre) ∈ pool'.live t := by
+  unfold PoolOwnedSpendStep at hstep
+  rcases nullified with _ | ⟨npos, c⟩
+  · obtain ⟨w, pub, hM, hC, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+      hnewnotes, _hroot, _hmarkspent, _hRandomOut, heq⟩ := hstep
+    rw [heq]
+    dsimp only
+    show (pos, pre) ∈ (if t = token then _ else pool.live t)
+    rw [if_neg ht]; exact hmem
+  · obtain ⟨w, pub, hM, hC, rest, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+      hnewnotes, _hleaf0, _hceq, _hroot, hremove, _hmarkspent, _hRandomOut, heq⟩ := hstep
+    rw [heq]
+    dsimp only
+    show (pos, pre) ∈ (if t = token then _ else pool.live t)
+    rw [if_neg ht]; exact hmem
+
 /-- `bulkTransferFold`'s own invariant for `PoolOwnedSpendStep_preserves_
     user_note`: one application per asset in the fold's own list,
     carried forward by induction — the user-note-liveness sibling of
@@ -2678,6 +2710,45 @@ theorem bulkTransferFold_preserves_user_note (self : Nat) (cid : Term) :
       refine ih newRest midPool poolF _ _ hrec t pos pre pk nk r hnpk ?_
       exact PoolOwnedSpendStep_preserves_user_note self exit.asset _ _ _ hmatch t pos pre pk nk r
         hnpk hmem
+
+/-- `bulkTransferFold`'s own invariant for `PoolOwnedSpendStep_live_
+    frame`: one application per asset in the fold's own list, carried
+    forward by induction — the token-disjoint sibling of
+    `bulkTransferFold_preserves_user_note` (that one needs the note to
+    be user-keyed; this one needs its OWN token absent from the rest
+    of the fold's own asset list, no ownership fact at all). What
+    `bulkTransferFold_index_payout` needs to carry a just-minted note
+    at ONE asset's own token through every LATER asset's own spend. -/
+theorem bulkTransferFold_live_frame (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    ∀ t pos pre, t ∉ outcome.map SingleAssetExit.asset →
+      (pos, pre) ∈ pool.live t → (pos, pre) ∈ poolF.live t := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold t pos pre _ht hmem
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hpoolEq, _hholdEq⟩ := hfold
+      rw [hpoolEq]; exact hmem
+    | cons _ _ => unfold bulkTransferFold at hfold; exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold t pos pre ht hmem
+    cases newOutcome with
+    | nil => unfold bulkTransferFold at hfold; exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguarantee, _hnewExit, rr, midPool, hmatch, hrec⟩ := hfold
+      have htne : t ≠ exit.asset := by
+        intro heq; exact ht (heq ▸ List.mem_cons_self ..)
+      have htrest : t ∉ rest.map SingleAssetExit.asset := by
+        intro hc; exact ht (List.mem_cons_of_mem _ hc)
+      refine ih newRest midPool poolF _ _ hrec t pos pre htrest ?_
+      exact PoolOwnedSpendStep_live_frame self exit.asset _ _ _ hmatch t pos pre htne hmem
+
 
 
 /-- `bulkTransferFold`'s own invariant for `notedValue_conserved`: one
@@ -2925,6 +2996,233 @@ theorem bulkTransferFold_outcomeDerivedFrom (self : Nat) (cid : Term) :
       simp only [List.get_cons_zero, ne_eq, not_true_eq_false, if_false,
         Nat.succ_ne_zero, not_false_eq_true, if_true] at hstep
       rwa [hid] at hstep
+
+/-- `bulkTransferFold`'s own per-index payout: at a GIVEN `assetIndex`
+    whose own TOKEN appears NOWHERE ELSE in `outcome` (`hunique`,
+    `unbeatable_pays`/`unbeatable_pays_after_timeout`'s own
+    `hassetunique` restated per-list), the fold's own `newOutcome`
+    entry there is exactly `.transfer`'s OWN per-asset rewrite (pay-all,
+    `indices := []`), and — once paid — the resulting note is live in
+    `poolF`, carried there unharmed by EVERY LATER asset's own spend
+    (`bulkTransferFold_live_frame`, since no later entry shares this
+    index's own token). The combined fact `unbeatable_pays`/
+    `unbeatable_pays_after_timeout` need for a bulk call: `.transfer`'s
+    own single-asset reasoning, applied to ONE position in the fold's
+    own per-asset list, with everything AFTER it shown not to touch it
+    again. -/
+theorem bulkTransferFold_index_payout (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
+      ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
+    ∀ (assetIndex : Nat) (hidx : assetIndex < outcome.length)
+      (hunique : ∀ j (hj : j < outcome.length), j ≠ assetIndex →
+        (outcome.get ⟨j, hj⟩).asset ≠ (outcome.get ⟨assetIndex, hidx⟩).asset)
+      (hidxN : assetIndex < newOutcome.length),
+    newOutcome.get ⟨assetIndex, hidxN⟩ =
+      { outcome.get ⟨assetIndex, hidx⟩ with
+        allocations := (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+          (match holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).1 } ∧
+    ∀ k : Nat, (afford (outcome.get ⟨assetIndex, hidx⟩).allocations
+        (match holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with
+          | none => 0
+          | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0)).getD k 0 ≠ 0 →
+      ∃ pos, (pos, (⟨((outcome.get ⟨assetIndex, hidx⟩).allocations.getD k
+          Allocation.default).destination, (outcome.get ⟨assetIndex, hidx⟩).asset,
+        (afford (outcome.get ⟨assetIndex, hidx⟩).allocations
+          (match holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with
+            | none => 0
+            | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0)).getD k 0⟩ :
+        CommitmentPreimage)) ∈ poolF.live (outcome.get ⟨assetIndex, hidx⟩).asset := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold hinv assetIndex hidx
+    exact absurd hidx (by simp)
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold hinv assetIndex hidx hunique hidxN
+    cases newOutcome with
+    | nil => unfold bulkTransferFold at hfold; exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hguarantee, hnewExit, r, midPool, hmatch, hrec⟩ := hfold
+      cases assetIndex with
+      | zero =>
+        refine ⟨hnewExit, ?_⟩
+        intro k hk
+        let surplus := match holdings exit.asset cid with
+          | none => 0
+          | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0
+        have htokPayout : ∀ pre ∈ (transferEffects exit.allocations surplus []).2.1
+            |>.filterMap (fun a => if a.amount = 0 then none else
+              some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)),
+            pre.token = exit.asset := by
+          intro pre hpre
+          obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+          by_cases hamt : a.amount = 0
+          · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+          · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl
+        have hkrange : k < exit.allocations.length := by
+          by_cases hkr : k < exit.allocations.length
+          · exact hkr
+          · exfalso
+            have hge : exit.allocations.length ≤ k := Nat.le_of_not_lt hkr
+            have hgeA : (afford exit.allocations surplus).length ≤ k := by
+              rw [afford_length]; exact hge
+            have : (afford exit.allocations surplus).getD k 0 = 0 := by
+              rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none_iff.mpr hgeA]; rfl
+            exact hk this
+        have hexitmem : { exit.allocations.getD k Allocation.default with
+            amount := (afford exit.allocations surplus).getD k 0 } ∈
+            (transferEffects exit.allocations surplus []).2.1 :=
+          transferEffectsSel_exit_mem exit.allocations surplus (fun _ => true) k hkrange rfl
+        have hpayoutmem : (⟨(exit.allocations.getD k Allocation.default).destination, exit.asset,
+            (afford exit.allocations surplus).getD k 0⟩ : CommitmentPreimage) ∈
+            ((transferEffects exit.allocations surplus []).2.1.filterMap (fun a =>
+              if a.amount = 0 then none else
+                some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage))) := by
+          apply List.mem_filterMap.mpr
+          refine ⟨{ exit.allocations.getD k Allocation.default with
+            amount := (afford exit.allocations surplus).getD k 0 }, hexitmem, ?_⟩
+          dsimp only
+          split
+          · next h => exact absurd h hk
+          · rfl
+        have hlivemem : ∃ pos, (pos, (⟨(exit.allocations.getD k Allocation.default).destination,
+            exit.asset, (afford exit.allocations surplus).getD k 0⟩ : CommitmentPreimage)) ∈
+            midPool.live exit.asset := by
+          rcases hh : holdings exit.asset cid with _ | ⟨pos0, c0⟩
+          · rw [hh] at hmatch
+            have hsurplusEq : surplus = 0 := by
+              show (match holdings exit.asset cid with
+                | none => 0
+                | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) = 0
+              rw [hh]
+            rw [hsurplusEq] at hpayoutmem
+            rw [hsurplusEq]
+            obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hbody⟩ := hmatch
+            have heq := hbody.2.2.2.2.2.2
+            obtain ⟨pos, hposmem⟩ := withPositionsFrom_mem_fwd (start := pool.leaves.length)
+              (List.mem_append_left
+                (if (0 : Nat) - (transferEffects exit.allocations 0 []).2.2 = 0 then []
+                 else [(⟨npk (Term.val self) r, exit.asset,
+                   (0 : Nat) - (transferEffects exit.allocations 0 []).2.2⟩ :
+                   CommitmentPreimage)])
+                hpayoutmem)
+            refine ⟨pos, ?_⟩
+            rw [heq]
+            show (pos, _) ∈ (if exit.asset = exit.asset then
+              withPositionsFrom pool.leaves.length _ ++ pool.live _ else pool.live _)
+            rw [if_pos rfl]
+            apply List.mem_append_left _ hposmem
+          · rw [hh] at hmatch
+            have hsurplusEq : surplus = ((pool.preimageOf c0).map CommitmentPreimage.value |>.getD 0) := by
+              show (match holdings exit.asset cid with
+                | none => 0
+                | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) = _
+              rw [hh]
+            rw [hsurplusEq] at hpayoutmem
+            rw [hsurplusEq]
+            obtain ⟨w, pub, hM, hC, rest', spent', randomOut, hNonZero, hCapacity, hbody⟩ := hmatch
+            have heq := hbody.2.2.2.2.2.2.2.2.2
+            obtain ⟨pos, hposmem⟩ := withPositionsFrom_mem_fwd (start := pool.leaves.length)
+              (List.mem_append_left
+                (if ((pool.preimageOf c0).map CommitmentPreimage.value |>.getD 0) -
+                    (transferEffects exit.allocations
+                      ((pool.preimageOf c0).map CommitmentPreimage.value |>.getD 0) []).2.2 = 0 then []
+                 else [(⟨npk (Term.val self) r, exit.asset,
+                   ((pool.preimageOf c0).map CommitmentPreimage.value |>.getD 0) -
+                     (transferEffects exit.allocations
+                       ((pool.preimageOf c0).map CommitmentPreimage.value |>.getD 0) []).2.2⟩ :
+                   CommitmentPreimage)])
+                hpayoutmem)
+            refine ⟨pos, ?_⟩
+            rw [heq]
+            show (pos, _) ∈ (if exit.asset = exit.asset then
+              withPositionsFrom pool.leaves.length _ ++ rest' else pool.live _)
+            rw [if_pos rfl]
+            apply List.mem_append_left _ hposmem
+        obtain ⟨pos, hlivemem⟩ := hlivemem
+        refine ⟨pos, ?_⟩
+        have hunique0 : exit.asset ∉ rest.map SingleAssetExit.asset := by
+          intro hc
+          obtain ⟨j, hjmem, hjeq⟩ := List.mem_map.mp hc
+          obtain ⟨j', hj'lt, hj'eq⟩ := List.mem_iff_getElem.mp hjmem
+          have hj'lt' : j' + 1 < (exit :: rest).length := by simpa using hj'lt
+          have := hunique (j' + 1) hj'lt' (by omega)
+          simp only [List.get_cons_succ] at this
+          apply this
+          rw [show rest.get ⟨j', hj'lt⟩ = j from by
+            rw [← hj'eq]; rfl]
+          simpa using hjeq
+        exact bulkTransferFold_live_frame self cid rest newRest midPool poolF _ holdingsF hrec
+          exit.asset pos _ hunique0 hlivemem
+      | succ n =>
+        have hidx' : n < rest.length := by simpa using hidx
+        have hidxN' : n < newRest.length := by simpa using hidxN
+        have hunique' : ∀ j (hj : j < rest.length), j ≠ n →
+            (rest.get ⟨j, hj⟩).asset ≠ (rest.get ⟨n, hidx'⟩).asset := by
+          intro j hj hjn
+          have := hunique (j + 1) (by simpa using hj) (by omega)
+          simpa using this
+        have htokNe : (rest.get ⟨n, hidx'⟩).asset ≠ exit.asset := by
+          have hne0 := hunique 0 (by omega) (by omega)
+          simp only [List.get_cons_succ, List.get_cons_zero] at hne0
+          exact fun hc => hne0 hc.symm
+        have htokPayout : ∀ pre ∈ (transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1
+            |>.filterMap (fun a => if a.amount = 0 then none else
+              some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)),
+            pre.token = exit.asset := by
+          intro pre hpre
+          obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+          by_cases hamt : a.amount = 0
+          · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+          · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl
+        have hinv' := PoolOwnedSpend_update_preimage_nonzero pool midPool self exit.asset cid
+          ((match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) -
+            (transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.2) r
+          ((transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1.filterMap
+            (fun a => if a.amount = 0 then none else
+              some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)))
+          holdings htokPayout hmatch hinv
+        have hframe := PoolOwnedSpendStep_frame pool midPool self exit.asset cid
+          ((match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) -
+            (transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.2) r
+          ((transferEffects exit.allocations (match holdings exit.asset cid with
+              | none => 0
+              | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0) []).2.1.filterMap
+            (fun a => if a.amount = 0 then none else
+              some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage)))
+          holdings htokPayout hmatch hinv (rest.get ⟨n, hidx'⟩).asset cid
+          (by simp only [ne_eq, Prod.mk.injEq, not_and]; intro hc; exact absurd hc htokNe)
+        obtain ⟨heq1, heq2⟩ := ih newRest midPool poolF _ holdingsF hrec hinv' n hidx' hunique' hidxN'
+        have hvalEq := congrArg (afford (rest.get ⟨n, hidx'⟩).allocations) hframe
+        refine ⟨?_, ?_⟩
+        · show newRest.get ⟨n, hidxN'⟩ = _
+          simp only [List.get_cons_succ]
+          exact heq1.trans (congrArg (fun v => { rest.get ⟨n, hidx'⟩ with
+            allocations := (transferEffects (rest.get ⟨n, hidx'⟩).allocations v []).1 }) hframe)
+        · intro k hk
+          simp only [List.get_cons_succ] at hk
+          obtain ⟨pos, hposmem⟩ := heq2 k (congrArg (fun l => List.getD l k 0) hvalEq ▸ hk)
+          simp only [List.get_cons_succ]
+          exact ⟨pos, (congrArg (fun l => List.getD l k 0) hvalEq) ▸ hposmem⟩
+
 
 
 /-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
