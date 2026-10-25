@@ -563,15 +563,15 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
       ((transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
           (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.1.filterMap (fun a =>
         if a.amount = 0 then none
-        else some (⟨a.destination, (outcome.get ⟨assetIndex, hidx⟩).asset, a.amount⟩ : CommitmentPreimage)) ++
-        (if heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
-            (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
-              (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
-         then []
-         else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, hidx⟩).asset,
-           heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
-             (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
-               (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2⟩ : CommitmentPreimage)]))
+        else some (⟨a.destination, (outcome.get ⟨assetIndex, hidx⟩).asset, a.amount⟩ : CommitmentPreimage)))
+      (if heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+          (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+            (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
+       then []
+       else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, hidx⟩).asset,
+         heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+           (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+             (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2⟩ : CommitmentPreimage)])
       s'.pool at hmatch
     change s'.holdings = update s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset
       (update (s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset) cid
@@ -1221,15 +1221,15 @@ theorem holdings_position_live_step (sig : SignatureAssumptions)
       ((transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
           (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.1.filterMap (fun a =>
         if a.amount = 0 then none
-        else some (⟨a.destination, (outcome.get ⟨assetIndex, hidx⟩).asset, a.amount⟩ : CommitmentPreimage)) ++
-        (if heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
-            (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
-              (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
-         then []
-         else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, hidx⟩).asset,
-           heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
-             (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
-               (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2⟩ : CommitmentPreimage)]))
+        else some (⟨a.destination, (outcome.get ⟨assetIndex, hidx⟩).asset, a.amount⟩ : CommitmentPreimage)))
+      (if heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+          (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+            (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2 = 0
+       then []
+       else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, hidx⟩).asset,
+         heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
+           (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
+             (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2⟩ : CommitmentPreimage)])
       s'.pool at hmatch
     change s'.holdings = update s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset
       (update (s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset) cid
@@ -1260,6 +1260,7 @@ theorem holdings_position_live_step (sig : SignatureAssumptions)
     generalize hRemDef : heldValue s assetOutcome.asset cid -
       (transferEffects assetOutcome.allocations (heldValue s assetOutcome.asset cid) indices).2.2 =
       remainder at hmatch hholdseq
+    unfold PoolOwnedSpendStep at hmatch
     generalize hOutDef : ((transferEffects assetOutcome.allocations
         (heldValue s assetOutcome.asset cid) indices).2.1.filterMap (fun a =>
           if a.amount = 0 then none

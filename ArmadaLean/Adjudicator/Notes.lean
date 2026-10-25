@@ -58,11 +58,17 @@
   spend witness for this note from public data alone
   (`ArmadaLean.PoolSafety.pool_ownedRandomOf_consistent`), with no secret
   carried by this theorem's own hypotheses. `PoolOwnedSpendStep`'s own
-  `transactOwned` call discloses every output this way UNCONDITIONALLY
-  (the pool's own `requireAll = true` rule for the owned path), so every
-  note the adjudicator ever holds — fresh from a deposit, or minted by a
-  merge or a transfer's own remainder — is contract-owned on the public
-  record from the moment it is minted.
+  `transactOwned` call discloses every note it MINTS AS CONTRACT-OWNED
+  (`ownedPreimages`) this way UNCONDITIONALLY (the pool's own `requireAll
+  = true` rule for the owned path): every note the adjudicator ever
+  holds — fresh from a deposit, or minted by a merge or a transfer's own
+  remainder — is contract-owned on the public record from the moment it
+  is minted. A `.transfer` call's own PAYOUT outputs (`payoutPreimages`)
+  are the opposite case: they are keyed to a recipient the adjudicator
+  does not control, so no such disclosure exists, or could exist, for
+  them (`ArmadaLean.TransactOwned.user_npk_ne_contract_npk`: a user's
+  own note key is never of the `npk (Term.val ownerField) r` form a
+  contract-owned disclosure names).
 
   Naming the witness explicitly — not hiding behind an opaque `Pool.Step`
   hypothesis — is what lets a deposit's OWN condition (the adjudicator-
@@ -77,21 +83,22 @@
 
   `PoolOwnedSpendStep`'s own adjudicator condition is that the witness's
   own outputs (`ArmadaLean.ownedNewNotes w`) ARE EXACTLY the payout notes
-  and remainder note its rule computes (`outputPreimages`, built in
-  `Operations.lean`'s `.transfer` case from `heldValue`/`transferEffects`)
-  — not a separately-asserted list the pool is trusted to mint on the
-  adjudicator's say-so. The circuit's own output-commitment check
-  (`OwnedConstrained.outputs`) already ties `ownedNewNotes w` to `pub`'s
-  public commitments, so this condition names no new trust, only which
-  notes are meant. This is what lets `notedValue_conserved` go through
-  from `ArmadaLean.transactOwned_balance` alone, with no separate
-  assumption that `heldValue` correctly reports the nullified note's true
-  value: if it ever disagreed, no witness could satisfy BOTH
-  `ownedNewNotes w = outputPreimages` (whose total is `heldValue`, by
-  `Operations.lean`'s own `remainder`/`totalPayouts` construction) AND the
-  circuit's balance (whose total is the spent note's TRUE Merkle-tree
-  value) — the step would simply not exist, which is the safe outcome,
-  not a fact this file needs to assume.
+  and remainder note its rule computes (`payoutPreimages ++
+  ownedPreimages`, built in `Operations.lean`'s `.transfer` case from
+  `heldValue`/`transferEffects`) — not a separately-asserted list the
+  pool is trusted to mint on the adjudicator's say-so. The circuit's own
+  output-commitment check (`OwnedConstrained.outputs`) already ties
+  `ownedNewNotes w` to `pub`'s public commitments, so this condition
+  names no new trust, only which notes are meant. This is what lets
+  `notedValue_conserved` go through from `ArmadaLean.transactOwned_
+  balance` alone, with no separate assumption that `heldValue` correctly
+  reports the nullified note's true value: if it ever disagreed, no
+  witness could satisfy BOTH `ownedNewNotes w = payoutPreimages ++
+  ownedPreimages` (whose total is `heldValue`, by `Operations.lean`'s own
+  `remainder`/`totalPayouts` construction) AND the circuit's balance
+  (whose total is the spent note's TRUE Merkle-tree value) — the step
+  would simply not exist, which is the safe outcome, not a fact this
+  file needs to assume.
 -/
 import ArmadaLean.PoolSafety
 
@@ -198,13 +205,16 @@ own accuracy.
 
 /-- One adjudicator-initiated `pool.transactOwned` call: nullifies, by leaf
     position, at most one of the adjudicator's own previously-owned
-    commitments and mints exactly `outputPreimages`, read off the
-    circuit's own witness (`ArmadaLean.ownedNewNotes`), landing at
+    commitments and mints exactly `payoutPreimages ++ ownedPreimages`, read
+    off the circuit's own witness (`ArmadaLean.ownedNewNotes`), landing at
     sequential positions starting at `before.leaves.length`
-    (`ArmadaLean.withPositionsFrom`). Requires the pool's OWN owner-
-    authorization convention (`self = ArmadaLean.addressOf pub.ownerField`,
-    matching `ArmadaLean.owned_owner_binding`'s `caller = addressOf
-    ownerField`) and the registered-shape bound (`hM`,
+    (`ArmadaLean.withPositionsFrom`). `payoutPreimages` are notes keyed to a
+    recipient the adjudicator does not control (`.transfer`'s own payout
+    outputs, `Operations.lean`); `ownedPreimages` are notes that stay
+    contract-owned (a `.transfer` remainder). Requires the pool's OWN
+    owner-authorization convention (`self = ArmadaLean.addressOf
+    pub.ownerField`, matching `ArmadaLean.owned_owner_binding`'s `caller =
+    addressOf ownerField`) and the registered-shape bound (`hM`,
     `ArmadaLean.transactOwned_value_conserved`'s own requirement) — the
     adjudicator supplies no mechanism and no arithmetic of its own.
     `removeAll` (`Pool.lean`) removes the nullified note by its own leaf
@@ -214,72 +224,89 @@ own accuracy.
     position the caller names. Every output's preimage is disclosed
     (`preimageOf`'s own update): `transactOwned`'s `_validatePublicOutputs
     (requireAll = true)` (`Pool.lean`'s own `Step.transactOwned` comment)
-    makes this MANDATORY, matching `ArmadaLean.ownedOutputRecords w pub`
-    directly. `randomOut`/`hRandomOut` are the matching mandatory
-    `ownedRandomOf` disclosure (`Step.transactOwned`'s own hypotheses) —
-    every note this call mints is contract-owned on the public record from
-    the moment it exists. `hNonZero` carries the same check's rejection of
-    a zero preimage; `ArmadaLean.transactOwned_records_all` is what lets
+    makes this MANDATORY for every output, payout or owned alike, matching
+    `ArmadaLean.ownedOutputRecords w pub` directly. `randomOut`/its own
+    disclosure hypothesis is the matching mandatory `ownedRandomOf`
+    disclosure (`Step.transactOwned`'s own hypotheses), but ONLY for the
+    `ownedPreimages` SUFFIX (indices `payoutPreimages.length` and up, via
+    `Fin.natAdd`): a payout note's own key is the recipient's, never one
+    the adjudicator (or anyone it can name as `ownerField`) derives
+    `npk (Term.val pub.ownerField) r` for, so no such disclosure could ever
+    exist for it — only a note that STAYS contract-owned carries one.
+    `hNonZero` carries the same check's rejection of a zero preimage;
+    `ArmadaLean.transactOwned_records_all` is what lets
     `holdings_never_zero_valued` read each output's own preimage back.
     `nullified`, when `some (pos, c)`, names both the position and the
     commitment being spent — the commitment is a check against the
     holding's own recorded value. -/
 def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
-    (nullified : Option (Nat × Term)) (outputPreimages : List CommitmentPreimage)
-    (after : PoolState) : Prop :=
+    (nullified : Option (Nat × Term))
+    (payoutPreimages ownedPreimages : List CommitmentPreimage) (after : PoolState) : Prop :=
   match nullified with
   | none =>
-    ∃ (w : TransactOwnedWitness 0 outputPreimages.length)
-      (pub : TransactOwnedPublic 0 outputPreimages.length)
-      (hM : outputPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
-      (spent' : NullifierSet) (randomOut : Fin outputPreimages.length → Nat)
+    ∃ (w : TransactOwnedWitness 0 (payoutPreimages.length + ownedPreimages.length))
+      (pub : TransactOwnedPublic 0 (payoutPreimages.length + ownedPreimages.length))
+      (hM : payoutPreimages.length + ownedPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
+      (spent' : NullifierSet) (randomOut : Fin ownedPreimages.length → Nat)
       (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-      (hCapacity : before.leaves.length + outputPreimages.length ≤ 2 ^ TreeDepth),
+      (hCapacity : before.leaves.length + (payoutPreimages.length + ownedPreimages.length) ≤
+        2 ^ TreeDepth),
       self = addressOf pub.ownerField ∧
       w.token = token ∧
-      ownedNewNotes w = outputPreimages ∧
+      ownedNewNotes w = payoutPreimages ++ ownedPreimages ∧
       pub.merkleRoot ∈ before.roots ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j) ∧
+      (∀ j, npk (Term.val pub.ownerField) (randomOut j) =
+        w.npkOut (Fin.natAdd payoutPreimages.length j)) ∧
       after = { before with
         live := fun t => if t = token
-          then withPositionsFrom before.leaves.length outputPreimages ++ before.live t
+          then withPositionsFrom before.leaves.length (payoutPreimages ++ ownedPreimages) ++
+            before.live t
           else before.live t,
         spent := spent',
-        leaves := before.leaves ++ outputPreimages.map hashCommitment,
-        roots := treeRoot TreeDepth (before.leaves ++ outputPreimages.map hashCommitment) ::
+        leaves := before.leaves ++ (payoutPreimages ++ ownedPreimages).map hashCommitment,
+        roots := treeRoot TreeDepth
+          (before.leaves ++ (payoutPreimages ++ ownedPreimages).map hashCommitment) ::
           before.roots,
         preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
         ownedRandomOf := applyOwnedRecords before.ownedRandomOf
-          (List.ofFn fun j => (pub.commitmentsOut j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) }
+          (List.ofFn fun j : Fin ownedPreimages.length =>
+            (pub.commitmentsOut (Fin.natAdd payoutPreimages.length j),
+              (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) }
   | some (pos, c) =>
-    ∃ (w : TransactOwnedWitness 1 outputPreimages.length)
-      (pub : TransactOwnedPublic 1 outputPreimages.length)
-      (hM : outputPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
+    ∃ (w : TransactOwnedWitness 1 (payoutPreimages.length + ownedPreimages.length))
+      (pub : TransactOwnedPublic 1 (payoutPreimages.length + ownedPreimages.length))
+      (hM : payoutPreimages.length + ownedPreimages.length ≤ 4) (hC : OwnedConstrained w pub)
       (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
-      (randomOut : Fin outputPreimages.length → Nat)
+      (randomOut : Fin ownedPreimages.length → Nat)
       (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-      (hCapacity : before.leaves.length + outputPreimages.length ≤ 2 ^ TreeDepth),
+      (hCapacity : before.leaves.length + (payoutPreimages.length + ownedPreimages.length) ≤
+        2 ^ TreeDepth),
       self = addressOf pub.ownerField ∧
       w.token = token ∧
-      ownedNewNotes w = outputPreimages ∧
+      ownedNewNotes w = payoutPreimages ++ ownedPreimages ∧
       w.leavesIndices 0 = pos ∧
       commitment (npk (Term.val pub.ownerField) (w.randomIn 0)) w.token (w.valueIn 0) = c ∧
       pub.merkleRoot ∈ before.roots ∧
       removeAll (before.live token) (ownedSpentPositions pub w) = some rest ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j) ∧
+      (∀ j, npk (Term.val pub.ownerField) (randomOut j) =
+        w.npkOut (Fin.natAdd payoutPreimages.length j)) ∧
       after = { before with
         live := fun t => if t = token
-          then withPositionsFrom before.leaves.length outputPreimages ++ rest
+          then withPositionsFrom before.leaves.length (payoutPreimages ++ ownedPreimages) ++ rest
           else before.live t,
         spent := spent',
-        leaves := before.leaves ++ outputPreimages.map hashCommitment,
-        roots := treeRoot TreeDepth (before.leaves ++ outputPreimages.map hashCommitment) ::
+        leaves := before.leaves ++ (payoutPreimages ++ ownedPreimages).map hashCommitment,
+        roots := treeRoot TreeDepth
+          (before.leaves ++ (payoutPreimages ++ ownedPreimages).map hashCommitment) ::
           before.roots,
         preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
         ownedRandomOf := applyOwnedRecords before.ownedRandomOf
-          (List.ofFn fun j => (pub.commitmentsOut j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) }
+          (List.ofFn fun j : Fin ownedPreimages.length =>
+            (pub.commitmentsOut (Fin.natAdd payoutPreimages.length j),
+              (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) }
+
 
 /-!
 ## Deposit top-up: merge the old holding with a fresh deposit note

@@ -316,10 +316,12 @@ def Step (sig : SignatureAssumptions)
         let payoutOutputs := exitAllocs.filterMap (fun a =>
           if a.amount = 0 then none
           else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage))
-        let outputs := payoutOutputs ++
-          (if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ : CommitmentPreimage)])
+        let remainderOutputs : List CommitmentPreimage :=
+          if remainder = 0 then [] else [(⟨Term.val s.self, assetOutcome.asset, remainder⟩ :
+            CommitmentPreimage)]
+        let outputs := payoutOutputs ++ remainderOutputs
         PoolOwnedSpendStep s.pool s.self assetOutcome.asset
-          (s.holdings assetOutcome.asset cid) outputs s'.pool ∧
+          (s.holdings assetOutcome.asset cid) payoutOutputs remainderOutputs s'.pool ∧
         s'.holdings = update s.holdings assetOutcome.asset
           (update (s.holdings assetOutcome.asset) cid
             (if remainder = 0 then none

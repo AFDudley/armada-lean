@@ -1,6 +1,7 @@
 /-
   ArmadaLean.Adjudicator.Safety — the theorem STATEMENTS stage A asks for.
-  Every theorem's proof is `sorry`; the proofs are not written yet.
+  `unbeatable_pays`/`unbeatable_pays_after_timeout` carry `sorry`; every
+  other theorem below is proved.
 
   The adjudicator holds other people's money, so this model shows three
   things: (1) no caller can take money they are not owed; (2) no caller
@@ -1646,7 +1647,10 @@ theorem payout_can_happen
     ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   have hreach3 : Reachable sig (consensusRelation sig) g mid3 :=
     reachable_step hreach2 hstep_tick
-  let dest : Allocation := ⟨Term.val 1, amount, .simple, 0⟩
+  let recipientPK : Nat × Nat := (2, 2)
+  let recipientNK : Nat := 2
+  let dest : Allocation :=
+    ⟨npk (masterPublicKey recipientPK recipientNK) 0, amount, .simple, 0⟩
   let outcome : Outcome := [⟨token, [dest]⟩]
   let candidate : VariablePart := ⟨outcome, 0, 0, true⟩
   let mid4 : AdjudicatorState := { mid3 with
@@ -1729,8 +1733,7 @@ theorem payout_can_happen
       roots := treeRoot TreeDepth (mid4.pool.leaves ++ [commitment dest.destination token amount]) ::
         mid4.pool.roots,
       preimageOf := applyRecords mid4.pool.preimageOf (ownedOutputRecords w_t pub_t),
-      ownedRandomOf := applyOwnedRecords mid4.pool.ownedRandomOf
-        [(pub_t.commitmentsOut 0, (⟨ownerField, 0⟩ : OwnedDisclosure))] },
+      ownedRandomOf := mid4.pool.ownedRandomOf },
     holdings := update mid4.holdings token (update (mid4.holdings token) cid none),
     channels := update mid4.channels cid
       { mid4.channels cid with
@@ -1747,10 +1750,10 @@ theorem payout_can_happen
     show (1 : Nat) + 1 + 1 ≤ 2 ^ TreeDepth
     decide
   have hospend : PoolOwnedSpendStep mid4.pool self token (mid4.holdings token cid)
-      [(⟨dest.destination, token, amount⟩ : CommitmentPreimage)] s'.pool := by
+      [(⟨dest.destination, token, amount⟩ : CommitmentPreimage)] [] s'.pool := by
     rw [hcEq]
-    refine ⟨w_t, pub_t, by decide, hOC, [], _, (fun _ => (0 : Nat)), hNonZero_t, hCapacity_t, rfl,
-      rfl, rfl, ?_, rfl, hRemove_t, hNullify_t, rfl⟩
+    refine ⟨w_t, pub_t, by decide, hOC, [], _, (fun j => j.elim0), hNonZero_t, hCapacity_t, rfl,
+      rfl, rfl, rfl, rfl, ?_, hRemove_t, hNullify_t, (fun j => j.elim0), rfl⟩
     · show rootT ∈ mid4.pool.roots
       show rootT ∈ mid2.pool.roots
       show rootT ∈ (treeRoot TreeDepth (mid1.pool.leaves ++ (transactAllOutputs w_d).map
@@ -1790,15 +1793,13 @@ theorem payout_can_happen
         CommitmentPreimage)] ++ ([] : List (Nat × CommitmentPreimage))
     apply List.mem_append.mpr
     left
-    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
-      withPositionsFrom mid1.pool.leaves.length [(⟨dest.destination, token, amount⟩ :
-        CommitmentPreimage)]
-    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
-      withPositionsFrom pool0.leaves.length [(⟨dest.destination, token, amount⟩ :
-        CommitmentPreimage)]
-    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
-      withPositionsFrom 1 [(⟨dest.destination, token, amount⟩ : CommitmentPreimage)]
-    rfl
+    have hlen : mid4.pool.leaves.length = 2 := by
+      show mid1.pool.leaves.length + 1 = 2
+      show pool0.leaves.length + 1 = 2
+      show (1 : Nat) + 1 = 2
+      rfl
+    rw [hlen]
+    simp [withPositionsFrom]
 
 
 /-- A reclaim can happen: for all `HashAssumptions`/`SignatureAssumptions`,
