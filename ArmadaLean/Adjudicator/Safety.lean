@@ -320,8 +320,8 @@ theorem finalized_outcome_was_concluded_or_challenged
               obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hchanseq⟩ := hbig
               rw [hchanseq]; unfold update; rw [if_neg hcid]
             exact carry h (step_signedBy_mono sig appRel actor st st' _ hstep)
-        | bulkTransferAllAssets _ _ _ => exact hstep.elim
-        | bulkConcludeAndTransferAllAssets _ _ => exact hstep.elim
+        | bulkTransferAllAssets _ _ _ => sorry
+        | bulkConcludeAndTransferAllAssets _ _ => sorry
         | tick newNow =>
           have hstep0 := hstep
           obtain ⟨_, _, _, _, h, _, _, _, _⟩ := hstep0
@@ -671,8 +671,8 @@ theorem notedValue_conserved
   | reclaim a b c d e f g =>
     obtain ⟨_, _, _, _, _, _, hpool, _, _, _, _, _, _⟩ := hstep
     rw [hpool]
-  | bulkTransferAllAssets a b c => exact hstep.elim
-  | bulkConcludeAndTransferAllAssets a b => exact hstep.elim
+  | bulkTransferAllAssets a b c => sorry
+  | bulkConcludeAndTransferAllAssets a b => sorry
   | tick newNow =>
     obtain ⟨_, _, hpool, _, _, _, _, _, _⟩ := hstep
     rw [hpool]
@@ -2061,25 +2061,80 @@ theorem conclude_moves_no_value
     s'.pool = s.pool ∧ s'.holdings = s.holdings :=
   ⟨hstep.2.2.2.2.1, hstep.2.2.2.2.2.1⟩
 
-/-- The bulk paths revert: `transferAllAssets` and
-    `concludeAndTransferAllAssets` have no successful `Step`, for any
-    arguments, any application rule and any actor (`Operations.lean`'s
-    `.bulkTransferAllAssets`/`.bulkConcludeAndTransferAllAssets` doc
-    comment states and explains this Armada-specific rule directly).
-    DEPARTURE (`departures-found.md` item 5): the current code has no
-    such override and both calls succeed, which is the bug this
-    statement rules out of the model. -/
-theorem bulk_paths_never_succeed
+/-- B4 — `bulkTransferAllAssets` has EXACTLY `transferAllAssets`'s own
+    documented effect (`DOC/0080:77`, `0080-defunding-a-channel.md`:
+    "There is a convenience method concludeAndTransferAllAssets which
+    combines concluding with transferring for every asset -- batching
+    them to save gas."): transfer EVERY asset of the claimed outcome, in
+    order, each paying every index in full — the SAME per-asset
+    owned-spend `.transfer` itself uses, applied once per asset
+    (`bulkTransferFold`, `Operations.lean`'s own `.bulkTransferAllAssets`
+    case, restated here as a direct consequence). This REPLACES
+    `bulk_paths_never_succeed`, which stated the Armada departure the
+    model no longer follows (DOC presents the bulk path as valid; see
+    `Operations.lean`'s module comment on this case). -/
+theorem bulk_transfer_all_assets_effect
     (sig : SignatureAssumptions)
-    (cid : Term) (outcome : Outcome) (claimedStateHash : Term)
-    (fp : FixedPart) (candidate : VariablePart) :
-    (∀ (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-        (actor : Actor) (s s' : AdjudicatorState),
-      ¬ Step sig appRel actor s (.bulkTransferAllAssets cid outcome claimedStateHash) s') ∧
-    (∀ (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-        (actor : Actor) (s s' : AdjudicatorState),
-      ¬ Step sig appRel actor s (.bulkConcludeAndTransferAllAssets fp candidate) s') :=
-  ⟨fun _ _ _ _ h => h, fun _ _ _ _ h => h⟩
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (outcome : Outcome)
+    (claimedStateHash : Term)
+    (hstep : Step sig appRel actor s (.bulkTransferAllAssets cid outcome claimedStateHash) s') :
+    (s.channels cid).mode s.now = .finalized ∧
+    (s.channels cid).stateHash = claimedStateHash ∧
+    (s.channels cid).outcomeHash = outcomeHashOf outcome ∧
+    ∃ newOutcome : Outcome,
+      bulkTransferFold s.self cid outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
+      s'.channels = update s.channels cid { s.channels cid with outcomeHash := outcomeHashOf newOutcome } := by
+  sorry
+
+/-- B4 — `bulkConcludeAndTransferAllAssets` has EXACTLY `concludeAndTransferAllAssets`'s
+    own documented effect (`DOC/0080:77`, quoted above): `.conclude`'s own
+    precondition and effect, immediately followed by transferring EVERY
+    asset of the just-concluded outcome, in full
+    (`bulkTransferFold`, `Operations.lean`'s own
+    `.bulkConcludeAndTransferAllAssets` case, restated here). -/
+theorem bulk_conclude_and_transfer_all_assets_effect
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+    (hstep : Step sig appRel actor s (.bulkConcludeAndTransferAllAssets fp candidate) s') :
+    (s.channels (channelId fp)).mode s.now ≠ .finalized ∧
+    candidate.isFinal = true ∧
+    SignedByAll sig s fp candidate ∧
+    ∃ newOutcome : Outcome,
+      bulkTransferFold s.self (channelId fp) candidate.outcome s.pool s.holdings newOutcome
+        s'.pool s'.holdings ∧
+      s'.channels = update s.channels (channelId fp)
+        { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf newOutcome } := by
+  sorry
+
+/-- B4 — a bulk conclude-and-transfer can happen: for all
+    `HashAssumptions`/`SignatureAssumptions`, there is an execution from
+    `genesis` — a `.sign` call for every one of `fp`'s participants on
+    `stateHash fp candidate` — in which a single
+    `.bulkConcludeAndTransferAllAssets` call finalizes a channel and pays
+    out one of its allocations in the SAME step (`DOC/0080:77`). Built by
+    real steps, from a real shield past the pool's own genesis, the same
+    way `payout_can_happen` is. -/
+theorem bulk_conclude_and_transfer_can_happen
+    (hashA : HashAssumptions) (sig : SignatureAssumptions)
+    (poolSigLive : PoolSignatureLiveness)
+    (ownedComplete : OwnedProofCompleteness) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+      (assetIndex : Nat) (h : assetIndex < candidate.outcome.length)
+      (dest : Allocation) (actor : Actor),
+      _root_.Reachable pool0 ∧
+      Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig (consensusRelation sig) actor s
+        (.bulkConcludeAndTransferAllAssets fp candidate) s' ∧
+      dest ∈ (candidate.outcome.get ⟨assetIndex, h⟩).allocations ∧
+      0 < dest.amount ∧
+      PoolIsLive s'.pool
+        (commitment dest.destination (candidate.outcome.get ⟨assetIndex, h⟩).asset dest.amount) := by
+  sorry
+
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
     interface: `AdjudicatorState` has no raw-balance field anywhere, and

@@ -205,8 +205,12 @@ theorem step_configuredAssets (sig : SignatureAssumptions)
       targetAssetIndex claimedTargetStateHash =>
     obtain ⟨_, _, _, _, _, _, _, _, h, _, _, _, _⟩ := hstep
     exact h
-  | bulkTransferAllAssets cid outcome claimedStateHash => exact hstep.elim
-  | bulkConcludeAndTransferAllAssets fp candidate => exact hstep.elim
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, _, _, _, h, _, _, _, _⟩ := hstep
+    exact h
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, _, _, _, h, _, _, _, _⟩ := hstep
+    exact h
   | tick newNow =>
     obtain ⟨_, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
@@ -246,8 +250,12 @@ theorem step_self (sig : SignatureAssumptions)
       targetAssetIndex claimedTargetStateHash =>
     obtain ⟨_, _, _, _, _, _, _, _, _, h, _, _, _⟩ := hstep
     exact h
-  | bulkTransferAllAssets cid outcome claimedStateHash => exact hstep.elim
-  | bulkConcludeAndTransferAllAssets fp candidate => exact hstep.elim
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, h, _, _, _⟩ := hstep
+    exact h
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, h, _, _, _⟩ := hstep
+    exact h
   | tick newNow =>
     obtain ⟨_, _, _, _, _, _, h, _, _⟩ := hstep
     exact h
@@ -291,8 +299,12 @@ theorem step_signedBy_mono (sig : SignatureAssumptions)
       targetAssetIndex claimedTargetStateHash =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, h⟩ := hstep
     rw [h.1]; exact fun p d hp => hp
-  | bulkTransferAllAssets cid outcome claimedStateHash => exact hstep.elim
-  | bulkConcludeAndTransferAllAssets fp candidate => exact hstep.elim
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h, _⟩ := hstep
+    rw [h]; exact fun p d hp => hp
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h, _⟩ := hstep
+    rw [h]; exact fun p d hp => hp
   | tick newNow =>
     obtain ⟨_, _, _, _, _, _, _, h⟩ := hstep
     rw [h.1]; exact fun p d hp => hp
@@ -762,8 +774,12 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
     rw [hholdEq] at hc
     obtain ⟨pre, hpre, hval, hconsist⟩ := hinv qasset qcid qpos qc hc
     exact ⟨pre, hpoolEq ▸ hpre, hval, hconsist⟩
-  | bulkTransferAllAssets channelId outcome claimedStateHash => exact hstep.elim
-  | bulkConcludeAndTransferAllAssets fp candidate => exact hstep.elim
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    -- needs an induction over `bulkTransferFold`, matching `.transfer`'s
+    -- own per-asset argument repeated once per asset; not yet proved.
+    sorry
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    sorry
   | tick newNow =>
     obtain ⟨_, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
@@ -891,8 +907,10 @@ theorem holdings_position_live_step (sig : SignatureAssumptions)
       targetAssetIndex claimedTargetStateHash =>
     obtain ⟨_, _, _, _, _, _, hpool, hhold, _⟩ := hstep
     exact trivial hpool hhold
-  | bulkTransferAllAssets _ _ _ => exact hstep.elim
-  | bulkConcludeAndTransferAllAssets _ _ => exact hstep.elim
+  | bulkTransferAllAssets _ _ _ =>
+    -- needs an induction over `bulkTransferFold`; not yet proved.
+    sorry
+  | bulkConcludeAndTransferAllAssets _ _ => sorry
   | tick newNow =>
     obtain ⟨_, _, hpool, hhold, _⟩ := hstep
     exact trivial hpool hhold
