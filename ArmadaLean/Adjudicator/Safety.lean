@@ -240,7 +240,7 @@ theorem finalized_outcome_was_concluded_or_challenged
         have hstep2 := hstep
         obtain ⟨hidx, hmodeT, hshT, hohT, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
         obtain ⟨_hguarantee, hrest⟩ := hinner
-        obtain ⟨_hmatch, _hholdseq, hchan⟩ := hrest
+        obtain ⟨_r, _hmatch, _hholdseq, hchan⟩ := hrest
         by_cases hcc : cid0 = cid'
         · subst hcc
           rw [hchan]
@@ -489,7 +489,7 @@ theorem transfer_order_independent_for_simple_allocations
     apply outcomeHashOf_inj
     obtain ⟨_, _, _, _, _, hinner1, _, _, _, _⟩ := hstep1
     obtain ⟨_, hrest1⟩ := hinner1
-    obtain ⟨_, _, hchan1⟩ := hrest1
+    obtain ⟨_, _, _, hchan1⟩ := hrest1
     obtain ⟨_, _, _, hoh2, _, _, _, _, _, _⟩ := hstep2
     rw [← hoh2, hchan1]
     unfold update
@@ -504,7 +504,7 @@ theorem transfer_order_independent_for_simple_allocations
     apply outcomeHashOf_inj
     obtain ⟨_, _, _, _, _, hinner1', _, _, _, _⟩ := hstep1'
     obtain ⟨_, hrest1'⟩ := hinner1'
-    obtain ⟨_, _, hchan1'⟩ := hrest1'
+    obtain ⟨_, _, _, hchan1'⟩ := hrest1'
     obtain ⟨_, _, _, hoh2', _, _, _, _, _, _⟩ := hstep2'
     rw [← hoh2', hchan1']
     unfold update
@@ -695,7 +695,7 @@ theorem turn_number_record_monotone
   | transfer assetIndex cid0 claimedStateHash outcome indices =>
     obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨_hguarantee, hrest⟩ := hinner
-    obtain ⟨_hmatch, _hholdseq, hchan⟩ := hrest
+    obtain ⟨_r, _hmatch, _hholdseq, hchan⟩ := hrest
     refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
     · rw [hchan]; unfold update; by_cases hcc : cid = cid0 <;> simp [hcc]
     · intro fp proof candidate heq; exact absurd heq (by simp)
@@ -817,7 +817,7 @@ theorem finalization_permanent
       | transfer assetIndex cid0 claimedStateHash outcome indices =>
         obtain ⟨hidx, hmodeT, hshT, hohT, _hstrict, hinner, _hcfg, _hself, hnow, _hsigned⟩ := hstep
         obtain ⟨_hguarantee, hrest⟩ := hinner
-        obtain ⟨_hmatch, _hholdseq, hchan⟩ := hrest
+        obtain ⟨_r, _hmatch, _hholdseq, hchan⟩ := hrest
         by_cases hcc : cid0 = cid
         · subst hcc
           rw [hchan]; unfold update; rw [if_pos rfl, hnow]
@@ -1201,9 +1201,9 @@ theorem value_leaves_only_via_transfer_of_finalized_channel
     · exfalso
       obtain ⟨h, _hmode, _, _, _, hinner, _, _, _, _⟩ := hstep
       obtain ⟨_hexit, hrest⟩ := hinner
-      obtain ⟨hmatch, hholdseq, _hchan⟩ := hrest
+      obtain ⟨r, hmatch, hholdseq, _hchan⟩ := hrest
       have hframe := PoolOwnedSpendStep_frame s.pool s'.pool s.self
-        (outcome.get ⟨assetIndex, h⟩).asset cid0 _ _ s.holdings
+        (outcome.get ⟨assetIndex, h⟩).asset cid0 _ r _ s.holdings
         (fun pre hpre => by
           obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
           by_cases hamt : a.amount = 0
@@ -1647,7 +1647,7 @@ theorem notedValue_conserved
   | transfer assetIndex cid claimedStateHash outcome indices =>
     obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨_hguarantee, hrest⟩ := hinner
-    obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
+    obtain ⟨_r, hmatch, _hholdseq, _hchanseq⟩ := hrest
     unfold PoolState.notedValue
     by_cases ht : token = (outcome.get ⟨assetIndex, hidx⟩).asset
     · rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
@@ -3766,7 +3766,7 @@ theorem bulk_conclude_and_transfer_can_happen
     simp [transferEffects, afford, dest]
   have hfold : bulkTransferFold self cid outcome mid3.pool mid3.holdings
       [(⟨token, [{ dest with amount := 0 }]⟩ : SingleAssetExit)] s'.pool s'.holdings := by
-    exact ⟨hguarantee_check _, rfl, s'.pool, hospend, rfl, rfl⟩
+    exact ⟨hguarantee_check _, rfl, 0, s'.pool, hospend, rfl, rfl⟩
   have hstep_bulk : Step sig (consensusRelation sig) (Actor.nitro 0) mid3
       (.bulkConcludeAndTransferAllAssets fp candidate) s' := by
     refine ⟨hnotfinalized, rfl, ?_, [(⟨token, [{ dest with amount := 0 }]⟩ : SingleAssetExit)],
@@ -3985,7 +3985,7 @@ theorem zero_payout_mints_nothing
         (∀ pos, (pos, pre) ∉ s.pool.live pre.token) := by
   obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨r, hmatch, _hholdseq, _hchanseq⟩ := hrest
   rintro ⟨pre, _hnpk, hval, ⟨pos, hin⟩, hnin⟩
   by_cases htok : pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset
   · rw [htok] at hin
@@ -3995,7 +3995,7 @@ theorem zero_payout_mints_nothing
       (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid -
         (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
           (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2)
-      (outcome.get ⟨assetIndex, hidx⟩).asset s.self
+      (outcome.get ⟨assetIndex, hidx⟩).asset s.self r
     rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | ⟨oldPos, c⟩
     · rw [hc] at hmatch
       obtain ⟨w, pub, hM, hC, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
@@ -4064,7 +4064,7 @@ theorem full_payout_leaves_no_remainder
     s'.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
   obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨_hpoolstep, hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨r, _hpoolstep, hholdseq, _hchanseq⟩ := hrest
   have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
   rw [hidx_eq] at hholdseq
   change s'.holdings = update s.holdings (outcome.get ⟨assetIndex, h⟩).asset
@@ -4083,12 +4083,12 @@ theorem full_payout_leaves_no_remainder
                    (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
                      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 = 0
                 then []
-                else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, h⟩).asset,
+                else [(⟨npk (Term.val s.self) r, (outcome.get ⟨assetIndex, h⟩).asset,
                   heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
                     (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
                       (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2⟩ :
                     CommitmentPreimage)])).length - 1,
-           commitment (Term.val s.self) (outcome.get ⟨assetIndex, h⟩).asset
+           commitment (npk (Term.val s.self) r) (outcome.get ⟨assetIndex, h⟩).asset
              (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
                (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
                 (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)))) at hholdseq
@@ -4125,7 +4125,7 @@ theorem nullify_iff_commitment_was_some
       s'.pool.spent = s.pool.spent := by
   obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨_hguarantee, hrest⟩ := hinner
-  obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
+  obtain ⟨_r, hmatch, _hholdseq, _hchanseq⟩ := hrest
   have hidx_eq : (⟨assetIndex, hidx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
   rw [hidx_eq] at hmatch
   constructor
