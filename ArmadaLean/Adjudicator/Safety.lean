@@ -1559,7 +1559,93 @@ theorem checkpoint_can_happen
       (s'.channels (channelId fp)).mode s'.now = .open ∧
       (s'.channels (channelId fp)).turnNumRecord = candidate.turnNum ∧
       (s'.channels (channelId fp)).finalizesAt = 0 := by
-  sorry
+  let assets : Nat → Prop := fun _ => False
+  let self : Nat := 0
+  let pool0 : PoolState := _root_.genesis
+  let fp : FixedPart := ⟨[0], 0, 0, 1⟩
+  let candidate0 : VariablePart := ⟨[], 0, 0, false⟩
+  let candidate : VariablePart := ⟨[], 0, 1, false⟩
+  let g := genesis assets self pool0
+  let mid1 : AdjudicatorState := { g with
+    signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate0) ∨ g.signedBy p' d' }
+  have hsignstep1 : Step sig (consensusRelation sig) (Actor.nitro 0) g
+      (.sign 0 (stateHash fp candidate0)) mid1 :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep1
+  let mid1b : AdjudicatorState := { mid1 with
+    signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ mid1.signedBy p' d' }
+  have hsignstep1b : Step sig (consensusRelation sig) (Actor.nitro 0) mid1
+      (.sign 0 (stateHash fp candidate)) mid1b :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1b : Reachable sig (consensusRelation sig) g mid1b :=
+    reachable_step hreach1 hsignstep1b
+  let s : AdjudicatorState := { mid1b with
+    channels := update mid1b.channels (channelId fp)
+      { turnNumRecord := candidate0.turnNum, finalizesAt := mid1b.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate0, outcomeHash := outcomeHashOf candidate0.outcome } }
+  have hauth0 : AuthorizedBy sig mid1b 0 (stateHash fp candidate0) :=
+    Or.inl (Or.inr (Or.inl ⟨rfl, rfl⟩))
+  have hcstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid1b
+      (.challenge fp [] candidate0 0) s := by
+    refine ⟨?_, ⟨rfl, ?_⟩, ?_, hauth0, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · show candidate0.turnNum ≥ (mid1b.channels (channelId fp)).turnNumRecord
+      simp [mid1b, mid1, g, genesis, emptyStatus]
+    · intro p hp
+      rw [List.mem_singleton] at hp
+      subst hp
+      exact hauth0
+    · exact List.mem_singleton.mpr rfl
+  have hreach2 : Reachable sig (consensusRelation sig) g s :=
+    reachable_step hreach1b hcstep
+  have hmodeChallenge : (s.channels (channelId fp)).mode s.now = .challenge := by
+    show ((update mid1b.channels (channelId fp)
+      { turnNumRecord := candidate0.turnNum, finalizesAt := mid1b.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate0, outcomeHash := outcomeHashOf candidate0.outcome })
+      (channelId fp)).mode mid1b.now = .challenge
+    unfold update
+    simp [ChannelStatus.mode, fp]
+  have hauth1 : AuthorizedBy sig s 0 (stateHash fp candidate) := Or.inl (Or.inl ⟨rfl, rfl⟩)
+  have hsignedAll : SignedByAll sig s fp candidate := by
+    intro p hp
+    rw [List.mem_singleton] at hp
+    subst hp
+    exact hauth1
+  have hturnGt : candidate.turnNum > (s.channels (channelId fp)).turnNumRecord := by
+    show (1 : Nat) > ((update mid1b.channels (channelId fp)
+      { turnNumRecord := candidate0.turnNum, finalizesAt := mid1b.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate0, outcomeHash := outcomeHashOf candidate0.outcome })
+      (channelId fp)).turnNumRecord
+    unfold update
+    rw [if_pos rfl]
+    decide
+  let s' : AdjudicatorState := { s with
+    channels := update s.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := Term.val 0,
+        outcomeHash := Term.val 0 } }
+  have hckstep : Step sig (consensusRelation sig) (Actor.nitro 0) s
+      (.checkpoint fp [] candidate) s' := by
+    refine ⟨?_, hturnGt, ⟨rfl, hsignedAll⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    rw [hmodeChallenge]
+    simp
+  refine ⟨assets, self, pool0, s, s', fp, candidate, Actor.nitro 0,
+    _root_.Reachable.genesis, hreach2, hmodeChallenge, hckstep, ?_, ?_, ?_⟩
+  · show ((update s.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := Term.val 0,
+        outcomeHash := Term.val 0 }) (channelId fp)).mode s.now = .open
+    unfold update
+    rw [if_pos rfl]
+    simp [ChannelStatus.mode]
+  · show ((update s.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := Term.val 0,
+        outcomeHash := Term.val 0 }) (channelId fp)).turnNumRecord = candidate.turnNum
+    unfold update
+    rw [if_pos rfl]
+  · show ((update s.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := Term.val 0,
+        outcomeHash := Term.val 0 }) (channelId fp)).finalizesAt = 0
+    unfold update
+    rw [if_pos rfl]
 
 /-- A-12 — guarantee reallocation can change a later transfer's payout:
     there is a reachable state `s` and a real `.reclaim` `Step` from `s`
