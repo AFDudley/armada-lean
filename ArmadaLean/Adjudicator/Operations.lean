@@ -150,21 +150,18 @@ def Step (sig : SignatureAssumptions)
   the current `depositFromNote` still requires `UnshieldType.NORMAL` and
   pays real ERC-20 out via `TransactModule._transferTokenOut`; this
   model follows the armada-nitro rule's intent, not the current code.
-  Deposit is authorized by the depositor's own EdDSA signature on the
-  spent note (the pool layer's `EdDSAVerify`, reused via `Constrained`/
-  `DepositStep`, `Notes.lean`), not by `sig`/`actor`, so this case
-  does not use either. `0 < amount`: the adjudicator's own rule that it
-  never records a `0`-value note as a channel holding (`State.lean`'s
-  armada-nitro rule, applied to zero; `Safety.lean`'s `holdings_never_
-  zero_valued`) —
-  `TransactOwned.circom:117-120` only range-checks an output value, so
-  the circuit alone would let a `0`-amount deposit mint a `0`-valued
-  holding; this precondition is what keeps the invariant here, since
-  the circuit does not. `depositBinding` (`ArmadaNitroAdjudicator.sol:
-  60-72`) binds the proof to `(channelId, expectedHeld)` so a deposit
-  always ADDS TO, never replaces, the prior holding: when the channel
-  already holds a note (`s.holdings asset channelId = some oldHolding`),
-  the fresh deposit note cannot simply become the new holding (that
+  `0 < amount`: the adjudicator's own rule that it never records a
+  `0`-value note as a channel holding (`State.lean`'s armada-nitro
+  rule, applied to zero; `Safety.lean`'s `holdings_never_zero_valued`)
+  — `TransactOwned.circom:117-120` only range-checks an output value,
+  so the circuit alone would let a `0`-amount deposit mint a
+  `0`-valued holding; this precondition is what keeps the invariant
+  here, since the circuit does not. `depositBinding`
+  (`ArmadaNitroAdjudicator.sol:60-72`) binds the proof to `(channelId,
+  expectedHeld)` so a deposit always ADDS TO, never replaces, the
+  prior holding: when the channel already holds a note
+  (`s.holdings asset channelId = some oldHolding`), the fresh deposit
+  note cannot simply become the new holding (that
   would discard the old value) and cannot sit alongside it either
   (`AdjudicatorState.holdings` names at most one commitment per
   `(asset, channelId)`) — the two notes MERGE into one, via
@@ -173,6 +170,27 @@ def Step (sig : SignatureAssumptions)
   old holding, the fresh deposit note) and one minted output (their
   sum). When the channel holds nothing yet, no merge is needed: the
   fresh deposit note becomes the holding directly, as before.
+  MODEL FIX (found proving `unbeatable_pays`): `DepositStep`'s own
+  `Constrained` check (`Transact.lean`) verifies `EdDSAVerify w.publicKey
+  w.signature (msgHashOf pub)` — an ABSTRACT predicate this model only
+  ever states COMPLETENESS for (`PoolSignatureLiveness.eddsaCompleteness`,
+  `Notes.lean`: a key holder CAN produce a verifying signature), never
+  SOUNDNESS (a non-holder cannot). Left as the sole gate, `.deposit`
+  could nullify ANY live note's position by supplying a witness whose
+  OWN fields merely claim that note's npk/value, since nothing ties the
+  claim back to the pool's own record of who actually signed. Every
+  OTHER call's signature-style gate instead reads a GHOST REGISTRY this
+  model tracks for exactly this purpose: `.sign`/`.challenge`/`.conclude`
+  read `AuthorizedBy`/`s.signedBy`, grown only by `.sign p d` taken AS
+  `p` (`Operations.lean`'s own module comment, above). The pool layer has
+  the identical registry for its OWN EdDSA signatures: `.signNote pk
+  msgHash`, taken AS `.pool pk` ONLY, grows `s.poolSignedBy pk msgHash`
+  (below) — `Transact.circom:163-186`'s own signature check, lifted to
+  the adjudicator the same way the Nitro layer's is. `s.poolSignedBy
+  w.publicKey (msgHashOf pub)` below closes the gap: a `.deposit` now
+  needs the SAME key holder to have ALREADY taken `.signNote` for this
+  exact message, exactly paralleling how `.conclude`/`.challenge` need a
+  PRIOR `.sign`, not a bare claim of authorization.
   -/
   | .deposit channelId expectedHeld asset amount => fun s' =>
       s.configuredAssets asset ∧
@@ -182,6 +200,7 @@ def Step (sig : SignatureAssumptions)
       (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
           (idx : Fin M) (position : Nat) (midPool : PoolState),
         DepositStep s.pool s.self asset amount w pub idx position midPool ∧
+        s.poolSignedBy w.publicKey (msgHashOf pub) ∧
         (match s.holdings asset channelId with
          | none =>
            s'.pool = midPool ∧

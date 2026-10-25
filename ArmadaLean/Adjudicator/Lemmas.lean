@@ -512,6 +512,245 @@ theorem afford_exchange (allocs : List Allocation) (surplus : Nat) (i k : Nat) (
         rw [hswap]
         exact ih (surplus - min a.amount surplus) i' k' hik'
 
+/-- `transferEffects`, restated with an arbitrary `Bool`-valued selection
+    predicate instead of an `indices` list: the SAME computation,
+    unfolded directly (not a new definition — `transferEffects`'s own
+    `selected` local is exactly this shape). What the batch-selection
+    generalization of `afford_exchange` below needs: a selection
+    predicate SHIFTS cleanly as `fun j => sel (j+1)` on the tail, where
+    an `indices : List Nat` does not (`indices.isEmpty` flips meaning
+    after stripping a head element — `[0]`'s tail `[]` would wrongly
+    read as "select all" under the list convention). -/
+def transferEffectsSel (allocations : List Allocation) (surplus : Nat) (sel : Nat → Bool) :
+    List Allocation × List Allocation × Nat :=
+  let paidAt := afford allocations surplus
+  let indexed := (List.range allocations.length).zip (allocations.zip paidAt)
+  let newAllocations := indexed.map fun (i, a, paid) =>
+    if sel i then { a with amount := a.amount - paid } else a
+  let exitAllocations := indexed.filterMap fun (i, a, paid) =>
+    if sel i then some { a with amount := paid } else none
+  (newAllocations, exitAllocations, listSum (exitAllocations.map Allocation.amount))
+
+/-- `transferEffects` IS `transferEffectsSel` under `indices`'s own
+    selection rule — same definition, unfolded. -/
+theorem transferEffects_eq_sel (allocs : List Allocation) (surplus : Nat) (indices : List Nat) :
+    transferEffects allocs surplus indices =
+      transferEffectsSel allocs surplus (fun i => indices.isEmpty || i ∈ indices) := rfl
+
+/-- `transferEffectsSel`'s own `newAllocations` (`.1`) at index `i`:
+    the SAME per-index characterization `transferEffects_newAllocations_
+    getD_full` gives for `indices`, restated for an arbitrary `sel`.
+    Same proof technique (`List.getElem?_zip_eq_some`), since
+    `transferEffectsSel` is the SAME `List.range`/`.zip`/`.map` shape
+    `transferEffects` unfolds to. -/
+theorem transferEffectsSel_getD_full (allocs : List Allocation) (surplus : Nat)
+    (sel : Nat → Bool) (i : Nat) (hi : i < allocs.length) :
+    (transferEffectsSel allocs surplus sel).1.getD i Allocation.default =
+      { allocs.getD i Allocation.default with
+        amount := if sel i then
+          (allocs.getD i Allocation.default).amount - (afford allocs surplus).getD i 0
+        else (allocs.getD i Allocation.default).amount } := by
+  have hlen : (afford allocs surplus).length = allocs.length := afford_length allocs surplus
+  have hrange : (List.range allocs.length)[i]? = some i := List.getElem?_range hi
+  have halloc : allocs[i]? = some (allocs.getD i Allocation.default) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : allocs[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some a => simp
+  have hpaid : (afford allocs surplus)[i]? = some ((afford allocs surplus).getD i 0) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : (afford allocs surplus)[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some p => simp
+  have hzip1 := (List.getElem?_zip_eq_some
+    (z := (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0))).mpr ⟨halloc, hpaid⟩
+  have hzip2 := (List.getElem?_zip_eq_some
+    (z := (i, (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0)))).mpr
+    ⟨hrange, hzip1⟩
+  unfold transferEffectsSel
+  dsimp only
+  rw [List.getD_eq_getElem?_getD, List.getElem?_map, hzip2]
+  simp only [Option.map_some, Option.getD_some]
+  split <;> rfl
+
+/-- `transferEffectsSel`'s own `newAllocations`, decomposed one entry at
+    a time: the head is paid out (or not) by `sel 0` alone, and the
+    tail recurses as `transferEffectsSel`'s own call on `as`, with `sel`
+    SHIFTED by one position and the surplus `afford`'s own head payout
+    already subtracted — the list-indexed counterpart of
+    `transferEffects_newAllocations_cons_zero`/`_cons_succ`, generalized
+    from a single selected index to an arbitrary predicate. Same proof
+    technique (`List.ext_get`), reading each side off
+    `transferEffectsSel_getD_full`. -/
+theorem transferEffectsSel_cons (a : Allocation) (as : List Allocation) (surplus : Nat)
+    (sel : Nat → Bool) :
+    (transferEffectsSel (a :: as) surplus sel).1 =
+      (if sel 0 then { a with amount := a.amount - min a.amount surplus } else a) ::
+        (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).1 := by
+  have hlen1 : (transferEffectsSel (a :: as) surplus sel).1.length = (a :: as).length := by
+    unfold transferEffectsSel
+    simp [afford_length]
+  have hlen2 : ((if sel 0 then { a with amount := a.amount - min a.amount surplus } else a) ::
+      (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).1).length =
+      (a :: as).length := by
+    have : (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).1.length
+        = as.length := by
+      unfold transferEffectsSel
+      simp [afford_length]
+    simp [this]
+  apply List.ext_get (hlen1.trans hlen2.symm)
+  intro n h1 h2
+  have hfull := transferEffectsSel_getD_full (a :: as) surplus sel n (by rw [hlen1] at h1; exact h1)
+  have hget1 : (transferEffectsSel (a :: as) surplus sel).1.get ⟨n, h1⟩ =
+      (transferEffectsSel (a :: as) surplus sel).1.getD n Allocation.default := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h1]; rfl
+  have hget2 : ((if sel 0 then { a with amount := a.amount - min a.amount surplus } else a) ::
+      (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).1).get
+      ⟨n, h2⟩ = ((if sel 0 then { a with amount := a.amount - min a.amount surplus } else a) ::
+      (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).1).getD
+      n Allocation.default := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h2]; rfl
+  rw [hget1, hget2, hfull]
+  cases n with
+  | zero => by_cases h0 : sel 0 <;> simp [h0, afford]
+  | succ n' =>
+    have hn'range : n' < as.length := by
+      rw [hlen1] at h1; simp only [List.length_cons] at h1; omega
+    have hafforD : (afford (a :: as) surplus).getD (n' + 1) 0 =
+        (afford as (surplus - min a.amount surplus)).getD n' 0 := by simp [afford]
+    have hfull2 := transferEffectsSel_getD_full as (surplus - min a.amount surplus)
+      (fun j => sel (j + 1)) n' hn'range
+    simp only [List.getD_cons_succ, hafforD]
+    rw [hfull2]
+
+/-- `transferEffectsSel`'s own total payout, decomposed the same way:
+    the head's own share, if selected, plus the tail's own total. -/
+theorem transferEffectsSel_cons_payout (a : Allocation) (as : List Allocation) (surplus : Nat)
+    (sel : Nat → Bool) :
+    (transferEffectsSel (a :: as) surplus sel).2.2 =
+      (if sel 0 then min a.amount surplus else 0) +
+        (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).2.2 := by
+  have haffcons : afford (a :: as) surplus =
+      min a.amount surplus :: afford as (surplus - min a.amount surplus) := rfl
+  by_cases h0 : sel 0
+  · simp only [if_pos h0]
+    unfold transferEffectsSel
+    simp only [List.length_cons, List.range_succ_eq_map, haffcons, List.zip_cons_cons,
+      List.map_cons, List.filterMap_cons, if_pos h0, listSum,
+      List.zip_map_left, List.filterMap_map]
+    congr 2
+  · simp only [if_neg h0]
+    unfold transferEffectsSel
+    simp only [List.length_cons, List.range_succ_eq_map, haffcons, List.zip_cons_cons,
+      List.filterMap_cons, if_neg h0,
+      List.zip_map_left, List.filterMap_map, Nat.zero_add]
+    congr 1
+
+
+/-- `transferEffectsSel`'s own total payout never exceeds `afford`'s own
+    total: every paid entry's amount IS one of `afford`'s own
+    per-index values (`transferEffectsSel`'s `exitAllocations`, built by
+    `filterMap`, keeps only SOME of `afford`'s own list), so their sum
+    is at most the WHOLE list's sum. What `afford_exchange_sel` needs
+    to bound its own carried deficit by `afford_sum_le`. -/
+theorem transferEffectsSel_payout_le (allocs : List Allocation) :
+    ∀ (surplus : Nat) (sel : Nat → Bool),
+      (transferEffectsSel allocs surplus sel).2.2 ≤ listSum (afford allocs surplus) := by
+  induction allocs with
+  | nil => intro surplus sel; simp [transferEffectsSel, afford, listSum]
+  | cons a as ih =>
+    intro surplus sel
+    rw [transferEffectsSel_cons_payout]
+    simp only [afford, listSum]
+    have hrec := ih (surplus - min a.amount surplus) (fun j => sel (j + 1))
+    by_cases h0 : sel 0
+    · rw [if_pos h0]; omega
+    · rw [if_neg h0]; omega
+
+/-- `afford_exchange` generalized from ONE paid-out index to an entire
+    selection predicate at once (`.transfer`'s own batch semantics,
+    via `transferEffectsSel`): paying out every SELECTED entry
+    simultaneously, each at its OWN `afford`-computed share, leaves
+    every UNSELECTED entry's OWN later-recomputed `afford` value
+    exactly where `afford` originally put it. Structural induction on
+    `allocs`, generalizing `afford_exchange`'s own `i≠k` case split to
+    `sel k = false`, carrying the ACTUAL running payout total (not an
+    abstract bound) so `afford_sum_le`/`transferEffectsSel_payout_le`
+    discharge the one inequality each step needs directly. What the
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` interleaving
+    argument needs: another actor's `.transfer`, selecting ANY set of
+    OTHER allocations, never lowers what `h`'s own entry can still
+    afford. -/
+theorem afford_exchange_sel (allocs : List Allocation) :
+    ∀ (surplus : Nat) (sel : Nat → Bool) (k : Nat), sel k = false →
+      (afford (transferEffectsSel allocs surplus sel).1
+          (surplus - (transferEffectsSel allocs surplus sel).2.2)).getD k 0 =
+        (afford allocs surplus).getD k 0 := by
+  induction allocs with
+  | nil => intro surplus sel k _; simp [afford, transferEffectsSel]
+  | cons a as ih =>
+    intro surplus sel k hk
+    rw [transferEffectsSel_cons, transferEffectsSel_cons_payout]
+    have hpaid0le : min a.amount surplus ≤ surplus := Nat.min_le_right _ _
+    have hrestle : (transferEffectsSel as (surplus - min a.amount surplus)
+        (fun j => sel (j + 1))).2.2 ≤ surplus - min a.amount surplus :=
+      Nat.le_trans (transferEffectsSel_payout_le as _ _) (afford_sum_le as _)
+    by_cases h0 : sel 0
+    · simp only [if_pos h0]
+      cases k with
+      | zero => rw [h0] at hk; exact absurd hk (by decide)
+      | succ k' =>
+        have hswap : surplus - (min a.amount surplus +
+            (transferEffectsSel as (surplus - min a.amount surplus)
+              (fun j => sel (j + 1))).2.2) =
+            (surplus - min a.amount surplus) -
+              (transferEffectsSel as (surplus - min a.amount surplus)
+                (fun j => sel (j + 1))).2.2 := by omega
+        rw [hswap]
+        have hgetD1 : (afford (a :: as) surplus).getD (k' + 1) 0 =
+            (afford as (surplus - min a.amount surplus)).getD k' 0 := by simp [afford]
+        rw [hgetD1]
+        have hminzero : min (a.amount - min a.amount surplus)
+            ((surplus - min a.amount surplus) -
+              (transferEffectsSel as (surplus - min a.amount surplus)
+                (fun j => sel (j + 1))).2.2) = 0 := by omega
+        simp only [afford, List.getD_cons_succ, hminzero, Nat.sub_zero]
+        show (afford ((transferEffectsSel as (surplus - min a.amount surplus)
+            (fun j => sel (j + 1))).1) ((surplus - min a.amount surplus) -
+            (transferEffectsSel as (surplus - min a.amount surplus)
+              (fun j => sel (j + 1))).2.2)).getD k' 0 =
+          (afford as (surplus - min a.amount surplus)).getD k' 0
+        exact ih (surplus - min a.amount surplus) (fun j => sel (j + 1)) k' hk
+    · simp only [if_neg h0]
+      cases k with
+      | zero =>
+        have hminEq0 : min a.amount (surplus -
+            (transferEffectsSel as (surplus - min a.amount surplus)
+              (fun j => sel (j + 1))).2.2) = min a.amount surplus := by omega
+        simp only [afford, hminEq0, Nat.zero_add, List.getD_cons_zero]
+      | succ k' =>
+        have hgetD1 : (afford (a :: as) surplus).getD (k' + 1) 0 =
+            (afford as (surplus - min a.amount surplus)).getD k' 0 := by simp [afford]
+        rw [hgetD1]
+        have hminEq : min a.amount (surplus -
+            (transferEffectsSel as (surplus - min a.amount surplus)
+              (fun j => sel (j + 1))).2.2) = min a.amount surplus := by omega
+        have hsub : surplus -
+            (transferEffectsSel as (surplus - min a.amount surplus)
+              (fun j => sel (j + 1))).2.2 - min a.amount surplus =
+            (surplus - min a.amount surplus) -
+              (transferEffectsSel as (surplus - min a.amount surplus)
+                (fun j => sel (j + 1))).2.2 := by omega
+        simp only [afford, Nat.zero_add, hminEq, List.getD_cons_succ]
+        rw [hsub]
+        show (afford ((transferEffectsSel as (surplus - min a.amount surplus)
+            (fun j => sel (j + 1))).1) ((surplus - min a.amount surplus) -
+            (transferEffectsSel as (surplus - min a.amount surplus)
+              (fun j => sel (j + 1))).2.2)).getD k' 0 =
+          (afford as (surplus - min a.amount surplus)).getD k' 0
+        exact ih (surplus - min a.amount surplus) (fun j => sel (j + 1)) k' hk
+
+
 
 
 /-! ## A reusable induction principle over the reachable set -/
@@ -759,6 +998,133 @@ theorem appliesAll_signedBy_frame (sig : SignatureAssumptions)
       appliesAll_signedBy_frame sig appRel q hrest
         (fun actor' call' hc => hexcl actor' call' (List.mem_cons_of_mem _ hc))
     rw [h2, h1]
+
+
+/-- `poolSignedBy` at one public key's OWN row is untouched by a `Step`
+    taken under any OTHER identity: only `.signNote pk msgHash` by actor
+    `.pool pk` itself ever adds to row `pk` (`Operations.lean`'s own
+    module comment on `.sign`/`.signNote`, the pool-layer counterpart);
+    every other call leaves `poolSignedBy` unchanged entirely
+    (`step_signedBy_mono`'s own case list, `poolSignedBy` side). What
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` need to carry the
+    MODEL FIX's `s.poolSignedBy w.publicKey (msgHashOf pub)` gate
+    (`Operations.lean`'s `.deposit` case) across an `interleaved`
+    sequence that never acts as `.pool pk`: no step in it can newly
+    authorize a `.deposit` spend under `pk`. -/
+theorem poolSignedBy_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hstep : Step sig appRel actor s call s') (pk : Nat × Nat)
+    (hactor : actor ≠ Actor.pool pk) :
+    s'.poolSignedBy pk = s.poolSignedBy pk := by
+  cases call with
+  | deposit cid expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h]
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h]
+  | tick newNow =>
+    obtain ⟨_, _, _, _, _, _, _, h⟩ := hstep
+    rw [h.2]
+  | sign p d =>
+    obtain ⟨_, _, _, _, _, _, _, _, h⟩ := hstep
+    rw [h]
+  | signNote pk' msgHash =>
+    obtain ⟨hp, h⟩ := hstep
+    rw [h.1]
+    funext m'
+    dsimp only
+    have hpneq : pk' ≠ pk := fun heq => hactor (heq ▸ hp)
+    have hiff : (pk = pk' ∧ m' = msgHash ∨ s.poolSignedBy pk m') ↔ s.poolSignedBy pk m' := by
+      constructor
+      · rintro (⟨heq, _⟩ | hsb)
+        · exact absurd heq (fun h => hpneq h.symm)
+        · exact hsb
+      · exact Or.inr
+    exact propext hiff
+
+/-- `poolSignedBy_frame` across a whole `interleaved` sequence: if no
+    step in it ever acts as `.pool pk`, `pk`'s own `poolSignedBy` row is
+    exactly what it was before the sequence ran. -/
+theorem appliesAll_poolSignedBy_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (pk : Nat × Nat) :
+    ∀ {calls : List (Actor × Call)} {s s' : AdjudicatorState},
+      AppliesAll sig appRel s calls s' →
+      (∀ actor call, (actor, call) ∈ calls → actor ≠ Actor.pool pk) →
+      s'.poolSignedBy pk = s.poolSignedBy pk
+  | [], s, s', happ, _ => by rw [show s' = s from happ]
+  | (actor, call) :: rest, s, s', happ, hexcl => by
+    obtain ⟨mid, hstep, hrest⟩ := happ
+    have h1 : mid.poolSignedBy pk = s.poolSignedBy pk :=
+      poolSignedBy_frame sig appRel actor s mid call hstep pk
+        (hexcl actor call (List.mem_cons_self ..))
+    have h2 : s'.poolSignedBy pk = mid.poolSignedBy pk :=
+      appliesAll_poolSignedBy_frame sig appRel pk hrest
+        (fun actor' call' hc => hexcl actor' call' (List.mem_cons_of_mem _ hc))
+    rw [h2, h1]
+
+/-- A live note keyed to a USER's own master public key is spent by a
+    `.deposit` step ONLY if the witness signs under THAT SAME key:
+    `transactSpentPositions` claims, for each input it names, a preimage
+    keyed to `npk (masterPublicKey w.publicKey w.nullifyingKey) _`
+    (`Pool.lean`); `removeAll`'s own list-permutation semantics
+    (`removeAll_perm`) means a position the witness does NOT name
+    survives untouched into `rest`, and one it DOES name forces its
+    EXACT claimed preimage onto the real one (`removeAll`'s `elem`
+    check is `DecidableEq`-exact), hence (`npk`/`masterPublicKey`'s own
+    Poseidon injectivity) the SAME public key. What the MODEL FIX's
+    `poolSignedBy` gate (`Operations.lean`'s `.deposit` case) and
+    `poolSignedBy_frame` need together, for `unbeatable_pays`/
+    `unbeatable_pays_after_timeout`: a note only `h` holds the key for
+    cannot be spent by a DIFFERENT key holder's deposit at all, so
+    excluding that OTHER key's `.pool` actor from `interleaved` is
+    moot for THIS note — it was never spendable by anyone else in the
+    first place; the exclusion only matters for `poolSignedBy_frame`
+    keeping `h`'s OWN key's authorization row from growing BY SOMEONE
+    ELSE first. -/
+theorem deposit_spend_requires_signer {N M : Nat}
+    (before : PoolState) (token pos : Nat) (pre : CommitmentPreimage)
+    (pk : Nat × Nat) (nk r : Nat) (hnpk : pre.npk = npk (masterPublicKey pk nk) r)
+    (hmem : (pos, pre) ∈ before.live token)
+    (w : TransactWitness N M) (htoken : w.token = token) (hpk : w.publicKey ≠ pk)
+    {rest : List (Nat × CommitmentPreimage)}
+    (hRemove : removeAll (before.live w.token) (transactSpentPositions w) = some rest) :
+    (pos, pre) ∈ rest := by
+  have hmemperm : (pos, pre) ∈ transactSpentPositions w ++ rest :=
+    (removeAll_perm hRemove).mem_iff.mp (htoken ▸ hmem)
+  refine (List.mem_append.mp hmemperm).resolve_left ?_
+  intro hsp
+  obtain ⟨j, hj⟩ := List.mem_ofFn.mp hsp
+  have hpreeq : pre = (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j),
+      w.token, w.valueIn j⟩ : CommitmentPreimage) := (congrArg Prod.snd hj).symm
+  have hnpkeq2 : npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j) =
+      npk (masterPublicKey pk nk) r :=
+    (congrArg CommitmentPreimage.npk hpreeq).symm.trans hnpk
+  have hmpkeq : masterPublicKey w.publicKey w.nullifyingKey = masterPublicKey pk nk :=
+    (Term.hash2_inj hnpkeq2).1
+  obtain ⟨h1, h2, h3⟩ := Term.hash3_inj hmpkeq
+  exact hpk (Prod.ext (Term.val.inj h1) (Term.val.inj h2))
 
 
 
@@ -1458,7 +1824,7 @@ theorem holdings_preimage_nonzero_step (sig : SignatureAssumptions)
   cases call with
   | deposit channelId expectedHeld asset amount =>
     obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
     obtain ⟨_r, _hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent', records, hCapacity,
       hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
     have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
@@ -2155,6 +2521,90 @@ theorem PoolOwnedSpendStep_notedValue_conserved
         listSum ((pool.live token).map (fun p => p.2.value))
       rw [if_neg ht]
 
+/-- A `PoolOwnedSpendStep` never touches a USER-keyed note: its own
+    nullification (the "some" case) only ever claims a position keyed
+    `npk (Term.val pub.ownerField) _` (`ownedSpentPositions`'s own
+    definition, `Pool.lean`), and `self = addressOf pub.ownerField`
+    ties that to the CONTRACT's own identity — `user_npk_ne_contract_
+    npk` (`TransactOwned.lean`) then rules out a user-keyed preimage
+    ever matching. The "none" case nullifies nothing at all. What
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` need: `.transfer`/
+    the bulk calls (both built on this one step) can never spend `h`'s
+    own payout note, so once minted it survives every later one. -/
+theorem PoolOwnedSpendStep_preserves_user_note {pool pool' : PoolState} (self token : Nat)
+    (nullified : Option (Nat × Term))
+    (payoutPreimages ownedPreimages : List CommitmentPreimage)
+    (hstep : PoolOwnedSpendStep pool self token nullified payoutPreimages ownedPreimages pool')
+    (t pos : Nat) (pre : CommitmentPreimage) (pk : Nat × Nat) (nk r : Nat)
+    (hnpk : pre.npk = npk (masterPublicKey pk nk) r)
+    (hmem : (pos, pre) ∈ pool.live t) :
+    (pos, pre) ∈ pool'.live t := by
+  unfold PoolOwnedSpendStep at hstep
+  rcases nullified with _ | ⟨npos, c⟩
+  · obtain ⟨w, pub, hM, hC, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+      hnewnotes, _hroot, _hmarkspent, _hRandomOut, heq⟩ := hstep
+    rw [heq]
+    dsimp only
+    by_cases ht : t = token
+    · rw [ht, if_pos rfl]
+      show (pos, pre) ∈ withPositionsFrom pool.leaves.length (payoutPreimages ++ ownedPreimages) ++
+        pool.live token
+      exact List.mem_append.mpr (Or.inr (ht ▸ hmem))
+    · show (pos, pre) ∈ (if t = token then _ else pool.live t)
+      rw [if_neg ht]; exact hmem
+  · obtain ⟨w, pub, hM, hC, rest, spent', _randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+      hnewnotes, _hleaf0, _hceq, _hroot, hremove, _hmarkspent, _hRandomOut, heq⟩ := hstep
+    rw [heq]
+    dsimp only
+    by_cases ht : t = token
+    · rw [ht, if_pos rfl]
+      show (pos, pre) ∈ withPositionsFrom pool.leaves.length (payoutPreimages ++ ownedPreimages) ++ rest
+      apply List.mem_append.mpr
+      right
+      have hmemperm : (pos, pre) ∈ ownedSpentPositions pub w ++ rest :=
+        (removeAll_perm hremove).mem_iff.mp (ht ▸ hmem)
+      refine (List.mem_append.mp hmemperm).resolve_left ?_
+      intro hsp
+      obtain ⟨j, hj⟩ := List.mem_ofFn.mp hsp
+      have hpreeq : pre = (⟨npk (Term.val pub.ownerField) (w.randomIn j), w.token,
+          w.valueIn j⟩ : CommitmentPreimage) := (congrArg Prod.snd hj).symm
+      rw [hpreeq] at hnpk
+      exact user_npk_ne_contract_npk hnpk.symm
+    · show (pos, pre) ∈ (if t = token then _ else pool.live t)
+      rw [if_neg ht]; exact hmem
+
+/-- `bulkTransferFold`'s own invariant for `PoolOwnedSpendStep_preserves_
+    user_note`: one application per asset in the fold's own list,
+    carried forward by induction — the user-note-liveness sibling of
+    `bulkTransferFold_position_live`. -/
+theorem bulkTransferFold_preserves_user_note (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    ∀ t pos pre pk nk r, pre.npk = npk (masterPublicKey pk nk) r →
+      (pos, pre) ∈ pool.live t → (pos, pre) ∈ poolF.live t := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold t pos pre pk nk r hnpk hmem
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hpoolEq, _hholdEq⟩ := hfold
+      rw [hpoolEq]; exact hmem
+    | cons _ _ => unfold bulkTransferFold at hfold; exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold t pos pre pk nk r hnpk hmem
+    cases newOutcome with
+    | nil => unfold bulkTransferFold at hfold; exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguarantee, _hnewExit, rr, midPool, hmatch, hrec⟩ := hfold
+      refine ih newRest midPool poolF _ _ hrec t pos pre pk nk r hnpk ?_
+      exact PoolOwnedSpendStep_preserves_user_note self exit.asset _ _ _ hmatch t pos pre pk nk r
+        hnpk hmem
+
+
 /-- `bulkTransferFold`'s own invariant for `notedValue_conserved`: one
     application of `PoolOwnedSpendStep_notedValue_conserved` per asset in
     the fold's own list, carried forward by induction. -/
@@ -2186,6 +2636,173 @@ theorem bulkTransferFold_notedValue_conserved (self : Nat) (cid : Term) :
       obtain ⟨_hguarantee, _hnewExit, _r, midPool, hmatch, hrec⟩ := hfold
       rw [ih newRest midPool poolF _ holdingsF hrec token]
       exact PoolOwnedSpendStep_notedValue_conserved pool midPool self exit.asset _ _ _ hmatch token
+
+/-- A user-keyed note survives ANY `Step` taken by an actor OTHER than
+    its own key's pool identity, PROVIDED that key had not already
+    signed a spend of it: `.transfer`/the bulk calls can never touch it
+    at all (`PoolOwnedSpendStep_preserves_user_note`/`bulkTransferFold_
+    preserves_user_note` — contract-owned spends only); every OTHER
+    call but `.deposit` does not touch `.pool`; `.deposit` needs the
+    full argument — `deposit_spend_requires_signer` when the witness
+    signs under a DIFFERENT key, `hhonestPool` (relative to the anchor
+    `s0`, carried forward unchanged by `hsrow0`) when it signs under
+    THIS key, since the model fix (`Operations.lean`'s `.deposit` case)
+    requires `s.poolSignedBy w.publicKey (msgHashOf pub)` to hold, and
+    that row is exactly `s0`'s own (`poolSignedBy_frame`, applied
+    through `hsrow0` by the caller) — `hhonestPool` then rules out every
+    message it could cover ever nullifying this note. What
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` need: once `h`'s
+    own payout note is minted, no later step in `interleaved` removes
+    it. -/
+theorem note_survives_step (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (pk : Nat × Nat) (nk r : Nat) (s0 : AdjudicatorState)
+    (hhonestPool : ∀ m, s0.poolSignedBy pk m →
+      ∀ {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M),
+      msgHashOf pub = m → Constrained w pub → w.publicKey = pk →
+      ∀ i : Fin N, (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i),
+        w.token, w.valueIn i⟩ : CommitmentPreimage).npk ≠ npk (masterPublicKey pk nk) r)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hstep : Step sig appRel actor s call s') (hactor : actor ≠ Actor.pool pk)
+    (hsrow0 : s.poolSignedBy pk = s0.poolSignedBy pk)
+    (t pos : Nat) (pre : CommitmentPreimage) (hnpk : pre.npk = npk (masterPublicKey pk nk) r)
+    (hmem : (pos, pre) ∈ s.pool.live t) :
+    (pos, pre) ∈ s'.pool.live t := by
+  cases call with
+  | deposit cid expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, hinner, _, _, _, _, hsb⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hpoolsigned, hmatch⟩ := hinner
+    obtain ⟨_r, _hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent', records,
+      hCapacity, hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    have hmid : (pos, pre) ∈ midPool.live t := by
+      rw [heq]
+      by_cases ht : t = w.token
+      · subst ht
+        have hmemw : (pos, pre) ∈ s.pool.live w.token := hmem
+        have hnotmem : (pos, pre) ∉ transactSpentPositions w := by
+          intro hsp
+          obtain ⟨j, hj⟩ := List.mem_ofFn.mp hsp
+          have hpreeq : pre = (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j),
+              w.token, w.valueIn j⟩ : CommitmentPreimage) := (congrArg Prod.snd hj).symm
+          have hclaimnpk : (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j),
+              w.token, w.valueIn j⟩ : CommitmentPreimage).npk = npk (masterPublicKey pk nk) r :=
+            (congrArg CommitmentPreimage.npk hpreeq).symm.trans hnpk
+          by_cases hwpk : w.publicKey = pk
+          · have step1 : s.poolSignedBy pk (msgHashOf pub) := hwpk ▸ hpoolsigned
+            have hsigned0' : s0.poolSignedBy pk (msgHashOf pub) := hsrow0 ▸ step1
+            exact hhonestPool (msgHashOf pub) hsigned0' w pub rfl hC hwpk j hclaimnpk
+          · have hnpkeq2 : npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j) =
+                npk (masterPublicKey pk nk) r := hclaimnpk
+            have hmpkeq : masterPublicKey w.publicKey w.nullifyingKey = masterPublicKey pk nk :=
+              (Term.hash2_inj hnpkeq2).1
+            obtain ⟨h1, h2, _⟩ := Term.hash3_inj hmpkeq
+            exact hwpk (Prod.ext (Term.val.inj h1) (Term.val.inj h2))
+        have hmemperm : (pos, pre) ∈ transactSpentPositions w ++ rest :=
+          (removeAll_perm hRemove).mem_iff.mp (htoken ▸ hmemw)
+        have hinrest := (List.mem_append.mp hmemperm).resolve_left hnotmem
+        show (pos, pre) ∈ (if w.token = w.token then
+            withPositionsFrom s.pool.leaves.length (transactAllOutputs w) ++ rest else s.pool.live w.token)
+        rw [if_pos rfl]
+        exact List.mem_append.mpr (Or.inr hinrest)
+      · show (pos, pre) ∈ (if t = w.token then _ else s.pool.live t)
+        rw [if_neg ht]
+        exact hmem
+    match s.holdings asset cid, hmatch with
+    | none, ⟨hspool, _⟩ => rw [hspool]; exact hmid
+    | some (oldPos, oldHolding), ⟨merged, mergedPos, hmerge, _hholdseq⟩ =>
+      obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r'', randomOut', hNonZero', hCapacity',
+        hself', htoken', hnpkOut', hmergedEq, hleaf0', hleaf1', hcommitOld, hcommitNew, hRoot',
+        hRemove', hNullify', hRandomOut', heq'⟩ := hmerge
+      have hnotmem' : (pos, pre) ∉ ownedSpentPositions pub' w' := by
+        intro hsp
+        obtain ⟨j, hj⟩ := List.mem_ofFn.mp hsp
+        have hpreeq' : pre = (⟨npk (Term.val pub'.ownerField) (w'.randomIn j), w'.token,
+            w'.valueIn j⟩ : CommitmentPreimage) := (congrArg Prod.snd hj).symm
+        rw [hpreeq'] at hnpk
+        exact user_npk_ne_contract_npk hnpk.symm
+      rw [heq']
+      by_cases ht' : t = asset
+      · rw [ht']
+        show (pos, pre) ∈ (if asset = asset then
+            withPositionsFrom midPool.leaves.length (ownedNewNotes w') ++ rest' else midPool.live asset)
+        rw [if_pos rfl]
+        apply List.mem_append.mpr
+        right
+        have hmidasset : (pos, pre) ∈ midPool.live asset := ht' ▸ hmid
+        have hmemperm' : (pos, pre) ∈ ownedSpentPositions pub' w' ++ rest' :=
+          (removeAll_perm hRemove').mem_iff.mp (htoken'.symm ▸ hmidasset)
+        exact (List.mem_append.mp hmemperm').resolve_left hnotmem'
+      · show (pos, pre) ∈ (if t = asset then _ else midPool.live t)
+        rw [if_neg ht']
+        exact hmid
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, hchan, hspool, _, _, _, _, _⟩ := hstep
+    rw [hspool]; exact hmem
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, hchan, hspool, _, _, _, _, _⟩ := hstep
+    rw [hspool]; exact hmem
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, hchan, hspool, _, _, _, _, _⟩ := hstep
+    rw [hspool]; exact hmem
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨hidx, _, _, _, _, hinner, _, _, _, _⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r', hospend, _hholdseq, _hchan⟩ := hrest
+    exact PoolOwnedSpendStep_preserves_user_note s.self (outcome.get ⟨assetIndex, hidx⟩).asset
+      _ _ _ hospend t pos pre pk nk r hnpk hmem
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, hspool, _, _, _, _, _⟩ := hstep
+    rw [hspool]; exact hmem
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, newOutcome, hfold, _, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_preserves_user_note s.self cid outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold t pos pre pk nk r hnpk hmem
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, newOutcome, hfold, _, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_preserves_user_note s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold t pos pre pk nk r hnpk hmem
+  | tick newNow =>
+    obtain ⟨_, _, hspool, _, _, _, _, _⟩ := hstep
+    rw [hspool]; exact hmem
+  | sign p d =>
+    obtain ⟨_, hsb⟩ := hstep
+    obtain ⟨_, hspool, _⟩ := hsb
+    rw [hspool]; exact hmem
+  | signNote pk' msgHash =>
+    obtain ⟨_, _, hspool, _, _, _, _, _, _⟩ := hstep
+    rw [hspool]; exact hmem
+
+/-- `note_survives_step` across a whole `interleaved` sequence: if no
+    step in it ever acts as `.pool pk`, `h`'s own payout note — once
+    live at the start — stays live throughout, using `poolSignedBy_
+    frame` to keep `hsrow0` true at every intermediate state. -/
+theorem appliesAll_note_survives (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (pk : Nat × Nat) (nk r : Nat) (s0 : AdjudicatorState)
+    (hhonestPool : ∀ m, s0.poolSignedBy pk m →
+      ∀ {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M),
+      msgHashOf pub = m → Constrained w pub → w.publicKey = pk →
+      ∀ i : Fin N, (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i),
+        w.token, w.valueIn i⟩ : CommitmentPreimage).npk ≠ npk (masterPublicKey pk nk) r)
+    (t pos : Nat) (pre : CommitmentPreimage) (hnpk : pre.npk = npk (masterPublicKey pk nk) r) :
+    ∀ {calls : List (Actor × Call)} {s s' : AdjudicatorState},
+      AppliesAll sig appRel s calls s' →
+      (∀ actor call, (actor, call) ∈ calls → actor ≠ Actor.pool pk) →
+      s.poolSignedBy pk = s0.poolSignedBy pk →
+      (pos, pre) ∈ s.pool.live t → (pos, pre) ∈ s'.pool.live t
+  | [], s, s', happ, _, _, hmem => by rw [show s' = s from happ]; exact hmem
+  | (actor, call) :: rest, s, s', happ, hexcl, hsrow0, hmem => by
+    obtain ⟨mid, hstep, hrest⟩ := happ
+    have hactor : actor ≠ Actor.pool pk := hexcl actor call (List.mem_cons_self ..)
+    have hmem_mid := note_survives_step sig appRel pk nk r s0 hhonestPool actor s mid call hstep
+      hactor hsrow0 t pos pre hnpk hmem
+    have hsrow0_mid : mid.poolSignedBy pk = s0.poolSignedBy pk :=
+      (poolSignedBy_frame sig appRel actor s mid call hstep pk hactor).trans hsrow0
+    exact appliesAll_note_survives sig appRel pk nk r s0 hhonestPool t pos pre hnpk hrest
+      (fun actor' call' hc => hexcl actor' call' (List.mem_cons_of_mem _ hc)) hsrow0_mid hmem_mid
+
+
 
 /-- `bulkTransferFold`'s own effect on an outcome is `OutcomeDerivedFrom`
     its starting outcome: each asset's own `transferEffects`-rewrite,
@@ -2324,7 +2941,7 @@ theorem holdings_position_live_step (sig : SignatureAssumptions)
   | deposit channelId0 expectedHeld tok amount =>
     have hstep0 := hstep
     obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hselfeq, _hnow, _hsigned⟩ := hstep0
-    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
     obtain ⟨r, hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent', records, hCapacity,
       hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
     have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
@@ -2655,7 +3272,7 @@ theorem deposit_sets_heldValue
     (hnone : s.holdings asset channelId = none) :
     heldValue s' asset channelId = amount := by
   obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
   obtain ⟨_r, _hown, hcommit, htoken, _hposition, _hN, _hM, hC, _rest, _spent', records, _hCapacity,
     _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
   rw [hnone] at hmatch
@@ -2700,7 +3317,7 @@ theorem deposit_merge_sets_heldValue
     (oldPos : Nat) (oldHolding : Term) (hsome : s.holdings asset channelId = some (oldPos, oldHolding)) :
     heldValue s' asset channelId = heldValue s asset channelId + amount := by
   obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
   obtain ⟨_r, _hown, hcommit, htoken, _hposition, _hN, _hM, hC, _rest, _spent', records, _hCapacity,
     _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
   rw [hsome] at hmatch
@@ -2774,7 +3391,7 @@ theorem deposit_frame (sig : SignatureAssumptions)
     (asset' : Nat) (cid' : Term) (hne : (asset', cid') ≠ (asset, channelId)) :
     heldValue s' asset' cid' = heldValue s asset' cid' := by
   obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
   obtain ⟨_r, _hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent', records, hCapacity,
     hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
   have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
