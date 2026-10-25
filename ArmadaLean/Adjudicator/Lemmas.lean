@@ -815,6 +815,14 @@ theorem withPositionsFrom_append {α : Type} (start : Nat) (l1 l2 : List α) :
     rw [List.length_cons]
     omega
 
+/-- A position-tagged pair's membership in `withPositionsFrom` drops to its own
+    preimage's membership in the underlying list, positions forgotten. -/
+theorem withPositionsFrom_mem_snd {α : Type} {start : Nat} {l : List α} {pos : Nat} {a : α}
+    (h : (pos, a) ∈ withPositionsFrom start l) : a ∈ l := by
+  have hmap : a ∈ (withPositionsFrom start l).map (fun p : Nat × α => id p.2) :=
+    List.mem_map.mpr ⟨(pos, a), h, rfl⟩
+  rwa [withPositionsFrom_map id, List.map_id] at hmap
+
 /-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
     (`Safety.lean`) need, one `Step` at a time: a holding names exactly one leaf
     position, that position is live with the holding's own commitment, it is within
