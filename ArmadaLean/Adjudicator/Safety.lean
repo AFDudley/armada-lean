@@ -1505,6 +1505,7 @@ theorem payout_can_happen
       (s s' : AdjudicatorState) (assetIndex : Nat) (cid claimedStateHash : Term)
       (outcome : Outcome) (indices : List Nat) (h : assetIndex < outcome.length)
       (dest : Allocation) (actor : Actor),
+      _root_.Reachable pool0 ∧
       Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
       Step sig (consensusRelation sig) actor s
         (.transfer assetIndex cid claimedStateHash outcome indices) s' ∧
@@ -1520,29 +1521,44 @@ theorem payout_can_happen
   let amount : Nat := 1
   let fp : FixedPart := ⟨[], 0, 0, 0⟩
   let cid : Term := channelId fp
-  let randomIn : Fin 1 → Nat := fun _ => 0
-  let valueIn : Fin 1 → Nat := fun _ => amount
-  let leavesIndices : Fin 1 → Nat := fun _ => 0
-  let pathElements1 : Fin 1 → List (Term × Bool) := fun _ => List.replicate 16 (Term.val 0, false)
+  -- `pool0`: one real shield past the pool's own genesis, the depositor's own note.
+  let note1 : CommitmentPreimage :=
+    ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
+  let pool0 : PoolState :=
+    let leaves' := (_root_.genesis : PoolState).leaves ++ [hashCommitment note1]
+    { (_root_.genesis : PoolState) with
+        live := fun t => if t = token then (0, note1) :: (_root_.genesis : PoolState).live t
+          else (_root_.genesis : PoolState).live t,
+        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
+          else (_root_.genesis : PoolState).held t,
+        leaves := leaves',
+        roots := treeRoot TreeDepth leaves' :: (_root_.genesis : PoolState).roots,
+        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
+  have hValue0 : 0 < amount := by decide
+  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
+  have hCapacity0 : (_root_.genesis : PoolState).leaves.length + 1 ≤ 2 ^ TreeDepth := by decide
+  have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
+    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hCapacity0
+  have hReachPool : _root_.Reachable pool0 :=
+    _root_.Reachable.step _root_.Reachable.genesis hshield
+  have hbitsZero : ∀ n, bitsVal (List.replicate n false) = 0 := by
+    intro n
+    induction n with
+    | zero => rfl
+    | succ k ih => simp [List.replicate_succ, bitsVal, ih]
+  have hbitsOne : bitsVal (true :: List.replicate 119 false) = 1 := by
+    rw [show bitsVal (true :: List.replicate 119 false) =
+        1 + 2 * bitsVal (List.replicate 119 false) from rfl, hbitsZero]
+  let root1 : Term := treeRoot TreeDepth pool0.leaves
+  let pathElements1 : Fin 1 → List (Term × Bool) := fun _ => treePath TreeDepth pool0.leaves 0
   let npkOut : Fin 1 → Term := fun _ => npk (Term.val self) 0
   let valueOut : Fin 1 → Nat := fun _ => amount
-  let leaf1 : Term :=
-    commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn 0)) token (valueIn 0)
-  let root1 : Term := merkleRoot leaf1 (pathElements1 0)
   let pub_d : TransactPublic 1 1 :=
     { merkleRoot := root1, boundParamsHash := 0,
-      nullifiers := fun _ => nullifier nullifyingKey (leavesIndices 0),
+      nullifiers := fun _ => nullifier nullifyingKey 0,
       commitmentsOut := fun _ => commitment (npkOut 0) token (valueOut 0) }
-  let inputNote : CommitmentPreimage :=
-    ⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn 0), token, valueIn 0⟩
   let depositedNote : CommitmentPreimage := ⟨npk (Term.val self) 0, token, amount⟩
-  let pathElements2 : Fin 1 → List (Term × Bool) := fun _ => List.replicate 16 (Term.val 1, false)
-  let leaf2 : Term := hashCommitment depositedNote
-  let root2 : Term := merkleRoot leaf2 (pathElements2 0)
-  let pool0 : PoolState :=
-    { live := fun t => if t = token then [inputNote] else [],
-      spent := [], roots := [root1, root2], held := fun _ => 0,
-      preimageOf := fun _ => none, shieldsPaused := false }
   let g := genesis assets self pool0
   let mid1 : AdjudicatorState := { g with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d) ∨ g.poolSignedBy pk' m' }
@@ -1556,33 +1572,33 @@ theorem payout_can_happen
     poolSigLive.eddsaCompleteness mid1.poolSignedBy publicKey (msgHashOf pub_d) hsigned
   let w_d : TransactWitness 1 1 :=
     { token := token, publicKey := publicKey, signature := signature,
-      nullifyingKey := nullifyingKey, randomIn := randomIn, valueIn := valueIn,
-      pathElements := pathElements1, leavesIndices := leavesIndices,
+      nullifyingKey := nullifyingKey, randomIn := fun _ => 0, valueIn := fun _ => note1.value,
+      pathElements := pathElements1, leavesIndices := fun _ => 0,
       npkOut := npkOut, valueOut := valueOut }
-  have hbitsZero : ∀ n, bitsVal (List.replicate n false) = 0 := by
-    intro n
-    induction n with
-    | zero => rfl
-    | succ k ih => simp [List.replicate_succ, bitsVal, ih]
-  have hbitsOne : bitsVal (true :: List.replicate 119 false) = 1 := by
-    rw [show bitsVal (true :: List.replicate 119 false) =
-        1 + 2 * bitsVal (List.replicate 119 false) from rfl, hbitsZero]
   have hC_d : Constrained w_d pub_d :=
-    { pathLen := fun _ => List.length_replicate
-      merkle := fun _ => rfl
+    { pathLen := fun _ => treePath_length TreeDepth pool0.leaves 0
+      merkle := fun _ => by
+        rw [show commitment (npk (masterPublicKey w_d.publicKey w_d.nullifyingKey) (w_d.randomIn 0))
+          w_d.token (w_d.valueIn 0) = hashCommitment note1 from rfl]
+        exact treePath_correct TreeDepth pool0.leaves 0 (by decide)
       nullifiers := fun _ => rfl
       outputs := fun _ => rfl
-      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp,
+        show note1.value = bitsVal (true :: List.replicate 119 false) by
+          rw [hbitsOne]; show shieldBase 0 amount = 1; decide⟩
       rangeOut := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
-      balance := rfl
+      balance := by
+        show fieldEq (listSum (List.ofFn (fun _ : Fin 1 => note1.value)))
+          (listSum (List.ofFn (fun _ : Fin 1 => amount)))
+        show fieldEq note1.value amount
+        show fieldEq (shieldBase 0 amount) amount
+        unfold fieldEq
+        decide
       distinct := fun i j hij => absurd (Subsingleton.elim i j) hij
       sig := hveri }
-  have hRemove_d : removeAll (mid1.pool.live w_d.token) (transactSpentNotes w_d) = some [] := by
-    show removeAll [inputNote] [inputNote] = some []
-    unfold removeAll
-    rw [if_pos (List.elem_eq_true_of_mem (List.mem_singleton_self _))]
-    rw [List.erase_cons_head]
-    rfl
+  have hRemove_d : removeAll (mid1.pool.live w_d.token) (transactSpentPositions w_d) = some [] := by
+    show removeAll [(0, note1)] [(0, note1)] = some []
+    decide
   have hNullify_d : markSpent mid1.pool.spent (List.ofFn pub_d.nullifiers) =
       some (List.ofFn pub_d.nullifiers) := rfl
   have hidxrec_d : (pub_d.commitmentsOut (0 : Fin 1),
@@ -1591,20 +1607,36 @@ theorem payout_can_happen
     List.mem_ofFn.mpr ⟨0, rfl⟩
   let mid2 : AdjudicatorState := { mid1 with
     pool := { mid1.pool with
-      live := fun t => if t = w_d.token then transactAllOutputs w_d ++ ([] : List CommitmentPreimage)
+      live := fun t => if t = w_d.token
+        then withPositionsFrom mid1.pool.leaves.length (transactAllOutputs w_d) ++
+          ([] : List (Nat × CommitmentPreimage))
         else mid1.pool.live t,
       spent := List.ofFn pub_d.nullifiers,
-      preimageOf := applyRecords mid1.pool.preimageOf (transactOutputRecords w_d pub_d) },
+      leaves := mid1.pool.leaves ++ (transactAllOutputs w_d).map hashCommitment,
+      roots := treeRoot TreeDepth (mid1.pool.leaves ++ (transactAllOutputs w_d).map hashCommitment) ::
+        mid1.pool.roots,
+      preimageOf := applyRecords mid1.pool.preimageOf (transactOutputRecords w_d pub_d),
+      ownedRandomOf := applyOwnedRecords mid1.pool.ownedRandomOf
+        [(pub_d.commitmentsOut (0 : Fin 1), (⟨self, 0⟩ : OwnedDisclosure))] },
     holdings := update mid1.holdings token (update (mid1.holdings token) cid
-      (some (pub_d.commitmentsOut (0 : Fin 1)))) }
-  have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) mid2.pool :=
-    ⟨⟨0, rfl⟩, rfl, rfl, by decide, by decide, hC_d, [], List.ofFn pub_d.nullifiers, Term.val 0,
-      transactOutputRecords w_d pub_d, List.mem_cons_self, hRemove_d, hNullify_d,
-      List.Sublist.refl _, hidxrec_d, rfl⟩
+      (some (1, pub_d.commitmentsOut (0 : Fin 1)))) }
+  have hCapacity_d : mid1.pool.leaves.length + 1 ≤ 2 ^ TreeDepth := by
+    show pool0.leaves.length + 1 ≤ 2 ^ TreeDepth
+    show (1 : Nat) + 1 ≤ 2 ^ TreeDepth
+    decide
+  have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) 1 mid2.pool :=
+    ⟨0, rfl, rfl, rfl, by
+      show 1 = mid1.pool.leaves.length + 0
+      show (1 : Nat) = pool0.leaves.length + 0
+      rfl,
+      by decide, by decide, hC_d, [], List.ofFn pub_d.nullifiers,
+      transactOutputRecords w_d pub_d, hCapacity_d,
+      (by show root1 ∈ mid1.pool.roots; show root1 ∈ pool0.roots; exact List.mem_cons_self),
+      hRemove_d, hNullify_d, List.Sublist.refl _, hidxrec_d, rfl⟩
   have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
       (.deposit cid 0 token amount) mid2 := by
     refine ⟨rfl, rfl, channelId_not_external fp, (by decide),
-      ⟨1, 1, w_d, pub_d, 0, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · exact hdstep
     · exact ⟨rfl, rfl⟩
   have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
@@ -1640,6 +1672,9 @@ theorem payout_can_happen
     deposit_sets_heldValue sig (consensusRelation sig) (Actor.pool publicKey) mid1 mid2 cid 0
       token amount hstep_d rfl
   have hheld4 : heldValue mid4 token cid = amount := hheld2
+  -- The payout: a `PoolOwnedSpendStep` that spends `depositedNote`@1 in `mid4.pool`'s own tree.
+  let rootT : Term := treeRoot TreeDepth mid4.pool.leaves
+  let pathElements2 : Fin 1 → List (Term × Bool) := fun _ => treePath TreeDepth mid4.pool.leaves 1
   let ownerField : Nat := 0
   let randomIn2 : Fin 1 → Nat := fun _ => 0
   let valueIn2 : Fin 1 → Nat := fun _ => amount
@@ -1647,7 +1682,7 @@ theorem payout_can_happen
   let npkOut2 : Fin 1 → Term := fun _ => dest.destination
   let valueOut2 : Fin 1 → Nat := fun _ => amount
   let pub_t : TransactOwnedPublic 1 1 :=
-    { merkleRoot := root2, boundParamsHash := 0,
+    { merkleRoot := rootT, boundParamsHash := 0,
       nullifiers := fun _ => nullifier ownerField (leavesIndices2 0),
       commitmentsOut := fun _ => commitment (npkOut2 0) token (valueOut2 0),
       ownerField := ownerField }
@@ -1655,8 +1690,11 @@ theorem payout_can_happen
     { token := token, randomIn := randomIn2, valueIn := valueIn2, pathElements := pathElements2,
       leavesIndices := leavesIndices2, npkOut := npkOut2, valueOut := valueOut2 }
   have hOC : OwnedConstrained w_t pub_t :=
-    { pathLen := fun _ => List.length_replicate
-      merkle := fun _ => rfl
+    { pathLen := fun _ => treePath_length TreeDepth mid4.pool.leaves 1
+      merkle := fun _ => by
+        rw [show commitment (npk (Term.val pub_t.ownerField) (w_t.randomIn 0)) w_t.token
+          (w_t.valueIn 0) = hashCommitment depositedNote from rfl]
+        exact treePath_correct TreeDepth mid4.pool.leaves 1 (by decide)
       nullifiers := fun _ => rfl
       outputs := fun _ => rfl
       rangeIn := fun _ => ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
@@ -1667,45 +1705,57 @@ theorem payout_can_happen
     intro j hz
     have : amount = 0 := hz.2.1
     simp [amount] at this
-  have hnullseparate : nullifier ownerField (leavesIndices2 0) ≠
-      nullifier nullifyingKey (leavesIndices 0) := by
-    intro heqn
-    have := Term.val.inj (Term.hash2_inj heqn).2
-    exact absurd this (by decide)
-  have hRemove_t : removeAll (mid4.pool.live token) (ownedSpentNotes pub_t w_t) = some [] := by
-    show removeAll [depositedNote] [depositedNote] = some []
-    unfold removeAll
-    rw [if_pos (List.elem_eq_true_of_mem (List.mem_singleton_self _))]
-    rw [List.erase_cons_head]
-    rfl
+  have hRemove_t : removeAll (mid4.pool.live token) (ownedSpentPositions pub_t w_t) = some [] := by
+    show removeAll [(1, depositedNote)] [(1, depositedNote)] = some []
+    decide
   have hNullify_t : markSpent mid4.pool.spent (List.ofFn pub_t.nullifiers) =
       some (nullifier ownerField (leavesIndices2 0) :: mid4.pool.spent) := by
-    show markSpent [nullifier nullifyingKey (leavesIndices 0)]
-      [nullifier ownerField (leavesIndices2 0)] =
-      some (nullifier ownerField (leavesIndices2 0) :: [nullifier nullifyingKey (leavesIndices 0)])
+    show markSpent [nullifier nullifyingKey 0] [nullifier ownerField (leavesIndices2 0)] =
+      some (nullifier ownerField (leavesIndices2 0) :: [nullifier nullifyingKey 0])
+    have hnullseparate : nullifier ownerField (leavesIndices2 0) ≠ nullifier nullifyingKey 0 := by
+      intro heqn
+      have := Term.val.inj (Term.hash2_inj heqn).2
+      exact absurd this (by decide)
     unfold markSpent
     rw [if_neg (by simpa using hnullseparate)]
     rfl
   let s' : AdjudicatorState := { mid4 with
     pool := { mid4.pool with
-      live := fun t => if t = token then [⟨dest.destination, token, amount⟩] ++ [] else mid4.pool.live t,
+      live := fun t => if t = token
+        then withPositionsFrom mid4.pool.leaves.length [(⟨dest.destination, token, amount⟩ :
+          CommitmentPreimage)] ++ [] else mid4.pool.live t,
       spent := nullifier ownerField (leavesIndices2 0) :: mid4.pool.spent,
-      preimageOf := applyRecords mid4.pool.preimageOf (ownedOutputRecords w_t pub_t) },
+      leaves := mid4.pool.leaves ++ [commitment dest.destination token amount],
+      roots := treeRoot TreeDepth (mid4.pool.leaves ++ [commitment dest.destination token amount]) ::
+        mid4.pool.roots,
+      preimageOf := applyRecords mid4.pool.preimageOf (ownedOutputRecords w_t pub_t),
+      ownedRandomOf := applyOwnedRecords mid4.pool.ownedRandomOf
+        [(pub_t.commitmentsOut 0, (⟨ownerField, 0⟩ : OwnedDisclosure))] },
     holdings := update mid4.holdings token (update (mid4.holdings token) cid none),
     channels := update mid4.channels cid
       { mid4.channels cid with
         outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
           if i ≠ 0 then exit else { exit with allocations := [{ dest with amount := 0 }] }) } }
-  have hcEq : mid4.holdings token cid = some (pub_d.commitmentsOut (0 : Fin 1)) := by
+  have hcEq : mid4.holdings token cid = some (1, pub_d.commitmentsOut (0 : Fin 1)) := by
     show (update mid1.holdings token (update (mid1.holdings token) cid
-      (some (pub_d.commitmentsOut (0 : Fin 1))))) token cid = some (pub_d.commitmentsOut (0 : Fin 1))
+      (some (1, pub_d.commitmentsOut (0 : Fin 1))))) token cid = some (1, pub_d.commitmentsOut (0 : Fin 1))
     unfold update
     rw [if_pos rfl, if_pos rfl]
+  have hCapacity_t : mid4.pool.leaves.length + 1 ≤ 2 ^ TreeDepth := by
+    show mid1.pool.leaves.length + 1 + 1 ≤ 2 ^ TreeDepth
+    show pool0.leaves.length + 1 + 1 ≤ 2 ^ TreeDepth
+    show (1 : Nat) + 1 + 1 ≤ 2 ^ TreeDepth
+    decide
   have hospend : PoolOwnedSpendStep mid4.pool self token (mid4.holdings token cid)
       [(⟨dest.destination, token, amount⟩ : CommitmentPreimage)] s'.pool := by
     rw [hcEq]
-    exact ⟨w_t, pub_t, by decide, hOC, [], _, Term.val 0, hNonZero_t, rfl, rfl, rfl, rfl,
-      List.mem_cons_of_mem _ List.mem_cons_self, hRemove_t, hNullify_t, rfl⟩
+    refine ⟨w_t, pub_t, by decide, hOC, [], _, (fun _ => (0 : Nat)), hNonZero_t, hCapacity_t, rfl,
+      rfl, rfl, ?_, rfl, hRemove_t, hNullify_t, rfl⟩
+    · show rootT ∈ mid4.pool.roots
+      show rootT ∈ mid2.pool.roots
+      show rootT ∈ (treeRoot TreeDepth (mid1.pool.leaves ++ (transactAllOutputs w_d).map
+        hashCommitment) :: mid1.pool.roots)
+      exact List.mem_cons_self
   have hstateHash : (mid4.channels cid).stateHash = Term.val 0 := by
     show ((update mid3.channels cid
       { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := Term.val 0,
@@ -1730,14 +1780,26 @@ theorem payout_can_happen
     simp [Nat.sub_self, dest, amount]
     exact ⟨hospend, rfl, rfl⟩
   refine ⟨assets, self, pool0, mid4, s', 0, cid, Term.val 0, outcome, [], hassetIdx, dest,
-    Actor.nitro 0, hreach4, hstep_t, ?_, ?_, ?_⟩
+    Actor.nitro 0, hReachPool, hreach4, hstep_t, ?_, ?_, ?_⟩
   · show dest ∈ [dest]
     exact List.mem_singleton_self _
   · decide
-  · refine ⟨token, ⟨dest.destination, token, amount⟩, ?_, rfl⟩
-    show (⟨dest.destination, token, amount⟩ : CommitmentPreimage) ∈
-      [⟨dest.destination, token, amount⟩] ++ ([] : List CommitmentPreimage)
-    exact List.mem_append_left _ (List.mem_singleton_self _)
+  · refine ⟨token, 2, ⟨dest.destination, token, amount⟩, ?_, rfl⟩
+    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
+      withPositionsFrom mid4.pool.leaves.length [(⟨dest.destination, token, amount⟩ :
+        CommitmentPreimage)] ++ ([] : List (Nat × CommitmentPreimage))
+    apply List.mem_append.mpr
+    left
+    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
+      withPositionsFrom mid1.pool.leaves.length [(⟨dest.destination, token, amount⟩ :
+        CommitmentPreimage)]
+    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
+      withPositionsFrom pool0.leaves.length [(⟨dest.destination, token, amount⟩ :
+        CommitmentPreimage)]
+    show (2, (⟨dest.destination, token, amount⟩ : CommitmentPreimage)) ∈
+      withPositionsFrom 1 [(⟨dest.destination, token, amount⟩ : CommitmentPreimage)]
+    rfl
+
 
 /-- A reclaim can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — `.conclude` with an EMPTY
@@ -2049,18 +2111,19 @@ theorem holdings_never_zero_valued
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
-    (s : AdjudicatorState) (asset : Nat) (cid c : Term) (pre : CommitmentPreimage)
+    (s : AdjudicatorState) (asset : Nat) (cid : Term) (pos : Nat) (c : Term)
+    (pre : CommitmentPreimage)
     (hreach : Reachable sig appRel (genesis assets self pool0) s)
-    (hholds : s.holdings asset cid = some c)
+    (hholds : s.holdings asset cid = some (pos, c))
     (hpre : s.pool.preimageOf c = some pre) :
     pre.value ≠ 0 := by
   have hinv := reachable_preserves
-    (P := fun s => ∀ qasset qcid qc, s.holdings qasset qcid = some qc →
+    (P := fun s => ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
       ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
-    (by intro qasset qcid qc hc; exact absurd hc (by simp [genesis]))
+    (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
     (fun actor call s s' hP hstep => holdings_preimage_nonzero_step sig appRel actor s s' call hP hstep)
     hreach
-  obtain ⟨pre', hpre', hval', _⟩ := hinv asset cid c hholds
+  obtain ⟨pre', hpre', hval', _⟩ := hinv asset cid pos c hholds
   rw [hpre] at hpre'
   exact (Option.some.inj hpre') ▸ hval'
 
@@ -2084,22 +2147,26 @@ theorem heldValue_zero_iff_no_collateral
     (hreach : Reachable sig appRel (genesis assets self pool0) s) :
     heldValue s asset cid = 0 ↔
       s.holdings asset cid = none ∨
-      ∃ c, s.holdings asset cid = some c ∧ s.pool.preimageOf c = none := by
+      ∃ pos c, s.holdings asset cid = some (pos, c) ∧ s.pool.preimageOf c = none := by
   unfold heldValue
-  rcases hc : s.holdings asset cid with _ | c
+  rcases hc : s.holdings asset cid with _ | ⟨pos, c⟩
   · simp [hc]
   · simp only [hc]
     rcases hp : s.pool.preimageOf c with _ | pre
-    · simp [hp]
+    · constructor
+      · intro _
+        exact Or.inr ⟨pos, c, rfl, hp⟩
+      · intro _
+        simp [hp]
     · simp only [hp, Option.map_some, Option.getD_some]
       constructor
       · intro hv
-        exact absurd hv (holdings_never_zero_valued sig appRel assets self pool0 s asset cid c pre
-          hreach hc hp)
-      · rintro (h1 | ⟨c2, hc2, hp2⟩)
+        exact absurd hv (holdings_never_zero_valued sig appRel assets self pool0 s asset cid pos c
+          pre hreach hc hp)
+      · rintro (h1 | ⟨pos2, c2, hc2, hp2⟩)
         · exact absurd h1 (by simp)
-        · have hceq : c = c2 := Option.some.inj hc2
-          rw [hceq, hp2] at hp
+        · have hceq : (pos, c) = (pos2, c2) := Option.some.inj hc2
+          rw [(show c = c2 from (congrArg Prod.snd hceq : (pos, c).snd = (pos2, c2).snd)), hp2] at hp
           exact absurd hp (by simp)
 
 /-- Closes the constructor's `configuredAssets[...] = true` miss
@@ -2149,14 +2216,14 @@ theorem zero_payout_mints_nothing
     (h : assetIndex < outcome.length) (dest : Allocation)
     (hdest : dest ∈ (outcome.get ⟨assetIndex, h⟩).allocations) (hzero : dest.amount = 0) :
     ¬ ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
-        pre ∈ s'.pool.live pre.token ∧
-        pre ∉ s.pool.live pre.token := by
+        (∃ pos, (pos, pre) ∈ s'.pool.live pre.token) ∧
+        (∀ pos, (pos, pre) ∉ s.pool.live pre.token) := by
   obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
   obtain ⟨_hguarantee, hrest⟩ := hinner
   obtain ⟨hmatch, _hholdseq, _hchanseq⟩ := hrest
-  rintro ⟨pre, _hnpk, hval, hin, hnin⟩
+  rintro ⟨pre, _hnpk, hval, ⟨pos, hin⟩, hnin⟩
   by_cases htok : pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset
-  · rw [htok] at hin hnin
+  · rw [htok] at hin
     have hnz := payout_outputs_nonzero
       (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
         (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.1
@@ -2164,44 +2231,44 @@ theorem zero_payout_mints_nothing
         (transferEffects (outcome.get ⟨assetIndex, hidx⟩).allocations
           (heldValue s (outcome.get ⟨assetIndex, hidx⟩).asset cid) indices).2.2)
       (outcome.get ⟨assetIndex, hidx⟩).asset s.self
-    rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
+    rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | ⟨oldPos, c⟩
     · rw [hc] at hmatch
-      obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
-        _hroot, _hmarkspent, heq⟩ := hmatch
+      obtain ⟨w, pub, hM, hC, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+        _hnewnotes, _hroot, _hmarkspent, _hrandomOut, heq⟩ := hmatch
       rw [heq] at hin
-      simp only at hin
+      simp only [htok] at hin
       rcases List.mem_append.mp hin with hc1 | hc2
-      · exact hnz pre hc1 hval
-      · exact hnin hc2
+      · exact hnz pre (withPositionsFrom_mem_snd hc1) hval
+      · exact hnin pos (htok ▸ hc2)
     · rw [hc] at hmatch
-      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
-        _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+        _hnewnotes, _hleavesIdx, _hcommit, _hroot, hremove, _hmarkspent, _hrandomOut, heq⟩ := hmatch
       rw [heq] at hin
-      simp only at hin
+      simp only [htok] at hin
       rcases List.mem_append.mp hin with hc1 | hc2
-      · exact hnz pre hc1 hval
+      · exact hnz pre (withPositionsFrom_mem_snd hc1) hval
       · have hperm := removeAll_perm hremove
-        have hmem : pre ∈ s.pool.live (outcome.get ⟨assetIndex, hidx⟩).asset :=
+        have hmem : (pos, pre) ∈ s.pool.live (outcome.get ⟨assetIndex, hidx⟩).asset :=
           (List.Perm.mem_iff hperm).mpr (List.mem_append.mpr (Or.inr hc2))
-        exact hnin hmem
+        exact hnin pos (htok ▸ hmem)
   · have heqlive : s'.pool.live pre.token = s.pool.live pre.token := by
-      rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c
+      rcases hc : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | ⟨oldPos, c⟩
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
-          _hroot, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+          _hnewnotes, _hroot, _hmarkspent, _hrandomOut, heq⟩ := hmatch
         rw [heq]
         show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
             else s.pool.live pre.token) = s.pool.live pre.token
         rw [if_neg htok]
       · rw [hc] at hmatch
-        obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
-          _hceq, _hroot, hremove, _hmarkspent, heq⟩ := hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+          _hnewnotes, _hleavesIdx, _hcommit, _hroot, hremove, _hmarkspent, _hrandomOut, heq⟩ := hmatch
         rw [heq]
         show (if pre.token = (outcome.get ⟨assetIndex, hidx⟩).asset then _
             else s.pool.live pre.token) = s.pool.live pre.token
         rw [if_neg htok]
     rw [heqlive] at hin
-    exact hnin hin
+    exact hnin pos hin
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
     strictly positive — a full payout (every index selected, or
@@ -2241,10 +2308,25 @@ theorem full_payout_leaves_no_remainder
             (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
               (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 = 0
          then none
-         else some (commitment (Term.val s.self) (outcome.get ⟨assetIndex, h⟩).asset
-           (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
-             (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
-               (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)))) at hholdseq
+         else some (s.pool.leaves.length +
+             ((transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+               (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.1.filterMap (fun a =>
+                 if a.amount = 0 then none
+                 else some (⟨a.destination, (outcome.get ⟨assetIndex, h⟩).asset, a.amount⟩ :
+                   CommitmentPreimage)) ++
+               (if heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+                   (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+                     (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 = 0
+                then []
+                else [(⟨Term.val s.self, (outcome.get ⟨assetIndex, h⟩).asset,
+                  heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+                    (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+                      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2⟩ :
+                    CommitmentPreimage)])).length - 1,
+           commitment (Term.val s.self) (outcome.get ⟨assetIndex, h⟩).asset
+             (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+               (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+                (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)))) at hholdseq
   simp only [hfull, Nat.sub_self, if_true] at hholdseq
   rw [hholdseq]
   show (update s.holdings (outcome.get ⟨assetIndex, h⟩).asset
@@ -2284,8 +2366,8 @@ theorem nullify_iff_commitment_was_some
   constructor
   · intro hnone
     rw [hnone] at hmatch
-    obtain ⟨w, pub, hM, hC, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
-      _hroot, hmarkspent, heq⟩ := hmatch
+    obtain ⟨w, pub, hM, hC, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+      _hnewnotes, _hroot, hmarkspent, _hrandomOut, heq⟩ := hmatch
     rw [heq]
     show spent' = s.pool.spent
     have hofn : List.ofFn pub.nullifiers = ([] : List Term) := List.ofFn_zero
@@ -2293,12 +2375,12 @@ theorem nullify_iff_commitment_was_some
     unfold markSpent at hmarkspent
     exact (Option.some.inj hmarkspent).symm
   · intro hpost
-    rcases hcase : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | c
+    rcases hcase : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | ⟨oldPos, c⟩
     · rfl
     · exfalso
       rw [hcase] at hmatch
-      obtain ⟨w, pub, hM, hC, rest, spent', newRoot, _hNonZero, _hself2, _htoken, _hnewnotes,
-        _hceq, _hroot, _hremove, hmarkspent, heq⟩ := hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', randomOut, _hNonZero, _hCapacity, _hself2, _htoken,
+        _hnewnotes, _hleavesIdx, _hcommit, _hroot, _hremove, hmarkspent, _hrandomOut, heq⟩ := hmatch
       rw [heq] at hpost
       simp only at hpost
       rw [List.ofFn_succ, List.ofFn_zero] at hmarkspent
