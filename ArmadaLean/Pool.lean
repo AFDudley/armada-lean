@@ -10,6 +10,17 @@
   pool contract itself performs across many calls: which notes are live, which nullifiers
   are spent, which roots are valid, and which tokens the pool holds.
 
+  A note is identified by its Merkle leaf position, not by its content: the circuit
+  derives a spend's nullifier as `Poseidon(nullifyingKey, leafIndex)`
+  (Transact.circom:97-101) or `Poseidon(ownerField, leafIndex)`
+  (TransactOwned.circom:89-97) — the leaf POSITION a proof names, never a scan for a
+  matching value. Two live notes can carry the identical preimage (two separate shields
+  of the same amount to the same recipient); they can never share a position.
+  `PoolState.live` is keyed accordingly: `live t` is a list of `(position, preimage)`
+  pairs, one per currently-unspent note of token `t`, and a spend removes exactly the
+  positions its witness names (`ArmadaLean.Nullifier.nullifier_pos_inj`: distinct
+  positions can never collapse onto one nullifier, so this removal is never ambiguous).
+
   The pool cannot see a note's value; it only ever reads a note's commitment (a Poseidon
   hash, modeled symbolically — `ArmadaLean.Poseidon.Term`). `PoolState.live` is therefore
   GHOST state: the model's own knowledge of every live note's real preimage, which the
@@ -17,7 +28,11 @@
   ArmadaLean.PoolSafety state the value invariant at all. `PoolState.preimageOf`, by
   contrast, mirrors the real public `PrivacyPoolStorage.preimageOf` mapping
   (PrivacyPoolStorage.sol:248): the pool writes an entry there only for a commitment it
-  has itself hashed and matched to a proof.
+  has itself hashed and matched to a proof. `PoolState.ownedRandomOf` is a second public
+  registry the approved design adds on top: see `ArmadaLean.PoolOwned`'s module comment
+  on `OwnedDisclosure` for the departure this closes (the real contract records no
+  random value at all) and `ArmadaLean.PoolSafety.owned_spend_witness_exists` for what it
+  buys — a live owned note's whole spend witness, built from public data alone.
 
   Scope: local `shield` (ShieldModule.sol:45-90), local `transact` including a local
   unshield (TransactModule.sol:43-96), and `transactOwned` (TransactModule.sol:488-519).
@@ -116,37 +131,33 @@ import ArmadaLean.PoolOwned
 import ArmadaLean.Transact
 import ArmadaLean.Fee
 
-/-! ### Removing a sub-multiset of live notes
+/-! ### Removing a sub-multiset of live notes, by key
 
-A spend names its inputs by commitment (the ghost `CommitmentPreimage` the model recorded
-when each note was created), not by position: two live notes can carry the identical
-preimage (e.g. two separate shields of the same amount to the same recipient), so "the
-notes this spend removes" is a sub-*multiset* of `live`, not a sub-set. `removeAll` mirrors
-`ArmadaLean.PoolOwned.markSpent`'s shape (fail the first time a requested element is
-missing) at the multiset level, using `List.erase` to drop one matching occurrence at a
-time. -/
+A spend names its inputs by leaf position (the model's own `live` entries are
+`(position, preimage)` pairs); `removeAll` is generic over the key type so the SAME
+function and lemmas serve both `live`'s `(Nat × CommitmentPreimage)` pairs here and
+`ArmadaLean.PoolOwned.markSpent`'s `Term` nullifiers. `removeAll` mirrors `markSpent`'s
+shape (fail the first time a requested element is missing) at the multiset level, using
+`List.erase` to drop one matching occurrence at a time. -/
 
-/-- Remove one occurrence of each of `spent` from `pool`, in order, failing (`none`) the
+/-- Remove one occurrence of each of `wanted` from `pool`, in order, failing (`none`) the
     first time an element is not present. This is the ghost-state analogue of a spend: the
     pool contract itself performs no such removal (it only ever marks nullifiers, via
     `ArmadaLean.PoolOwned.markSpent`); this function removes the *notes* those nullifiers
     name from the model's own live-note bookkeeping. -/
-def removeAll : List CommitmentPreimage → List CommitmentPreimage →
-    Option (List CommitmentPreimage)
+def removeAll {α : Type} [DecidableEq α] : List α → List α → Option (List α)
   | pool, [] => some pool
   | pool, n :: ns => if pool.elem n then removeAll (pool.erase n) ns else none
 
-/-- A successful `removeAll` splits the pool's total value exactly into the removed
-    notes' value and the remaining notes' value. The multiset identity underlying both
-    `removeAll_sum` and `removeAll_perm`: removing `n` from `pool` is a reordering
+/-- A successful `removeAll` splits the pool's total `g`-value exactly into the removed
+    elements' value and the remaining elements' value. The multiset identity underlying
+    both `removeAll_sum` and `removeAll_perm`: removing `n` from `pool` is a reordering
     (`List.perm_cons_erase`) followed by dropping the head, so `listSum` (which only sees
     values, not positions) cannot tell the two apart. -/
-theorem removeAll_sum {pool spent pool' : List CommitmentPreimage}
-    (h : removeAll pool spent = some pool') :
-    listSum (pool.map CommitmentPreimage.value) =
-      listSum (spent.map CommitmentPreimage.value) +
-        listSum (pool'.map CommitmentPreimage.value) := by
-  induction spent generalizing pool with
+theorem removeAll_sum {α : Type} [DecidableEq α] (g : α → Nat)
+    {pool wanted pool' : List α} (h : removeAll pool wanted = some pool') :
+    listSum (pool.map g) = listSum (wanted.map g) + listSum (pool'.map g) := by
+  induction wanted generalizing pool with
   | nil =>
     unfold removeAll at h
     cases h
@@ -157,21 +168,20 @@ theorem removeAll_sum {pool spent pool' : List CommitmentPreimage}
     · rw [if_pos hmem] at h
       have hmem' : n ∈ pool := List.elem_iff.mp hmem
       have hperm : pool.Perm (n :: pool.erase n) := List.perm_cons_erase hmem'
-      have heq : listSum (pool.map CommitmentPreimage.value) =
-          listSum ((n :: pool.erase n).map CommitmentPreimage.value) :=
-        listSum_perm (List.Perm.map CommitmentPreimage.value hperm)
+      have heq : listSum (pool.map g) = listSum ((n :: pool.erase n).map g) :=
+        listSum_perm (List.Perm.map g hperm)
       have ihh := ih h
       simp only [List.map_cons, listSum] at heq ⊢
       omega
     · rw [if_neg hmem] at h
       exact absurd h (by simp)
 
-/-- A successful `removeAll` is a reordering: `pool` is exactly the removed notes plus
+/-- A successful `removeAll` is a reordering: `pool` is exactly the removed elements plus
     the remainder, as a multiset. This is "a spend removes exactly the notes it spends
     from the live set" at the list level. -/
-theorem removeAll_perm {pool spent pool' : List CommitmentPreimage}
-    (h : removeAll pool spent = some pool') : pool.Perm (spent ++ pool') := by
-  induction spent generalizing pool with
+theorem removeAll_perm {α : Type} [DecidableEq α] {pool wanted pool' : List α}
+    (h : removeAll pool wanted = some pool') : pool.Perm (wanted ++ pool') := by
+  induction wanted generalizing pool with
   | nil =>
     unfold removeAll at h
     cases h
@@ -187,6 +197,28 @@ theorem removeAll_perm {pool spent pool' : List CommitmentPreimage}
       exact step1.trans step2
     · rw [if_neg hmem] at h
       exact absurd h (by simp)
+
+/-! ### Tagging a batch of new notes with the leaf positions they land at
+
+`MerkleModule.insertLeaves` assigns a batch's leaf positions in insertion order,
+starting right after whatever was already in the tree (MerkleModule.sol:54-121): the
+first new leaf lands at `leaves.length`, the next at `leaves.length + 1`, and so on.
+`withPositionsFrom` is the one place that reads this off, reused by every `Step`
+constructor below that inserts notes into `live`. -/
+
+/-- Tag `l`'s elements with ascending positions starting at `start`. -/
+def withPositionsFrom {α : Type} (start : Nat) : List α → List (Nat × α)
+  | [] => []
+  | a :: rest => (start, a) :: withPositionsFrom (start + 1) rest
+
+/-- Tagging with positions does not touch values: mapping any function `f` over the
+    tagged list's second components is the same as mapping `f` over the original list.
+    The value-sum bridge every `Step` constructor's `HeldInvariant` proof needs. -/
+theorem withPositionsFrom_map {α β : Type} (f : α → β) (start : Nat) (l : List α) :
+    (withPositionsFrom start l).map (fun p => f p.2) = l.map f := by
+  induction l generalizing start with
+  | nil => rfl
+  | cons a rest ih => simp [withPositionsFrom, ih]
 
 /-! ### The on-chain preimage registry
 
@@ -275,23 +307,25 @@ theorem applyRecords_preserves_key {reg : PreimageRegistry} {records : List (Ter
       · rw [if_neg hcc]; exact hreg
 
 /-- **A valid, non-zero batch is recoverable from the registry it produces.** If every
-    record in a batch hashes to its own key and is never the zero preimage (so
-    `recordStep` never skips it — `_validatePublicOutputs`'s non-zero requirement), then
-    for any record `(c, p)` in the batch, `applyRecords` settles on `p` at key `c`,
-    whatever else is in the batch: a later record sharing key `c` must, by
-    `hashCommitment_inj`, carry the identical preimage `p`, so even an overwrite leaves
-    the answer unchanged. The key lemma behind `transactOwned_records_all`. -/
+    record in a batch hashes to its own key, and the looked-up record itself is never
+    the zero preimage (so `recordStep` never skips writing it — `_validatePublicOutputs`'s
+    non-zero requirement), then `applyRecords` settles on `p` at key `c`, whatever else
+    is in the batch: a later record sharing key `c` must, by `hashCommitment_inj`, carry
+    the identical preimage `p`, so even an overwrite leaves the answer unchanged. Only
+    the looked-up record's own non-zero-ness is needed — the batch may contain other,
+    possibly-zero records elsewhere (a plain `transact`'s disclosure, unlike
+    `transactOwned`'s, does not require every output non-zero). The key lemma behind
+    `transactOwned_records_all` and `pool_ownedRandomOf_consistent`. -/
 theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × CommitmentPreimage)}
     (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
-    (hNonZero : ∀ cp ∈ records, ¬ isZeroPreimage cp.2)
-    {c : Term} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) :
+    {c : Term} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) (hNonZero : ¬ isZeroPreimage p) :
     applyRecords reg records c = some p := by
   obtain ⟨pre, post, hsplit⟩ := List.append_of_mem hmem
   rw [hsplit, applyRecords_append]
   unfold applyRecords
   apply applyRecords_preserves_key
   · unfold recordStep
-    rw [if_neg (hNonZero (c, p) (hsplit ▸ List.mem_append_right pre List.mem_cons_self))]
+    rw [if_neg hNonZero]
     simp
   · intro cp hcp hcpeq
     have hcpmem : cp ∈ records := by
@@ -301,6 +335,42 @@ theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × C
     have hpval := hvalid (c, p) hmem
     rw [hcpeq] at hcpval
     exact hashCommitment_inj (hcpval.trans hpval.symm)
+
+/-- `recordStep` leaves any OTHER already-consistent key's answer unchanged: a write at
+    `newc` can only coincide with `c` if the written preimage genuinely hashes to `c`
+    too, in which case — since `pre` is ALREADY known to hash to `c`
+    (`hashCommitment_inj`) — the write is a no-op value-wise. The one-record case of
+    `applyRecords_preserves_other`, used directly by `Step.shield` (which calls
+    `recordStep`, not `applyRecords`). -/
+theorem recordStep_preserves_other {reg : PreimageRegistry}
+    {c newc : Term} {newpre pre : CommitmentPreimage}
+    (hc : hashCommitment pre = c) (hcreg : reg c = some pre) (hvalid : hashCommitment newpre = newc) :
+    recordStep reg newc newpre c = some pre := by
+  unfold recordStep
+  by_cases hz : isZeroPreimage newpre
+  · rw [if_pos hz]; exact hcreg
+  · rw [if_neg hz]
+    by_cases heq : c = newc
+    · rw [if_pos heq]
+      rw [heq] at hc
+      have hveq := hashCommitment_inj (hc.trans hvalid.symm)
+      rw [hveq]
+    · rw [if_neg heq]; exact hcreg
+
+/-- `applyRecords` leaves any OTHER already-consistent key's answer unchanged — the
+    batch generalization of `recordStep_preserves_other`, used by `Step.transact`'s
+    optional owned-disclosure batch. -/
+theorem applyRecords_preserves_other {reg : PreimageRegistry}
+    {records : List (Term × CommitmentPreimage)}
+    (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
+    {c : Term} {pre : CommitmentPreimage} (hc : hashCommitment pre = c) (hcreg : reg c = some pre) :
+    applyRecords reg records c = some pre := by
+  induction records generalizing reg with
+  | nil => exact hcreg
+  | cons cp rest ih =>
+    obtain ⟨c', p'⟩ := cp
+    apply ih (fun cp' hcp' => hvalid cp' (List.mem_cons_of_mem _ hcp'))
+    exact recordStep_preserves_other hc hcreg (hvalid (c', p') List.mem_cons_self)
 
 /-- The `(commitment, preimage)` pair a plain `Transact` output would record, if
     disclosed — the full candidate batch `Step.transact`'s `records` is a sublist of. -/
@@ -336,14 +406,47 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
   rw [← hj]
   exact (hC.outputs j).symm
 
+/-! ### The public owned-random registry
+
+`ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure` records the departure: the
+real contract never stores a note's random value, so only its creator can spend it. The
+approved design closes this for contract-owned notes; `applyOwnedRecords` lifts one
+commitment's disclosure (`ArmadaLean.PoolOwned.recordOwnedStep`) to a whole batch, the
+same way `applyRecords` lifts `recordStep`. -/
+
+/-- Apply a batch of `(commitment, disclosure)` records to the owned-random registry,
+    in order. -/
+def applyOwnedRecords (rreg : OwnedRandomRegistry) :
+    List (Term × OwnedDisclosure) → OwnedRandomRegistry
+  | [] => rreg
+  | (c, d) :: rest => applyOwnedRecords (recordOwnedStep rreg c d) rest
+
+/-- `applyOwnedRecords` preserves `OwnedRandomConsistent` against a FIXED preimage
+    registry `reg`, given every record's random genuinely reconstructs the npk of
+    whatever `reg` already holds at that key — exactly the shape
+    `applyRecords_preserves_consistency` has for `PreimageRegistry` alone. -/
+theorem applyOwnedRecords_preserves_consistency {reg : PreimageRegistry} {rreg : OwnedRandomRegistry}
+    (hconsistent : OwnedRandomConsistent reg rreg)
+    {records : List (Term × OwnedDisclosure)}
+    (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
+      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk) :
+    OwnedRandomConsistent reg (applyOwnedRecords rreg records) := by
+  induction records generalizing rreg with
+  | nil => exact hconsistent
+  | cons cd rest ih =>
+    obtain ⟨c, d⟩ := cd
+    apply ih
+    · obtain ⟨pre, hreg, hnpk⟩ := hvalid (c, d) List.mem_cons_self
+      exact recordOwnedStep_preserves_consistency hconsistent hreg hnpk
+    · intro cd' hcd'
+      exact hvalid cd' (List.mem_cons_of_mem (c, d) hcd')
+
 /-! ### Pool state -/
 
 /-- The pool's state, at the level this model needs. `live t` is the model's ghost
-    knowledge of every currently-unspent note of token `t` (S-RG, "How Does RAILGUN
-    Work?": the output notes of a split "are added to the live pool"; Armada has no
-    `dead` pool — a spent note stays in the Merkle tree forever, only its nullifier is
-    marked, so `live` here is the model's own "not yet spent" bookkeeping, not a second
-    on-chain list). `spent` is the nullifier set
+    knowledge of every currently-unspent note of token `t`, as `(position, preimage)`
+    pairs keyed by leaf position (module comment: a note is identified by where it sits
+    in the tree, never by a content scan). `spent` is the nullifier set
     (`ArmadaLean.PoolOwned.NullifierSet`, one tree's slice, as that module already
     documents). `leaves` is the pool's real Merkle tree: every commitment
     `MerkleModule.insertLeaves` has ever inserted, in insertion order — public data
@@ -355,17 +458,20 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
     inflate with a raw, pool-unmediated `transfer` that credits no note (sibling
     labbook entry §3a, the surplus/R4 discussion); `held` is the ledger the three
     modeled operations maintain, which is exactly what the core invariant is about.
-    `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`. `shieldsPaused` mirrors
-    `IShieldPauseController.shieldsPaused`, read by `ShieldModule
-    ._requireShieldsNotPaused` — the one freeze the Armada design keeps, and it gates
-    `Step.shield` alone (module comment, freeze-removal departure). -/
+    `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`. `ownedRandomOf` is the second,
+    approved-design public registry (`ArmadaLean.PoolOwned`'s module comment on
+    `OwnedDisclosure`). `shieldsPaused` mirrors `IShieldPauseController.shieldsPaused`,
+    read by `ShieldModule._requireShieldsNotPaused` — the one freeze the Armada design
+    keeps, and it gates `Step.shield` alone (module comment, freeze-removal
+    departure). -/
 structure PoolState where
-  live : Nat → List CommitmentPreimage
+  live : Nat → List (Nat × CommitmentPreimage)
   spent : NullifierSet
   leaves : List Term
   roots : List Term
   held : Nat → Nat
   preimageOf : PreimageRegistry
+  ownedRandomOf : OwnedRandomRegistry
   shieldsPaused : Bool
 
 /-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
@@ -373,28 +479,32 @@ structure PoolState where
     spent nullifiers, the one root of the empty tree (`ArmadaLean.Merkle.treeRoot
     TreeDepth []`, computed — not a free parameter standing for the real pinned
     `ZERO_VALUE`-derived constant, PrivacyPoolStorage.sol:150; see the module comment on
-    `Term.val 0` as this model's stand-in zero value), no custody, an empty registry,
+    `Term.val 0` as this model's stand-in zero value), no custody, empty registries,
     not paused. -/
 def genesis : PoolState :=
   { live := fun _ => [], spent := [], leaves := [], roots := [treeRoot TreeDepth []],
-    held := fun _ => 0, preimageOf := fun _ => none, shieldsPaused := false }
+    held := fun _ => 0, preimageOf := fun _ => none, ownedRandomOf := fun _ => none,
+    shieldsPaused := false }
 
 /-! ### Deriving notes from a witness
 
 A spend's input and output notes are never free choices: they are read off the witness
-a `Constrained`/`OwnedConstrained` proof already pins down. These four definitions are
+a `Constrained`/`OwnedConstrained` proof already pins down. These definitions are
 the single place that reads them off, reused by every `Step` constructor and every
 `can_happen` theorem below, so "which notes did this spend touch" has exactly one
 answer, derived, not asserted. -/
 
-/-- The commitment preimages of a plain `TransactWitness`'s `N` inputs: input `i` opens
-    the commitment at `npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i)`
+/-- The leaf positions and preimages of a plain `TransactWitness`'s `N` inputs: input
+    `i` names leaf position `w.leavesIndices i` (the same position `nullifier
+    nk (leavesIndices i)` is derived from, Transact.circom:97-101) and opens it as the
+    commitment of `npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i)`
     (Transact.circom:74-84). -/
-def transactSpentNotes {N M : Nat} (w : TransactWitness N M) :
-    List CommitmentPreimage :=
+def transactSpentPositions {N M : Nat} (w : TransactWitness N M) :
+    List (Nat × CommitmentPreimage) :=
   List.ofFn fun i =>
-    (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i), w.token,
-      w.valueIn i⟩ : CommitmentPreimage)
+    (w.leavesIndices i,
+      (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i), w.token,
+        w.valueIn i⟩ : CommitmentPreimage))
 
 /-- The commitment preimages of a plain `TransactWitness`'s `M` outputs, in witness
     order (Transact.circom:105-113). The circuit does not distinguish a kept note from
@@ -402,14 +512,17 @@ def transactSpentNotes {N M : Nat} (w : TransactWitness N M) :
 def transactAllOutputs {N M : Nat} (w : TransactWitness N M) : List CommitmentPreimage :=
   List.ofFn fun j => (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)
 
-/-- The commitment preimages of an owned `TransactOwnedWitness`'s `N` inputs: input `i`
-    opens the commitment at `npk (Term.val pub.ownerField) (w.randomIn i)`
+/-- The leaf positions and preimages of an owned `TransactOwnedWitness`'s `N` inputs:
+    input `i` names leaf position `w.leavesIndices i` (the same position `nullifier
+    ownerField (leavesIndices i)` is derived from, TransactOwned.circom:89-97) and
+    opens it as the commitment of `npk (Term.val pub.ownerField) (w.randomIn i)`
     (TransactOwned.circom:66-76). -/
-def ownedSpentNotes {N M : Nat} (pub : TransactOwnedPublic N M)
+def ownedSpentPositions {N M : Nat} (pub : TransactOwnedPublic N M)
     (w : TransactOwnedWitness N M) :
-    List CommitmentPreimage :=
+    List (Nat × CommitmentPreimage) :=
   List.ofFn fun i =>
-    (⟨npk (Term.val pub.ownerField) (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage)
+    (w.leavesIndices i,
+      (⟨npk (Term.val pub.ownerField) (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage))
 
 /-- The commitment preimages of an owned `TransactOwnedWitness`'s `M` outputs. All of
     them stay live: `transactOwned` never unshields
@@ -436,8 +549,9 @@ inductive Step : PoolState → PoolState → Prop where
       directly (the shield circuit does not derive it — the recipient computes their own
       `npk` off-chain and the shielder just names it, same role as `npkOut` in a
       `transact`). The note's commitment is appended to `leaves`
-      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121) and the pushed root is
-      `ArmadaLean.Merkle.treeRoot TreeDepth` of the result — computed, not a free
+      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121); the note lands at leaf
+      position `s.leaves.length`, the position `live` records it under. The pushed root
+      is `ArmadaLean.Merkle.treeRoot TreeDepth` of the result — computed, not a free
       parameter — so a shield cannot name a root that does not match the leaf it just
       inserted. `hCapacity` is the one-tree capacity bound (`ArmadaLean.Merkle`'s
       module comment, the rollover departure): the tree holds at most `2 ^ TreeDepth`
@@ -457,7 +571,7 @@ inductive Step : PoolState → PoolState → Prop where
         (let note : CommitmentPreimage := ⟨npk, token, shieldBase feeBP grossAmount⟩
          let leaves' := s.leaves ++ [hashCommitment note]
          { s with
-             live := fun t => if t = token then note :: s.live t else s.live t,
+             live := fun t => if t = token then (s.leaves.length, note) :: s.live t else s.live t,
              held := fun t => if t = token then s.held t + note.value else s.held t,
              leaves := leaves',
              roots := treeRoot TreeDepth leaves' :: s.roots,
@@ -466,8 +580,8 @@ inductive Step : PoolState → PoolState → Prop where
       transfer and a transfer with a local unshield. `w`/`pub` are the proof's own
       witness and public inputs; `hC : Constrained w pub` is the soundness hypothesis
       ("an accepted proof means its circuit constraints hold") — this is what ties
-      `transactSpentNotes w` to notes the spender actually derived from keys it holds,
-      not a free choice (see `ArmadaLean.PoolSafety.transact_spends_only_owned`).
+      `transactSpentPositions w` to notes the spender actually derived from keys it
+      holds, not a free choice (see `ArmadaLean.PoolSafety.transact_spends_only_owned`).
       `hN`/`hM` are the registered circuit shapes: `VerifierModule.setVerificationKey`
       (VerifierModule.sol:32-47) registers one key per `(nullifierCount,
       commitmentCount)` pair, and an unregistered shape reverts
@@ -481,24 +595,35 @@ inductive Step : PoolState → PoolState → Prop where
       unshield payout — the circuit itself draws no such line
       (TransactOwned.circom/Transact.circom treat every output alike); the pool does, via
       `boundParams.unshield`/`commitmentCiphertext.length` (TransactModule.sol:289-337).
-      `hRemove` is the ghost-level half of "spend these inputs", licensed by the proof's
-      `Constrained.merkle`/root-history facts (soundness: a Merkle-membership proof
-      against a historical root cannot name a note the pool never created — Pool module
-      comment); `hNullify` is its on-chain half, `_accumulateAndNullify`
-      (TransactModule.sol:373-399). `hRecords` is `_validatePublicOutputs
-      (requireAll = false)`/`_recordPreimages` (TransactModule.sol:544-604): disclosure
-      is optional, so `records` is any sublist of the outputs' own `(commitment,
-      preimage)` pairs (`transactOutputRecords`), in witness order — never an unrelated
-      list, since `List.Sublist` forces every disclosed entry to be one of the circuit's
-      own outputs (`transactOutputRecords_valid` then gives `hashCommitment`
-      correctness for free, not as a separate hypothesis). The balance fact itself is
-      not a hypothesis here: `ArmadaLean.PoolSafety.step_preserves_invariant` derives
-      it from `transact_value_conserved hN hM hC` at the point it is needed, exactly
-      as the contract's own guarantee rests on the circuit constraints and nothing
-      else. S-RG: "The contract checks to make sure: ... That it hasn't seen the
-      nullifiers before, eliminating any double spends[;] The Merkle root is the
-      current or a previous Merkle root, to prevent users from making up UTXOs."
-      Zokyo's 2022-12-21 audit of `RailgunLogic.sol`
+      `hRemove` is the ghost-level half of "spend these inputs", keyed by the leaf
+      positions the witness names (`transactSpentPositions`) — a spend of a position
+      that is not live has no step, since `removeAll` fails (`none`) the moment a
+      requested position is missing. `hNullify` is its on-chain half,
+      `_accumulateAndNullify` (TransactModule.sol:373-399). The kept outputs land at
+      leaf positions `s.leaves.length, s.leaves.length + 1, …` in order
+      (`withPositionsFrom`), the positions `live` records them under — this is how a
+      later caller recovers where its own new notes sit. `hRecords` is
+      `_validatePublicOutputs (requireAll = false)`/`_recordPreimages`
+      (TransactModule.sol:544-604): disclosure is optional, so `records` is any sublist
+      of the outputs' own `(commitment, preimage)` pairs (`transactOutputRecords`), in
+      witness order — never an unrelated list, since `List.Sublist` forces every
+      disclosed entry to be one of the circuit's own outputs
+      (`transactOutputRecords_valid` then gives `hashCommitment` correctness for free,
+      not as a separate hypothesis). `ownedRecords`/`hOwnedRecords` are the approved
+      design's optional extra: for any disclosed output the discloser additionally
+      claims is contract-owned, it supplies `(ownerField, random)` and the pool checks
+      `npk (ownerField) random` matches that output's own `npk` — `hOwnedRecords`
+      requires every such claim to point at an already-disclosed, matching entry (a
+      deposit to the adjudicator is one scenario this covers;
+      `ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure` records the
+      departure). The balance fact itself is not a hypothesis here:
+      `ArmadaLean.PoolSafety.step_preserves_invariant` derives it from
+      `transact_value_conserved hN hM hC` at the point it is needed, exactly as the
+      contract's own guarantee rests on the circuit constraints and nothing else. S-RG:
+      "The contract checks to make sure: ... That it hasn't seen the nullifiers
+      before, eliminating any double spends[;] The Merkle root is the current or a
+      previous Merkle root, to prevent users from making up UTXOs." Zokyo's 2022-12-21
+      audit of `RailgunLogic.sol`
       (`.scratch/rewrite-B/sources/railgun-audit-2022-12-21-Zokyo.pdf`, sha256
       `b974caa94f7eee9f3f52e7996e4251ac1581523af161a5c83b7468cb06f3a9a9`), finding #1
       ("Transaction validation is out of the scope", Medium, Resolved): "the current
@@ -532,26 +657,32 @@ inductive Step : PoolState → PoolState → Prop where
       take, the owner included, changes whether they hold. -/
   | transact {s : PoolState} {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
       (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
-      (newNotes unshieldTail rest : List CommitmentPreimage) (spent' : NullifierSet)
+      (newNotes unshieldTail : List CommitmentPreimage)
+      (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
       (records : List (Term × CommitmentPreimage))
+      (ownedRecords : List (Term × OwnedDisclosure))
       (hRoot : pub.merkleRoot ∈ s.roots)
       (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
       (hUnshieldLen : unshieldTail.length ≤ 1)
-      (hRemove : removeAll (s.live w.token) (transactSpentNotes w) = some rest)
+      (hRemove : removeAll (s.live w.token) (transactSpentPositions w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hRecords : records.Sublist (transactOutputRecords w pub))
+      (hOwnedRecords : ∀ cd ∈ ownedRecords, ∃ pre, (cd.1, pre) ∈ records ∧
+        npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
       (hCapacity : s.leaves.length + newNotes.length ≤ 2 ^ TreeDepth) :
       Step s
         (let leaves' := s.leaves ++ newNotes.map hashCommitment
          { s with
-            live := fun t => if t = w.token then newNotes ++ rest else s.live t,
+            live := fun t => if t = w.token
+                then withPositionsFrom s.leaves.length newNotes ++ rest else s.live t,
             spent := spent',
             held := fun t => if t = w.token
                 then s.held t - listSum (unshieldTail.map CommitmentPreimage.value)
                 else s.held t,
             leaves := leaves',
             roots := treeRoot TreeDepth leaves' :: s.roots,
-            preimageOf := applyRecords s.preimageOf records })
+            preimageOf := applyRecords s.preimageOf records,
+            ownedRandomOf := applyOwnedRecords s.ownedRandomOf ownedRecords })
   /-- `TransactModule.transactOwned` (TransactModule.sol:488-519): the same bookkeeping
       shape as `transact`, with no unshield (`_validateOwnedTransaction` rejects any
       `unshield != NONE`, TransactModule.sol:619-623) and every output's preimage
@@ -570,11 +701,19 @@ inductive Step : PoolState → PoolState → Prop where
       `N = 1 ≤ 8` and `M ≤ 3 ≤ 4`, well inside the bound
       `transactOwned_value_conserved` needs; this model uses the same `N ≤ 8 ∧ M ≤ 4`
       bound as the plain path rather than the tighter true one, since that is the bound
-      the existing proof already supplies. Every output is appended to `leaves`
-      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121) and the pushed root is
+      the existing proof already supplies. The spent positions come from
+      `ownedSpentPositions`; the spend removes exactly those positions from `live`, and
+      a position that is not live has no step. The new outputs land at leaf positions
+      `s.leaves.length, s.leaves.length + 1, …` in order (`withPositionsFrom`), the
+      positions `live` records them under, and every output is appended to `leaves`
+      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121). The pushed root is
       `ArmadaLean.Merkle.treeRoot TreeDepth` of the result — computed, not a free
       parameter. `hCapacity` is the one-tree capacity bound (`ArmadaLean.Merkle`'s
-      module comment, the rollover departure).
+      module comment, the rollover departure). `randomOut`/`hRandomOut` are the
+      approved design's mandatory owned-random disclosure, matching the owned path's
+      existing `requireAll = true`: every output's random is supplied and checked
+      against its own `npk`, then recorded into `ownedRandomOf` alongside `pub
+      .ownerField` (`ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure`).
 
       DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
       `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before `transactOwned` too
@@ -590,21 +729,26 @@ inductive Step : PoolState → PoolState → Prop where
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
-      (rest : List CommitmentPreimage) (spent' : NullifierSet)
+      (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet) (randomOut : Fin M → Nat)
       (hRoot : pub.merkleRoot ∈ s.roots)
-      (hRemove : removeAll (s.live w.token) (ownedSpentNotes pub w) = some rest)
+      (hRemove : removeAll (s.live w.token) (ownedSpentPositions pub w) = some rest)
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hNonZero : ∀ j, ¬ isZeroPreimage
         (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+      (hRandomOut : ∀ j, npk (Term.val pub.ownerField) (randomOut j) = w.npkOut j)
       (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
       Step s
         (let leaves' := s.leaves ++ (ownedNewNotes w).map hashCommitment
          { s with
-            live := fun t => if t = w.token then ownedNewNotes w ++ rest else s.live t,
+            live := fun t => if t = w.token
+                then withPositionsFrom s.leaves.length (ownedNewNotes w) ++ rest else s.live t,
             spent := spent',
             leaves := leaves',
             roots := treeRoot TreeDepth leaves' :: s.roots,
-            preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub) })
+            preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub),
+            ownedRandomOf := applyOwnedRecords s.ownedRandomOf
+              (List.ofFn fun j =>
+                (pub.commitmentsOut j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure))) })
   /-- The one remaining administrative path that changes pool state at all:
       `setShieldPauseContract` installs a controller whose `IShieldPauseController
       .shieldsPaused` this model reads (`ShieldModule._requireShieldsNotPaused`,
@@ -613,9 +757,9 @@ inductive Step : PoolState → PoolState → Prop where
       departure). Every other owner function (`setShieldFee`, `setFeeRecipient`,
       `addToBlocklist`, `setVerificationKey`, `setVerificationKeyOwned`,
       `setTestingMode`, ...) changes configuration this model does not represent and is
-      not modeled individually: none of them touches `live`, `spent`, `roots`, `held`
-      or `preimageOf`, so every one of them is this same no-op on the fields the safety
-      theorems are about. -/
+      not modeled individually: none of them touches `live`, `spent`, `roots`, `held`,
+      `preimageOf` or `ownedRandomOf`, so every one of them is this same no-op on the
+      fields the safety theorems are about. -/
   | admin {s : PoolState} (shieldsPaused : Bool) :
       Step s { s with shieldsPaused := shieldsPaused }
 

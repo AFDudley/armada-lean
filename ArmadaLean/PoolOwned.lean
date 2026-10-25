@@ -268,6 +268,81 @@ theorem preimageOf_consistent {K : Nat} (commitments : Fin K → Term)
   recordPreimages_preserves_consistency commitments publicOutputs hvalid
     (fun _ _ h => by simp at h)
 
+/-! ### Public random for a contract-owned note (`PoolTypes.sol:79-83`, `TransactModule
+._recordPreimages`, TransactModule.sol:590-604, DEPARTURE)
+
+DEPARTURE (contract, confirmed by reading the source): the merged contract's
+`CommitmentPreimage` struct (`PoolTypes.sol:79-83`) has exactly three fields — `npk`,
+`token`, `value` — and `_recordPreimages` (TransactModule.sol:590-604) writes exactly
+that struct to `preimageOf`, nothing more. The random value behind a contract-owned
+note's `npk = Poseidon(ownerField, random)` (TransactOwned.circom:66-70) is never
+recorded anywhere the real contract exposes, so only the note's own creator — the one
+party who chose `random` — can ever build the `TransactOwned` proof that spends it. The
+approved design changes this: when a note is created for a contract owner, the creator
+additionally supplies `ownerField` and `random` alongside the preimage; the pool checks
+`npk (Term.val ownerField) random = npk` and records `random` (paired with `ownerField`,
+so a reader can tell which owner it is claimed for) in a second, public registry. This
+applies to every owned-path output (`Step.transactOwned`, mandatory, matching
+`_validatePublicOutputs(requireAll = true)`'s existing mandatory disclosure) and to any
+plain-`transact` output additionally disclosed as contract-owned (`Step.transact`,
+optional — a deposit to the adjudicator is one such output). Any later caller who knows
+its own `ownerField` can then read this registry and the ordinary `preimageOf` registry
+and construct a spend witness entirely from public data
+(`ArmadaLean.PoolSafety.owned_spend_witness_exists`). -/
+
+/-- One contract-owned note's recorded random, alongside the owner it was disclosed for
+    — `PoolState.ownedRandomOf`'s value type. -/
+structure OwnedDisclosure where
+  ownerField : Nat
+  random : Nat
+
+/-- The public registry of disclosed owned-note randoms (`PoolState.ownedRandomOf`),
+    keyed by commitment, parallel to `PreimageRegistry`: `none` unless the note was
+    disclosed as contract-owned. -/
+abbrev OwnedRandomRegistry := Term → Option OwnedDisclosure
+
+/-- The registry invariant: every recorded owned disclosure's random genuinely
+    reconstructs the commitment's own `npk`, against the matching `preimageOf` entry —
+    the pool's own check before it ever writes an entry here. -/
+def OwnedRandomConsistent (reg : PreimageRegistry) (rreg : OwnedRandomRegistry) : Prop :=
+  ∀ c d, rreg c = some d → ∃ pre, reg c = some pre ∧ npk (Term.val d.ownerField) d.random = pre.npk
+
+/-- Recording one commitment's owned disclosure: unconditional overwrite at key `c`,
+    mirroring `recordStep`'s shape (no zero-skip here — an `npk` built from `random`
+    is always a genuine hash term, never the zero sentinel, `npk_preimage_not_zero`
+    below). -/
+def recordOwnedStep (rreg : OwnedRandomRegistry) (c : Term) (d : OwnedDisclosure) :
+    OwnedRandomRegistry :=
+  fun c' => if c' = c then some d else rreg c'
+
+/-- A preimage whose `npk` is reconstructed from an owner field and a random value can
+    never be the zero sentinel: `npk` is always `Term.hash2 ...` (a genuine Poseidon
+    output), and `Term.val 0` can never equal a hash term (`Term.val_ne_hash`, by
+    construction). This is what lets `recordOwnedStep` skip no owned disclosure the way
+    `recordStep` skips a zero preimage. -/
+theorem npk_preimage_not_zero {ownerField random : Nat} {pre : CommitmentPreimage}
+    (h : npk (Term.val ownerField) random = pre.npk) : ¬ isZeroPreimage pre := by
+  rintro ⟨hz, -, -⟩
+  rw [← h] at hz
+  unfold npk at hz
+  exact Term.val_ne_hash 0 _ hz.symm
+
+/-- `recordOwnedStep` preserves `OwnedRandomConsistent`, given the new entry's random
+    genuinely reconstructs the npk of whatever `reg` already holds at that key. -/
+theorem recordOwnedStep_preserves_consistency {reg : PreimageRegistry} {rreg : OwnedRandomRegistry}
+    (hconsistent : OwnedRandomConsistent reg rreg)
+    {c : Term} {pre : CommitmentPreimage} {d : OwnedDisclosure}
+    (hreg : reg c = some pre) (hnpk : npk (Term.val d.ownerField) d.random = pre.npk) :
+    OwnedRandomConsistent reg (recordOwnedStep rreg c d) := by
+  intro c' d' hc'
+  unfold recordOwnedStep at hc'
+  by_cases heq : c' = c
+  · rw [if_pos heq] at hc'
+    cases hc'
+    exact ⟨pre, heq ▸ hreg, hnpk⟩
+  · rw [if_neg heq] at hc'
+    exact hconsistent c' d' hc'
+
 /-! ### Can happen (proof completeness) -/
 
 /--

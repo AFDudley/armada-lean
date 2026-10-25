@@ -35,3 +35,14 @@ theorem distinct_leaves_distinct_nullifiers (nk : Nat) (leaves : List Nat)
   rw [List.pairwise_map]
   refine h.imp fun {a b} hab hcon => hab ?_
   exact Term.val.inj (Term.hash2_inj hcon).2
+
+/--
+**Two different leaf positions never share a nullifier**, for a fixed nullifying
+key/owner field: `nullifier`'s two raw arguments are embedded separately
+(`Term.val nk`, `Term.val leafIdx`) before one `Term.hash2` call, so a nullifier
+collision forces BOTH embedded arguments equal (`Term.hash2_inj`), not merely one.
+This is the pool-level fact behind identifying a live note by its leaf position: no
+two distinct positions a spend removes can ever collapse onto the one nullifier a
+`markSpent` call marks. -/
+theorem nullifier_pos_inj {nk a b : Nat} (h : nullifier nk a = nullifier nk b) : a = b :=
+  Term.val.inj (Term.hash2_inj h).2
