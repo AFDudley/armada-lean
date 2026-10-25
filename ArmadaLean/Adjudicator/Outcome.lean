@@ -290,14 +290,43 @@ the signed/challenged outcome ITSELF, only derived from it this way.
 -/
 inductive OutcomeDerivedFrom : Outcome → Outcome → Prop where
   | refl (o : Outcome) : OutcomeDerivedFrom o o
+  /-- `transferEffects`'s `newAllocations` (`.1`) only ever REDUCES a
+      SELECTED allocation's own amount, by `afford`'s own paid amount
+      (`afford_le`, `Lemmas.lean`: `paid ≤ a.amount`) — never increases
+      one, never changes a destination, asset, or allocation type, and
+      never touches an UNSELECTED position at all. So an adversarially
+      chosen `heldBefore` (this `.transfer` call's own claimed
+      `heldValue`) can only make this step pay out LESS, never credit a
+      destination it did not already hold — safe to leave free here. -/
   | transferStep {o mid : Outcome} (assetIndex : Nat) (h : assetIndex < mid.length)
       (heldBefore : Nat) (indices : List Nat) (hmid : OutcomeDerivedFrom o mid) :
       OutcomeDerivedFrom o
         (mid.mapIdx fun i exit => if i ≠ assetIndex then exit else
           { exit with allocations :=
               (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 })
-  | reclaimStep {o mid : Outcome} (assetIndex allocIndex : Nat) (left right : Term)
-      (amtLeft amtRight : Nat) (hmid : OutcomeDerivedFrom o mid) :
-      OutcomeDerivedFrom o (reallocateGuarantee mid assetIndex allocIndex left right amtLeft amtRight)
+  /-- Mirrors `.reclaim`'s OWN preconditions (`Operations.lean`) exactly,
+      not a free rewrite: `allocIndex` must name a `.guarantee`
+      allocation (`guarantee.allocationType = .guarantee`); the credited
+      destinations are `decodeGuarantee`'s OWN output on that
+      guarantee's OWN metadata, not independently chosen; and the two
+      credited amounts must SUM TO EXACTLY the guarantee's own amount
+      (`a0 + a1 = guarantee.amount`, `Operations.lean`'s `.reclaim`
+      case) — so this step can only erase a guarantee ALREADY present
+      in `mid` and redistribute EXACTLY its own amount to the two
+      destinations its OWN metadata names, never an arbitrary allocation
+      or an arbitrary destination/amount. -/
+  | reclaimStep {o mid : Outcome} (assetIndex allocIndex : Nat)
+      (h1 : assetIndex < mid.length)
+      (h2 : allocIndex < (mid.get ⟨assetIndex, h1⟩).allocations.length)
+      (hguarantee : ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).allocationType =
+        .guarantee)
+      (amtLeft amtRight : Nat)
+      (hsum : amtLeft + amtRight =
+        ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).amount)
+      (hmid : OutcomeDerivedFrom o mid) :
+      OutcomeDerivedFrom o (reallocateGuarantee mid assetIndex allocIndex
+        (decodeGuarantee ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).metadata).1
+        (decodeGuarantee ((mid.get ⟨assetIndex, h1⟩).allocations.get ⟨allocIndex, h2⟩).metadata).2
+        amtLeft amtRight)
 
 end ArmadaLean.Adjudicator
