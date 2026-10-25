@@ -24,6 +24,28 @@ theorem afford_sum_le (allocs : List Allocation) (surplus : Nat) :
     have hpaid : min a.amount surplus ≤ surplus := Nat.min_le_right _ _
     omega
 
+/-- `afford`'s own payout at a GIVEN index never goes DOWN as surplus
+    goes UP: priority order means more funds can only help a later
+    entry, never hurt one (S2 §5.2's Turbo Value Algorithm is monotone
+    in its own starting surplus). What the `unbeatable_pays`/
+    `unbeatable_pays_after_timeout` interleaving invariant needs: a
+    `.deposit` raising `heldValue` while the channel is still
+    unfinalized can only keep `x`'s own affordability, never break it. -/
+theorem afford_mono (allocs : List Allocation) {surplus1 surplus2 : Nat} (hle : surplus1 ≤ surplus2)
+    (k : Nat) : (afford allocs surplus1).getD k 0 ≤ (afford allocs surplus2).getD k 0 := by
+  induction allocs generalizing surplus1 surplus2 k with
+  | nil => simp [afford]
+  | cons a as ih =>
+    cases k with
+    | zero =>
+      show min a.amount surplus1 ≤ min a.amount surplus2
+      omega
+    | succ k' =>
+      show (afford as (surplus1 - min a.amount surplus1)).getD k' 0 ≤
+        (afford as (surplus2 - min a.amount surplus2)).getD k' 0
+      exact ih (by omega) k'
+
+
 /-- `afford` produces one paid amount per allocation. -/
 theorem afford_length (allocs : List Allocation) (surplus : Nat) :
     (afford allocs surplus).length = allocs.length := by
@@ -572,6 +594,44 @@ theorem transferEffectsSel_getD_full (allocs : List Allocation) (surplus : Nat)
   rw [List.getD_eq_getElem?_getD, List.getElem?_map, hzip2]
   simp only [Option.map_some, Option.getD_some]
   split <;> rfl
+
+/-- A SELECTED index's own entry is a member of `transferEffectsSel`'s
+    `exitAllocations` (`.2.1`), carrying `afford`'s own paid amount as
+    its `.amount`, everything else unchanged. What the `unbeatable_pays`/
+    `unbeatable_pays_after_timeout` invariant needs to tie a selected
+    `destIdx`'s own affordability bound to an ACTUAL minted payout
+    output: `transferEffectsSel_getD_full` gives `newAllocations`'s own
+    SHRUNK entry; this gives `exitAllocations`'s own PAID entry, the one
+    `.transfer`'s own `payoutOutputs` mints a note from. -/
+theorem transferEffectsSel_exit_mem (allocs : List Allocation) (surplus : Nat) (sel : Nat → Bool)
+    (i : Nat) (hi : i < allocs.length) (hsel : sel i = true) :
+    { allocs.getD i Allocation.default with
+        amount := (afford allocs surplus).getD i 0 } ∈
+      (transferEffectsSel allocs surplus sel).2.1 := by
+  have hlen : (afford allocs surplus).length = allocs.length := afford_length allocs surplus
+  have hrange : (List.range allocs.length)[i]? = some i := List.getElem?_range hi
+  have halloc : allocs[i]? = some (allocs.getD i Allocation.default) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : allocs[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some a => simp
+  have hpaid : (afford allocs surplus)[i]? = some ((afford allocs surplus).getD i 0) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : (afford allocs surplus)[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some p => simp
+  have hzip1 := (List.getElem?_zip_eq_some
+    (z := (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0))).mpr ⟨halloc, hpaid⟩
+  have hzip2 := (List.getElem?_zip_eq_some
+    (z := (i, (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0)))).mpr
+    ⟨hrange, hzip1⟩
+  have hmemIndexed : (i, allocs.getD i Allocation.default, (afford allocs surplus).getD i 0) ∈
+      (List.range allocs.length).zip (allocs.zip (afford allocs surplus)) :=
+    List.mem_iff_getElem?.mpr ⟨_, hzip2⟩
+  unfold transferEffectsSel
+  dsimp only
+  exact List.mem_filterMap.mpr ⟨_, hmemIndexed, by rw [if_pos hsel]⟩
+
 
 /-- `transferEffectsSel`'s own `newAllocations`, decomposed one entry at
     a time: the head is paid out (or not) by `sel 0` alone, and the
@@ -2076,6 +2136,21 @@ theorem withPositionsFrom_mem_snd {α : Type} {start : Nat} {l : List α} {pos :
   have hmap : a ∈ (withPositionsFrom start l).map (fun p : Nat × α => id p.2) :=
     List.mem_map.mpr ⟨(pos, a), h, rfl⟩
   rwa [withPositionsFrom_map id, List.map_id] at hmap
+
+/-- Converse of `withPositionsFrom_mem_snd`: anything already IN the
+    underlying list gets SOME position once tagged — what the
+    `unbeatable_pays`/`unbeatable_pays_after_timeout` invariant needs to
+    turn "this output is one of `.transfer`'s own `payoutOutputs`" into
+    an ACTUAL `(pos, pre) ∈ s'.pool.live token` fact. -/
+theorem withPositionsFrom_mem_fwd {α : Type} {start : Nat} {l : List α} {a : α}
+    (h : a ∈ l) : ∃ pos, (pos, a) ∈ withPositionsFrom start l := by
+  induction l generalizing start with
+  | nil => exact absurd h (by simp)
+  | cons b rest ih =>
+    rcases List.mem_cons.mp h with heq | hmem
+    · exact ⟨start, by rw [heq]; exact List.mem_cons_self ..⟩
+    · obtain ⟨pos, hpos⟩ := ih hmem (start := start + 1)
+      exact ⟨pos, List.mem_cons_of_mem _ hpos⟩
 
 
 /-- One `PoolOwnedSpendStep`-backed holdings update's effect on the
