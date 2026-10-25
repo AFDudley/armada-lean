@@ -156,6 +156,77 @@ theorem transferEffects_totalPayouts_le (allocs : List Allocation) (surplus : Na
       (fun i => indices.isEmpty || i ∈ indices))
     (afford_sum_le allocs surplus)
 
+/-- Splitting `(indexed, allocation, paid)` triples into a "kept" record
+    (amount reduced by `paid` when selected) and an "exited" record
+    (amount `paid`, only when selected) conserves the total amount —
+    PROVIDED every selected triple's own `paid` never exceeds its own
+    allocation's amount (so the `Nat` subtraction never underflows). The
+    generic shape behind `transferEffects`'s own `(newAllocations,
+    exitAllocations, totalPayouts)` split. -/
+theorem indexed_conservation {α : Type} (l : List (α × Allocation × Nat)) (sel : α → Bool)
+    (hle : ∀ p ∈ l, p.2.2 ≤ p.2.1.amount) :
+    listSum ((l.map fun p => if sel p.1 then { p.2.1 with amount := p.2.1.amount - p.2.2 }
+        else p.2.1).map Allocation.amount) +
+      listSum ((l.filterMap fun p =>
+        if sel p.1 then some ({ p.2.1 with amount := p.2.2 } : Allocation) else none).map
+        Allocation.amount) =
+      listSum (l.map fun p => p.2.1.amount) := by
+  induction l with
+  | nil => simp [listSum]
+  | cons x xs ih =>
+    have hxle : x.2.2 ≤ x.2.1.amount := hle x List.mem_cons_self
+    have hxsle : ∀ p ∈ xs, p.2.2 ≤ p.2.1.amount := fun p hp => hle p (List.mem_cons_of_mem x hp)
+    by_cases hsel : sel x.1 = true
+    · simp only [List.map_cons, List.filterMap_cons, if_pos hsel, listSum]
+      have := ih hxsle
+      dsimp only at this ⊢
+      omega
+    · simp only [List.map_cons, List.filterMap_cons, if_neg hsel, listSum]
+      have := ih hxsle
+      dsimp only at this ⊢
+      omega
+
+/-- `transferEffects`'s own split (`newAllocations`, `exitAllocations`,
+    `totalPayouts`) conserves the total amount: `instantiate
+    `indexed_conservation` on `transferEffects`'s own `indexed` list,
+    using `afford_le` for the "paid never exceeds amount" side
+    condition. -/
+theorem transferEffects_conservation (allocs : List Allocation) (surplus : Nat)
+    (indices : List Nat) :
+    listSum ((transferEffects allocs surplus indices).1.map Allocation.amount) +
+      (transferEffects allocs surplus indices).2.2 =
+      listSum (allocs.map Allocation.amount) := by
+  have hconv := indexed_conservation
+    ((List.range allocs.length).zip (allocs.zip (afford allocs surplus)))
+    (fun i => indices.isEmpty || i ∈ indices)
+    (fun p hp => afford_le allocs surplus p.2 (List.of_mem_zip hp).2)
+  have hmap : ((List.range allocs.length).zip (allocs.zip (afford allocs surplus))).map
+      (fun (p : Nat × Allocation × Nat) => p.2.1) = allocs := by
+    have h1 : ((List.range allocs.length).zip (allocs.zip (afford allocs surplus))).map
+        (fun (p : Nat × Allocation × Nat) => p.2) = allocs.zip (afford allocs surplus) := by
+      apply List.map_snd_zip
+      rw [List.length_zip, afford_length]
+      simp
+    calc ((List.range allocs.length).zip (allocs.zip (afford allocs surplus))).map
+          (fun (p : Nat × Allocation × Nat) => p.2.1)
+        = (((List.range allocs.length).zip (allocs.zip (afford allocs surplus))).map
+            (fun (p : Nat × Allocation × Nat) => p.2)).map Prod.fst := by
+          rw [List.map_map]; rfl
+      _ = (allocs.zip (afford allocs surplus)).map Prod.fst := by rw [h1]
+      _ = allocs := by
+        apply List.map_fst_zip
+        rw [afford_length]
+        exact Nat.le_refl _
+  have hmap2 : ((List.range allocs.length).zip (allocs.zip (afford allocs surplus))).map
+      (fun (p : Nat × Allocation × Nat) => p.2.1.amount) = allocs.map Allocation.amount := by
+    have hc := congrArg (List.map Allocation.amount) hmap
+    rwa [List.map_map] at hc
+  exact hconv.trans (congrArg listSum hmap2)
+
+
+
+
+
 /-- Every allocation `transferEffects` actually pays out now shares its
     destination with, and is paid no more than, some allocation already
     recorded in the original list (clause 24, `MultiAssetHolder.sol:135-191`:
@@ -228,6 +299,219 @@ theorem transferEffects_newAllocations_length (allocs : List Allocation) (surplu
   rw [List.length_map, List.length_zip, List.length_zip, List.length_range,
     afford_length allocs surplus]
   omega
+
+/-- `transferEffects_newAllocations_getD`, for the WHOLE allocation, not
+    just its own `.amount`: at a selected index, destination/type/
+    metadata survive unchanged too (only `.amount` moves). What
+    `afford_exchange` (below) needs to recover `transferEffects`'s own
+    `newAllocations` LIST, not just one of its own fields. -/
+theorem transferEffects_newAllocations_getD_full (allocs : List Allocation) (surplus : Nat)
+    (indices : List Nat) (i : Nat) (hi : i < allocs.length) :
+    (transferEffects allocs surplus indices).1.getD i Allocation.default =
+      { allocs.getD i Allocation.default with
+        amount := if indices.isEmpty || i ∈ indices then
+          (allocs.getD i Allocation.default).amount - (afford allocs surplus).getD i 0
+        else (allocs.getD i Allocation.default).amount } := by
+  have hlen : (afford allocs surplus).length = allocs.length := afford_length allocs surplus
+  have hrange : (List.range allocs.length)[i]? = some i := List.getElem?_range hi
+  have halloc : allocs[i]? = some (allocs.getD i Allocation.default) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : allocs[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some a => simp
+  have hpaid : (afford allocs surplus)[i]? = some ((afford allocs surplus).getD i 0) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : (afford allocs surplus)[i]? with
+    | none => rw [List.getElem?_eq_none_iff] at h; omega
+    | some p => simp
+  have hzip1 := (List.getElem?_zip_eq_some
+    (z := (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0))).mpr ⟨halloc, hpaid⟩
+  have hzip2 := (List.getElem?_zip_eq_some
+    (z := (i, (allocs.getD i Allocation.default, (afford allocs surplus).getD i 0)))).mpr
+    ⟨hrange, hzip1⟩
+  unfold transferEffects
+  dsimp only
+  rw [List.getD_eq_getElem?_getD, List.getElem?_map, hzip2]
+  simp only [Option.map_some, Option.getD_some]
+  split <;> rfl
+
+/-- `transferEffects`'s own `newAllocations`, selecting only index `0`:
+    the head's amount drops by its own `afford` payout, the tail is
+    untouched (no other index is selected). What `afford_exchange`
+    (below) needs to unfold `transferEffects (a :: as) surplus [0]`
+    without re-deriving `List.range`/`.zip`/`.map`'s own interplay each
+    time. -/
+theorem transferEffects_newAllocations_cons_zero (a : Allocation) (as : List Allocation)
+    (surplus : Nat) :
+    (transferEffects (a :: as) surplus [0]).1 =
+      { a with amount := a.amount - min a.amount surplus } :: as := by
+  have hlen1 : (transferEffects (a :: as) surplus [0]).1.length = (a :: as).length :=
+    transferEffects_newAllocations_length (a :: as) surplus [0]
+  have hlen2 : (({ a with amount := a.amount - min a.amount surplus } :: as) :
+      List Allocation).length = (a :: as).length := by simp
+  apply List.ext_get (hlen1.trans hlen2.symm)
+  intro n h1 h2
+  have hfull := transferEffects_newAllocations_getD_full (a :: as) surplus [0] n (by simpa using h2)
+  have hget1 : (transferEffects (a :: as) surplus [0]).1.get ⟨n, h1⟩ =
+      (transferEffects (a :: as) surplus [0]).1.getD n Allocation.default := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h1]; rfl
+  have hget2 : (({ a with amount := a.amount - min a.amount surplus } :: as) :
+      List Allocation).get ⟨n, h2⟩ =
+      (({ a with amount := a.amount - min a.amount surplus } :: as) :
+      List Allocation).getD n Allocation.default := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h2]; rfl
+  rw [hget1, hget2, hfull]
+  cases n with
+  | zero => simp [afford]
+  | succ n' => simp
+
+
+/-- `transferEffects`'s own `newAllocations`, selecting a SUCCESSOR
+    index: the head is untouched (index `0` is never `i' + 1`), and the
+    tail recurses as `transferEffects`'s own call on `as`, one index
+    lower, over the surplus `as`'s own run actually sees (`afford`'s
+    own head payout already subtracted). -/
+theorem transferEffects_newAllocations_cons_succ (a : Allocation) (as : List Allocation)
+    (surplus i' : Nat) :
+    (transferEffects (a :: as) surplus [i' + 1]).1 =
+      a :: (transferEffects as (surplus - min a.amount surplus) [i']).1 := by
+  have hlen1 : (transferEffects (a :: as) surplus [i' + 1]).1.length = (a :: as).length :=
+    transferEffects_newAllocations_length (a :: as) surplus [i' + 1]
+  have hlen2 : (a :: (transferEffects as (surplus - min a.amount surplus) [i']).1).length =
+      (a :: as).length := by
+    simp [transferEffects_newAllocations_length as (surplus - min a.amount surplus) [i']]
+  apply List.ext_get (hlen1.trans hlen2.symm)
+  intro n h1 h2
+  have hfull := transferEffects_newAllocations_getD_full (a :: as) surplus [i' + 1] n
+    (by rw [← hlen2]; exact h2)
+  have hget1 : (transferEffects (a :: as) surplus [i' + 1]).1.get ⟨n, h1⟩ =
+      (transferEffects (a :: as) surplus [i' + 1]).1.getD n Allocation.default := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h1]; rfl
+  have hget2 : (a :: (transferEffects as (surplus - min a.amount surplus) [i']).1).get
+      ⟨n, h2⟩ = (a :: (transferEffects as (surplus - min a.amount surplus) [i']).1).getD
+      n Allocation.default := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h2]; rfl
+  rw [hget1, hget2, hfull]
+  cases n with
+  | zero => simp
+  | succ n' =>
+    have hn'range : n' < as.length := by
+      rw [hlen1] at h1
+      simp only [List.length_cons] at h1
+      omega
+    have hafforD : (afford (a :: as) surplus).getD (n' + 1) 0 =
+        (afford as (surplus - min a.amount surplus)).getD n' 0 := by
+      simp [afford]
+    have hfull2 := transferEffects_newAllocations_getD_full as (surplus - min a.amount surplus)
+      [i'] n' hn'range
+    simp only [List.getD_cons_succ, hafforD, List.mem_singleton] at *
+    rw [hfull2]
+    by_cases hsel : n' = i'
+    · simp [hsel]
+    · have : (n' + 1 = i' + 1) = False := by simp [hsel]
+      simp [this, hsel]
+
+/-- `transferEffects`'s own total payout, selecting a SINGLE index, is
+    exactly `afford`'s own computed amount there — A-02's own two
+    `.transfer [i]`/`.transfer [j]` calls each select one index, so
+    their own `.2.2` reduces to a plain `afford` lookup `afford_exchange`
+    can reason about directly. -/
+theorem transferEffects_totalPayouts_single (allocs : List Allocation) (surplus idx : Nat) :
+    (transferEffects allocs surplus [idx]).2.2 = (afford allocs surplus).getD idx 0 := by
+  induction allocs generalizing surplus idx with
+  | nil => simp [transferEffects, afford, listSum]
+  | cons a as ih =>
+    have hcons := transferEffects_conservation (a :: as) surplus [idx]
+    cases idx with
+    | zero =>
+      rw [transferEffects_newAllocations_cons_zero] at hcons
+      simp only [listSum, List.map_cons] at hcons
+      simp only [afford, List.getD_cons_zero]
+      have hle : min a.amount surplus ≤ a.amount := Nat.min_le_left _ _
+      omega
+    | succ i' =>
+      rw [transferEffects_newAllocations_cons_succ] at hcons
+      have hih := ih (surplus - min a.amount surplus) i'
+      have hcons2 := transferEffects_conservation as (surplus - min a.amount surplus) [i']
+      simp only [listSum, List.map_cons] at hcons
+      simp only [afford, List.getD_cons_succ]
+      omega
+
+/-- `afford`'s own payout at ANY index never exceeds the surplus it
+    started with — stronger than `afford_le` (which bounds a payout by
+    its OWN allocation's amount): this bounds it by the surplus
+    instead, what `afford_exchange` needs to show subtracting a LATER
+    payout from an EARLIER-reduced surplus never underflows. -/
+theorem afford_getD_le_surplus (allocs : List Allocation) (surplus i : Nat) :
+    (afford allocs surplus).getD i 0 ≤ surplus := by
+  induction allocs generalizing surplus i with
+  | nil => simp [afford]
+  | cons a as ih =>
+    cases i with
+    | zero =>
+      show min a.amount surplus ≤ surplus
+      omega
+    | succ i' =>
+      show (afford as (surplus - min a.amount surplus)).getD i' 0 ≤ surplus
+      have := ih (surplus - min a.amount surplus) i'
+      omega
+
+/-- Paying out exactly index `i`'s own `afford`-computed amount, THEN
+    recomputing `afford` on the updated list and the surplus that
+    leaves, gives the SAME value at every OTHER index `k` as the
+    ORIGINAL `afford` run did. The two-call case A-02 needs: paying `i`
+    first never changes what `j` would have been afforded, and vice
+    versa. -/
+theorem afford_exchange (allocs : List Allocation) (surplus : Nat) (i k : Nat) (hik : i ≠ k) :
+    (afford ((transferEffects allocs surplus [i]).1)
+        (surplus - (afford allocs surplus).getD i 0)).getD k 0 =
+      (afford allocs surplus).getD k 0 := by
+  induction allocs generalizing surplus i k with
+  | nil => simp [afford, transferEffects]
+  | cons a as ih =>
+    cases i with
+    | zero =>
+      rw [transferEffects_newAllocations_cons_zero]
+      cases k with
+      | zero => exact absurd rfl hik
+      | succ k' =>
+        have hafford0 : (afford (a :: as) surplus).getD 0 0 = min a.amount surplus := by
+          simp [afford]
+        rw [hafford0]
+        show (afford ({ a with amount := a.amount - min a.amount surplus } :: as)
+          (surplus - min a.amount surplus)).getD (k' + 1) 0 =
+          (afford (a :: as) surplus).getD (k' + 1) 0
+        have hmin0 : min (a.amount - min a.amount surplus) (surplus - min a.amount surplus) = 0 := by
+          omega
+        simp only [afford, hmin0, Nat.sub_zero, List.getD_cons_succ]
+    | succ i' =>
+      rw [transferEffects_newAllocations_cons_succ]
+      have hgeti : (afford (a :: as) surplus).getD (i' + 1) 0 =
+          (afford as (surplus - min a.amount surplus)).getD i' 0 := by
+        simp [afford]
+      cases k with
+      | zero =>
+        rw [hgeti]
+        show min a.amount (surplus - (afford as (surplus - min a.amount surplus)).getD i' 0) =
+          min a.amount surplus
+        have hle := afford_getD_le_surplus as (surplus - min a.amount surplus) i'
+        omega
+      | succ k' =>
+        have hik' : i' ≠ k' := fun h => hik (congrArg Nat.succ h)
+        rw [hgeti]
+        simp only [afford, List.getD_cons_succ]
+        have hle := afford_getD_le_surplus as (surplus - min a.amount surplus) i'
+        have hminEq : min a.amount (surplus -
+            (afford as (surplus - min a.amount surplus)).getD i' 0) = min a.amount surplus := by
+          omega
+        rw [hminEq]
+        have hswap : (surplus - (afford as (surplus - min a.amount surplus)).getD i' 0) -
+            min a.amount surplus =
+            (surplus - min a.amount surplus) -
+              (afford as (surplus - min a.amount surplus)).getD i' 0 := by omega
+        rw [hswap]
+        exact ih (surplus - min a.amount surplus) i' k' hik'
+
 
 
 /-! ## A reusable induction principle over the reachable set -/
@@ -804,7 +1088,152 @@ theorem PoolOwnedSpendStep_frame
       rw [hpre0, applyRecords_preserves_known hvalid_outputs pool.preimageOf qc pre_old hpre_old
         hconsist_old, hpre_old]
 
+/-- One `PoolOwnedSpendStep`-backed holdings update (the shape `.transfer`
+    and `bulkTransferFold` both use) sets the TOUCHED pair's own held
+    value to EXACTLY `remainder` — the fresh remainder note this update
+    writes reads back at its own face value, the same
+    `applyRecords_reads` read-back `PoolOwnedSpendStep_frame`'s own
+    `hrelated` case uses. What A-02 needs: `heldValue` after a
+    `.transfer` call is exactly the surplus that call's own
+    `transferEffects` left behind. -/
+theorem PoolOwnedSpendStep_sets_heldValue
+    (pool pool' : PoolState) (self asset : Nat) (cid : Term) (remainder : Nat)
+    (payoutOutputs : List CommitmentPreimage)
+    (holdings : Nat → Term → Option (Nat × Term))
+    (htokPayout : ∀ pre ∈ payoutOutputs, pre.token = asset)
+    (hmatch : PoolOwnedSpendStep pool self asset (holdings asset cid) payoutOutputs
+      (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)]) pool') :
+    (match (update holdings asset
+        (update (holdings asset) cid
+          (if remainder = 0 then none
+           else some (pool.leaves.length +
+               (payoutOutputs ++ (if remainder = 0 then [] else
+                 [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).length - 1,
+             commitment (Term.val self) asset remainder)))) asset cid with
+      | none => (0 : Nat)
+      | some (_, c) => ((pool'.preimageOf c).map CommitmentPreimage.value).getD 0) = remainder := by
+  by_cases hrem : remainder = 0
+  · unfold update
+    simp [hrem]
+  · have hvalid_outputs : ∀ cp ∈ (payoutOutputs ++
+        (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).map
+        (fun pre => (commitment pre.npk asset pre.value, pre)), hashCommitment cp.2 = cp.1 := by
+      intro cp hcp
+      obtain ⟨pre, hmem, hcpeq⟩ := List.mem_map.mp hcp
+      have htok : pre.token = asset := by
+        rcases List.mem_append.mp hmem with hc1 | hc2
+        · exact htokPayout pre hc1
+        · rw [if_neg hrem] at hc2
+          rw [List.mem_singleton] at hc2
+          exact hc2 ▸ rfl
+      rw [← hcpeq]
+      show hashCommitment pre = commitment pre.npk asset pre.value
+      rw [← htok]
+      rfl
+    have hnz : ¬ isZeroPreimage (⟨Term.val self, asset, remainder⟩ : CommitmentPreimage) :=
+      fun hz => hrem hz.2.1
+    have hmemout : (⟨Term.val self, asset, remainder⟩ : CommitmentPreimage) ∈
+        (payoutOutputs ++
+        (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])) := by
+      rw [if_neg hrem]
+      exact List.mem_append.mpr (Or.inr (List.mem_singleton_self _))
+    have hmemout2 : (commitment (Term.val self) asset remainder,
+        (⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)) ∈
+        (payoutOutputs ++
+        (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).map
+        (fun pre => (commitment pre.npk asset pre.value, pre)) :=
+      List.mem_map.mpr ⟨_, hmemout, rfl⟩
+    rcases hc0 : holdings asset cid with _ | c0
+    · simp only [hc0] at hmatch
+      obtain ⟨w, pub, _hM, hC, _spent', _randomOut, hNonZero, _hCapacity, _hown, htoken, hnewnotes,
+        _hroot, _hmark, _hRandomOut, heq⟩ := hmatch
+      have hrecordseq : ownedOutputRecords w pub = (payoutOutputs ++
+          (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).map
+          (fun pre => (commitment pre.npk asset pre.value, pre)) := by
+        have hstep1 := congrArg
+          (List.map (fun pre => (commitment pre.npk asset pre.value, pre))) hnewnotes
+        rw [← hstep1]
+        unfold ownedOutputRecords ownedNewNotes
+        rw [List.map_ofFn]
+        congr 1
+        funext j
+        congr 1
+        exact (hC.outputs j).trans (by rw [htoken])
+      have hpre0 : pool'.preimageOf = applyRecords pool.preimageOf
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).map
+            (fun pre => (commitment pre.npk asset pre.value, pre))) := by
+        rw [← hrecordseq]
+        exact congrArg PoolState.preimageOf heq
+      unfold update
+      rw [if_pos rfl, if_pos rfl]
+      rw [if_neg hrem]
+      dsimp only
+      rw [hpre0]
+      rw [applyRecords_reads hvalid_outputs pool.preimageOf (commitment (Term.val self) asset remainder)
+        (⟨Term.val self, asset, remainder⟩ : CommitmentPreimage) hmemout2 hnz]
+      simp
+    · simp only [hc0] at hmatch
+      obtain ⟨w, pub, _, hC, _, _, _, hNonZero, _, _, htoken, hnewnotes, _, _, _, _, _, _, heq⟩ := hmatch
+      have hrecordseq : ownedOutputRecords w pub = (payoutOutputs ++
+          (if remainder = 0 then [] else [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).map
+          (fun pre => (commitment pre.npk asset pre.value, pre)) := by
+        have hstep1 := congrArg
+          (List.map (fun pre => (commitment pre.npk asset pre.value, pre))) hnewnotes
+        rw [← hstep1]
+        unfold ownedOutputRecords ownedNewNotes
+        rw [List.map_ofFn]
+        congr 1
+        funext j
+        congr 1
+        exact (hC.outputs j).trans (by rw [htoken])
+      have hpre0 : pool'.preimageOf = applyRecords pool.preimageOf
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨Term.val self, asset, remainder⟩ : CommitmentPreimage)])).map
+            (fun pre => (commitment pre.npk asset pre.value, pre))) := by
+        rw [← hrecordseq]
+        exact congrArg PoolState.preimageOf heq
+      unfold update
+      rw [if_pos rfl, if_pos rfl]
+      rw [if_neg hrem]
+      dsimp only
+      rw [hpre0]
+      rw [applyRecords_reads hvalid_outputs pool.preimageOf (commitment (Term.val self) asset remainder)
+        (⟨Term.val self, asset, remainder⟩ : CommitmentPreimage) hmemout2 hnz]
+      simp
 
+
+
+
+/-- A successful `.transfer` sets `heldValue` to EXACTLY the surplus its
+    own `transferEffects` left behind — the remainder note
+    `PoolOwnedSpendStep_sets_heldValue` already shows reads back at its
+    own face value. What A-02 needs to thread `heldValue` across its own
+    two `.transfer` calls. -/
+theorem transfer_sets_heldValue
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (assetIndex : Nat) (cid claimedStateHash : Term)
+    (outcome : Outcome) (indices : List Nat)
+    (hstep : Step sig appRel actor s (.transfer assetIndex cid claimedStateHash outcome indices) s')
+    (h : assetIndex < outcome.length) :
+    heldValue s' (outcome.get ⟨assetIndex, h⟩).asset cid =
+      heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 := by
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _, _, _, _⟩ := hstep
+  obtain ⟨_hexit, hrest⟩ := hinner
+  obtain ⟨hospend, hholdseq, _hchan⟩ := hrest
+  unfold heldValue
+  rw [hholdseq]
+  exact PoolOwnedSpendStep_sets_heldValue s.pool s'.pool s.self (outcome.get ⟨assetIndex, h⟩).asset cid
+    _ _ s.holdings
+    (fun pre hpre => by
+      obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+      by_cases hamt : a.amount = 0
+      · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+      · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl)
+    hospend
 
 /-- `bulkTransferFold`'s own invariant: if every known holding reads back
     a nonzero, consistent preimage before the fold, the same holds after
