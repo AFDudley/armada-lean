@@ -278,9 +278,9 @@ theorem finalized_outcome_was_concluded_or_challenged
           by_cases hcid : cid' = sourceChannelId'
           · subst hcid
             have hstep0 := hstep
-            obtain ⟨hmode, houtcomeHash, hsa, hidx, _hallocType, hbig, _, _, _, _, _, hsigned, _⟩ :=
+            obtain ⟨hmode, houtcomeHash, hsa, hidx, hallocType, hbig, _, _, _, _, _, hsigned, _⟩ :=
               hstep0
-            obtain ⟨_, _, _, _hta, _, a0, a1, _, _, _, _, hchanseq⟩ := hbig
+            obtain ⟨_, _, _, _hta, _, a0, a1, _, _, _, hsumeq, hchanseq⟩ := hbig
             have hfz : (st.channels cid').finalizesAt ≠ 0 := by
               intro h0
               have hmo : (st.channels cid').mode st.now = .open := by
@@ -301,11 +301,8 @@ theorem finalized_outcome_was_concluded_or_challenged
             · have heqo : o = sourceOutcome' := outcomeHashOf_inj (hohw.trans houtcomeHash)
               subst heqo
               refine Or.inl ⟨fp, candidate, hcf, ?_, _,
-                OutcomeDerivedFrom.reclaimStep sourceAssetIndex' indexOfTargetInSource'
-                  (decodeGuarantee ((o.get ⟨sourceAssetIndex', hsa⟩).allocations.get
-                    ⟨indexOfTargetInSource', hidx⟩).metadata).1
-                  (decodeGuarantee ((o.get ⟨sourceAssetIndex', hsa⟩).allocations.get
-                    ⟨indexOfTargetInSource', hidx⟩).metadata).2 a0 a1 hder, ho2.symm⟩
+                OutcomeDerivedFrom.reclaimStep sourceAssetIndex' indexOfTargetInSource' hsa hidx
+                  hallocType a0 a1 hsumeq hder, ho2.symm⟩
               intro p hp
               have hap := hsig p hp
               unfold AuthorizedBy at hap ⊢
@@ -313,11 +310,8 @@ theorem finalized_outcome_was_concluded_or_challenged
             · have heqo : o = sourceOutcome' := outcomeHashOf_inj (hohw.trans houtcomeHash)
               subst heqo
               refine Or.inr ⟨fp, proof, candidate, challenger, actor0, t0, t1, hcf, hreacht0, hstepc,
-                ?_, _, OutcomeDerivedFrom.reclaimStep sourceAssetIndex' indexOfTargetInSource'
-                  (decodeGuarantee ((o.get ⟨sourceAssetIndex', hsa⟩).allocations.get
-                    ⟨indexOfTargetInSource', hidx⟩).metadata).1
-                  (decodeGuarantee ((o.get ⟨sourceAssetIndex', hsa⟩).allocations.get
-                    ⟨indexOfTargetInSource', hidx⟩).metadata).2 a0 a1 hder, ho2.symm⟩
+                ?_, _, OutcomeDerivedFrom.reclaimStep sourceAssetIndex' indexOfTargetInSource' hsa hidx
+                  hallocType a0 a1 hsumeq hder, ho2.symm⟩
               rw [hchanseq]; unfold update; rw [if_pos rfl]; exact hsh2
           · have h : st'.channels cid' = st.channels cid' := by
               have hstep0 := hstep
