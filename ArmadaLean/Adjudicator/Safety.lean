@@ -3792,6 +3792,353 @@ theorem bulk_conclude_and_transfer_can_happen
     rw [hlen]
     simp [withPositionsFrom]
 
+set_option maxRecDepth 4000 in
+/-- A later `.transfer` call can happen after an earlier `.transfer`
+    call on the SAME channel already left a nonzero remainder: paying
+    one entry of a finalized two-entry outcome does not lock the
+    other. Nitro-2019-219.pdf §5.1's `T(A, B, x)`: "Reduces the funds
+    held in channel A by x... Reduces the amount owed to B in the
+    outcome of A by x" — only B's own entry changes; every OTHER
+    entry's own owed amount, and whatever the channel's own priority-
+    order run (§5.2, the Turbo Value Algorithm, `afford`) left
+    unpaid, stay exactly where that first call left them, so a later
+    `.transfer` can still pay what remains. The second call's own
+    spend witness is built the way `ArmadaLean.PoolSafety.
+    owned_spend_witness_exists`/`leaf_has_merkle_witness` show one
+    always can: the random comes back from `mid.pool.ownedRandomOf`'s
+    own public lookup (`hOwnedRandom`), not from the first call's own
+    local choice of `r1` — any actor reading `mid.pool` recovers the
+    same witness; `.transfer`'s remainder note (`Operations.lean`) is
+    disclosed there exactly because it stays contract-owned. -/
+theorem transfer_after_transfer_can_happen
+    (hashA : HashAssumptions) (sig : SignatureAssumptions)
+    (poolSigLive : PoolSignatureLiveness) (ownedComplete : OwnedProofCompleteness) :
+    ∃ (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
+      (s mid s' : AdjudicatorState) (assetIndex : Nat)
+      (cid claimedStateHash claimedStateHash' : Term)
+      (outcome outcome1 : Outcome) (actor actor' : Actor)
+      (h : assetIndex < outcome.length) (h1 : assetIndex < outcome1.length)
+      (dest1 dest2 : Allocation),
+      _root_.Reachable pool0 ∧
+      Reachable sig (consensusRelation sig) (genesis assets self pool0) s ∧
+      Step sig (consensusRelation sig) actor s
+        (.transfer assetIndex cid claimedStateHash outcome [0]) mid ∧
+      dest1 ∈ (outcome.get ⟨assetIndex, h⟩).allocations ∧ 0 < dest1.amount ∧
+      heldValue mid (outcome1.get ⟨assetIndex, h1⟩).asset cid ≠ 0 ∧
+      Step sig (consensusRelation sig) actor' mid
+        (.transfer assetIndex cid claimedStateHash' outcome1 [1]) s' ∧
+      dest2 ∈ (outcome1.get ⟨assetIndex, h1⟩).allocations ∧ 0 < dest2.amount ∧
+      PoolIsLive s'.pool
+        (commitment dest2.destination (outcome1.get ⟨assetIndex, h1⟩).asset dest2.amount) := by
+  let self : Nat := 0
+  let publicKey : Nat × Nat := (0, 0)
+  let nullifyingKey : Nat := 0
+  let token : Nat := 0
+  let assets : Nat → Prop := fun a => a = token
+  let amount : Nat := 2
+  let fp : FixedPart := ⟨[], 0, 0, 0⟩
+  let cid : Term := channelId fp
+  let note1 : CommitmentPreimage :=
+    ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
+  let pool0 : PoolState :=
+    let leaves' := (_root_.genesis : PoolState).leaves ++ [hashCommitment note1]
+    { (_root_.genesis : PoolState) with
+        live := fun t => if t = token then (0, note1) :: (_root_.genesis : PoolState).live t
+          else (_root_.genesis : PoolState).live t,
+        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
+          else (_root_.genesis : PoolState).held t,
+        leaves := leaves',
+        roots := treeRoot TreeDepth leaves' :: (_root_.genesis : PoolState).roots,
+        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
+  have hValue0 : 0 < amount := by decide
+  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
+  have hCapacity0 : (_root_.genesis : PoolState).leaves.length + 1 ≤ 2 ^ TreeDepth := by decide
+  have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
+    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hCapacity0
+  have hReachPool : _root_.Reachable pool0 :=
+    _root_.Reachable.step _root_.Reachable.genesis hshield
+  have hbitsZero : ∀ n, bitsVal (List.replicate n false) = 0 := by
+    intro n
+    induction n with
+    | zero => rfl
+    | succ k ih => simp [List.replicate_succ, bitsVal, ih]
+  have hbitsOne : bitsVal (true :: List.replicate 119 false) = 1 := by
+    rw [show bitsVal (true :: List.replicate 119 false) =
+        1 + 2 * bitsVal (List.replicate 119 false) from rfl, hbitsZero]
+  let root1 : Term := treeRoot TreeDepth pool0.leaves
+  let pathElements1 : Fin 1 → List (Term × Bool) := fun _ => treePath TreeDepth pool0.leaves 0
+  let npkOut : Fin 1 → Term := fun _ => npk (Term.val self) 0
+  let valueOut : Fin 1 → Nat := fun _ => amount
+  let pub_d : TransactPublic 1 1 :=
+    { merkleRoot := root1, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier nullifyingKey 0,
+      commitmentsOut := fun _ => commitment (npkOut 0) token (valueOut 0) }
+  let depositedNote : CommitmentPreimage := ⟨npk (Term.val self) 0, token, amount⟩
+  let g := genesis assets self pool0
+  let mid1 : AdjudicatorState := { g with
+    poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d) ∨ g.poolSignedBy pk' m' }
+  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
+      (.signNote publicKey (msgHashOf pub_d)) mid1 :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
+  have hsigned : mid1.poolSignedBy publicKey (msgHashOf pub_d) := Or.inl ⟨rfl, rfl⟩
+  obtain ⟨signature, hveri⟩ :=
+    poolSigLive.eddsaCompleteness mid1.poolSignedBy publicKey (msgHashOf pub_d) hsigned
+  have hbitsOne118 : bitsVal (true :: List.replicate 118 false) = 1 := by
+    rw [show bitsVal (true :: List.replicate 118 false) =
+        1 + 2 * bitsVal (List.replicate 118 false) from rfl, hbitsZero]
+  have hbitsTwo : bitsVal (false :: true :: List.replicate 118 false) = 2 := by
+    rw [show bitsVal (false :: true :: List.replicate 118 false) =
+        0 + 2 * bitsVal (true :: List.replicate 118 false) from rfl, hbitsOne118]
+  let w_d : TransactWitness 1 1 :=
+    { token := token, publicKey := publicKey, signature := signature,
+      nullifyingKey := nullifyingKey, randomIn := fun _ => 0, valueIn := fun _ => note1.value,
+      pathElements := pathElements1, leavesIndices := fun _ => 0,
+      npkOut := npkOut, valueOut := valueOut }
+  have hC_d : Constrained w_d pub_d :=
+    { pathLen := fun _ => treePath_length TreeDepth pool0.leaves 0
+      merkle := fun _ => by
+        rw [show commitment (npk (masterPublicKey w_d.publicKey w_d.nullifyingKey) (w_d.randomIn 0))
+          w_d.token (w_d.valueIn 0) = hashCommitment note1 from rfl]
+        exact treePath_correct TreeDepth pool0.leaves 0 (by decide)
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨false :: true :: List.replicate 118 false, by simp,
+        show note1.value = bitsVal (false :: true :: List.replicate 118 false) by
+          rw [hbitsTwo]; show shieldBase 0 amount = 2; decide⟩
+      rangeOut := fun _ => ⟨false :: true :: List.replicate 118 false, by simp, hbitsTwo.symm⟩
+      balance := by
+        show fieldEq (listSum (List.ofFn (fun _ : Fin 1 => note1.value)))
+          (listSum (List.ofFn (fun _ : Fin 1 => amount)))
+        show fieldEq note1.value amount
+        show fieldEq (shieldBase 0 amount) amount
+        unfold fieldEq
+        decide
+      distinct := fun i j hij => absurd (Subsingleton.elim i j) hij
+      sig := hveri }
+  have hRemove_d : removeAll (mid1.pool.live w_d.token) (transactSpentPositions w_d) = some [] := by
+    show removeAll [(0, note1)] [(0, note1)] = some []
+    decide
+  have hNullify_d : markSpent mid1.pool.spent (List.ofFn pub_d.nullifiers) =
+      some (List.ofFn pub_d.nullifiers) := rfl
+  have hidxrec_d : (pub_d.commitmentsOut (0 : Fin 1),
+      (⟨w_d.npkOut 0, w_d.token, w_d.valueOut 0⟩ : CommitmentPreimage)) ∈
+      transactOutputRecords w_d pub_d :=
+    List.mem_ofFn.mpr ⟨0, rfl⟩
+  let mid2 : AdjudicatorState := { mid1 with
+    pool := { mid1.pool with
+      live := fun t => if t = w_d.token
+        then withPositionsFrom mid1.pool.leaves.length (transactAllOutputs w_d) ++
+          ([] : List (Nat × CommitmentPreimage))
+        else mid1.pool.live t,
+      spent := List.ofFn pub_d.nullifiers,
+      leaves := mid1.pool.leaves ++ (transactAllOutputs w_d).map hashCommitment,
+      roots := treeRoot TreeDepth (mid1.pool.leaves ++ (transactAllOutputs w_d).map hashCommitment) ::
+        mid1.pool.roots,
+      preimageOf := applyRecords mid1.pool.preimageOf (transactOutputRecords w_d pub_d),
+      ownedRandomOf := applyOwnedRecords mid1.pool.ownedRandomOf
+        [(pub_d.commitmentsOut (0 : Fin 1), (⟨self, 0⟩ : OwnedDisclosure))] },
+    holdings := update mid1.holdings token (update (mid1.holdings token) cid
+      (some (1, pub_d.commitmentsOut (0 : Fin 1)))) }
+  have hCapacity_d : mid1.pool.leaves.length + 1 ≤ 2 ^ TreeDepth := by
+    show pool0.leaves.length + 1 ≤ 2 ^ TreeDepth
+    show (1 : Nat) + 1 ≤ 2 ^ TreeDepth
+    decide
+  have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) 1 mid2.pool :=
+    ⟨0, rfl, rfl, rfl, by
+      show 1 = mid1.pool.leaves.length + 0
+      show (1 : Nat) = pool0.leaves.length + 0
+      rfl,
+      by decide, by decide, hC_d, [], List.ofFn pub_d.nullifiers,
+      transactOutputRecords w_d pub_d, hCapacity_d,
+      (by show root1 ∈ mid1.pool.roots; show root1 ∈ pool0.roots; exact List.mem_cons_self),
+      hRemove_d, hNullify_d, List.Sublist.refl _, hidxrec_d, rfl⟩
+  have hstep_d : Step sig (consensusRelation sig) (Actor.pool publicKey) mid1
+      (.deposit cid 0 token amount) mid2 := by
+    refine ⟨rfl, rfl, channelId_not_external fp, (by decide),
+      ⟨1, 1, w_d, pub_d, 0, 1, mid2.pool, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact hdstep
+    · exact ⟨rfl, rfl⟩
+  have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
+    reachable_step hreach1 hstep_d
+  let mid3 : AdjudicatorState := { mid2 with now := 1 }
+  have hstep_tick : Step sig (consensusRelation sig) (Actor.nitro 0) mid2 (.tick 1) mid3 :=
+    ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach3 : Reachable sig (consensusRelation sig) g mid3 :=
+    reachable_step hreach2 hstep_tick
+  let recipientPK1 : Nat × Nat := (2, 2)
+  let recipientNK1 : Nat := 2
+  let dest1 : Allocation :=
+    ⟨npk (masterPublicKey recipientPK1 recipientNK1) 0, 1, .simple, 0⟩
+  let recipientPK2 : Nat × Nat := (3, 3)
+  let recipientNK2 : Nat := 3
+  let dest2 : Allocation :=
+    ⟨npk (masterPublicKey recipientPK2 recipientNK2) 0, 1, .simple, 0⟩
+  let outcome : Outcome := [⟨token, [dest1, dest2]⟩]
+  let candidate : VariablePart := ⟨outcome, 0, 0, true⟩
+  let mid4 : AdjudicatorState := { mid3 with
+    channels := update mid3.channels cid
+      { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate.outcome } }
+  have hstep_conclude : Step sig (consensusRelation sig) (Actor.nitro 0) mid3
+      (.conclude fp candidate) mid4 := by
+    refine ⟨?_, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [mid3, mid2, mid1, g, genesis, ChannelStatus.mode, emptyStatus]
+    · intro p hp
+      exact absurd hp List.not_mem_nil
+  have hreach4 : Reachable sig (consensusRelation sig) g mid4 :=
+    reachable_step hreach3 hstep_conclude
+  have hassetIdx : (0 : Nat) < outcome.length := by decide
+  have hfinalized : (mid4.channels cid).mode mid4.now = .finalized := by
+    show ((update mid3.channels cid
+        { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate.outcome }) cid).mode mid3.now = .finalized
+    unfold update
+    simp [ChannelStatus.mode, mid3]
+  have hheld2 : heldValue mid2 token cid = amount :=
+    deposit_sets_heldValue sig (consensusRelation sig) (Actor.pool publicKey) mid1 mid2 cid 0
+      token amount hstep_d rfl
+  have hheld4 : heldValue mid4 token cid = amount := hheld2
+  -- First transfer: pays dest1 out of the deposited note, leaving a
+  -- nonzero remainder note worth dest2.amount.
+  let rootT : Term := treeRoot TreeDepth mid4.pool.leaves
+  let pathElements2 : Fin 1 → List (Term × Bool) := fun _ => treePath TreeDepth mid4.pool.leaves 1
+  let ownerField : Nat := 0
+  let randomIn2 : Fin 1 → Nat := fun _ => 0
+  let valueIn2 : Fin 1 → Nat := fun _ => amount
+  let leavesIndices2 : Fin 1 → Nat := fun _ => 1
+  let r1 : Nat := 1
+  let npkOut2 : Fin 2 → Term := fun j => if j = 0 then dest1.destination else npk (Term.val self) r1
+  let valueOut2 : Fin 2 → Nat := fun j => if j = 0 then dest1.amount else 1
+  let pub_t1 : TransactOwnedPublic 1 2 :=
+    { merkleRoot := rootT, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier ownerField (leavesIndices2 0),
+      commitmentsOut := fun j => commitment (npkOut2 j) token (valueOut2 j),
+      ownerField := ownerField }
+  let w_t1 : TransactOwnedWitness 1 2 :=
+    { token := token, randomIn := randomIn2, valueIn := valueIn2, pathElements := pathElements2,
+      leavesIndices := leavesIndices2, npkOut := npkOut2, valueOut := valueOut2 }
+  have hOC1 : OwnedConstrained w_t1 pub_t1 :=
+    { pathLen := fun _ => treePath_length TreeDepth mid4.pool.leaves 1
+      merkle := fun _ => by
+        rw [show commitment (npk (Term.val pub_t1.ownerField) (w_t1.randomIn 0)) w_t1.token
+          (w_t1.valueIn 0) = hashCommitment depositedNote from rfl]
+        exact treePath_correct TreeDepth mid4.pool.leaves 1 (by decide)
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun _ => ⟨false :: true :: List.replicate 118 false, by simp, hbitsTwo.symm⟩
+      rangeOut := fun j => by
+        match j with
+        | 0 => exact ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+        | 1 => exact ⟨true :: List.replicate 119 false, by simp, hbitsOne.symm⟩
+      balance := by
+        show fieldEq (listSum (List.ofFn (fun _ : Fin 1 => amount)))
+          (listSum (List.ofFn valueOut2))
+        show fieldEq amount (listSum (List.ofFn valueOut2))
+        unfold fieldEq
+        decide }
+  have hNonZero_t1 : ∀ j : Fin 2, ¬ isZeroPreimage
+      (⟨w_t1.npkOut j, w_t1.token, w_t1.valueOut j⟩ : CommitmentPreimage) := by
+    intro j hz
+    have hcase : j.val = 0 ∨ j.val = 1 := by have := j.isLt; omega
+    rcases hcase with hv | hv
+    · have hj0 : j = 0 := Fin.ext hv
+      rw [hj0] at hz
+      have h1 : dest1.amount = 0 := hz.2.1
+      simp [dest1] at h1
+    · have hj1 : j = 1 := Fin.ext hv
+      rw [hj1] at hz
+      have h1 : (1 : Nat) = 0 := hz.2.1
+      omega
+  have hCapacity_t1 : mid4.pool.leaves.length + 2 ≤ 2 ^ TreeDepth := by
+    show mid1.pool.leaves.length + 1 + 2 ≤ 2 ^ TreeDepth
+    show pool0.leaves.length + 1 + 2 ≤ 2 ^ TreeDepth
+    show (1 : Nat) + 1 + 2 ≤ 2 ^ TreeDepth
+    decide
+  have hcEq4 : mid4.holdings token cid = some (1, pub_d.commitmentsOut (0 : Fin 1)) := by
+    show (update mid1.holdings token (update (mid1.holdings token) cid
+      (some (1, pub_d.commitmentsOut (0 : Fin 1))))) token cid = some (1, pub_d.commitmentsOut (0 : Fin 1))
+    unfold update
+    rw [if_pos rfl, if_pos rfl]
+  have hRemove_t1 : removeAll (mid4.pool.live token) (ownedSpentPositions pub_t1 w_t1) = some [] := by
+    show removeAll [(1, depositedNote)] [(1, depositedNote)] = some []
+    decide
+  have hNullify_t1 : markSpent mid4.pool.spent (List.ofFn pub_t1.nullifiers) =
+      some (nullifier ownerField (leavesIndices2 0) :: mid4.pool.spent) := by
+    show markSpent [nullifier nullifyingKey 0] [nullifier ownerField (leavesIndices2 0)] =
+      some (nullifier ownerField (leavesIndices2 0) :: [nullifier nullifyingKey 0])
+    have hnullseparate : nullifier ownerField (leavesIndices2 0) ≠ nullifier nullifyingKey 0 := by
+      intro heqn
+      have := Term.val.inj (Term.hash2_inj heqn).2
+      exact absurd this (by decide)
+    unfold markSpent
+    rw [if_neg (by simpa using hnullseparate)]
+    rfl
+  let dest1Note : CommitmentPreimage := ⟨dest1.destination, token, 1⟩
+  let remainderNote : CommitmentPreimage := ⟨npk (Term.val self) r1, token, 1⟩
+  let mid5 : AdjudicatorState := { mid4 with
+    pool := { mid4.pool with
+      live := fun t => if t = token
+        then withPositionsFrom mid4.pool.leaves.length [dest1Note, remainderNote] ++
+          ([] : List (Nat × CommitmentPreimage))
+        else mid4.pool.live t,
+      spent := nullifier ownerField (leavesIndices2 0) :: mid4.pool.spent,
+      leaves := mid4.pool.leaves ++ [commitment dest1.destination token 1,
+        commitment (npk (Term.val self) r1) token 1],
+      roots := treeRoot TreeDepth (mid4.pool.leaves ++ [commitment dest1.destination token 1,
+        commitment (npk (Term.val self) r1) token 1]) :: mid4.pool.roots,
+      preimageOf := applyRecords mid4.pool.preimageOf (ownedOutputRecords w_t1 pub_t1),
+      ownedRandomOf := applyOwnedRecords mid4.pool.ownedRandomOf
+        [(pub_t1.commitmentsOut (1 : Fin 2), (⟨ownerField, r1⟩ : OwnedDisclosure))] },
+    holdings := update mid4.holdings token (update (mid4.holdings token) cid
+      (some (mid4.pool.leaves.length + 1, commitment (npk (Term.val self) r1) token 1))),
+    channels := update mid4.channels cid
+      { mid4.channels cid with
+        outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
+          if i ≠ 0 then exit else { exit with allocations := [{ dest1 with amount := 0 }, dest2] }) } }
+  have hospend1 : PoolOwnedSpendStep mid4.pool self token (mid4.holdings token cid)
+      [dest1Note] [remainderNote] mid5.pool := by
+    rw [hcEq4]
+    refine ⟨w_t1, pub_t1, by decide, hOC1, [], _, (fun _ => r1), hNonZero_t1, hCapacity_t1, rfl,
+      rfl, rfl, rfl, rfl, ?_, hRemove_t1, hNullify_t1,
+      (fun j => by
+        obtain ⟨jv, hjv⟩ := j
+        have hjv0 : jv = 0 := by simp at hjv; omega
+        subst hjv0
+        rfl), rfl⟩
+    · show rootT ∈ mid4.pool.roots
+      show rootT ∈ mid2.pool.roots
+      show rootT ∈ (treeRoot TreeDepth (mid1.pool.leaves ++ (transactAllOutputs w_d).map
+        hashCommitment) :: mid1.pool.roots)
+      exact List.mem_cons_self
+  have hstateHash : (mid4.channels cid).stateHash = Term.val 0 := by
+    show ((update mid3.channels cid
+      { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate.outcome }) cid).stateHash = Term.val 0
+    unfold update
+    rw [if_pos rfl]
+  have houtcomeHash : (mid4.channels cid).outcomeHash = outcomeHashOf outcome := by
+    show ((update mid3.channels cid
+      { turnNumRecord := 0, finalizesAt := mid3.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate.outcome }) cid).outcomeHash = outcomeHashOf outcome
+    unfold update
+    rw [if_pos rfl]
+  have htransferEffects1 : transferEffects [dest1, dest2] amount [0] =
+      ([{ dest1 with amount := 0 }, dest2], [dest1], 1) := by
+    unfold transferEffects afford
+    decide
+  have hstep_t1 : Step sig (consensusRelation sig) (Actor.nitro 0) mid4
+      (.transfer 0 cid (Term.val 0) outcome [0]) mid5 := by
+    refine ⟨hassetIdx, hfinalized, hstateHash, houtcomeHash, trivial, ?_, rfl, rfl, rfl, rfl, rfl⟩
+    have hget : outcome.get ⟨0, hassetIdx⟩ = ⟨token, [dest1, dest2]⟩ := rfl
+    rw [hget, hheld4, htransferEffects1]
+    refine ⟨by decide, r1, ?_⟩
+    simp only [Nat.sub_self]
+    exact ⟨hospend1, rfl, rfl⟩
+  sorry
+
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
     interface: `AdjudicatorState` has no raw-balance field anywhere, and
