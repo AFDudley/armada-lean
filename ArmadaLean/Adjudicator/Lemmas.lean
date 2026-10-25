@@ -2347,6 +2347,83 @@ theorem deposit_merge_sets_heldValue
   rw [hreadM, hpre_old]
   simp [hvalOutSum, hvalOld', hvalNewIn']
 
+
+/-- A successful `.deposit` leaves `heldValue` UNCHANGED at every OTHER
+    `(asset, channelId)` pair: `update` only ever touches the ONE pair
+    the call names, and `applyRecords_preserves_known` carries any
+    OTHER already-known preimage through the deposit's own disclosure
+    batch unscathed. The frame half of `deposit_effect` (`Safety.lean`,
+    A-08), paired with `deposit_sets_heldValue`/
+    `deposit_merge_sets_heldValue` for the touched pair itself. -/
+theorem deposit_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (channelId : Term) (expectedHeld asset amount : Nat)
+    (hstep : Step sig appRel actor s (.deposit channelId expectedHeld asset amount) s')
+    (hinv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+    (asset' : Nat) (cid' : Term) (hne : (asset', cid') ≠ (asset, channelId)) :
+    heldValue s' asset' cid' = heldValue s asset' cid' := by
+  obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, hmatch⟩ := hinner
+  obtain ⟨_r, _hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent', records, hCapacity,
+    hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
+  have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+    fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+  have hchain : ∀ qc pre, s.pool.preimageOf qc = some pre → hashCommitment pre = qc →
+      midPool.preimageOf qc = some pre := fun qc pre hpre hconsist => by
+    rw [heq]; exact applyRecords_preserves_known hvalid s.pool.preimageOf qc pre hpre hconsist
+  unfold heldValue
+  rcases hh : s.holdings asset channelId with _ | oldHolding
+  · rw [hh] at hmatch
+    obtain ⟨hpoolEq, hholdseq⟩ := hmatch
+    rw [hholdseq]
+    unfold update
+    by_cases ha : asset' = asset
+    · subst ha
+      by_cases hcid : cid' = channelId
+      · subst hcid; exact absurd rfl hne
+      · rw [if_pos rfl, if_neg hcid]
+        rcases hh' : s.holdings asset' cid' with _ | hpair
+        · rfl
+        · obtain ⟨qpos, qc⟩ := hpair
+          obtain ⟨pre_old, hpre_old, _hval_old, hconsist_old⟩ := hinv asset' cid' qpos qc hh'
+          dsimp only; rw [hpoolEq, hchain qc pre_old hpre_old hconsist_old, hpre_old]
+    · rw [if_neg ha]
+      rcases hh' : s.holdings asset' cid' with _ | hpair
+      · rfl
+      · obtain ⟨qpos, qc⟩ := hpair
+        obtain ⟨pre_old, hpre_old, _hval_old, hconsist_old⟩ := hinv asset' cid' qpos qc hh'
+        dsimp only; rw [hpoolEq, hchain qc pre_old hpre_old hconsist_old, hpre_old]
+  · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
+    rw [hh] at hmatch
+    obtain ⟨merged, mergedPos, hmerge, hholdseq⟩ := hmatch
+    obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r', randomOut', hNonZero', hCapacity',
+      hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
+      hremove', hnullify', _hrandomOut', heq'⟩ := hmerge
+    have hchain2 : ∀ qc pre, s.pool.preimageOf qc = some pre → hashCommitment pre = qc →
+        s'.pool.preimageOf qc = some pre := fun qc pre hpre hconsist => by
+      rw [heq']
+      exact applyRecords_preserves_known (ownedOutputRecords_valid hC') midPool.preimageOf qc pre
+        (hchain qc pre hpre hconsist) hconsist
+    rw [hholdseq]
+    unfold update
+    by_cases ha : asset' = asset
+    · subst ha
+      by_cases hcid : cid' = channelId
+      · subst hcid; exact absurd rfl hne
+      · rw [if_pos rfl, if_neg hcid]
+        rcases hh' : s.holdings asset' cid' with _ | hpair
+        · rfl
+        · obtain ⟨qpos, qc⟩ := hpair
+          obtain ⟨pre_old2, hpre_old2, _hval_old2, hconsist_old2⟩ := hinv asset' cid' qpos qc hh'
+          dsimp only; rw [hchain2 qc pre_old2 hpre_old2 hconsist_old2, hpre_old2]
+    · rw [if_neg ha]
+      rcases hh' : s.holdings asset' cid' with _ | hpair
+      · rfl
+      · obtain ⟨qpos, qc⟩ := hpair
+        obtain ⟨pre_old2, hpre_old2, _hval_old2, hconsist_old2⟩ := hinv asset' cid' qpos qc hh'
+        dsimp only; rw [hchain2 qc pre_old2 hpre_old2 hconsist_old2, hpre_old2]
+
 /-- A channel id is never an external (address-sized) destination:
     `channelId fp` is always a `Term.hash` term (`channelIdOf`'s own
     definition, `Assumptions.lean`), and `isExternal` names only

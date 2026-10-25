@@ -479,7 +479,14 @@ theorem transfer_order_independent_for_simple_allocations
     `challenge`/`checkpoint`/`conclude` step either raises `fp`'s own
     `turnNumRecord`, leaves it the same, or (only `conclude`) drops it
     to `0` while finalizing the channel in the same step; no other call
-    touches it at all.
+    touches it at all. Needs `0 < s.now`: `conclude` writes `finalizesAt
+    := s.now` (`Operations.lean`'s `.conclude` case), and the model
+    allows `s.now = 0` (`tick` need never be called), at which
+    `finalizesAt = 0` reads as `Open`, not `Finalized` — the deployed
+    contract instead writes `block.timestamp`, always a positive Unix
+    time on a real chain (`ForceMove.sol:160-167`,
+    `ChannelData(0, uint48(block.timestamp), bytes32(0),
+    NitroUtils.hashOutcome(...))`).
     Quotes: `DOC/0020:11` "Each state has a version number, with
     greater version numbers superceding lesser ones." `DOC/0020:19-21`
     "The only things enforced by the core protocol are: the rule that
@@ -501,7 +508,10 @@ theorem transfer_order_independent_for_simple_allocations
 theorem turn_number_record_monotone
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (cid : Term)
+    (hreach : Reachable sig appRel (genesis assets self pool0) s)
+    (hnowpos : 0 < s.now)
     (hstep : Step sig appRel actor s call s') :
     ((s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord ∨
       (s'.channels cid).turnNumRecord = (s.channels cid).turnNumRecord ∨
@@ -511,7 +521,116 @@ theorem turn_number_record_monotone
     (∀ fp proof candidate challenger, call = .challenge fp proof candidate challenger →
       channelId fp = cid → (s.channels cid).mode s.now = .challenge →
       (s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord) := by
-  sorry
+  cases call with
+  | deposit channelId0 expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, _, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | challenge fp proof candidate challenger =>
+    obtain ⟨hprecond, _, _, _, hchan, _, _, _, _, hnow, _, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc
+        rw [hchan]; unfold update; rw [if_pos rfl]
+        rcases hmode : (s.channels (channelId fp)).mode s.now with _ | _ | _
+        · rw [hmode] at hprecond; dsimp only; omega
+        · rw [hmode] at hprecond; dsimp only; omega
+        · rw [hmode] at hprecond; exact absurd hprecond id
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq; exact absurd heq (by simp)
+    · intro fp' proof' candidate' challenger' heq hcc hmode
+      injection heq with hfp hproof hcand hchallenger
+      subst hfp; subst hcand
+      rw [hcc] at hprecond
+      rw [hmode] at hprecond
+      rw [hchan]; unfold update; rw [if_pos hcc.symm]
+      omega
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, hprecond, _, hchan, _, _, _, _, _, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc; rw [hchan]; unfold update; rw [if_pos rfl]; left; omega
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq hcc
+      injection heq with hfp hproof hcand
+      subst hfp; subst hcand
+      rw [hcc] at hprecond
+      rw [hchan]; unfold update; rw [if_pos hcc.symm]
+      omega
+    · intro fp' proof' candidate' challenger' heq; exact absurd heq (by simp)
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, hchan, _, _, _, _, hnow, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc
+        right; right
+        rw [hchan]; unfold update; rw [if_pos rfl]
+        refine ⟨rfl, ?_⟩
+        unfold ChannelStatus.mode
+        rw [hnow]
+        dsimp only
+        rw [if_neg (by omega), if_pos (by omega)]
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq; exact absurd heq (by simp)
+    · intro fp' proof' candidate' challenger' heq; exact absurd heq (by simp)
+  | transfer assetIndex cid0 claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨_hmatch, _hholdseq, hchan⟩ := hrest
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]; unfold update; by_cases hcc : cid = cid0 <;> simp [hcc]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, hrest, _, _, _, _, _, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hchan⟩ := hrest
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]; unfold update; by_cases hcc : cid = sourceChannelId <;> simp [hcc]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | bulkTransferAllAssets channelId0 outcome claimedStateHash =>
+    obtain ⟨_, _, _, newOutcome, hfold, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]; unfold update; by_cases hcc : cid = channelId0 <;> simp [hcc]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, newOutcome, hfold, hchan, _, _, hnow, _, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc
+        right; right
+        rw [hchan]; unfold update; rw [if_pos rfl]
+        refine ⟨rfl, ?_⟩
+        unfold ChannelStatus.mode
+        rw [hnow]
+        dsimp only
+        rw [if_neg (by omega), if_pos (by omega)]
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq; exact absurd heq (by simp)
+    · intro fp' proof' candidate' challenger' heq; exact absurd heq (by simp)
+  | tick newNow =>
+    obtain ⟨_, _, _, _, hchan, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | sign p d =>
+    obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [congrFun hchan cid]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | signNote pk msgHash =>
+    obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [congrFun hchan cid]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+
 
 /-- A-04 — finalization is permanent and fixes the state: once `cid` is
     finalized at `s`, it stays finalized at every state `AppliesAll`
@@ -731,7 +850,13 @@ theorem deposit_wrong_expected_held_fails
     `deposit_merge_sets_heldValue` (`Lemmas.lean`) to a full statement,
     adding the frame condition those two theorems do not state — every
     OTHER `(asset, channel)` held value is unchanged, and no channel
-    status changes.
+    status changes. Needs `Reachable`: the MERGE branch reads the OLD
+    held value off `s.pool.preimageOf`, which only reads back the
+    actual value once `holdings_preimage_nonzero_step`'s own invariant
+    (`Lemmas.lean`) guarantees the holding's commitment has a disclosed
+    preimage at all — a bare `Step` hypothesis does not rule out an
+    adversarial `s` where `s.holdings asset cid` already names a
+    commitment nobody has disclosed yet.
     Quotes: `N19:165-168` "The deposit operation, DA(x), is an on-chain
     operation used to increase A's balance by x coins. There are no
     restrictions on who can deposit coins for an address, but the
@@ -743,13 +868,33 @@ theorem deposit_wrong_expected_held_fails
 theorem deposit_effect
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (self : Nat) (pool0 : PoolState)
     (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (expectedHeld asset amount : Nat)
+    (hreach : Reachable sig appRel (genesis assets self pool0) s)
     (hstep : Step sig appRel actor s (.deposit cid expectedHeld asset amount) s') :
     heldValue s' asset cid = heldValue s asset cid + amount ∧
     (∀ asset' cid', (asset', cid') ≠ (asset, cid) →
       heldValue s' asset' cid' = heldValue s asset' cid') ∧
     s'.channels = s.channels := by
-  sorry
+  have hinv := reachable_preserves
+    (P := fun s'' => ∀ qasset qcid qpos qc, s''.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre, s''.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
+    (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
+    (fun actor call s1 s2 hP hstep => holdings_preimage_nonzero_step sig appRel actor s1 s2 call hP hstep)
+    hreach
+  have hchan : s'.channels = s.channels := by
+    obtain ⟨_, _, _, _, _, h, _, _, _, _, _⟩ := hstep
+    exact h
+  refine ⟨?_, fun asset' cid' hne => deposit_frame sig appRel actor s s' cid expectedHeld asset
+    amount hstep hinv asset' cid' hne, hchan⟩
+  rcases hh : s.holdings asset cid with _ | ⟨oldPos, oldHolding⟩
+  · rw [deposit_sets_heldValue sig appRel actor s s' cid expectedHeld asset amount hstep hh]
+    unfold heldValue
+    rw [hh]
+    dsimp only
+    omega
+  · exact deposit_merge_sets_heldValue sig appRel actor s s' cid expectedHeld asset amount hstep
+      hinv oldPos oldHolding hh
 
 
 /-- A-10 — `transfer` never pays a guarantee allocation: restates
