@@ -441,6 +441,59 @@ theorem applyOwnedRecords_preserves_consistency {reg : PreimageRegistry} {rreg :
     · intro cd' hcd'
       exact hvalid cd' (List.mem_cons_of_mem (c, d) hcd')
 
+/-- Applying a valid owned-disclosure batch to a registry that already
+    reads `⟨self, r⟩` at `c` (consistently, `reg c = some pre` with
+    `pre.npk = npk (Term.val self) r`) still reads `⟨self, r⟩` at `c`
+    afterward: any entry in the batch sharing key `c` must, by `hvalid`
+    and `npk_inj`, carry the SAME pair back — the `ownedRandomOf`
+    sibling of `applyRecords_preserves_known`. -/
+theorem applyOwnedRecords_preserves_known {reg : PreimageRegistry}
+    {records : List (Term × OwnedDisclosure)}
+    (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
+      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
+    (rreg : OwnedRandomRegistry) (c : Term) (self r : Nat) (pre : CommitmentPreimage)
+    (hknown : rreg c = some ⟨self, r⟩) (hreg : reg c = some pre)
+    (hnpk : pre.npk = npk (Term.val self) r) :
+    applyOwnedRecords rreg records c = some ⟨self, r⟩ := by
+  induction records generalizing rreg with
+  | nil => exact hknown
+  | cons cd rest ih =>
+    obtain ⟨c0, d0⟩ := cd
+    unfold applyOwnedRecords
+    apply ih (fun cd' hcd' => hvalid cd' (List.mem_cons_of_mem _ hcd'))
+    exact recordOwnedStep_preserves_known (hvalid (c0, d0) List.mem_cons_self) hknown hreg hnpk
+
+/-- Applying a valid owned-disclosure batch that names `(c, d)` reads back
+    `d` at key `c` afterward — the `ownedRandomOf` sibling of
+    `applyRecords_reads` (no zero-skip here: `recordOwnedStep` skips
+    nothing, `recordOwnedStep`'s own module comment). -/
+theorem applyOwnedRecords_reads {reg : PreimageRegistry}
+    {records : List (Term × OwnedDisclosure)}
+    (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
+      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
+    (rreg : OwnedRandomRegistry) (c : Term) (d : OwnedDisclosure)
+    (hmem : (c, d) ∈ records) :
+    applyOwnedRecords rreg records c = some d := by
+  induction records generalizing rreg with
+  | nil => simp at hmem
+  | cons cd0 rest ih =>
+    obtain ⟨c0, d0⟩ := cd0
+    unfold applyOwnedRecords
+    rcases List.mem_cons.mp hmem with heq | hmem'
+    · injection heq with hc hd
+      subst hc; subst hd
+      obtain ⟨pre, hreg, hnpk⟩ := hvalid (c, d) List.mem_cons_self
+      have hstep : recordOwnedStep rreg c d c = some d := by
+        unfold recordOwnedStep; rw [if_pos rfl]
+      have := applyOwnedRecords_preserves_known
+        (fun cd' hcd' => hvalid cd' (List.mem_cons_of_mem _ hcd'))
+        (recordOwnedStep rreg c d) c d.ownerField d.random pre hstep hreg hnpk.symm
+      exact this
+    · exact ih (fun cd' hcd' => hvalid cd' (List.mem_cons_of_mem _ hcd')) (recordOwnedStep rreg c0 d0)
+        hmem'
+
+
+
 /-! ### Pool state -/
 
 /-- The pool's state, at the level this model needs. `live t` is the model's ghost
