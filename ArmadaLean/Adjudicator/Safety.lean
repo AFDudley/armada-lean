@@ -426,11 +426,19 @@ theorem reclaim_value_neutral
   sorry
 
 
-/-- A-13 — channel value leaves only through `.transfer` of a finalized
-    channel: whenever a `Step` lowers a channel's own held value, that
-    step is a `.transfer` on that SAME channel, and the channel was
-    already finalized when it ran. No other call can ever lower a
-    channel's collateral.
+/-- A-13 — channel value leaves only through a `.transfer`/bulk payout of
+    a finalized channel: whenever a `Step` lowers a channel's own held
+    value, that step is `.transfer`, `.bulkTransferAllAssets` or
+    `.bulkConcludeAndTransferAllAssets` on that SAME channel, and the
+    channel was already finalized when it ran (for the two bulk calls,
+    "already finalized" covers `.bulkConcludeAndTransferAllAssets`'s own
+    `.conclude` sub-step too, since that sub-step runs first, inside the
+    SAME `Step`). No other call can ever lower a channel's collateral.
+    REVISED from the audit's own A-13 text to name the bulk calls too:
+    B4 restores them as real payout paths (`DOC/0080:77`), so excluding
+    them here, as the audit's own candidate text does (it still assumed
+    the pre-B4 model, where both bulk calls never succeed), would be
+    false against the restored model.
     Quotes: `N19:227-229` "funds can only be withdrawn from participant
     addresses - and only by a party who knows the private key."
     `DOC/0080:5` "Defunding can only happen after a channel finalizes."
@@ -440,17 +448,22 @@ theorem reclaim_value_neutral
     ended ... a game's adjudicator should release funds";
     `Require(Adjudicator.isTerminated(channelId))`. Contract: holdings
     change only at `MAH.sol:228`, `ANA.sol:168`, `ANA.sol:199`
-    (reclaim, departure) and `NA.sol:95` (bulk path, departure). -/
+    (reclaim, departure) and `NA.sol:95` (bulk path — no longer a
+    departure, B4). -/
 theorem value_leaves_only_via_transfer_of_finalized_channel
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (asset : Nat) (cid : Term)
     (hstep : Step sig appRel actor s call s')
     (hdec : heldValue s' asset cid < heldValue s asset cid) :
-    (∃ assetIndex claimedStateHash outcome indices,
-      call = .transfer assetIndex cid claimedStateHash outcome indices) ∧
-    (s.channels cid).mode s.now = .finalized := by
+    ((∃ assetIndex claimedStateHash outcome indices,
+        call = .transfer assetIndex cid claimedStateHash outcome indices) ∧
+      (s.channels cid).mode s.now = .finalized) ∨
+    (∃ outcome claimedStateHash, call = .bulkTransferAllAssets cid outcome claimedStateHash ∧
+      (s.channels cid).mode s.now = .finalized) ∨
+    (∃ fp candidate, channelId fp = cid ∧ call = .bulkConcludeAndTransferAllAssets fp candidate) := by
   sorry
+
 
 /-- Like `OutcomeDerivedFrom`, but excluding `.reclaimStep`: reached
     from `o` by `.transfer` rewrites only, no `.reclaim` in between —
