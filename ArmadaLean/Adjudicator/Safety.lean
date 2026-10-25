@@ -428,7 +428,16 @@ theorem transfer_pays_only_the_finalized_outcome
     (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 ≤
       heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
-  sorry
+  obtain ⟨hidx, hmode, hsh, hoh, _hstrict, _hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  refine ⟨⟨hmode, hsh, hoh⟩, ?_, transferEffects_totalPayouts_le _ _ _⟩
+  intro allocs held selected paidAt newAllocs i hi
+  have := transferEffects_newAllocations_getD (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices i hi
+  constructor
+  · intro hsel
+    rw [this, if_pos hsel]
+  · intro hsel
+    rw [this, if_neg hsel]
 
 /-- A-02 — order does not change a simple-allocation payout: paying two
     DIFFERENT entries of the same finalized asset outcome, in either
