@@ -1,15 +1,17 @@
 /-
   Nitro protocol specification: network states, strategies, unbeatable
   strategies, finalizable and enabled outcomes, funding and value. Source:
-  S2 §4 (lines 359-709). See `Address.lean` for the source list.
+  Nitro §4 (lines 359-709); SATP:164-168 gives the two security assumptions
+  and SATP:393-399 the commit step. go-nitro has no off-chain model. See
+  `Address.lean` for the source list.
 
-  Modelling choice (the game). S2:460-461: "we assume that all other
+  Modelling choice (the game). Nitro:460-461: "we assume that all other
   participants are controlled by a single adversary, pooling their resources
   and commitments." The honest participant `p` plays against that adversary.
   One round is: the adversary applies any finite list of feasible moves, then
-  `p` applies one move. This encodes S2:537-542: the adversary can front-run
-  any single move of `p` (S2:540-542), and `p`'s move is applied before the
-  adversary can move time past a deadline (S2:537-539, `Assumptions.unimpeded`).
+  `p` applies one move. This encodes Nitro:537-542: the adversary can front-run
+  any single move of `p` (Nitro:540-542), and `p`'s move is applied before the
+  adversary can move time past a deadline (Nitro:537-539, `Assumptions.unimpeded`).
   Only `p` lets time pass by `HonestMove.wait`. The adversary may move time
   only short of every pending deadline of a channel of `p`.
 -/
@@ -17,7 +19,7 @@ import ArmadaLean.Nitro.Adjudicator
 
 namespace ArmadaLean.Nitro
 
-/-- S2:446-454: "The network state, Σ, for a participant, A, consists of:
+/-- Nitro:446-454: "The network state, Σ, for a participant, A, consists of:
     1. The state of the adjudicator ... 2. For each channel A is a participant
     of: (a) Signed commitments that A has received (b) Signed commitments that
     A has sent (c) Private information held by A". The private information is
@@ -34,9 +36,11 @@ def NetworkState.Holds {p : Participant} (net : NetworkState p) (ss : SignedStat
     (q = p ∧ ∃ s ∈ net.sent, s.state = ss.state) ∨
     (∃ r ∈ net.received, r.state = ss.state ∧ q ∈ r.signers)
 
-/-- A move of the honest participant. S2:485-488: "signing commitments,
+/-- A move of the honest participant. Nitro:485-488: "signing commitments,
     refusing to sign commitments, launching/responding to on-chain challenges
-    and calling on-chain operations". `wait` lets the chain clock advance. -/
+    and calling on-chain operations". SATP:393-399 (Definition 3.1): a peer
+    commits by signing and sending a state. `wait` lets the chain clock
+    advance. -/
 inductive HonestMove
   | chain (op : Op)
   | send (st : State)
@@ -56,7 +60,7 @@ def HonestMove.Feasible {p : Participant} (net : NetworkState p) : HonestMove �
   | .wait _ => True
 
 /-- Apply an honest move. A failed on-chain operation changes nothing
-    (S1:685-686). -/
+    (ForceMove:685-686). -/
 noncomputable def NetworkState.applyHonest (apps : Apps) {p : Participant}
     (m : HonestMove) (net : NetworkState p) : NetworkState p :=
   match m with
@@ -93,10 +97,10 @@ def NetworkState.PendingDeadline {p : Participant} (net : NetworkState p) (d : T
     adversary `T`. Each theorem that speaks about a strategy takes an
     `Assumptions` value. -/
 structure Assumptions (apps : Apps) (p : Participant) (T : Threat p) : Prop where
-  /-- S2:158-160: "impossible to find a private key for A"; S1:683: "From
-      the signature you can deduce the signer"; S3:168: "Forging
-      cryptographic signatures is infeasible." The adversary submits `p`'s
-      signature only on a state `p` sent. -/
+  /-- SATP:168: "(Safety) Forging cryptographic signatures is infeasible.";
+      Nitro:158-160: "impossible to find a private key for A"; ForceMove:683:
+      "From the signature you can deduce the signer". The adversary submits
+      `p`'s signature only on a state `p` sent. -/
   unforgeable : ∀ net caller op, T.feasible net (.chain caller op) →
     ∀ ss ∈ op.proofStates, p ∈ ss.signers → ∃ s ∈ net.sent, s.state = ss.state
   /-- The same bound for delivered states. -/
@@ -104,12 +108,13 @@ structure Assumptions (apps : Apps) (p : Participant) (T : Threat p) : Prop wher
     p ∈ ss.signers → ∃ s ∈ net.sent, s.state = ss.state
   /-- The adversary never acts as `p`. -/
   notHonest : ∀ net caller op, T.feasible net (.chain caller op) → caller ≠ p
-  /-- S2:537-539 "Transactions are unimpeded"; S3:166-167 "Any peer can
-      successfully record transactions on the blockchain in O(1) time". The
-      adversary cannot move the clock to a pending deadline of `p`. -/
+  /-- SATP:166-167 "(Liveness) Any peer can successfully record transactions
+      on the blockchain in O(1) time"; Nitro:537-539 "Transactions are
+      unimpeded". The adversary cannot move the clock to a pending deadline
+      of `p`. -/
   unimpeded : ∀ net dt, T.feasible net (.tick dt) →
     ∀ d, net.PendingDeadline d → net.chain.now + dt < d
-  /-- S2:460-461: the adversary controls every other participant. Any
+  /-- Nitro:460-461: the adversary controls every other participant. Any
       operation by another caller that carries no forged signature of `p` is
       feasible. -/
   capable : ∀ net caller op, caller ≠ p →
@@ -122,7 +127,7 @@ structure Assumptions (apps : Apps) (p : Participant) (T : Threat p) : Prop wher
   capableTick : ∀ net dt, (∀ d, net.PendingDeadline d → net.chain.now + dt < d) →
     T.feasible net (.tick dt)
 
-/-- S2:526-530: "having an unbeatable strategy for obtaining some state
+/-- Nitro:526-530: "having an unbeatable strategy for obtaining some state
     on-chain. The means that whatever actions (or lack of actions) other
     participants and external parties might take, the target state is still
     obtainable." `Unbeatable apps p T G net`: `p` has a strategy from `net` that
@@ -149,31 +154,31 @@ inductive Run (apps : Apps) {p : Participant} (T : Threat p) (σ : Strategy p) :
   | honest {net net' m} : Run apps T σ net net' → σ net' = some m → m.Feasible net' →
       Run apps T σ net (net'.applyHonest apps m)
 
-/-- S2:641-644: `p` "has a strategy to prevent" `G`: some strategy keeps
+/-- Nitro:641-644: `p` "has a strategy to prevent" `G`: some strategy keeps
     every run outside `G`. -/
 def Prevents (apps : Apps) {p : Participant} (T : Threat p)
     (G : NetworkState p → Prop) (net : NetworkState p) : Prop :=
   ∃ σ : Strategy p, ∀ net', Run apps T σ net net' → ¬ G net'
 
-/-- S2:602-603 `⟦χ ↦ Ω⟧`: the outcome of `χ` is finalized on-chain as `Ω`. -/
+/-- Nitro:602-603 `⟦χ ↦ Ω⟧`: the outcome of `χ` is finalized on-chain as `Ω`. -/
 def NetworkState.Finalized {p : Participant} (net : NetworkState p) (c : FixedPart)
     (Ω : Outcome) : Prop :=
   net.chain.finalOutcome c.address = some Ω
 
-/-- S2:590-593: "an outcome, Ω, is finalizable for participant A, if A has an
+/-- Nitro:590-593: "an outcome, Ω, is finalizable for participant A, if A has an
     unbeatable strategy for finalizing this outcome in the adjudicator. We use
     the notation `[χ ↦ Ω]_A`". -/
 def Finalizable (apps : Apps) {p : Participant} (T : Threat p) (c : FixedPart) (Ω : Outcome)
     (net : NetworkState p) : Prop :=
   Unbeatable apps T (fun net' => net'.Finalized c Ω) net
 
-/-- S2:641-652: "The enabled outcomes for a participant, p, is defined as the
+/-- Nitro:641-652: "The enabled outcomes for a participant, p, is defined as the
     set of outcomes that p has no strategy to prevent from being finalized." -/
 def Enabled (apps : Apps) {p : Participant} (T : Threat p) (c : FixedPart) (Ω : Outcome)
     (net : NetworkState p) : Prop :=
   ¬ Prevents apps T (fun net' => net'.Finalized c Ω) net
 
-/-- S2:480-481: "A channel χ is funded for participant A with x coins, if A
+/-- Nitro:480-481: "A channel χ is funded for participant A with x coins, if A
     has an unbeatable strategy for obtaining a state where χ is directly
     funded with x coins." -/
 def FundedFor (apps : Apps) {p : Participant} (T : Threat p) (c : FixedPart) (x : Coins)
@@ -186,7 +191,7 @@ def CanObtain (apps : Apps) {p : Participant} (T : Threat p) (a : Address) (x : 
     (net : NetworkState p) : Prop :=
   Unbeatable apps T (fun net' => x ≤ net'.chain.balances.get a) net
 
-/-- S2:482-484: "The value for participant A of a network state net is the
+/-- Nitro:482-484: "The value for participant A of a network state net is the
     maximum x for which A has an unbeatable strategy for obtaining a state
     where the balance of A's address in the adjudicator is x coins." -/
 def Value (apps : Apps) {p : Participant} (T : Threat p) (net : NetworkState p) (x : Coins) :
@@ -194,7 +199,7 @@ def Value (apps : Apps) {p : Participant} (T : Threat p) (net : NetworkState p) 
   CanObtain apps T (.participant p) x net ∧
   ∀ y, CanObtain apps T (.participant p) y net → y ≤ x
 
-/-- A family of network states, one per participant. S2:632-633: "the outcome
+/-- A family of network states, one per participant. Nitro:632-633: "the outcome
     of a channel is finalizable by all its participants". -/
 def Views := ∀ p : Participant, NetworkState p
 
@@ -209,14 +214,14 @@ structure Threats (apps : Apps) where
   T : ∀ p : Participant, Threat p
   ok : ∀ p, Assumptions apps p (T p)
 
-/-- S2:632-633: "In the special case where the outcome of a channel is
+/-- Nitro:632-633: "In the special case where the outcome of a channel is
     finalizable by all its participants, we say that the outcome is
     universally finalizable." -/
 def UniversallyFinalizable (apps : Apps) (Ts : Threats apps) (v : Views) (c : FixedPart)
     (Ω : Outcome) : Prop :=
   ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p)
 
-/-- S2:635-636: "After the first n states have been broadcast. In this state,
+/-- Nitro:635-636: "After the first n states have been broadcast. In this state,
     we say the channel is at the funding point." Each participant holds the
     first `n` states, each signed by its mover, with outcome `Ω`, and no
     participant has signed any later state. -/
@@ -226,7 +231,7 @@ def AtFundingPoint (v : Views) (c : FixedPart) (Ω : Outcome) : Prop :=
       ss.state.outcome = Ω ∧ ss.state.isFinal = false ∧ ss.ByMover) ∧
   (∀ p ∈ c.participants, ∀ ss ∈ (v p).sent, ss.state.channel = c → ss.state.turnNum < c.n)
 
-/-- S2:637-638: "When a single conclusion proof is known to each participant.
+/-- Nitro:637-638: "When a single conclusion proof is known to each participant.
     In this state, we say the channel is in the concluded state." -/
 def Concluded (v : Views) (c : FixedPart) (Ω : Outcome) : Prop :=
   ∀ p ∈ c.participants, ∃ ss, (v p).Holds ss ∧ ConclusionProof c ss ∧ ss.state.outcome = Ω

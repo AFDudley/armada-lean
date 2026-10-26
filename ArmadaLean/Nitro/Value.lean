@@ -1,9 +1,12 @@
 /-
   Nitro protocol specification: the network of outcomes, the Turbo Value
-  Algorithm (S2:818-835) and the Nitro Lower-bound Value Algorithm
-  (S2:1178-1255). See `Address.lean` for the source list.
+  Algorithm (Nitro:818-835) and the Nitro Lower-bound Value Algorithm
+  (Nitro:1178-1255). See `Address.lean` for the source list. SATP and
+  go-nitro have no value algorithm, so Nitro is the primary source for this
+  file. The lower-bound algorithm reads Nitro's `claim`, which SATP and
+  go-nitro replaced by `reclaim`.
 
-  Modelling choice (DAG). S2:796-799 takes a topological ordering of the
+  Modelling choice (DAG). Nitro:796-799 takes a topological ordering of the
   outcome network and notes that every DAG has one. Here "the network is a
   DAG" is "a topological ordering exists" (`Adjudicator.IsDAG`).
 -/
@@ -12,19 +15,19 @@ import ArmadaLean.Nitro.Strategy
 namespace ArmadaLean.Nitro
 
 /-- The finalized allocation of a node, with duplicate destinations dropped
-    (S2:744-746). A node with no finalized allocation has the empty
+    (Nitro:744-746). A node with no finalized allocation has the empty
     allocation. -/
 def Adjudicator.allocationOf (s : Adjudicator) (n : Address) : Allocation :=
   match s.finalOutcome n with
   | some (.allocation o) => o.dedup
   | _ => []
 
-/-- S2:790-792: "the nodes are channels and the edges represent allocations
+/-- Nitro:790-792: "the nodes are channels and the edges represent allocations
     from one channel to the other." -/
 def Adjudicator.Edge (s : Adjudicator) (n d : Address) : Prop :=
   ∃ e ∈ s.allocationOf n, e.dest = d
 
-/-- S2:796-798: "A topological ordering is an ordering of nodes such that, if
+/-- Nitro:796-798: "A topological ordering is an ordering of nodes such that, if
     N1 ↦ N2 is an edge, then N1 < N2." Every node with a balance or an
     allocation appears once. -/
 def Adjudicator.IsTopologicalOrder (s : Adjudicator) (order : List Address) : Prop :=
@@ -32,12 +35,12 @@ def Adjudicator.IsTopologicalOrder (s : Adjudicator) (order : List Address) : Pr
   (∀ n d, s.Edge n d → ∃ i j : Nat, order[i]? = some n ∧ order[j]? = some d ∧ i < j) ∧
   (∀ n, (s.balances.get n ≠ 0 ∨ s.allocationOf n ≠ []) → n ∈ order)
 
-/-- S2:790-795: "We will only consider the case where the network of
+/-- Nitro:790-795: "We will only consider the case where the network of
     outcomes forms a directed acyclic graph (DAG)". -/
 def Adjudicator.IsDAG (s : Adjudicator) : Prop :=
   ∃ order, s.IsTopologicalOrder order
 
-/-- S2:824-834, step 3: pay `remaining` through one node's allocation in
+/-- Nitro:824-834, step 3: pay `remaining` through one node's allocation in
     order; each destination's value rises by `min(payout, remaining)`. -/
 def payoutValues : Balances → Coins → Allocation → Balances
   | vals, _, [] => vals
@@ -45,50 +48,52 @@ def payoutValues : Balances → Coins → Allocation → Balances
     let x := min e.amount remaining
     payoutValues (vals.add e.dest x) (remaining - x) rest
 
-/-- S2:818-835 Turbo Value Algorithm, steps 2-3: start from the balances,
+/-- Nitro:818-835 Turbo Value Algorithm, steps 2-3: start from the balances,
     then for each node in order pay its value through its allocation. -/
 def Adjudicator.turboValues (s : Adjudicator) : List Address → Balances → Balances
   | [], vals => vals
   | n :: rest, vals => s.turboValues rest (payoutValues vals (vals.get n) (s.allocationOf n))
 
-/-- S2:835 step 4: "Then Values[n] gives the value of node n." -/
+/-- Nitro:835 step 4: "Then Values[n] gives the value of node n." -/
 def Adjudicator.turboValue (s : Adjudicator) (order : List Address) (n : Address) : Coins :=
   (s.turboValues order s.balances).get n
 
-/-- A Turbo state: every finalized outcome is an allocation (S2:732). -/
+/-- A Turbo state: every finalized outcome is an allocation (Nitro:732). -/
 def Adjudicator.TurboOnly (s : Adjudicator) : Prop :=
   ∀ c t pr, s.finalOutcome (.channel c) ≠ some (.guarantee t pr)
 
-/-- A transfer sequence is maximal when no further positive transfer can
-    succeed. S2:840-842: "we have done every possible transfer on these
-    channels". -/
+/-- A transfer sequence is maximal when no further transfer moves coins.
+    Nitro:840-842: "we have done every possible transfer on these
+    channels". go-nitro's `transfer` pays the whole affordable amount, so a
+    further transfer moves coins only if some entry still affords a
+    positive amount. -/
 def Adjudicator.TransferExhausted (s : Adjudicator) : Prop :=
-  ∀ a b x, 0 < x → s.transfer a b x = none
+  ∀ a b s', s.transfer a b = some s' → s'.balances = s.balances
 
 /-- A list of transfers only. -/
 def OnlyTransfers (ops : List (Participant × Op)) : Prop :=
-  ∀ e ∈ ops, ∃ a b x, e.2 = Op.transfer a b x
+  ∀ e ∈ ops, ∃ a b, e.2 = Op.transfer a b
 
-/-- S2:1203-1209: an allocation channel `L` and the guarantees `G1..Gn`
+/-- Nitro:1203-1209: an allocation channel `L` and the guarantees `G1..Gn`
     that target it, with values `v_i` and the priority lists that induce the
     permutations `π_i`. -/
 structure GuaranteeGroup where
   target : Allocation
   guarantees : List (Coins × List Address)
 
-/-- S2:1217 `Σ v_i`. -/
+/-- Nitro:1217 `Σ v_i`. -/
 def GuaranteeGroup.funds (g : GuaranteeGroup) : Coins :=
   (g.guarantees.map (·.1)).sum
 
-/-- S2:1216-1217: "If Σ v_i > Σ a_j, then we say the system is overfunded." -/
+/-- Nitro:1216-1217: "If Σ v_i > Σ a_j, then we say the system is overfunded." -/
 def GuaranteeGroup.Overfunded (g : GuaranteeGroup) : Prop :=
   g.target.total < g.funds
 
-/-- S2:1251-1252: "the fully funded case, where Σ v_i = Σ a_j". -/
+/-- Nitro:1251-1252: "the fully funded case, where Σ v_i = Σ a_j". -/
 def GuaranteeGroup.FullyFunded (g : GuaranteeGroup) : Prop :=
   g.funds = g.target.total
 
-/-- One claim inside the group: guarantee `i` pays `x` to `d` (S2:1139-1145,
+/-- One claim inside the group: guarantee `i` pays `x` to `d` (Nitro:1139-1145,
     restricted to the group). -/
 def GuaranteeGroup.claim (g : GuaranteeGroup) (i : Nat) (d : Address) (x : Coins) :
     Option GuaranteeGroup :=
@@ -105,7 +110,7 @@ def GuaranteeGroup.applyClaims : List (Nat × Address × Coins) → GuaranteeGro
   | [], g => g
   | (i, d, x) :: rest, g => GuaranteeGroup.applyClaims rest ((g.claim i d x).getD g)
 
-/-- S2:1219-1221 (constraint 19): "no funds are left in the guarantees". No
+/-- Nitro:1219-1221 (constraint 19): "no funds are left in the guarantees". No
     positive claim can succeed. -/
 def GuaranteeGroup.Exhausted (g : GuaranteeGroup) : Prop :=
   ∀ i d x, 0 < x → g.claim i d x = none
@@ -114,7 +119,7 @@ def GuaranteeGroup.Exhausted (g : GuaranteeGroup) : Prop :=
 def GuaranteeGroup.paidTo (g g' : GuaranteeGroup) (d : Address) : Coins :=
   g.target.owed d - g'.target.owed d
 
-/-- S2:1202-1207 Minimum Payout Calculation: "the minimum payout, `p_i`, that
+/-- Nitro:1202-1207 Minimum Payout Calculation: "the minimum payout, `p_i`, that
     each destination will receive when all possible payout orders are
     considered." `m` is the least amount `d` receives over every exhausted
     claim order. -/
@@ -130,7 +135,7 @@ def Adjudicator.guaranteesTargeting (s : Adjudicator) (vals : Balances) (l : Add
     | some (.guarantee t pr) => if t = l then some (vals.get e.1.address, pr) else none
     | _ => none)
 
-/-- S2:1210-1215: the group of `l`. "We will assume the value of L itself is
+/-- Nitro:1210-1215: the group of `l`. "We will assume the value of L itself is
     0 ... by adding a guarantee G_{n+1} that has value x, that targets L and
     that has π_{n+1}(k) = k." The empty priority list is the identity. -/
 def Adjudicator.groupOf (s : Adjudicator) (vals : Balances) (l : Address) : GuaranteeGroup :=
@@ -138,7 +143,7 @@ def Adjudicator.groupOf (s : Adjudicator) (vals : Balances) (l : Address) : Guar
     guarantees := s.guaranteesTargeting vals l ++
       (if 0 < vals.get l then [(vals.get l, [])] else []) }
 
-/-- S2:1178-1193 Nitro Lower-bound Value Algorithm, step 3: a guarantee node
+/-- Nitro:1178-1193 Nitro Lower-bound Value Algorithm, step 3: a guarantee node
     does nothing; an allocation node adds `MinPayouts[d]` to each destination
     `d`. `minPayout` is a function that meets `IsMinPayout`. -/
 def Adjudicator.nitroValues (s : Adjudicator) (minPayout : GuaranteeGroup → Address → Coins) :
@@ -152,7 +157,7 @@ def Adjudicator.nitroValues (s : Adjudicator) (minPayout : GuaranteeGroup → Ad
       s.nitroValues minPayout rest
         ((s.allocationOf n).foldl (fun acc e => acc.add e.dest (minPayout g e.dest)) vals)
 
-/-- S2:1193 step 4: `Values[n]`. -/
+/-- Nitro:1193 step 4: `Values[n]`. -/
 def Adjudicator.nitroValue (s : Adjudicator) (minPayout : GuaranteeGroup → Address → Coins)
     (order : List Address) (n : Address) : Coins :=
   (s.nitroValues minPayout order s.balances).get n

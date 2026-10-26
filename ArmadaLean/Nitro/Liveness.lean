@@ -10,15 +10,15 @@ namespace ArmadaLean.Nitro
 
 open Classical
 
-/-- S2-31. S2:779-781: "We will restrict ourselves to looking at strategies
-    and counter-strategies involving transfer operations only, ignoring
-    deposits and withdrawals." An adversary that plays only transfers and
-    lets time pass. -/
+/-- Nitro-31. Nitro:779-781: "We will restrict ourselves to looking at
+    strategies and counter-strategies involving transfer operations only,
+    ignoring deposits and withdrawals." An adversary that plays only
+    transfers (go-nitro `transfer`) and lets time pass. -/
 def Threat.TransfersOnly {p : Participant} (T : Threat p) : Prop :=
   ∀ net m, T.feasible net m →
-    (∃ caller a b x, m = .chain caller (.transfer a b x)) ∨ (∃ dt, m = .tick dt)
+    (∃ caller a b, m = .chain caller (.transfer a b)) ∨ (∃ dt, m = .tick dt)
 
-/-- An adversary that plays only transfers and claims. S2:1147-1151 reasons
+/-- An adversary that plays only transfers and claims. Nitro:1147-1151 reasons
     about Nitro redistribution with these two operations. -/
 def Threat.RedistributionOnly {p : Participant} (T : Threat p) : Prop :=
   ∀ net m, T.feasible net m →
@@ -30,7 +30,7 @@ def HonestMove.NoWait : HonestMove → Prop
   | _ => True
 
 /-- `Unbeatable` with no `wait` move: the goal is reached "instantly", with
-    no challenge period (S2:1046-1047: "A was able to withdraw their funds
+    no challenge period (Nitro:1046-1047: "A was able to withdraw their funds
     instantly, without having to wait for the channel timeout"). -/
 inductive UnbeatableNoWait (apps : Apps) {p : Participant} (T : Threat p)
     (G : NetworkState p → Prop) : NetworkState p → Prop
@@ -40,7 +40,7 @@ inductive UnbeatableNoWait (apps : Apps) {p : Participant} (T : Threat p)
         UnbeatableNoWait apps T G (net'.applyHonest apps m)) →
       UnbeatableNoWait apps T G net
 
-/-- S1-A06, S1-A07. S1:1092-1125 and S1:1150-1184: through the
+/-- ForceMove-A06, ForceMove-A07. ForceMove:1092-1125 and ForceMove:1150-1184: through the
     PreFundSetup and PostFundSetup phases (the first `2n` states) every
     transition keeps the resolution. -/
 def SetupPhaseKeepsOutcome (vt : State → State → Prop) (c : FixedPart) : Prop :=
@@ -50,7 +50,7 @@ def SetupPhaseKeepsOutcome (vt : State → State → Prop) (c : FixedPart) : Pro
 def OnlyClaims (ops : List (Participant × Op)) : Prop :=
   ∀ e ∈ ops, ∃ g a x, e.2 = Op.claim g a x
 
-/-- S2-16, S2-21, S1-B01, S1-C03, S4-0070-05, S4-0080-06. S2:395-398: "where
+/-- Nitro-16, Nitro-21, ForceMove-B01, ForceMove-C03, docs-0070-05, docs-0080-06. Nitro:395-398: "where
     the channel L itself has enough coins in the adjudicator to cover the
     entire allocation ... A will receive all x coins allocated to them in ω."
     The strategy is one transfer. -/
@@ -62,7 +62,7 @@ theorem directly_funded_pays (apps : Apps) {p : Participant} (T : Threat p)
         net'.chain.balances.get p.address) net := by
   sorry
 
-/-- S2-17, S2-21, S2-16. S2:480-481 and S2:590-593: a finalizable allocation
+/-- Nitro-17, Nitro-21, Nitro-16. Nitro:480-481 and Nitro:590-593: a finalizable allocation
     in a channel funded for `p` pays `p` its allocation. -/
 theorem finalizable_funded_pays (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (o : Allocation)
@@ -70,10 +70,12 @@ theorem finalizable_funded_pays (apps : Apps) {p : Participant} (T : Threat p)
     CanObtain apps T p.address (net.chain.balances.get p.address + o.owed p.address) net := by
   sorry
 
-/-- S2-13, S2-21, S2-23, S4-0070-05, S1-A14. S2:296-299: a participant who
-    holds a conclusion proof can register it. Under the consensus app no
-    other participant can finalize a different outcome without `p`'s
-    signature, so the outcome is finalizable for `p`. -/
+/-- Nitro-13, Nitro-21, Nitro-23, docs-0070-05, ForceMove-A14. SATP:286-289: a
+    final state supported by all finalizes "without delay"; Nitro:296-299: a
+    participant who holds a conclusion proof can register it; go-nitro
+    `_conclude` accepts it from any caller. Under the consensus app no other
+    participant can finalize a different outcome without `p`'s signature, so
+    the outcome is finalizable for `p`. -/
 theorem conclusion_proof_finalizable (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (ss : SignedState)
     (Ω : Outcome) (hc : apps c.appDef = consensusRules) (hp : p ∈ c.participants)
@@ -83,10 +85,14 @@ theorem conclusion_proof_finalizable (apps : Apps) {p : Participant} (T : Threat
     UnbeatableNoWait apps T (fun net' => net'.Finalized c Ω) net := by
   sorry
 
-/-- S2-12, S1-B01, S1-B03, S4-0070-06, S1-C02. S2:292-296: "one participant
-    launches an on-chain challenge, starting a timeout period; if no other
-    participant responds during the timeout period, then the challenge times
-    out and the outcome corresponding to the challenge state is finalized."
+/-- Nitro-12, ForceMove-B01, ForceMove-B03, docs-0070-06, ForceMove-C02.
+    SATP:290-292: "an adjudicator implements a challenge operation, enabling
+    peers to recover funds from the channel after a timeout"; Nitro:292-296:
+    "if no other participant responds during the timeout period, then the
+    challenge times out and the outcome corresponding to the challenge state
+    is finalized." go-nitro: a later challenge or checkpoint needs a strictly
+    higher turn (ForceMove.sol:48-50, 95), so the holder of the highest
+    supported state wins.
     Under the consensus app, a participant who holds a supported state and
     has signed no higher state can finalize that state's outcome. -/
 theorem latest_state_finalizable (apps : Apps) {p : Participant} (T : Threat p)
@@ -103,12 +109,13 @@ theorem latest_state_finalizable (apps : Apps) {p : Participant} (T : Threat p)
     Finalizable apps T c ss.state.outcome net := by
   sorry
 
-/-- S1-B05. S1:1511-1529: "as long as Alice notices Bob's challenge within
+/-- ForceMove-B05. ForceMove:1511-1529: "as long as Alice notices Bob's challenge within
     the timeout period, she cannot hurt her position by playing on as though
     still in Collaborative mode ... all the moves made in Collaborative still
     stand." A participant who holds a supported state above the challenge
-    state can reopen the channel at or above that turn before the deadline. -/
-theorem late_observer_can_respond (apps : Apps) {p : Participant} (T : Threat p)
+    state can reopen the channel at or above that turn before the deadline,
+    with go-nitro `checkpoint`. -/
+theorem late_observer_can_checkpoint (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (ss : SignedState)
     (t : Nat) (ch : Challenge) (hc : apps c.appDef = consensusRules)
     (hh : net.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = c)
@@ -119,7 +126,7 @@ theorem late_observer_can_respond (apps : Apps) {p : Participant} (T : Threat p)
         ss.state.turnNum ≤ (net'.chain.statusOf c).turnNumRecord) net := by
   sorry
 
-/-- S2-22. S2:612-614: "The definition of finalizability excludes the case
+/-- Nitro-22. Nitro:612-614: "The definition of finalizability excludes the case
     where two different finalizable outcomes are held by different
     participants, as in this case at least one participant's strategy would
     be beatable by the other participant's strategy." -/
@@ -129,7 +136,7 @@ theorem finalizable_unique (apps : Apps) (Ts : Threats apps) (v : Views) (hv : v
     Ω = Ω' := by
   sorry
 
-/-- S2-22. S2:597-611: "exactly one of the following statements is true
+/-- Nitro-22. Nitro:597-611: "exactly one of the following statements is true
     about a channel χ at any point in time: 1. Finalized outcome ... 2. One
     participant has multiple finalizable outcomes ... 3. Multiple participants
     share one finalizable outcome ... 4. No finalizable outcomes." -/
@@ -144,7 +151,7 @@ theorem channel_finalizability_cases (apps : Apps) (Ts : Threats apps) (v : View
     (∀ p, p ∈ c.participants → ∀ Ω, ¬ Finalizable apps (Ts.T p) c Ω (v p)) := by
   sorry
 
-/-- S2-24. S2:653-656: "For any participant, p, in a channel, χ, exactly one
+/-- Nitro-24. Nitro:653-656: "For any participant, p, in a channel, χ, exactly one
     of the following statements is true at a given point in time: 1. p has at
     least one finalizable outcome. 2. p has at least two enabled outcomes." -/
 theorem finalizable_or_two_enabled (apps : Apps) {p : Participant} (T : Threat p)
@@ -153,7 +160,7 @@ theorem finalizable_or_two_enabled (apps : Apps) {p : Participant} (T : Threat p
     (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps T c Ω1 net ∧ Enabled apps T c Ω2 net) := by
   sorry
 
-/-- S2-24. S2:657-658: "if a participant has only enabled a single outcome,
+/-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
     that outcome must be finalizable for them." -/
 theorem single_enabled_is_finalizable (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (hp : p ∈ c.participants)
@@ -162,18 +169,18 @@ theorem single_enabled_is_finalizable (apps : Apps) {p : Participant} (T : Threa
     Finalizable apps T c Ω net := by
   sorry
 
-/-- S2-24, S2-21. A finalizable outcome is enabled: `p` cannot prevent what
+/-- Nitro-24, Nitro-21. A finalizable outcome is enabled: `p` cannot prevent what
     `p` can force. -/
 theorem finalizable_is_enabled (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (Ω : Outcome)
     (h : Finalizable apps T c Ω net) : Enabled apps T c Ω net := by
   sorry
 
-/-- S2-23, S1-B06, S1-A06, S1-A07. S2:635-636, S2:639-640: at the funding
+/-- Nitro-23, ForceMove-B06, ForceMove-A06, ForceMove-A07. Nitro:635-636, Nitro:639-640: at the funding
     point, "After the first n states have been broadcast", the outcome is
-    universally finalizable. S1:862-871: the prefund states are "exactly what
+    universally finalizable. ForceMove:862-871: the prefund states are "exactly what
     they need to launch a challenge on-chain to recover their funds". The
-    setup phase keeps the outcome (S1:1092-1125, S1:1150-1184). -/
+    setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184). -/
 theorem funding_point_universally_finalizable (apps : Apps) (Ts : Threats apps) (v : Views)
     (hv : v.Consistent) (c : FixedPart) (Ω : Outcome) (vt : State → State → Prop)
     (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
@@ -182,7 +189,7 @@ theorem funding_point_universally_finalizable (apps : Apps) (Ts : Threats apps) 
     UniversallyFinalizable apps Ts v c Ω := by
   sorry
 
-/-- S2-23, S1-A14. S2:637-640: "When a single conclusion proof is known to
+/-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
 theorem concluded_universally_finalizable (apps : Apps) (Ts : Threats apps) (v : Views)
@@ -195,7 +202,7 @@ theorem concluded_universally_finalizable (apps : Apps) (Ts : Threats apps) (v :
     UniversallyFinalizable apps Ts v c Ω := by
   sorry
 
-/-- S2-49 (consensus game, S2:660-688), S3-08, S4-0020-01. S2:684-688:
+/-- Nitro-49 (consensus game, Nitro:660-688), SATP-08, docs-0020-01. Nitro:684-688:
     "Throughout the only enabled outcomes for any participant are Ω1 and Ω2.
     In particular, a participant has the finalizable outcome [χ ↦ Ω1]_p
     until they approve the transition, and then enabled outcomes
@@ -214,11 +221,12 @@ theorem consensus_enabled_outcomes (apps : Apps) {p : Participant} (T : Threat p
     (hen : Enabled apps T c Ω net) : Ω = Ω1 ∨ Ω = Ω2 := by
   sorry
 
-/-- S2-30, S2-16. S2:775-777: "reasoning about redistribution is easy in
-    Turbo: if you can find one strategy to move a certain amount into an
+/-- Nitro-30, Nitro-16. Nitro:775-777: "reasoning about redistribution is easy
+    in Turbo: if you can find one strategy to move a certain amount into an
     address, then no-one else can prevent this from occurring." A transfer
     sequence that reaches balance `x` at `a` gives an unbeatable strategy
-    against a transfer-only adversary. -/
+    against a transfer-only adversary. `a` may be a participant address
+    (coins paid out, go-nitro `_executeSingleAssetExit`) or a channel. -/
 theorem turbo_redistribution_unbeatable (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
     (hturbo : net.chain.TurboOnly) (hdag : net.chain.IsDAG)
@@ -227,27 +235,30 @@ theorem turbo_redistribution_unbeatable (apps : Apps) {p : Participant} (T : Thr
     CanObtain apps T a x net := by
   sorry
 
-/-- S2-31. S2:785-787: "a deposit into the system cannot reduce the value of
+/-- Nitro-31. Nitro:785-787: "a deposit into the system cannot reduce the value of
     any address and cannot increase the value of any address by more than the
     value of the deposit." -/
 theorem deposit_bounds_value (apps : Apps) {p : Participant} (T : Threat p)
-    (A : Assumptions apps p T) (net : NetworkState p) (a : Address) (y x x' : Coins)
-    (hv : Value apps T net x)
-    (hv' : Value apps T { net with chain := net.chain.deposit a y } x') :
+    (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (y x x' : Coins)
+    (s' : Adjudicator) (hd : net.chain.deposit c.address y = some s')
+    (hv : Value apps T net x) (hv' : Value apps T { net with chain := s' } x') :
     x ≤ x' ∧ x' ≤ x + y := by
   sorry
 
-/-- S2-31. S2:787-789: "Withdrawals can only occur from participant
+/-- Nitro-31. Nitro:787-789: "Withdrawals can only occur from participant
     addresses and are the only way funds can leave these addresses, so cannot
-    affect values elsewhere." A withdrawal by another participant leaves
-    `p`'s value unchanged. -/
-theorem withdrawal_affects_only_owner (apps : Apps) {p : Participant} (T : Threat p)
-    (A : Assumptions apps p T) (net : NetworkState p) (q : Participant) (hq : q ≠ p) (y : Coins)
-    (s' : Adjudicator) (h : net.chain.withdraw q q y = some s') (x : Coins) :
+    affect values elsewhere." go-nitro has no withdrawal: a payout to a
+    participant is the transfer of a finalized entry to that participant's
+    address. A payout to another participant `q` leaves `p`'s value
+    unchanged. -/
+theorem payout_to_other_affects_only_owner (apps : Apps) {p : Participant} (T : Threat p)
+    (A : Assumptions apps p T) (net : NetworkState p) (q : Participant) (hq : q ≠ p)
+    (a : FixedPart) (s' : Adjudicator) (h : net.chain.transfer a (.participant q) = some s')
+    (x : Coins) :
     Value apps T net x ↔ Value apps T { net with chain := s' } x := by
   sorry
 
-/-- S2-32. S2:792-794: "While it is technically possible to create outcomes
+/-- Nitro-32. Nitro:792-794: "While it is technically possible to create outcomes
     with cycles, it is also possible for any participant in the channel to
     prevent this from happening." Under the consensus app a participant who
     signs no state can keep the outcome network acyclic. -/
@@ -258,7 +269,7 @@ theorem participant_can_prevent_cycles (apps : Apps) {p : Participant} (T : Thre
     Prevents apps T (fun net' => ¬ net'.chain.IsDAG) net := by
   sorry
 
-/-- S2-33, S2-34, S2-32. S2:836-837: "it is impossible to find a strategy
+/-- Nitro-33, Nitro-34, Nitro-32. Nitro:836-837: "it is impossible to find a strategy
     that gives any node a value higher than allocated by this algorithm."
     Against a transfer-only adversary, on a DAG of allocation outcomes. -/
 theorem turbo_value_upper_bound (apps : Apps) {p : Participant} (T : Threat p)
@@ -268,7 +279,7 @@ theorem turbo_value_upper_bound (apps : Apps) {p : Participant} (T : Threat p)
     (h : CanObtain apps T n x net) : x ≤ net.chain.turboValue order n := by
   sorry
 
-/-- S2-33, S2-35, S2-18. S2:837-839: "It is also not hard to construct a
+/-- Nitro-33, Nitro-35, Nitro-18. Nitro:837-839: "It is also not hard to construct a
     strategy for a node to obtain the value allocated by the algorithm, if
     necessary by actually implementing the algorithm up until that node." -/
 theorem turbo_value_achievable (apps : Apps) {p : Participant} (T : Threat p)
@@ -278,7 +289,7 @@ theorem turbo_value_achievable (apps : Apps) {p : Participant} (T : Threat p)
     CanObtain apps T n (net.chain.turboValue order n) net := by
   sorry
 
-/-- S2-18, S2-33, S2-34, S2-35. S2:482-484 with S2:835-839: on a Turbo DAG
+/-- Nitro-18, Nitro-33, Nitro-34, Nitro-35. Nitro:482-484 with Nitro:835-839: on a Turbo DAG
     the value of `p`'s network state is the algorithm's value of `p`'s
     address. -/
 theorem turbo_value_is_value (apps : Apps) {p : Participant} (T : Threat p)
@@ -288,7 +299,7 @@ theorem turbo_value_is_value (apps : Apps) {p : Participant} (T : Threat p)
     Value apps T net (net.chain.turboValue order p.address) := by
   sorry
 
-/-- S2-36. S2:842-843: "calling transfers out of order does not affect the
+/-- Nitro-36. Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result." Two exhausted transfer sequences from one Turbo state
     give the same balances. -/
 theorem turbo_order_independent (apps : Apps) (s : Adjudicator) (hturbo : s.TurboOnly)
@@ -299,14 +310,14 @@ theorem turbo_order_independent (apps : Apps) (s : Adjudicator) (hturbo : s.Turb
       (Adjudicator.applyAll apps ops2 s).balances.get a := by
   sorry
 
-/-- S2-33, S2-36. S2:819 "Choose a topological ordering": the algorithm's
+/-- Nitro-33, Nitro-36. Nitro:819 "Choose a topological ordering": the algorithm's
     value does not depend on which topological ordering is chosen. -/
 theorem turbo_value_order_choice_irrelevant (s : Adjudicator) (hturbo : s.TurboOnly)
     (o1 o2 : List Address) (h1 : s.IsTopologicalOrder o1) (h2 : s.IsTopologicalOrder o2)
     (n : Address) : s.turboValue o1 n = s.turboValue o2 n := by
   sorry
 
-/-- S2-37, S4-0060-07, S4-0080-08. S2:859-865: "χ is funded with 6 coins by
+/-- Nitro-37, docs-0060-07, docs-0080-08. Nitro:859-865: "χ is funded with 6 coins by
     L for both A and B ... Once it is on-chain, the transfer operation
     T(L, χ, 6) is all that is required to make χ directly funded. From the
     Turbo redistribution result, we know that this redistribution strategy is
@@ -316,7 +327,7 @@ theorem ledger_offload_funds_subchannel (apps : Apps) (Ts : Threats apps) (v : V
     FundedFor apps (Ts.T w.A) w.χ w.c (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.c (v w.B) := by
   sorry
 
-/-- S2-49 (S2:891-922, §5.4.1 Opening a Sub-channel), S4-0060-07. From
+/-- Nitro-49 (Nitro:891-922, §5.4.1 Opening a Sub-channel), docs-0060-07. From
     `⟦L : x⟧, [L ↦ (A : a, B : b)]_{A,B}` and `[χ ↦ (A : a', B : b')]_{A,B}`
     with `a' ≤ a`, `b' ≤ b`, the update
     `[L ↦ (A : a − a', B : b − b', χ : a' + b')]_{A,B}` preserves the value
@@ -336,7 +347,7 @@ theorem subchannel_open_value_preserving (apps : Apps) (Ts : Threats apps) (v v'
     SameValue apps (Ts.T A) (v A) (v' A) ∧ SameValue apps (Ts.T B) (v B) (v' B) := by
   sorry
 
-/-- S2-49 (S2:939-957, §5.4.2 Closing a Sub-channel), S4-0080-07. From
+/-- Nitro-49 (Nitro:939-957, §5.4.2 Closing a Sub-channel), docs-0080-07. From
     `[L ↦ (A : a, B : b, χ : c)]_{A,B}` and the concluded
     `[χ ↦ (A : a', B : b')]_{A,B}` with `a' + b' = c`, the update
     `[L ↦ (A : a + a', B : b + b')]_{A,B}` preserves the value of `A` and
@@ -353,8 +364,8 @@ theorem subchannel_close_value_preserving (apps : Apps) (Ts : Threats apps) (v v
     SameValue apps (Ts.T w.A) (v w.A) (v' w.A) ∧ SameValue apps (Ts.T w.B) (v w.B) (v' w.B) := by
   sorry
 
-/-- S2-49 (S2:959-995, §5.4.3 Topping Up a Ledger Channel), S4-0060-05.
-    S2:982-985: moving `A`'s entry to the end with the larger total
+/-- Nitro-49 (Nitro:959-995, §5.4.3 Topping Up a Ledger Channel), docs-0060-05.
+    Nitro:982-985: moving `A`'s entry to the end with the larger total
     `a + a'` "is a safe operation due to the precedence rules: as the channel
     is currently underfunded A would still only receive a if the outcome went
     to chain." The reordered outcome affords `A` exactly `a`. -/
@@ -365,7 +376,7 @@ theorem ledger_topup_reorder_safe (A B χ : Address) (a b c a' : Coins) (hAB : A
     Allocation.paidTo (a + b + c) [alloc B b, alloc χ c, alloc A (a + a')] χ = c := by
   sorry
 
-/-- S2-49 (S2:989-995, §5.4.3 steps 3-4), S2-04. After the deposit
+/-- Nitro-49 (Nitro:989-995, §5.4.3 steps 3-4), Nitro-04. After the deposit
     `D_L(a')` the reordered outcome is fully funded: every entry, including
     `A`'s raised one, is affordable in full. -/
 theorem ledger_topup_deposit_funds (A B χ : Address) (a b c a' : Coins) (hAB : A ≠ B)
@@ -374,8 +385,8 @@ theorem ledger_topup_deposit_funds (A B χ : Address) (a b c a' : Coins) (hAB : 
     Allocation.paidTo (a + b + c + a') [alloc A (a + a'), alloc B b, alloc χ c] A = a + a' := by
   sorry
 
-/-- S2-49 (S2:997-1047, §5.4.4 Partial Withdrawal from a Ledger Channel).
-    S2:1046-1047: "A was able to withdraw their funds instantly, without
+/-- Nitro-49 (Nitro:997-1047, §5.4.4 Partial Withdrawal from a Ledger Channel).
+    Nitro:1046-1047: "A was able to withdraw their funds instantly, without
     having to wait for the channel timeout." With the conclusion proof for
     `[L ↦ (L' : a + b + c, A : a')]_{A,B}` and `⟦L : x⟧`, `A` obtains `a'`
     with no wait, and `L'` is funded with `a + b + c` for `A` and `B`. -/
@@ -396,7 +407,7 @@ theorem ledger_partial_withdrawal (apps : Apps) (Ts : Threats apps) (v : Views)
     FundedFor apps (Ts.T A) L' (a + b + c) (v A) ∧ FundedFor apps (Ts.T B) L' (a + b + c) (v B) := by
   sorry
 
-/-- S2-44. S2:1148-1151: "it is possible to construct situations where the
+/-- Nitro-44. Nitro:1148-1151: "it is possible to construct situations where the
     same outcome can lead to different values, depending on the order in
     which guarantees are claimed." Figure 23: two guarantees `G1 = (J|I, A)`
     and `G2 = (J|I, B)` of 5 coins each on `J ↦ (I : 5, A : 5, B : 5)`. -/
@@ -407,7 +418,7 @@ theorem claim_order_dependent (apps : Apps) :
         (Adjudicator.applyAll apps ops2 s).balances.get a := by
   sorry
 
-/-- S2-45, S2-18. S2:1152-1154, S2:1178-1193: the Nitro Lower-bound Value
+/-- Nitro-45, Nitro-18. Nitro:1152-1154, Nitro:1178-1193: the Nitro Lower-bound Value
     Algorithm gives a value every node can obtain against a redistribution
     adversary. -/
 theorem nitro_lower_bound_achievable (apps : Apps) {p : Participant} (T : Threat p)
@@ -419,7 +430,7 @@ theorem nitro_lower_bound_achievable (apps : Apps) {p : Participant} (T : Threat
     CanObtain apps T n (net.chain.nitroValue minPayout order n) net := by
   sorry
 
-/-- S2-45. S2:1194-1196: "by taking the minimum independently on different
+/-- Nitro-45. Nitro:1194-1196: "by taking the minimum independently on different
     allocation/guarantee groupings, we end up with an algorithm that strictly
     underestimates the actual value in some cases." -/
 theorem nitro_lower_bound_underestimates (apps : Apps) (p : Participant) :
@@ -429,20 +440,20 @@ theorem nitro_lower_bound_underestimates (apps : Apps) (p : Participant) :
       CanObtain apps T n x net ∧ net.chain.nitroValue minPayout order n < x := by
   sorry
 
-/-- S2-46. S2:1216-1218: "If Σ v_i > Σ a_j, then we say the system is
+/-- Nitro-46. Nitro:1216-1218: "If Σ v_i > Σ a_j, then we say the system is
     overfunded. In this case, we know that all destinations will receive
     their allocations, so p_i = a_i regardless of the order of payout." -/
 theorem overfunded_min_payout (g : GuaranteeGroup) (h : g.Overfunded) (d : Address)
     (hd : ∃ e ∈ g.target, e.dest = d) : g.IsMinPayout d (g.target.owed d) := by
   sorry
 
-/-- S2-46. S2:1251-1253: "In the fully funded case, where Σ v_i = Σ a_j, it
+/-- Nitro-46. Nitro:1251-1253: "In the fully funded case, where Σ v_i = Σ a_j, it
     is easy to see that p_i = a_i, just as in the overfunded case." -/
 theorem fully_funded_min_payout (g : GuaranteeGroup) (h : g.FullyFunded) (d : Address)
     (hd : ∃ e ∈ g.target, e.dest = d) : g.IsMinPayout d (g.target.owed d) := by
   sorry
 
-/-- S2-46. S2:1253-1255: "In the single guarantee case, the payouts are fully
+/-- Nitro-46. Nitro:1253-1255: "In the single guarantee case, the payouts are fully
     determined." Every exhausted claim order pays each destination the same
     amount. -/
 theorem single_guarantee_determined (g : GuaranteeGroup) (h : g.guarantees.length = 1)
@@ -451,7 +462,7 @@ theorem single_guarantee_determined (g : GuaranteeGroup) (h : g.guarantees.lengt
     g.paidTo (g.applyClaims cs1) d = g.paidTo (g.applyClaims cs2) d := by
   sorry
 
-/-- S2-45, S2-44. S2:1173-1176, Figure 23: "participant I will receive their
+/-- Nitro-45, Nitro-44. Nitro:1173-1176, Figure 23: "participant I will receive their
     5 coins, even though we cannot say anything about how the remaining 5
     coins will be distributed between A and B." -/
 theorem figure23_lower_bound (I A B : Address) (hIA : I ≠ A) (hIB : I ≠ B) (hAB : A ≠ B) :
@@ -466,7 +477,7 @@ theorem figure23_lower_bound (I A B : Address) (hIA : I ≠ A) (hIB : I ≠ B) (
       B 0 := by
   sorry
 
-/-- S2-47, S2-37, S4-0060-08. S2:1299-1316: `A` finalizes `L`, `G` and `J`,
+/-- Nitro-47, Nitro-37, docs-0060-08. Nitro:1299-1316: `A` finalizes `L`, `G` and `J`,
     calls `T(L, G, x)` and `C(G, χ, x)`; "As G has χ as top priority, the
     operation is successful. By symmetry, the previous case also covers the
     case where B wants to offload." The virtual channel construction funds
@@ -476,7 +487,7 @@ theorem end_participant_offloads (apps : Apps) (Ts : Threats apps) (v : Views)
     FundedFor apps (Ts.T w.A) w.χ w.x (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.x (v w.B) := by
   sorry
 
-/-- S2-48. S2:1317-1343: "the case where I wants to offload the channel and
+/-- Nitro-48. Nitro:1317-1343: "the case where I wants to offload the channel and
     reclaim their funds. This is important to ensure that A and B cannot lock
     I's funds indefinitely in the channel ... The virtual channel became a
     direct channel and the intermediary was able to recover their
@@ -490,7 +501,7 @@ theorem intermediary_recovers_collateral (apps : Apps) (Ts : Threats apps) (v : 
       (v w.I) := by
   sorry
 
-/-- S2-49 (S2:1364-1394, §6.5.1 Opening a Virtual Channel), S4-0060-08. The
+/-- Nitro-49 (Nitro:1364-1394, §6.5.1 Opening a Virtual Channel), docs-0060-08. The
     construction is reached from equation 22 by single-channel updates that
     preserve the value of `A`, `B` and `I`. -/
 theorem virtual_open_value_preserving (apps : Apps) (Ts : Threats apps) (v v' : Views)
@@ -503,8 +514,8 @@ theorem virtual_open_value_preserving (apps : Apps) (Ts : Threats apps) (v v' : 
     SameValue apps (Ts.T w.I) (v w.I) (v' w.I) := by
   sorry
 
-/-- S2-49 (S2:1412-1431, §6.5.2 Closing a Virtual Channel), S4-0080-07.
-    S2:1418-1420: "I will accept this update, provided that their allocation
+/-- Nitro-49 (Nitro:1412-1431, §6.5.2 Closing a Virtual Channel), docs-0080-07.
+    Nitro:1418-1420: "I will accept this update, provided that their allocation
     of x coins remains the same." The reverse sequence preserves the value of
     `A`, `B` and `I`, and `I` ends with `b' + a' = x` across the ledgers. -/
 theorem virtual_close_value_preserving (apps : Apps) (Ts : Threats apps) (v v' : Views)
@@ -518,7 +529,7 @@ theorem virtual_close_value_preserving (apps : Apps) (Ts : Threats apps) (v v' :
     SameValue apps (Ts.T w.I) (v w.I) (v' w.I) := by
   sorry
 
-/-- S3-19, S3-18. S3:707-709, S3:734: "The following two requirements
+/-- SATP-19, SATP-18. SATP:707-709, SATP:734: "The following two requirements
     guarantee that intermediary's funds are invariant:
     `voucher1.alice + voucher1.bob == x`" and the same for `voucher2`. Every
     state that `validateOutcomeChange` supports keeps the funded total of the
@@ -532,13 +543,13 @@ theorem satp_outcome_change_keeps_total (decode : Decode) (c : FixedPart) (alice
       a + b = s0.state.outcome.fundedTotal) := by
   sorry
 
-/-- S3-21, S3-19 (Lemma 3.1, S3:511-513; Lemma A.1, S3:746-753). "Suppose V
+/-- SATP-21, SATP-19 (Lemma 3.1, SATP:511-513; Lemma A.1, SATP:746-753). "Suppose V
     finalizes on-chain. Either V is finalized with version = 0 and its
     original outcome {A : A(a0), B : A(b0)} or it is finalized with an
     outcome {A : A(a), B : A(b)}, where a0 + b0 = a + b." The hypotheses are
     what an honest signer controls: every all-signed setup state carries the
     original outcome, and every all-signed final state keeps the total
-    (S3:751-753). -/
+    (SATP:751-753). -/
 theorem satp_lemma_3_1 (apps : Apps) (decode : Decode) (r : Route) (alice bob : Participant)
     (hr : r.WellFormed apps) (hV : apps r.V.appDef = satpVirtualRules decode)
     (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
@@ -553,7 +564,7 @@ theorem satp_lemma_3_1 (apps : Apps) (decode : Decode) (r : Route) (alice bob : 
        (∃ a b, PairOutcome alice bob Ω0 a b ∧ a + b = r.a0 + r.b0)) := by
   sorry
 
-/-- S3-21 (Lemma A.1, S3:747-750, liveness half). "every party has signed a
+/-- SATP-21 (Lemma A.1, SATP:747-750, liveness half). "every party has signed a
     None state with version 1, in which case peers can take unilateral
     actions to ensure V finalized with an outcome {A : a, B : b}, where
     a0 + b0 = a + b." A peer who holds the all-signed post-fund state and
@@ -572,13 +583,13 @@ theorem satp_peers_can_finalize (apps : Apps) (decode : Decode) {p : Participant
       PairOutcome alice bob Ω a b ∧ a + b = r.a0 + r.b0) net := by
   sorry
 
-/-- S3-20 (Theorem 3.2, S3:503-507). "Let d(V, Pi) be the amount debited to
+/-- SATP-20 (Theorem 3.2, SATP:503-507). "Let d(V, Pi) be the amount debited to
     V from Pi's balances, across Li and Li−1 in Protocol 3.1. Let c(V, Pi) be
     the amount credited to Pi's balance from guarantees targeting V across Li
     and Li−1 in both Protocol 3.2 and 3.3. For all V, for all i = 1, ..., n,
     if Pi follows Protocols 3.1-3.3, then c(Pi) = d(Pi)." An intermediary
-    that completed Round 2 (S3:411-418) and holds the latest ledger states
-    has an unbeatable strategy (Protocol 3.3, S3:480-485) to finalize both
+    that completed Round 2 (SATP:411-418) and holds the latest ledger states
+    has an unbeatable strategy (Protocol 3.3, SATP:480-485) to finalize both
     ledgers with no guarantee for `V` and its pre-protocol balances
     restored. -/
 theorem satp_theorem_3_2 (apps : Apps) (decode : Decode) {P : Participant} (T : Threat P)
@@ -602,7 +613,7 @@ theorem satp_theorem_3_2 (apps : Apps) (decode : Decode) {P : Participant} (T : 
     Unbeatable apps T (IntermediaryRecovered r Lm Lp balm balp) net := by
   sorry
 
-/-- S3-20 (Theorem 3.2, Case 1-2, S3:522-537). An intermediary that has not
+/-- SATP-20 (Theorem 3.2, Case 1-2, SATP:522-537). An intermediary that has not
     signed any ledger update with a guarantee for `V` keeps its ledger
     balances: "Without Pi's signature on such an update, the consensus app
     guarantees there is no risk to Pi's balances". -/
@@ -619,7 +630,7 @@ theorem satp_intermediary_before_round2 (apps : Apps) {P : Participant} (T : Thr
     Unbeatable apps T (IntermediaryRecovered r Lm Lp balm balp) net := by
   sorry
 
-/-- S3-20 (S3:500-501): "We omit the analogous statement that can be stated
+/-- SATP-20 (SATP:500-501): "We omit the analogous statement that can be stated
     for the end-users Alice and Bob." The analogue for Alice (`P0`, ledger
     `L0`): if `V` finalizes with `{A : A(a), B : A(b)}` Alice can finalize
     `L0` with no guarantee for `V` and her entry raised by `a` from its
@@ -640,10 +651,12 @@ theorem satp_end_user_recovers (apps : Apps) (decode : Decode) {P : Participant}
     Unbeatable apps T (EndUserRecovered r L0 bal a) net := by
   sorry
 
-/-- S3-15, S3-20 (Protocol 3.3 step 3, S3:484-485; S3:550-553). After both
-    ledgers and `V` are finalized, one reclaim on each ledger credits `Pi`
-    with `a` in `L_{i-1}` and `b` in `L_i`: "implying Pi's balance increases
-    by a + b = a0 + b0 across both Li and Li−1." -/
+/-- SATP-15, SATP-20 (Protocol 3.3 step 3, SATP:484-485; SATP:550-553). After
+    both ledgers and `V` are finalized, one reclaim on each ledger credits
+    `Pi` with `a` in `L_{i-1}` and `b` in `L_i`: "implying Pi's balance
+    increases by a + b = a0 + b0 across both Li and Li−1." go-nitro
+    `compute_reclaim_effects` needs the peers' entries present and
+    `a + b = a0 + b0`; both hold after Protocol 3.1 Round 2 (SATP:411-418). -/
 theorem satp_reclaim_credits_intermediary (s : Adjudicator) (r : Route) (alice bob P Pprev Pnext : Participant)
     (Lm Lp : FixedPart) (om op : Allocation) (a b : Coins)
     (hdist : P ≠ Pprev ∧ P ≠ Pnext ∧ Pprev ≠ Pnext)
@@ -651,7 +664,10 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator) (r : Route) (alice b
     (hLm : s.finalOutcome Lm.address = some (.allocation om))
     (hLp : s.finalOutcome Lp.address = some (.allocation op))
     (hgm : om.find r.V.address = some (r.guarantee Pprev P))
-    (hgp : op.find r.V.address = some (r.guarantee P Pnext)) (hne : Lm ≠ Lp) :
+    (hgp : op.find r.V.address = some (r.guarantee P Pnext)) (hne : Lm ≠ Lp)
+    (hem : om.find Pprev.address ≠ none ∧ om.find P.address ≠ none)
+    (hep : op.find P.address ≠ none ∧ op.find Pnext.address ≠ none)
+    (hab : a + b = r.a0 + r.b0) :
     ∃ s1 s2 om' op', s.reclaim Lm r.V = some s1 ∧ s1.reclaim Lp r.V = some s2 ∧
       s2.finalOutcome Lm.address = some (.allocation om') ∧
       s2.finalOutcome Lp.address = some (.allocation op') ∧
