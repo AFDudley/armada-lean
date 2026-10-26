@@ -3042,6 +3042,98 @@ theorem transfer_step_exists
   rw [hassetDef, hallocsDef, hheldDef, hTotalPayoutsDef, hRemDef, hPayoutDef]
   exact ⟨hnoguarantee', 0, hospendstep, rfl, rfl⟩
 
+/-- Which harm this rules out: once all participants have signed a final
+    state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
+    point, Figure 11), no other caller's actions — in any number, in any
+    order, by any `Actor` OTHER than `h` themselves, before this
+    theorem's own calls run — can prevent the honest participant `h` from
+    obtaining a spendable note worth their allocation. This is the Lean
+    statement of "A's unbeatable strategy ⟹ the finalized outcome": the
+    fixed strategy is `conclude` (if not already concluded) then
+    `transfer`, and it succeeds after ANY interleaving (`interleaved`)
+    another caller runs first — formalizing §4.3's two assumptions
+    (unimpeded, cannot be front-run) as "no interleaving can make the
+    strategy's own `Step` preconditions false". `hnotActor` excludes `h`'s
+    OWN actor identities (the Nitro identity `h`, and the pool key `pk`
+    `dest.destination` names) from `interleaved`: without it,
+    `interleaved` could contain a step only `h` themselves could take
+    (`.sign h d` for an arbitrary `d` `h` never chose, `Operations.lean`'s
+    actor check) and have it count as "the adversary's" doing, when it is
+    really `h`'s own action. `h`'s own steps belong only
+    in the witnessed `payCalls`, never in `interleaved`. `hnotick`
+    excludes a `.tick` from `interleaved` too: a `.tick` is nobody's
+    signed action, so `hnotActor` alone does not rule it out, but an
+    adversary ticking the clock forward could otherwise time a stale
+    challenge into `.finalized` mode with the WRONG outcome before `h`'s
+    own strategy runs; `h`'s own strategy may still tick the clock, in
+    `payCalls`, if its own `conclude` needs one. `hduration` and
+    `hnotfinal` are what make the no-tick exclusion sufficient: a fresh
+    `.challenge` registered during `interleaved` always sets `finalizesAt
+    > now` (`0 < fp.challengeDuration`), so it cannot finalize the
+    channel without a further tick, and the channel is not ALREADY
+    finalized (with some stale outcome) at `s` to begin with. `hnowpos`
+    is what lets `h`'s own `.conclude` actually finalize the channel: on
+    a real chain `block.timestamp` is a positive Unix time, so `conclude`
+    (`ForceMove.sol:160-167`, writes `uint48(block.timestamp)`) always
+    finalizes; the model's own `finalizesAt := s.now` (`Operations.lean`'s
+    `.conclude` case) treats `0` as the SAME sentinel `ChannelStatus.mode`
+    reads as "no deadline set" (`.open`), so concluding at `s.now = 0`
+    would not finalize. `hhonest`
+    closes the one remaining way an adversary could still finalize the
+    channel with the WRONG outcome during `interleaved`, via `.conclude`:
+    `h` may, in an earlier round, have signed some OTHER final state for
+    this same channel (a stale offer, since withdrawn) that still
+    satisfies `AuthorizedBy` at `s`; `hhonest` says `h` never signed any
+    final state for `fp` OTHER than `candidate` itself, so no adversary-
+    assembled `SignedByAll` for a different final state can ever succeed.
+    `hsigned` reads unanimous signing at `s`; since `.sign` only ever
+    adds to `signedBy`, and only in the ACTING participant's own row,
+    `interleaved` (now excluding `h`'s own actor) cannot UN-sign
+    anything, so `SignedByAll` still holds at `mid`. The payout note's
+    own key, `dest.destination`, is restated as a USER note key
+    (`npk (masterPublicKey pk nk) r`) rather than a raw address:
+    `pk`/`nk`/`r` are `h`'s own keys and the random `h` chose when the
+    outcome was signed (the same convention `DepositStep`'s own witness
+    uses, `Notes.lean`), so the note this theorem mints is one `h` can
+    actually spend — a RAW address (`Term.val h`, the original text)
+    names a note no `npk` derivation can ever equal (`Term`'s
+    `val`/`hash` constructors are disjoint), so a payout to one would be
+    unspendable by anyone. "Getting money owed" is a live note in the
+    pool, matching this model's note-based payment (`Notes.lean`): `h`
+    can later spend it with their own key, which is the Armada-layer
+    meaning of "paid" — the armada-nitro rule (`State.lean`). `0 < x`:
+    a zero payment carries no content, and no call mints a note for a
+    zero payout (`zero_payout_mints_nothing`), so `x = 0` would need a
+    DIFFERENT, pre-existing note at `dest.destination` no hypothesis
+    here supplies. `actor ≠ Actor.pool pk`: another `.transfer` can
+    legitimately pay `destIdx` itself before `h`'s own calls run (clause
+    24 names no caller restriction); when it does, the minted note is
+    THIS theorem's own witness directly. The ONE further gap a MODEL FIX
+    closes (found proving this theorem): `.deposit`'s own witness, left
+    unconstrained beyond the abstract `EdDSAVerify`, could otherwise
+    nullify that note's position by merely CLAIMING its npk/value, since
+    nothing tied the claim back to a real prior signing
+    (`Operations.lean`'s `.deposit` case, "MODEL FIX" comment). The fix
+    gates `.deposit` on `s.poolSignedBy w.publicKey (msgHashOf pub)`,
+    grown only by `.signNote` taken AS `.pool pk` (the module comment on
+    `.sign`/`.signNote`); excluding `actor ≠ Actor.pool pk` from
+    `interleaved` then means NO step in it can newly authorize that
+    key's spend (`poolSignedBy_frame`), and `deposit_spend_requires_
+    signer` (`Lemmas.lean`) shows a `.deposit` under any OTHER key could
+    not have named this note's position in the first place — together,
+    once minted, the note survives the rest of `interleaved` untouched,
+    PROVIDED `pk` had not ALREADY signed a spend of it before `s`, which
+    neither lemma rules out on its own (`poolSignedBy_frame` only shows
+    `pk`'s row cannot GROW during `interleaved`; it says nothing about
+    what the row already held at `s`, and `s` is chosen before the note
+    even exists). `hhonestPool` is the pool-layer half of the SAME
+    honest-participant condition `hhonest` states for the Nitro layer:
+    an honest `h` signs a pool spend only for a transaction it actually
+    means to make, so at `s`, key `pk` has signed no transaction whose
+    witness nullifies a note keyed to `dest.destination` — the one fact
+    `deposit_spend_requires_signer`/`poolSignedBy_frame` need together
+    with `hhonestPool` to rule out EVERY `.deposit` in `interleaved`
+    spending this note, not just ones authorized DURING it. -/
 theorem unbeatable_pays
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
