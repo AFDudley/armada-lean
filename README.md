@@ -95,9 +95,13 @@ and the only fee is the shield-in fee. "armada-nitro code" marks a statement
 whose only source is the armada-nitro contract or its R1 mutation tests, not
 S1–S4.
 
-Origin: `v1` is the statement set the operator approved on 2026-10-24 (tag
-`adjudicator-statements-v1`). `A-xx` is from the 2026-10-25 read of S1–S4.
-`B4` replaced `v1`'s `bulk_paths_never_succeed`. `none` is in neither set.
+Origin and approval: `v1` is the statement set the operator approved on
+2026-10-24 (tag `adjudicator-statements-v1`). `A-xx` came from the
+2026-10-25 read of S1–S4. The operator approved A-01 to A-14 on 2026-10-25
+("A01-A14 should be added"; "if the analysis says they're statements in the
+docs they should be statements in our system"). `B4` replaced `v1`'s
+`bulk_paths_never_succeed`, by the operator's ruling of 2026-10-25 to follow
+the docs. `none` has no recorded approval.
 
 | Lean theorem | Property | Source | Origin |
 |---|---|---|---|
