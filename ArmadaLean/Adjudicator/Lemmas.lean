@@ -24,6 +24,22 @@ theorem afford_sum_le (allocs : List Allocation) (surplus : Nat) :
     have hpaid : min a.amount surplus ≤ surplus := Nat.min_le_right _ _
     omega
 
+/-- `afford` pays nothing out of a zero surplus, at any index: with no
+    funds to distribute, every entry's own paid amount is `0`. What
+    `unbeatable_pays`'s own strategy needs: a positive affordable amount
+    (`haffordable`/`hxpos`) rules out a zero `heldValue`, so the
+    channel's own held note actually exists. -/
+theorem afford_zero_surplus (allocs : List Allocation) (k : Nat) :
+    (afford allocs 0).getD k 0 = 0 := by
+  induction allocs generalizing k with
+  | nil => simp [afford]
+  | cons a as ih =>
+    cases k with
+    | zero => show min a.amount 0 = 0; omega
+    | succ k' =>
+      show (afford as (0 - min a.amount 0)).getD k' 0 = 0
+      simpa using ih k'
+
 /-- `afford`'s own payout at a GIVEN index never goes DOWN as surplus
     goes UP: priority order means more funds can only help a later
     entry, never hurt one (S2 §5.2's Turbo Value Algorithm is monotone
@@ -749,6 +765,71 @@ theorem transferEffectsSel_cons_payout (a : Allocation) (as : List Allocation) (
     congr 1
 
 
+/-- `transferEffectsSel`'s own exit list, decomposed the same way as
+    `transferEffectsSel_cons_payout`: the head's own payout, if
+    selected, prepended to the tail's own exit list. What
+    `transfer_step_exists` (`Safety.lean`) needs to pin a single-index
+    selection's exit list down to exactly one entry. -/
+theorem transferEffectsSel_cons_exit (a : Allocation) (as : List Allocation) (surplus : Nat)
+    (sel : Nat → Bool) :
+    (transferEffectsSel (a :: as) surplus sel).2.1 =
+      (if sel 0 then [{ a with amount := min a.amount surplus }] else []) ++
+        (transferEffectsSel as (surplus - min a.amount surplus) (fun j => sel (j + 1))).2.1 := by
+  have haffcons : afford (a :: as) surplus =
+      min a.amount surplus :: afford as (surplus - min a.amount surplus) := rfl
+  by_cases h0 : sel 0
+  · simp only [if_pos h0]
+    unfold transferEffectsSel
+    simp only [List.length_cons, List.range_succ_eq_map, haffcons, List.zip_cons_cons,
+      List.filterMap_cons, if_pos h0,
+      List.zip_map_left, List.filterMap_map, List.singleton_append]
+    congr 1
+  · simp only [if_neg h0, List.nil_append]
+    unfold transferEffectsSel
+    simp only [List.length_cons, List.range_succ_eq_map, haffcons, List.zip_cons_cons,
+      List.filterMap_cons, if_neg h0,
+      List.zip_map_left, List.filterMap_map]
+    congr 1
+
+/-- A single-index selection's own exit list is exactly one entry: the
+    selected allocation's own share. What `transfer_step_exists`
+    (`Safety.lean`) needs for `PoolOwnedSpendStep`'s own `hM` bound —
+    without this, `payoutOutputs`'s own length is unbounded. -/
+theorem transferEffects_exit_single (allocs : List Allocation) (surplus idx : Nat)
+    (hidx : idx < allocs.length) :
+    (transferEffects allocs surplus [idx]).2.1 =
+      [{ allocs.getD idx Allocation.default with amount := (afford allocs surplus).getD idx 0 }] := by
+  induction allocs generalizing surplus idx with
+  | nil => simp at hidx
+  | cons a as ih =>
+    rw [transferEffects_eq_sel, transferEffectsSel_cons_exit]
+    cases idx with
+    | zero =>
+      have hsel0 : ([0].isEmpty || (0:Nat) ∈ [0]) = true := by simp
+      rw [hsel0]
+      have hempty : (transferEffectsSel as (surplus - min a.amount surplus)
+          (fun j => [0].isEmpty || j + 1 ∈ [0])).2.1 = [] := by
+        have hsel' : ∀ j, ([0].isEmpty || j + 1 ∈ [0]) = false := by
+          intro j; simp
+        unfold transferEffectsSel
+        simp only [hsel']
+        simp
+      rw [hempty]
+      simp [afford]
+    | succ i' =>
+      have hidx' : i' < as.length := by simpa using hidx
+      have hselshift : (fun j => [i' + 1].isEmpty || j + 1 ∈ [i' + 1]) =
+          (fun j => [i'].isEmpty || j ∈ [i']) := by
+        funext j; simp [Nat.succ_eq_add_one]
+      rw [hselshift, ← transferEffects_eq_sel, ih (surplus - min a.amount surplus) i' hidx']
+      have hsel0 : ([i' + 1].isEmpty || (0:Nat) ∈ [i' + 1]) = false := by simp
+      rw [hsel0]
+      simp only [List.getD_cons_succ, Bool.false_eq_true, if_false, List.nil_append]
+      have hafforD : (afford (a :: as) surplus).getD (i' + 1) 0 =
+          (afford as (surplus - min a.amount surplus)).getD i' 0 := by simp [afford]
+      rw [hafforD]
+
+
 /-- `transferEffectsSel`'s own total payout never exceeds `afford`'s own
     total: every paid entry's amount IS one of `afford`'s own
     per-index values (`transferEffectsSel`'s `exitAllocations`, built by
@@ -1192,6 +1273,75 @@ theorem step_self (sig : SignatureAssumptions)
   | signNote pk msgHash =>
     obtain ⟨_, _, _, _, _, _, h, _, _⟩ := hstep
     exact congrArg Term.keccak h
+
+/-- Every `Step` case OTHER than `.tick` leaves `now` untouched
+    (`Operations.lean`): `.tick` is the one call whose own job is to
+    advance the clock; every other case states `s'.now = s.now`
+    directly. What `unbeatable_pays`'s own strategy needs: `interleaved`
+    (which excludes `.tick`, `hexclTick`) never changes `mid.now` away
+    from `s.now`, so `s`'s own `hnowpos : 0 < s.now` still holds at
+    `mid`. -/
+theorem step_now_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hnotick : ∀ newNow, call ≠ Call.tick newNow)
+    (hstep : Step sig appRel actor s call s') :
+    s'.now = s.now := by
+  cases call with
+  | deposit cid expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, _, _, _, _, h, _, _⟩ := hstep
+    exact h
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, h, _, _⟩ := hstep
+    exact h
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, h, _⟩ := hstep
+    exact h
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, h, _⟩ := hstep
+    exact h
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨_, _, _, _, _, _, _, _, h, _⟩ := hstep
+    exact h
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, h, _, _⟩ := hstep
+    exact h
+  | bulkTransferAllAssets cid outcome claimedStateHash =>
+    obtain ⟨_, _, _, _, _, _, _, _, h, _, _⟩ := hstep
+    exact h
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, _, _, _, _, _, h, _, _⟩ := hstep
+    exact h
+  | tick newNow => exact absurd rfl (hnotick newNow)
+  | sign p d =>
+    obtain ⟨_, _, _, _, _, _, _, h, _⟩ := hstep
+    exact h
+  | signNote pk msgHash =>
+    obtain ⟨_, _, _, _, _, _, _, h, _⟩ := hstep
+    exact h
+
+/-- `AppliesAll`'s own lift of `step_now_frame`: a call sequence that
+    never includes `.tick` leaves `now` exactly where it started, one
+    `Step` at a time. -/
+theorem appliesAll_now_frame (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (s s' : AdjudicatorState) (calls : List (Actor × Call))
+    (happ : AppliesAll sig appRel s calls s')
+    (hnotick : ∀ actor newNow, (actor, Call.tick newNow) ∉ calls) :
+    s'.now = s.now := by
+  induction calls generalizing s with
+  | nil => rw [happ]
+  | cons hd rest ih =>
+    obtain ⟨actor, call⟩ := hd
+    obtain ⟨mid, hstep, hrest⟩ := happ
+    have hnotickcall : ∀ newNow, call ≠ Call.tick newNow := by
+      intro newNow heq
+      exact hnotick actor newNow (heq ▸ List.mem_cons_self)
+    have hnotickrest : ∀ actor' newNow, (actor', Call.tick newNow) ∉ rest :=
+      fun actor' newNow hc => hnotick actor' newNow (List.mem_cons_of_mem _ hc)
+    rw [ih mid hrest hnotickrest, step_now_frame sig appRel actor s mid call hnotickcall hstep]
+
 /-! ## Another Step-level fact every call case keeps: `signedBy` only grows -/
 
 /-- `signedBy` only grows across a single `Step`: only `.sign` adds to it,
@@ -1598,6 +1748,7 @@ theorem PoolOwnedSpend_update_owned_disclosure
       pool')
     (hinv : ∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r, pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
         self = ownerField ∧ pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
         npk ownerField r = pre.npk) :
     ∀ qasset qcid qpos qc, (update holdings asset
@@ -1608,6 +1759,7 @@ theorem PoolOwnedSpend_update_owned_disclosure
                  [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1,
              commitment (npk self r) asset remainder)))) qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r', pool'.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
         self = ownerField ∧ pool'.ownedRandomOf qc = some ⟨ownerField, r'⟩ ∧
         npk ownerField r' = pre.npk := by
   intro qasset qcid qpos qc hc
@@ -1680,7 +1832,7 @@ theorem PoolOwnedSpend_update_owned_disclosure
         have hvaleq : w.valueOut idx = remainder := congrArg CommitmentPreimage.value hpr
         have hqceq : qc = pub.commitmentsOut idx := by
           rw [hC.outputs idx, hnpkeq, htokeq, hvaleq]; exact hceq.symm
-        refine ⟨⟨npk self r, qasset, remainder⟩, pub.ownerField, randomOut j0, ?_, ?_,
+        refine ⟨⟨npk self r, qasset, remainder⟩, pub.ownerField, randomOut j0, ?_, ?_, rfl,
           hown, ?_, ?_⟩
         · rw [heq]; dsimp only; exact h0
         · exact hceq
@@ -1705,8 +1857,8 @@ theorem PoolOwnedSpend_update_owned_disclosure
           · exact absurd ⟨rfl, hcid'⟩ heqch
           · rw [if_pos rfl, if_neg hcid'] at hc; exact hc
         · rw [if_neg ha] at hc; exact hc
-      obtain ⟨pre, ownerField', r', h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc'
-      refine ⟨pre, ownerField', r', ?_, h2, h3, ?_, h5⟩
+      obtain ⟨pre, ownerField', r', h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc'
+      refine ⟨pre, ownerField', r', ?_, h2, h3, h4, ?_, h6⟩
       · rw [heq]; dsimp only
         exact applyRecords_preserves_known hvalid_outputs' pool.preimageOf qc pre h1 h2
       · rw [heq]; dsimp only
@@ -1720,8 +1872,8 @@ theorem PoolOwnedSpend_update_owned_disclosure
                 (by unfold ownedOutputRecords
                     exact List.mem_ofFn.mpr ⟨Fin.natAdd payoutOutputs.length j, rfl⟩)
                 (npk_preimage_not_zero (hRandomOut j)),
-              hRandomOut j⟩) pool.ownedRandomOf qc ownerField' r' pre h4
-          (applyRecords_preserves_known hvalid_outputs' pool.preimageOf qc pre h1 h2) h5.symm
+              hRandomOut j⟩) pool.ownedRandomOf qc ownerField' r' pre h5
+          (applyRecords_preserves_known hvalid_outputs' pool.preimageOf qc pre h1 h2) h6.symm
   · simp only [hc0] at hmatch
     obtain ⟨w, pub, hM, hC, rest, spent', randomOut, hNonZero, hCapacity, hown, htoken,
       hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
@@ -1773,7 +1925,7 @@ theorem PoolOwnedSpend_update_owned_disclosure
         have hvaleq : w.valueOut idx = remainder := congrArg CommitmentPreimage.value hpr
         have hqceq : qc = pub.commitmentsOut idx := by
           rw [hC.outputs idx, hnpkeq, htokeq, hvaleq]; exact hceq.symm
-        refine ⟨⟨npk self r, qasset, remainder⟩, pub.ownerField, randomOut j0, ?_, ?_,
+        refine ⟨⟨npk self r, qasset, remainder⟩, pub.ownerField, randomOut j0, ?_, ?_, rfl,
           hown, ?_, ?_⟩
         · rw [heq]; dsimp only; exact h0
         · exact hceq
@@ -1798,8 +1950,8 @@ theorem PoolOwnedSpend_update_owned_disclosure
           · exact absurd ⟨rfl, hcid'⟩ heqch
           · rw [if_pos rfl, if_neg hcid'] at hc; exact hc
         · rw [if_neg ha] at hc; exact hc
-      obtain ⟨pre, ownerField', r', h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc'
-      refine ⟨pre, ownerField', r', ?_, h2, h3, ?_, h5⟩
+      obtain ⟨pre, ownerField', r', h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc'
+      refine ⟨pre, ownerField', r', ?_, h2, h3, h4, ?_, h6⟩
       · rw [heq]; dsimp only
         exact applyRecords_preserves_known hvalid_outputs' pool.preimageOf qc pre h1 h2
       · rw [heq]; dsimp only
@@ -1813,8 +1965,8 @@ theorem PoolOwnedSpend_update_owned_disclosure
                 (by unfold ownedOutputRecords
                     exact List.mem_ofFn.mpr ⟨Fin.natAdd payoutOutputs.length j, rfl⟩)
                 (npk_preimage_not_zero (hRandomOut j)),
-              hRandomOut j⟩) pool.ownedRandomOf qc ownerField' r' pre h4
-          (applyRecords_preserves_known hvalid_outputs' pool.preimageOf qc pre h1 h2) h5.symm
+              hRandomOut j⟩) pool.ownedRandomOf qc ownerField' r' pre h5
+          (applyRecords_preserves_known hvalid_outputs' pool.preimageOf qc pre h1 h2) h6.symm
 
 
 /-- One `PoolOwnedSpendStep`-backed holdings update, the shape `.transfer`
@@ -2581,10 +2733,12 @@ theorem bulkTransferFold_owned_disclosure (self : Term) (cid : Term) :
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r, pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
         self = ownerField ∧ pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
         npk ownerField r = pre.npk) →
     ∀ qasset qcid qpos qc, holdingsF qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r, poolF.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
         self = ownerField ∧ poolF.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
         npk ownerField r = pre.npk := by
   intro outcome
@@ -4547,11 +4701,13 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call)
     (hinv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r, s.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
         s.self = ownerField ∧ s.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
         npk ownerField r = pre.npk)
     (hstep : Step sig appRel actor s call s') :
     ∀ qasset qcid qpos qc, s'.holdings qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r, s'.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
         s.self = ownerField ∧ s'.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
         npk ownerField r = pre.npk := by
   cases call with
@@ -4576,7 +4732,7 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
         · subst hcid
           rw [if_pos rfl, if_pos rfl] at hc
           obtain ⟨hpeq, hceq⟩ := Prod.mk.injEq .. ▸ Option.some.inj hc
-          refine ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, s.self, r0, ?_, ?_, rfl, ?_, ?_⟩
+          refine ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, s.self, r0, ?_, ?_, htoken, rfl, ?_, ?_⟩
           · rw [hpoolEq, heq, ← hceq]; dsimp only; exact hread0
           · exact (hC.outputs idx).symm.trans hceq
           · rw [hpoolEq, heq, ← hceq]; dsimp only
@@ -4589,8 +4745,8 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
               (List.mem_singleton_self _)
           · exact hown.symm
         · rw [if_pos rfl, if_neg hcid] at hc
-          obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-          refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+          obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+          refine ⟨pre, ownerField', r, ?_, h2, h3, h4, ?_, h6⟩
           · rw [hpoolEq, heq]; dsimp only
             exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2
           · rw [hpoolEq, heq]; dsimp only
@@ -4599,11 +4755,11 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
                 rw [List.mem_singleton] at hcd
                 rw [hcd]
                 exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
-                  rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
-              (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
+                  rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h5
+              (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h6.symm
       · rw [if_neg ha] at hc
-        obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-        refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+        obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+        refine ⟨pre, ownerField', r, ?_, h2, h3, h4, ?_, h6⟩
         · rw [hpoolEq, heq]; dsimp only
           exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2
         · rw [hpoolEq, heq]; dsimp only
@@ -4612,8 +4768,8 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
               rw [List.mem_singleton] at hcd
               rw [hcd]
               exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
-                rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
-            (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
+                rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h5
+            (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h6.symm
     · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
       rw [hh] at hmatch
       obtain ⟨merged, mergedPos, hmerge, hholdseq⟩ := hmatch
@@ -4638,7 +4794,7 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
             npk_preimage_not_zero hnpkOut'.symm
           have hread' := applyRecords_reads hvalid_outputs' midPool.preimageOf _ _ hmemrec hnz0'
           refine ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩, pub'.ownerField, randomOut', ?_, ?_,
-            hown', ?_, ?_⟩
+            htoken', hown', ?_, ?_⟩
           · rw [heq', hceq.symm.trans hmergedEq]; dsimp only; exact hread'
           · exact (hC'.outputs 0).symm.trans (hmergedEq.symm.trans hceq)
           · rw [heq', hceq.symm.trans hmergedEq]; dsimp only
@@ -4651,7 +4807,7 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
               (⟨pub'.ownerField, randomOut'⟩ : OwnedDisclosure) (List.mem_singleton_self _)
           · exact hrandomOut'
         · rw [if_pos rfl, if_neg hcid] at hc
-          obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+          obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
           have hvalid_outputs' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
             ownedOutputRecords_valid hC'
           have h1mid : midPool.preimageOf qc = some pre := by
@@ -4664,9 +4820,9 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
                 rw [List.mem_singleton] at hcd
                 rw [hcd]
                 exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
-                  rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
-              (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
-          refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+                  rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h5
+              (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h6.symm
+          refine ⟨pre, ownerField', r, ?_, h2, h3, h4, ?_, h6⟩
           · rw [heq']; dsimp only
             exact applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2
           · rw [heq']; dsimp only
@@ -4678,9 +4834,9 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
                   (by unfold ownedOutputRecords; exact List.mem_ofFn.mpr ⟨0, rfl⟩)
                   (npk_preimage_not_zero hnpkOut'.symm), hrandomOut'⟩)
               midPool.ownedRandomOf qc ownerField' r pre h4mid
-              (applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2) h5.symm
+              (applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2) h6.symm
       · rw [if_neg ha] at hc
-        obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+        obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
         have hvalid_outputs' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
           ownedOutputRecords_valid hC'
         have h1mid : midPool.preimageOf qc = some pre := by
@@ -4693,9 +4849,9 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
               rw [List.mem_singleton] at hcd
               rw [hcd]
               exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
-                rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
-            (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
-        refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+                rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h5
+            (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h6.symm
+        refine ⟨pre, ownerField', r, ?_, h2, h3, h4, ?_, h6⟩
         · rw [heq']; dsimp only
           exact applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2
         · rw [heq']; dsimp only
@@ -4707,25 +4863,25 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
                 (by unfold ownedOutputRecords; exact List.mem_ofFn.mpr ⟨0, rfl⟩)
                 (npk_preimage_not_zero hnpkOut'.symm), hrandomOut'⟩)
             midPool.ownedRandomOf qc ownerField' r pre h4mid
-            (applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2) h5.symm
+            (applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2) h6.symm
   | challenge fp proof candidate challenger =>
     obtain ⟨_, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
   | checkpoint fp proof candidate =>
     obtain ⟨_, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
   | conclude fp candidate =>
     obtain ⟨_, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
   | transfer assetIndex cid claimedStateHash outcome indices =>
     obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨_hguarantee, hrest⟩ := hinner
@@ -4794,8 +4950,8 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
     obtain ⟨_, _, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
   | bulkTransferAllAssets channelId outcome claimedStateHash =>
     obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
     exact bulkTransferFold_owned_disclosure s.self channelId outcome newOutcome s.pool s'.pool
@@ -4808,20 +4964,49 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
     obtain ⟨_, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
   | sign p d =>
     obtain ⟨_, _, hpoolEq, _, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
   | signNote pk msgHash =>
     obtain ⟨_, _, hpoolEq, _, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
     rw [hholdEq] at hc
-    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
-    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, h4, hpoolEq ▸ h5, h6⟩
+
+/-- `held_note_owned_disclosure_step`'s own reachable-set lift: every held
+    note's own preimage has a known owned disclosure, at ANY reachable
+    state, not just one `Step` away from an already-established anchor.
+    What `unbeatable_pays`'s own strategy needs to build
+    `owned_spend_witness_exists`'s own `hOwned` hypothesis for the
+    channel's held note, at an ARBITRARY reachable `mid`. -/
+theorem held_note_owned_disclosure_reachable (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (s : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) :
+    ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre ownerField r, s.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
+        s.self = ownerField ∧ s.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
+        npk ownerField r = pre.npk :=
+  reachable_preserves
+    (P := fun mid => ∀ qasset qcid qpos qc, mid.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre ownerField r, mid.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        pre.token = qasset ∧
+        mid.self = ownerField ∧ mid.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
+        npk ownerField r = pre.npk)
+    (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
+    (fun actor call s1 s2 hP hstep qasset qcid qpos qc hc => by
+      obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5, h6⟩ :=
+        held_note_owned_disclosure_step sig appRel actor s1 s2 call hP hstep qasset qcid qpos qc hc
+      exact ⟨pre, ownerField, r, h1, h2, h3, (step_self sig appRel actor s1 s2 call hstep).trans h4,
+        h5, h6⟩)
+    hreach
 
 /-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
     (`Safety.lean`) need, one `Step` at a time: a holding names exactly one leaf

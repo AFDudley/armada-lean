@@ -2483,6 +2483,533 @@ theorem conclude_step_finalizes
       outcomeHashOf candidate.outcome
     unfold update; rw [if_pos rfl]
 
+/-- **Placeholder, pending the pool-model rollover change**: the pool's
+    own tree always has room for two more leaves, at ANY reachable
+    state. On the real chain this holds because the contract rolls the
+    tree over to a fresh one once full (`MerkleModule.sol:62-70`); the
+    current pool model has one tree with no rollover, so this is not
+    yet provable from `Reachable` alone. Replace with the
+    `adjudicator_pool_reachable`-lifted fact once the pool model's own
+    rollover change lands. -/
+theorem pool_leaves_capacity_placeholder (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid) :
+    mid.pool.leaves.length + 2 ≤ 2 ^ TreeDepth := by
+  sorry
+
+/-- **Placeholder, pending the pool-model `live_values_lt_2pow120` change**:
+    a channel's own `heldValue`, at ANY reachable state, is below
+    `2 ^ 120` — true because every note ever minted passed the owning
+    circuit's own `Num2Bits(120)` range check (`Constrained`/
+    `OwnedConstrained`'s own `rangeIn`/`rangeOut` fields) at mint time,
+    so every LIVE note's own value is in range, and `heldValue` only
+    ever reads a live note's own value (`State.lean`). Replace with the
+    `adjudicator_pool_reachable`-lifted `live_values_lt_2pow120` once
+    the pool model proves it. -/
+theorem heldValue_range_placeholder (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (asset : Nat) (cid : Term)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid) :
+    RangeChecked120 (heldValue mid asset cid) := by
+  sorry
+
+/-- **Placeholder, pending the pool-model tree-rollover change**: a
+    channel's own recorded holding position names the EXACT pool leaf
+    its own commitment lives at, at ANY reachable state — `leaves` only
+    grows by append (never overwrites an existing index), and
+    `position := before.leaves.length + idx.val`
+    (`DepositStep`/`PoolOwnedSpendStep`, `Notes.lean`) already places
+    the note's own `hashCommitment` at exactly that index the moment it
+    is written, so this should hold for today's single-tree pool
+    model — but the pool model's own rollover change in progress
+    reshapes a leaf position to `(tree number, index)`, so a proof
+    against today's `leaves : List Term` shape would need redoing once
+    that change lands. Replace once the pool model's own "a leaf
+    written at a position never changes" fact (in the new shape) is
+    available to connect this to. -/
+theorem holdings_position_leaf_value_placeholder (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid) :
+    ∀ asset cid pos c, mid.holdings asset cid = some (pos, c) →
+      mid.pool.leaves.getD pos (Term.val 0) = c := by
+  sorry
+
+/-- **Placeholder, pending the pool-model rollover change**: a live,
+    owned note's own nullifier is never already spent — true because a
+    note leaves `live` the SAME step its nullifier enters `spent`
+    (`PoolOwnedSpendStep`'s own `removeAll`/`markSpent` pairing,
+    `Notes.lean`), so a note that stays live was never spent. A
+    nullifier is derived from the leaf position
+    (`ArmadaLean.Nullifier.nullifier`), and the pool model's own
+    rollover change in progress reshapes what a position is, so a
+    proof against today's shape would need redoing once that change
+    lands. Replace with the pool model's own version of this fact (in
+    the new shape) once that change lands. -/
+theorem live_note_nullifier_unspent_placeholder (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid)
+    (asset : Nat) (cid : Term) (pos : Nat) (c ownerField : Term) (r : Nat)
+    (hholds : mid.holdings asset cid = some (pos, c))
+    (hown : mid.pool.ownedRandomOf c = some ⟨ownerField, r⟩) :
+    nullifier ownerField pos ∉ mid.pool.spent := by
+  sorry
+
+/-- Removing a single already-live element from a pool always succeeds,
+    leaving it erased. Generic over `removeAll`'s own `[DecidableEq α]`
+    parameter so the `BEq` instance it derives internally stays pinned
+    to the SAME one this lemma's own statement uses — what
+    `transfer_step_exists` needs for `PoolOwnedSpendStep`'s own
+    `removeAll` obligation on a singleton `ownedSpentPositions`. -/
+theorem removeAll_singleton_of_mem {α : Type} [DecidableEq α] {l : List α} {x : α}
+    (h : x ∈ l) : removeAll l [x] = some (l.erase x) := by
+  unfold removeAll
+  rw [List.elem_eq_true_of_mem h]
+  unfold removeAll
+  simp
+
+
+
+/-- The full per-step invariant `holdings_position_live_step` (`Lemmas.lean`)
+    preserves, lifted to any reachable state: a holding's own position is
+    live with the holding's own commitment (naming the EXACT `(position,
+    preimage)` pair, not just that SOME live note matches the
+    commitment), within the pool's own leaf range, and distinct from
+    every unrelated holding's own position. `holdings_point_to_live_notes`
+    weakens this to `PoolIsLive`; `transfer_step_exists` needs the exact
+    pair, to name `removeAll`'s own witness. -/
+theorem holdings_position_live_reachable
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (s : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) :
+    ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      (∃ pre, (qpos, pre) ∈ s.pool.live qasset ∧ hashCommitment pre = qc ∧
+        ((∃ ownerField r, s.self = ownerField ∧ pre.npk = npk ownerField r) ∨
+          ∃ r, pre.npk = npk s.self r)) ∧
+      qpos < s.pool.leaves.length ∧
+      (∀ qasset' qcid' qpos' qc', s.holdings qasset' qcid' = some (qpos', qc') →
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos) :=
+  reachable_preserves
+    (P := fun s => ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      (∃ pre, (qpos, pre) ∈ s.pool.live qasset ∧ hashCommitment pre = qc ∧
+        ((∃ ownerField r, s.self = ownerField ∧ pre.npk = npk ownerField r) ∨
+          ∃ r, pre.npk = npk s.self r)) ∧
+      qpos < s.pool.leaves.length ∧
+      (∀ qasset' qcid' qpos' qc', s.holdings qasset' qcid' = some (qpos', qc') →
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos))
+    (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
+    (fun actor call s s' hP hstep =>
+      (step_self sig appRel actor s s' call hstep ▸
+        holdings_position_live_step sig appRel actor s s' call hP hstep : _))
+    hreach
+
+/-- Which harm this rules out: `holdings` can never point to a commitment
+    the pool itself does not back with a live note — there is no path by
+    which a channel's recorded collateral becomes a dangling reference a
+    caller could exploit. The held value is the note's value read from
+    the pool's own record, which `ArmadaLean.preimageOf_consistent`
+    (`PoolOwned.lean`) proves trustworthy; only the owner can ever
+    spend the note the holding points at, by `ArmadaLean.
+    owned_owner_binding` (`PoolOwned.lean`). This is the formal content
+    of the armada-nitro rule at the adjudicator's own storage layer,
+    not only the pool's. -/
+theorem holdings_point_to_live_notes
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (s : AdjudicatorState) (asset : Nat) (cid : Term) (pos : Nat) (c : Term)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
+    (hholds : s.holdings asset cid = some (pos, c)) :
+    PoolIsLive s.pool c := by
+  obtain ⟨⟨pre, hpre, hval, _⟩, _, _⟩ :=
+    holdings_position_live_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c
+      hholds
+  exact ⟨asset, pos, pre, hpre, hval⟩
+
+/-- Value in the pool exists only as notes, at the adjudicator's own
+    interface: `AdjudicatorState` has no raw-balance field anywhere, and
+    `heldValue` (`State.lean`) is always a read of a live note's preimage,
+    never a stored integer — the armada-nitro rule (`State.lean`).
+    This statement packages `holdings_point_to_live_notes` (C) and
+    `notedValue_conserved_reachable` (C) as the single "value is notes"
+    claim, on top of plain conservation. -/
+theorem value_exists_only_as_notes
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (s : AdjudicatorState) (asset : Nat) (cid : Term)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
+    (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
+    ∃ pos c, s.holdings asset cid = some (pos, c) ∧ PoolIsLive s.pool c ∧
+      (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
+  unfold heldValue at hheld
+  rcases hc : s.holdings asset cid with _ | ⟨pos, cm⟩
+  · simp only [hc] at hheld; omega
+  · refine ⟨pos, cm, ?_, ?_, ?_⟩
+    · rfl
+    · exact holdings_point_to_live_notes sig appRel assets selfInputs pool0 s asset cid pos cm hreach hc
+    · simp only [hc] at hheld
+      rcases hp : s.pool.preimageOf cm with _ | pre
+      · rw [hp] at hheld; simp at hheld; omega
+      · rw [hp] at hheld; simp at hheld; simp [hheld]
+
+/-- Given a finalized channel at `mid` naming `curOutcome` at
+    `assetIndex`, with `destIdx` still affording `x` (`haffordable`), a
+    `.transfer` step naming exactly `destIdx` exists from `mid` — the
+    owned-spend witness `owned_spend_witness_exists` builds, applied to
+    the channel's own held note at an ARBITRARY reachable state. What
+    `unbeatable_pays`'s own B/A1 cases need before handing off to
+    `transfer_step_pays_selected` for the payout itself. -/
+theorem transfer_step_exists
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (hReachPool : _root_.Reachable pool0)
+    (actor : Actor) (mid : AdjudicatorState) (assetIndex : Nat) (cid : Term)
+    (curOutcome : Outcome) (destIdx : Nat)
+    (hci : assetIndex < curOutcome.length)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid)
+    (hmode : (mid.channels cid).mode mid.now = .finalized)
+    (hoh : (mid.channels cid).outcomeHash = outcomeHashOf curOutcome)
+    (dest : Allocation)
+    (hdest : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? = some dest)
+    (hnoguarantee : ∀ a ∈ (curOutcome.get ⟨assetIndex, hci⟩).allocations,
+      a.allocationType ≠ .guarantee)
+    (x : Nat) (hxpos : 0 < x)
+    (haffordable : x ≤ (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
+      (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid)).getD destIdx 0) :
+    ∃ final, Step sig appRel actor mid
+      (.transfer assetIndex cid (mid.channels cid).stateHash curOutcome [destIdx]) final := by
+  have hheldpos : 0 < heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid := by
+    rcases Nat.eq_zero_or_pos (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) with
+      hz | hpos
+    · rw [hz, afford_zero_surplus] at haffordable; omega
+    · exact hpos
+  generalize hassetDef : (curOutcome.get ⟨assetIndex, hci⟩).asset = asset at hdest hnoguarantee haffordable hheldpos
+  generalize hheldDef : heldValue mid asset cid = held at haffordable hheldpos
+  obtain ⟨pos, c, hholds, hlive, hvalmap⟩ :=
+    value_exists_only_as_notes sig appRel assets selfInputs pool0 mid asset cid hreach held
+      hheldDef hheldpos
+  obtain ⟨pre, ownerField, r, hpreOf, hhash, htok, hself, hrand, hnpk⟩ :=
+    held_note_owned_disclosure_reachable sig appRel assets selfInputs pool0 mid hreach
+      asset cid pos c hholds
+  have hpreval : pre.value = held := by
+    rw [hpreOf] at hvalmap; simpa using hvalmap
+  obtain ⟨⟨pre', hlivemem, hhash', _⟩, hposlt, hdistinct⟩ :=
+    holdings_position_live_reachable sig appRel assets selfInputs pool0 mid hreach
+      asset cid pos c hholds
+  have hpreeq : pre' = pre := hashCommitment_inj (hhash'.trans hhash.symm)
+  rw [hpreeq] at hlivemem
+  have hrandeq : mid.pool.ownedRandomOf (hashCommitment pre) = some ⟨ownerField, r⟩ := by
+    rw [hhash]; exact hrand
+  have hcapacity2 := pool_leaves_capacity_placeholder sig appRel assets selfInputs pool0 mid hreach
+  have hposlt2 : pos < 2 ^ TreeDepth := by omega
+  have hleafval := holdings_position_leaf_value_placeholder sig appRel assets selfInputs pool0 mid
+    hreach asset cid pos c hholds
+  have hrangeheld := heldValue_range_placeholder sig appRel assets selfInputs pool0 mid asset cid
+    hreach
+  rw [hheldDef] at hrangeheld
+  have hnullunspent := live_note_nullifier_unspent_placeholder sig appRel assets selfInputs pool0
+    mid hreach asset cid pos c ownerField r hholds hrand
+  generalize hallocsDef : (curOutcome.get ⟨assetIndex, hci⟩).allocations = allocs at hdest hnoguarantee haffordable
+  have hdestlt : destIdx < allocs.length := (List.getElem?_eq_some_iff.mp hdest).1
+  have hexitmem := transferEffectsSel_exit_mem allocs held
+    (fun i => [destIdx].isEmpty || i ∈ [destIdx]) destIdx hdestlt (by simp)
+  rw [← transferEffects_eq_sel] at hexitmem
+  have hallocsD : allocs.getD destIdx Allocation.default = dest := by
+    rw [List.getD_eq_getElem?_getD, hdest]; rfl
+  rw [hallocsD] at hexitmem
+  generalize hpaidDef : (afford allocs held).getD destIdx 0 = paidAmt at haffordable hexitmem
+  have hpaidleheld : paidAmt ≤ held := hpaidDef ▸ afford_getD_le_surplus allocs held destIdx
+  generalize hPayoutDef : (transferEffects allocs held [destIdx]).2.1.filterMap (fun a =>
+      if a.amount = 0 then none else some (⟨a.destination, asset, a.amount⟩ : CommitmentPreimage)) =
+    payoutOutputs
+  have hTotalPayoutsDef : (transferEffects allocs held [destIdx]).2.2 = paidAmt := by
+    rw [← hpaidDef]; exact transferEffects_totalPayouts_single allocs held destIdx
+  generalize hRemDef : held - (transferEffects allocs held [destIdx]).2.2 = remainder
+  rw [hTotalPayoutsDef] at hRemDef
+  have hremleheld : remainder ≤ held := by omega
+  have hpayoutmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈ payoutOutputs := by
+    rw [← hPayoutDef]
+    refine List.mem_filterMap.mpr ⟨{ dest with amount := paidAmt }, hexitmem, ?_⟩
+    rw [if_neg (show paidAmt ≠ 0 by omega)]
+  have hpayouttok : ∀ a ∈ payoutOutputs, a.token = asset := by
+    rw [← hPayoutDef]
+    intro a ha
+    obtain ⟨b, _, hb⟩ := List.mem_filterMap.mp ha
+    split at hb
+    · cases hb
+    · injection hb with hb; rw [← hb]
+  have hexitall : ∀ x ∈ (transferEffects allocs held [destIdx]).2.1,
+      x = { dest with amount := paidAmt } := by
+    intro x hx
+    rw [transferEffects_eq_sel allocs held [destIdx]] at hx
+    obtain ⟨i, _, hseli, hxeq⟩ := transferEffectsSel_exit_forall allocs held
+      (fun i => [destIdx].isEmpty || i ∈ [destIdx]) x hx
+    simp only [List.isEmpty_cons, List.isEmpty_nil, Bool.false_or, List.mem_singleton,
+      decide_eq_true_eq] at hseli
+    subst hseli
+    rw [hallocsD, hpaidDef] at hxeq
+    exact hxeq
+  have hpayoutval : ∀ b ∈ payoutOutputs, b.value = paidAmt := by
+    rw [← hPayoutDef]
+    intro b hb
+    obtain ⟨a, ha, hab⟩ := List.mem_filterMap.mp hb
+    rw [hexitall a ha] at hab
+    split at hab
+    · cases hab
+    · injection hab with hab; rw [← hab]
+  classical
+  let remainderOutputs : List CommitmentPreimage :=
+    if remainder = 0 then [] else [⟨npk mid.self 0, asset, remainder⟩]
+  have hgetval : ∀ (k : Nat) (hk : k < remainderOutputs.length),
+      remainderOutputs.get ⟨k, hk⟩ = (⟨npk mid.self 0, asset, remainder⟩ : CommitmentPreimage) := by
+    intro k hk
+    have hremne : remainder ≠ 0 := by
+      intro hr0
+      have hlen0 : remainderOutputs.length = 0 := by
+        show (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]).length = 0
+        simp [if_pos hr0]
+      omega
+    have hk1 : k < 1 := by
+      have hlen1 : remainderOutputs.length = 1 := by
+        show (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]).length = 1
+        simp [if_neg hremne]
+      omega
+    show remainderOutputs[k]'hk = _
+    have heq : remainderOutputs = [⟨npk mid.self 0, asset, remainder⟩] := by
+      show (if remainder = 0 then ([] : List CommitmentPreimage)
+        else [⟨npk mid.self 0, asset, remainder⟩]) = _
+      rw [if_neg hremne]
+    simp only [heq]
+    exact List.getElem_singleton hk1
+  have hgetvalE : ∀ (k : Nat) (hk : k < remainderOutputs.length),
+      remainderOutputs[k]'hk = (⟨npk mid.self 0, asset, remainder⟩ : CommitmentPreimage) :=
+    hgetval
+  have hpaidpos : 0 < paidAmt := by omega
+  have hpayoutlen1 : payoutOutputs.length ≤ 1 := by
+    rw [← hPayoutDef, transferEffects_exit_single allocs held destIdx hdestlt]
+    simp only [List.filterMap_cons, List.filterMap_nil]
+    split <;> simp
+  have hremlen1 : remainderOutputs.length ≤ 1 := by
+    show (if remainder = 0 then ([] : List CommitmentPreimage)
+      else [⟨npk mid.self 0, asset, remainder⟩]).length ≤ 1
+    split <;> simp
+  let M : Nat := payoutOutputs.length + remainderOutputs.length
+  have hM : M ≤ 4 := by show payoutOutputs.length + remainderOutputs.length ≤ 4; omega
+  let npkOut : Fin M → Term := fun j =>
+    if h : j.val < payoutOutputs.length then (payoutOutputs.get ⟨j.val, h⟩).npk
+    else (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩).npk
+  let valueOut : Fin M → Nat := fun j =>
+    if h : j.val < payoutOutputs.length then (payoutOutputs.get ⟨j.val, h⟩).value
+    else (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩).value
+  have hvalueOutLow : ∀ j (h : j.val < payoutOutputs.length),
+      valueOut j = (payoutOutputs.get ⟨j.val, h⟩).value := by
+    intro j h; show (if h' : j.val < payoutOutputs.length then _ else _) = _; rw [dif_pos h]
+  have hvalueOutHigh : ∀ j (h : ¬ j.val < payoutOutputs.length),
+      valueOut j = (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩).value := by
+    intro j h; show (if h' : j.val < payoutOutputs.length then _ else _) = _; rw [dif_neg h]
+  have hRangeOut : ∀ j, RangeChecked120 (valueOut j) := by
+    intro j
+    by_cases h : j.val < payoutOutputs.length
+    · rw [hvalueOutLow j h, hpayoutval _ (List.get_mem payoutOutputs ⟨j.val, h⟩)]
+      exact rangeCheck120_mono hpaidleheld hrangeheld
+    · rw [hvalueOutHigh j h]
+      have hmem : (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩) ∈
+          remainderOutputs := List.get_mem remainderOutputs _
+      change remainderOutputs.get _ ∈
+        (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]) at hmem
+      split at hmem
+      · exact absurd hmem (List.not_mem_nil)
+      · rcases List.mem_singleton.mp hmem with hmem
+        rw [hmem]; exact rangeCheck120_mono hremleheld hrangeheld
+  have hRangeIn : ∀ i : Fin 1, RangeChecked120 ((fun _ : Fin 1 => pre) i).value := by
+    intro i; rw [hpreval]; exact hrangeheld
+  have hToken : ∀ i : Fin 1, ((fun _ : Fin 1 => pre) i).token = asset := fun _ => htok
+  have hOwned : ∀ i : Fin 1, ∃ r', mid.pool.ownedRandomOf
+      (hashCommitment ((fun _ : Fin 1 => pre) i)) = some ⟨ownerField, r'⟩ ∧
+      npk ownerField r' = ((fun _ : Fin 1 => pre) i).npk := fun _ => ⟨r, hrandeq, hnpk⟩
+  have hLeafIndex : ∀ i : Fin 1, (fun _ : Fin 1 => pos) i < 2 ^ TreeDepth := fun _ => hposlt2
+  have hLeafValue : ∀ i : Fin 1, mid.pool.leaves.getD ((fun _ : Fin 1 => pos) i) (Term.val 0) =
+      hashCommitment ((fun _ : Fin 1 => pre) i) := fun _ => hleafval.trans hhash.symm
+  have hBalance : listSum (List.ofFn fun i : Fin 1 => ((fun _ : Fin 1 => pre) i).value) =
+      listSum (List.ofFn valueOut) := by
+    have hfiltersum : ∀ (l : List Allocation) (tok : Nat),
+        listSum ((l.filterMap (fun a => if a.amount = 0 then none
+          else some (⟨a.destination, tok, a.amount⟩ : CommitmentPreimage))).map
+          CommitmentPreimage.value) = listSum (l.map Allocation.amount) := by
+      intro l tok
+      induction l with
+      | nil => simp [listSum]
+      | cons a as ih =>
+        by_cases hz : a.amount = 0
+        · simp only [List.filterMap_cons, hz, if_pos, List.map_cons, listSum]
+          rw [ih]; omega
+        · simp only [List.filterMap_cons, if_neg hz, List.map_cons, listSum]
+          rw [ih]
+    have hofffn : List.ofFn valueOut =
+        payoutOutputs.map CommitmentPreimage.value ++ remainderOutputs.map CommitmentPreimage.value := by
+      apply List.ext_getElem
+      · rw [List.length_ofFn, List.length_append, List.length_map, List.length_map]
+      · intro n h1 h2
+        rw [List.getElem_ofFn h1]
+        have h1' : n < payoutOutputs.length + remainderOutputs.length := by
+          have := List.length_ofFn (f := valueOut) ▸ h1
+          exact this
+        by_cases h : n < payoutOutputs.length
+        · rw [hvalueOutLow ⟨n, h1'⟩ h]
+          rw [List.getElem_append_left (by simpa using h)]
+          simp
+        · rw [hvalueOutHigh ⟨n, h1'⟩ h]
+          rw [List.getElem_append_right (by simpa using h)]
+          simp
+    rw [hofffn]
+    show pre.value = listSum (payoutOutputs.map CommitmentPreimage.value ++
+      remainderOutputs.map CommitmentPreimage.value)
+    rw [hpreval]
+    have hsplit : listSum (payoutOutputs.map CommitmentPreimage.value) +
+        listSum (remainderOutputs.map CommitmentPreimage.value) =
+        listSum (payoutOutputs.map CommitmentPreimage.value ++
+          remainderOutputs.map CommitmentPreimage.value) := by
+      generalize payoutOutputs.map CommitmentPreimage.value = l1
+      generalize remainderOutputs.map CommitmentPreimage.value = l2
+      induction l1 with
+      | nil => simp [listSum]
+      | cons x xs ih => simp only [List.cons_append, listSum]; rw [← ih]; omega
+    rw [← hsplit]
+    have hpayoutsum : listSum (payoutOutputs.map CommitmentPreimage.value) = paidAmt := by
+      rw [← hPayoutDef, hfiltersum]
+      exact hTotalPayoutsDef
+    have hremsum : listSum (remainderOutputs.map CommitmentPreimage.value) = remainder := by
+      show listSum ((if remainder = 0 then [] else
+        [⟨npk mid.self 0, asset, remainder⟩]).map CommitmentPreimage.value) = remainder
+      split
+      · next hz => simp [listSum, hz]
+      · simp [listSum]
+    rw [hpayoutsum, hremsum]
+    omega
+  let w : TransactOwnedWitness 1 M :=
+    { token := asset, randomIn := fun _ => r, valueIn := fun _ => pre.value,
+      pathElements := fun _ => treePath TreeDepth mid.pool.leaves pos,
+      leavesIndices := fun _ => pos, npkOut := npkOut, valueOut := valueOut }
+  let pub : TransactOwnedPublic 1 M :=
+    { merkleRoot := treeRoot TreeDepth mid.pool.leaves, boundParamsHash := 0,
+      nullifiers := fun _ => nullifier ownerField pos,
+      commitmentsOut := fun j => commitment (npkOut j) asset (valueOut j),
+      ownerField := ownerField }
+  have hcommit0 : hashCommitment pre = commitment (npk ownerField r) asset pre.value := by
+    unfold hashCommitment; rw [hnpk, htok]
+  have hmerkle0 : merkleRoot (commitment (npk ownerField r) asset pre.value)
+      (treePath TreeDepth mid.pool.leaves pos) = treeRoot TreeDepth mid.pool.leaves := by
+    rw [← hcommit0, hhash, ← hleafval]
+    exact treePath_correct TreeDepth mid.pool.leaves pos hposlt2
+  have hC : OwnedConstrained w pub :=
+    { pathLen := fun _ => treePath_length TreeDepth mid.pool.leaves pos,
+      merkle := fun _ => hmerkle0, nullifiers := fun _ => rfl, outputs := fun _ => rfl,
+      rangeIn := hRangeIn, rangeOut := hRangeOut, balance := congrArg (· % p) hBalance }
+  have hprematch : (⟨npk ownerField r, asset, pre.value⟩ : CommitmentPreimage) = pre := by
+    rw [hnpk, ← htok]
+  have hospos : ownedSpentPositions pub w = [(pos, pre)] := by
+    show List.ofFn (fun _ : Fin 1 =>
+      (pos, (⟨npk ownerField r, asset, pre.value⟩ : CommitmentPreimage))) = [(pos, pre)]
+    simp only [List.ofFn_succ, List.ofFn_zero, hprematch]
+  have hremove := removeAll_singleton_of_mem (l := mid.pool.live asset) (x := (pos, pre)) hlivemem
+  rw [← hospos] at hremove
+  have hmarkfresh : nullifier ownerField pos ∉ mid.pool.spent := hnullunspent
+  obtain ⟨spent', hmark⟩ := markSpent_succeeds
+    (ns := List.ofFn pub.nullifiers)
+    (by
+      show (List.ofFn pub.nullifiers).Pairwise (· ≠ ·)
+      simp only [List.ofFn_succ, List.ofFn_zero]
+      simp)
+    (by
+      intro n hn
+      change n ∈ [nullifier ownerField pos] at hn
+      simp only [List.mem_singleton] at hn
+      rw [hn]; exact hmarkfresh)
+  let randomOut : Fin remainderOutputs.length → Nat := fun _ => 0
+  have hNonZero : ∀ j, ¬ isZeroPreimage
+      (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage) := by
+    intro j hz
+    unfold isZeroPreimage at hz
+    change npkOut j = Term.val 0 ∧ valueOut j = 0 ∧ asset = 0 at hz
+    by_cases h : j.val < payoutOutputs.length
+    · rw [hvalueOutLow j h, hpayoutval _ (List.get_mem payoutOutputs ⟨j.val, h⟩)] at hz
+      exact (by omega : paidAmt ≠ 0) hz.2.1
+    · rw [hvalueOutHigh j h] at hz
+      have hmem : (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩) ∈
+          remainderOutputs := List.get_mem remainderOutputs _
+      change remainderOutputs.get _ ∈
+        (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]) at hmem
+      split at hmem
+      · exact absurd hmem (List.not_mem_nil)
+      · next hrpos =>
+          rcases List.mem_singleton.mp hmem with hmem
+          rw [hmem] at hz; exact hrpos hz.2.1
+  have hRandomOut : ∀ j, npk pub.ownerField (randomOut j) =
+      w.npkOut (Fin.natAdd payoutOutputs.length j) := by
+    intro j
+    show npk ownerField 0 = npkOut (Fin.natAdd payoutOutputs.length j)
+    have hnotlow : ¬ (Fin.natAdd payoutOutputs.length j).val < payoutOutputs.length := by
+      show ¬ payoutOutputs.length + j.val < payoutOutputs.length; omega
+    show npk ownerField 0 =
+      (if h : (Fin.natAdd payoutOutputs.length j).val < payoutOutputs.length then _ else
+        (remainderOutputs.get ⟨(Fin.natAdd payoutOutputs.length j).val - payoutOutputs.length,
+          by omega⟩).npk)
+    rw [dif_neg hnotlow]
+    rw [hgetval _ (by omega)]
+    show npk ownerField 0 = npk mid.self 0
+    rw [hself]
+  have hown : mid.self = pub.ownerField := hself
+  have htoken : w.token = asset := rfl
+  have hleavesIdx : w.leavesIndices 0 = pos := rfl
+  have hcommitFinal : commitment (npk pub.ownerField (w.randomIn 0)) w.token (w.valueIn 0) = c := by
+    show commitment (npk ownerField r) asset pre.value = c
+    rw [← hcommit0, hhash]
+  have hReachPoolMid : _root_.Reachable mid.pool :=
+    adjudicator_pool_reachable sig appRel assets selfInputs pool0 hReachPool mid hreach
+  have hroot : pub.merkleRoot ∈ mid.pool.roots := by
+    show treeRoot TreeDepth mid.pool.leaves ∈ mid.pool.roots
+    exact reachable_root_matches_leaves hReachPoolMid
+  have hnewnotes : ownedNewNotes w = payoutOutputs ++ remainderOutputs := by
+    show List.ofFn (fun j : Fin M => (⟨npkOut j, asset, valueOut j⟩ : CommitmentPreimage)) =
+      payoutOutputs ++ remainderOutputs
+    apply List.ext_getElem
+    · rw [List.length_ofFn, List.length_append]
+    · intro n h1 h2
+      rw [List.getElem_ofFn h1]
+      have h1' : n < payoutOutputs.length + remainderOutputs.length := by
+        have := List.length_ofFn (f := fun j : Fin M => (⟨npkOut j, asset, valueOut j⟩ :
+          CommitmentPreimage))
+        omega
+      by_cases h : n < payoutOutputs.length
+      · show (⟨npkOut ⟨n, h1'⟩, asset, valueOut ⟨n, h1'⟩⟩ : CommitmentPreimage) = _
+        have hnpkLow : npkOut ⟨n, h1'⟩ = (payoutOutputs.get ⟨n, h⟩).npk := by
+          show (if h' : n < payoutOutputs.length then _ else _) = _; rw [dif_pos h]
+        rw [hnpkLow, hvalueOutLow ⟨n, h1'⟩ h, ← hpayouttok _ (List.get_mem payoutOutputs ⟨n, h⟩)]
+        rw [List.getElem_append_left (by simpa using h)]
+        rfl
+      · show (⟨npkOut ⟨n, h1'⟩, asset, valueOut ⟨n, h1'⟩⟩ : CommitmentPreimage) = _
+        have hnpkHigh : npkOut ⟨n, h1'⟩ =
+            (remainderOutputs.get ⟨n - payoutOutputs.length, by omega⟩).npk := by
+          show (if h' : n < payoutOutputs.length then _ else _) = _; rw [dif_neg h]
+        rw [hnpkHigh, hvalueOutHigh ⟨n, h1'⟩ h]
+        have hremeq := hgetval (n - payoutOutputs.length) (by omega)
+        rw [hremeq]
+        rw [List.getElem_append_right (by simpa using h)]
+        rw [hgetvalE (n - payoutOutputs.length) (by omega)]
+  sorry
+
+
 /-- Which harm this rules out: once all participants have signed a final
     state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
     point, Figure 11), no other caller's actions — in any number, in any
@@ -2512,7 +3039,14 @@ theorem conclude_step_finalizes
     `.challenge` registered during `interleaved` always sets `finalizesAt
     > now` (`0 < fp.challengeDuration`), so it cannot finalize the
     channel without a further tick, and the channel is not ALREADY
-    finalized (with some stale outcome) at `s` to begin with. `hhonest`
+    finalized (with some stale outcome) at `s` to begin with. `hnowpos`
+    is what lets `h`'s own `.conclude` actually finalize the channel: on
+    a real chain `block.timestamp` is a positive Unix time, so `conclude`
+    (`ForceMove.sol:160-167`, writes `uint48(block.timestamp)`) always
+    finalizes; the model's own `finalizesAt := s.now` (`Operations.lean`'s
+    `.conclude` case) treats `0` as the SAME sentinel `ChannelStatus.mode`
+    reads as "no deadline set" (`.open`), so concluding at `s.now = 0`
+    would not finalize. `hhonest`
     closes the one remaining way an adversary could still finalize the
     channel with the WRONG outcome during `interleaved`, via `.conclude`:
     `h` may, in an earlier round, have signed some OTHER final state for
@@ -2569,6 +3103,7 @@ theorem conclude_step_finalizes
     with `hhonestPool` to rule out EVERY `.deposit` in `interleaved`
     spending this note, not just ones authorized DURING it. -/
 
+
 theorem unbeatable_pays
     (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
@@ -2581,7 +3116,7 @@ theorem unbeatable_pays
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) (hp : h ∈ fp.participants)
     (hfinal : candidate.isFinal = true)
     (hduration : 0 < fp.challengeDuration)
-    (hnotfinal : (s.channels (channelId fp)).mode s.now ≠ .finalized)
+    (hnotfinal : (s.channels (channelId fp)).mode s.now ≠ .finalized) (hnowpos : 0 < s.now)
     (hsigned : SignedByAll sig s fp candidate)
     (hdest : (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations[destIdx]? = some dest)
     (hassetunique : ∀ i (hi : i < candidate.outcome.length), i ≠ assetIndex →
@@ -2872,39 +3407,6 @@ theorem notedValue_conserved_reachable
     (fun actor call s s' hP hstep => (notedValue_conserved sig appRel actor s s' call token hstep).trans hP)
     hreach
 
-/-- Which harm this rules out: `holdings` can never point to a commitment
-    the pool itself does not back with a live note — there is no path by
-    which a channel's recorded collateral becomes a dangling reference a
-    caller could exploit. The held value is the note's value read from
-    the pool's own record, which `ArmadaLean.preimageOf_consistent`
-    (`PoolOwned.lean`) proves trustworthy; only the owner can ever
-    spend the note the holding points at, by `ArmadaLean.
-    owned_owner_binding` (`PoolOwned.lean`). This is the formal content
-    of the armada-nitro rule at the adjudicator's own storage layer,
-    not only the pool's. -/
-theorem holdings_point_to_live_notes
-    (sig : SignatureAssumptions)
-    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
-    (s : AdjudicatorState) (asset : Nat) (cid : Term) (pos : Nat) (c : Term)
-    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
-    (hholds : s.holdings asset cid = some (pos, c)) :
-    PoolIsLive s.pool c := by
-  have hinv := reachable_preserves
-    (P := fun s => ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
-      (∃ pre, (qpos, pre) ∈ s.pool.live qasset ∧ hashCommitment pre = qc ∧
-        ((∃ ownerField r, s.self = ownerField ∧ pre.npk = npk ownerField r) ∨
-          ∃ r, pre.npk = npk s.self r)) ∧
-      qpos < s.pool.leaves.length ∧
-      (∀ qasset' qcid' qpos' qc', s.holdings qasset' qcid' = some (qpos', qc') →
-        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos))
-    (by intro qasset qcid qpos qc hc; exact absurd hc (by simp [genesis]))
-    (fun actor call s s' hP hstep =>
-      (step_self sig appRel actor s s' call hstep ▸
-        holdings_position_live_step sig appRel actor s s' call hP hstep : _))
-    hreach
-  obtain ⟨⟨pre, hpre, hval, _⟩, _, _⟩ := hinv asset cid pos c hholds
-  exact ⟨asset, pos, pre, hpre, hval⟩
 
 /-!
 ## A concrete app, for the can-happen theorems only
@@ -5475,33 +5977,6 @@ theorem transfer_after_transfer_can_happen
     rw [hlen5]
     simp [withPositionsFrom]
 
-
-/-- Value in the pool exists only as notes, at the adjudicator's own
-    interface: `AdjudicatorState` has no raw-balance field anywhere, and
-    `heldValue` (`State.lean`) is always a read of a live note's preimage,
-    never a stored integer — the armada-nitro rule (`State.lean`).
-    This statement packages `holdings_point_to_live_notes` (C) and
-    `notedValue_conserved_reachable` (C) as the single "value is notes"
-    claim, on top of plain conservation. -/
-theorem value_exists_only_as_notes
-    (sig : SignatureAssumptions)
-    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
-    (s : AdjudicatorState) (asset : Nat) (cid : Term)
-    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
-    (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
-    ∃ pos c, s.holdings asset cid = some (pos, c) ∧ PoolIsLive s.pool c ∧
-      (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
-  unfold heldValue at hheld
-  rcases hc : s.holdings asset cid with _ | ⟨pos, cm⟩
-  · simp only [hc] at hheld; omega
-  · refine ⟨pos, cm, ?_, ?_, ?_⟩
-    · rfl
-    · exact holdings_point_to_live_notes sig appRel assets selfInputs pool0 s asset cid pos cm hreach hc
-    · simp only [hc] at hheld
-      rcases hp : s.pool.preimageOf cm with _ | pre
-      · rw [hp] at hheld; simp at hheld; omega
-      · rw [hp] at hheld; simp at hheld; simp [hheld]
 
 /-!
 ## F. R1 mutation-test misses
