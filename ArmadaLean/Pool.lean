@@ -974,6 +974,64 @@ theorem insertResult_leavesAt_stable (closedTrees : List TreeState) (curLeaves c
       exact List.getD_append_of_lt curLeaves newLeaves pos d hpos
     · rw [if_neg htn]
 
+/-- A batch tagged by `withPositionsFrom` always lands, in the appended leaf list, at
+    exactly the leaf `f` of its own preimage — no other value could appear there.
+    `base` is whatever already sat before the batch (the current tree's own prior
+    leaves, or empty on a fresh roll); `hstart` pins `base`'s length to the batch's own
+    starting position, matching `insertStartPos`'s own convention. -/
+theorem withPositionsFrom_leaf_matches {α β : Type} (f : α → β) (base : List β) (start : Nat)
+    (l : List α) (hstart : base.length = start) (d : β)
+    (p : Nat × α) (hp : p ∈ withPositionsFrom start l) :
+    (base ++ l.map f).getD p.1 d = f p.2 := by
+  induction l generalizing start base with
+  | nil => simp [withPositionsFrom] at hp
+  | cons a rest ih =>
+    simp only [withPositionsFrom, List.mem_cons] at hp
+    rcases hp with heq | hp
+    · rw [heq]
+      simp only [List.map_cons]
+      have hassoc : base ++ (f a :: rest.map f) = (base ++ [f a]) ++ rest.map f := by simp
+      rw [hassoc]
+      rw [List.getD_append_of_lt (base ++ [f a]) (rest.map f) start d (by simp [hstart])]
+      rw [← hstart]
+      exact List.getD_concat_length base (f a) d
+    · have hassoc : base ++ (a :: rest).map f = (base ++ [f a]) ++ rest.map f := by simp
+      rw [hassoc]
+      exact ih (base ++ [f a]) (start + 1) (by simp [hstart]) hp
+
+/-- The tree-tagged counterpart of `withPositionsFrom_leaf_matches`. -/
+theorem withTreePositionsFrom_leaf_matches {α : Type} (f : α → Term) (base : List Term)
+    (treeNumber start : Nat) (l : List α) (hstart : base.length = start) (d : Term)
+    (p : (Nat × Nat) × α) (hp : p ∈ withTreePositionsFrom treeNumber start l) :
+    (base ++ l.map f).getD p.1.2 d = f p.2 := by
+  unfold withTreePositionsFrom at hp
+  obtain ⟨q, hq, heq⟩ := List.mem_map.mp hp
+  rw [← heq]
+  exact withPositionsFrom_leaf_matches f base start l hstart d q hq
+
+/-- **A freshly-inserted batch's leaves, in the tree it actually lands in, are exactly
+    `base ++ newLeaves` for some `base` of length `insertStartPos`.** The precise
+    "what is this tree's leaf list now" fact `withPositionsFrom_leaf_matches` needs to
+    connect a `Step`'s own reported position to the leaf the pool actually stored
+    there (`ArmadaLean.PoolSafety.live_leaf_matches`). -/
+theorem insertResult_leavesAt_new_matches (closedTrees : List TreeState) (curLeaves curRoots : List Term)
+    (newLeaves : List Term) (tn : Nat)
+    (htn : tn = insertTreeNumber closedTrees curLeaves newLeaves.length) :
+    ∃ base : List Term, base.length = insertStartPos curLeaves newLeaves.length ∧
+      PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
+        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
+        (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn = base ++ newLeaves := by
+  rw [insertResult_leavesAt]
+  unfold insertStartPos
+  unfold insertTreeNumber at htn
+  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
+  · rw [if_pos hover, if_pos hover]
+    rw [htn, if_pos hover, if_pos rfl]
+    exact ⟨[], rfl, by simp⟩
+  · rw [if_neg hover, if_neg hover]
+    rw [htn, if_neg hover, if_pos rfl]
+    exact ⟨curLeaves, rfl, rfl⟩
+
 /-- **One insertion's new root is always `treeRoot TreeDepth` of its own, post-insertion
     leaf list.** Tree `tn` either sees no change at all, or its root history gains
     exactly `treeRoot TreeDepth` of whatever its leaf list now is — combining

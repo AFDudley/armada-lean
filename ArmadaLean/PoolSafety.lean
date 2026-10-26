@@ -1786,6 +1786,162 @@ theorem leaf_stable {s s' : PoolState} (h : ReachableFrom s s') (tn pos : Nat) (
     obtain ⟨hlen2, heq2⟩ := step_leavesAt_stable hstep tn pos d ihlen
     exact ⟨hlen2, heq2.trans iheq⟩
 
+/-! ### A live entry's position names the leaf that holds its commitment -/
+
+/-- One step preserves "every live entry's position holds its own commitment as a
+    leaf": a surviving entry's leaf is unchanged (`insertResult_leavesAt_stable`,
+    using `ihrange` for the in-range precondition), and a freshly-inserted entry's
+    leaf is exactly its own hash by construction
+    (`insertResult_leavesAt_new_matches`/`withTreePositionsFrom_leaf_matches`). A
+    standalone wrapper (states inferred from `hstep`) so
+    `reachable_live_leaf_matches`'s induction never needs to name the previous state
+    by hand. -/
+theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
+    (ihmatch : ∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t →
+      (s.leavesAt' tn).getD pos (Term.val 0) = hashCommitment pre)
+    (ihrange : ∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t → pos < (s.leavesAt' tn).length) :
+    ∀ t tn pos pre, ((tn, pos), pre) ∈ s'.live t →
+      (s'.leavesAt' tn).getD pos (Term.val 0) = hashCommitment pre := by
+  cases hstep with
+  | shield token grossAmount feeBP npk hNotPaused hValue hFeeBP hRange =>
+    intro t tn pos pre hmem
+    by_cases ht : t = token
+    · subst t
+      simp only [if_pos rfl] at hmem
+      rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
+      · obtain ⟨base, hbaselen, hbase⟩ := insertResult_leavesAt_new_matches s.closedTrees s.leaves
+            s.roots [hashCommitment (⟨npk, token, shieldBase feeBP grossAmount⟩ : CommitmentPreimage)]
+            (insertTreeNumber s.closedTrees s.leaves 1) rfl
+        injection heq with h1 h2
+        injection h1 with h1a h1b
+        simp only [List.length_singleton] at hbaselen
+        rw [h1a, h1b, h2]
+        dsimp only [PoolState.leavesAt']
+        rw [hbase, ← hbaselen]
+        exact List.getD_concat_length base _ _
+      · have hmatch := ihmatch token tn pos pre hmem
+        have hr := ihrange token tn pos pre hmem
+        dsimp only [PoolState.leavesAt']
+        rw [insertResult_leavesAt_stable s.closedTrees s.leaves s.roots
+          [hashCommitment (⟨npk, token, shieldBase feeBP grossAmount⟩ : CommitmentPreimage)] tn pos
+          (Term.val 0) hr]
+        exact hmatch
+    · simp only [if_neg ht] at hmem
+      have hmatch := ihmatch t tn pos pre hmem
+      have hr := ihrange t tn pos pre hmem
+      dsimp only [PoolState.leavesAt']
+      rw [insertResult_leavesAt_stable s.closedTrees s.leaves s.roots
+        [hashCommitment (⟨npk, token, shieldBase feeBP grossAmount⟩ : CommitmentPreimage)] tn pos
+        (Term.val 0) hr]
+      exact hmatch
+  | transact w pub treeNumber hN hM hC newNotes unshieldTail rest spent' records ownedRecords
+      hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords =>
+    intro t tn pos pre hmem
+    have hlenEq : (newNotes.map hashCommitment).length = newNotes.length := by simp
+    by_cases ht : t = w.token
+    · subst ht
+      simp only [if_pos rfl] at hmem
+      rcases List.mem_append.mp hmem with hnew | hrest
+      · have htn : insertTreeNumber s.closedTrees s.leaves newNotes.length =
+            insertTreeNumber s.closedTrees s.leaves (newNotes.map hashCommitment).length := by
+          rw [hlenEq]
+        obtain ⟨base, hbaselen, hbase⟩ := insertResult_leavesAt_new_matches s.closedTrees s.leaves
+            s.roots (newNotes.map hashCommitment)
+            (insertTreeNumber s.closedTrees s.leaves (newNotes.map hashCommitment).length) rfl
+        rw [← htn] at hbase
+        rw [hlenEq] at hbaselen
+        have htn' := withTreePositionsFrom_treeNumber _ _ _ _ hnew
+        simp only at htn'
+        have hleaf := withTreePositionsFrom_leaf_matches hashCommitment base
+          (insertTreeNumber s.closedTrees s.leaves newNotes.length)
+          (insertStartPos s.leaves newNotes.length) newNotes hbaselen (Term.val 0) ((tn, pos), pre) hnew
+        dsimp only [PoolState.leavesAt']
+        rw [htn', hbase]
+        exact hleaf
+      · have hmemold : ((tn, pos), pre) ∈ s.live w.token :=
+          (removeAll_perm hRemove).mem_iff.mpr (List.mem_append_right _ hrest)
+        have hmatch := ihmatch w.token tn pos pre hmemold
+        have hr := ihrange w.token tn pos pre hmemold
+        dsimp only [PoolState.leavesAt']
+        rw [insertResult_leavesAt_stable s.closedTrees s.leaves s.roots
+          (newNotes.map hashCommitment) tn pos (Term.val 0) hr]
+        exact hmatch
+    · simp only [if_neg ht] at hmem
+      have hmatch := ihmatch t tn pos pre hmem
+      have hr := ihrange t tn pos pre hmem
+      dsimp only [PoolState.leavesAt']
+      rw [insertResult_leavesAt_stable s.closedTrees s.leaves s.roots
+        (newNotes.map hashCommitment) tn pos (Term.val 0) hr]
+      exact hmatch
+  | transactOwned w pub treeNumber hN hM hC caller hCaller rest spent' ownedOutputs
+      hRoot hRemove hNullify hNonZero hOwnedOutputs =>
+    intro t tn pos pre hmem
+    have hlenEq : ((ownedNewNotes w).map hashCommitment).length = (ownedNewNotes w).length := by simp
+    by_cases ht : t = w.token
+    · subst ht
+      simp only [if_pos rfl] at hmem
+      rcases List.mem_append.mp hmem with hnew | hrest
+      · have htn : insertTreeNumber s.closedTrees s.leaves (ownedNewNotes w).length =
+            insertTreeNumber s.closedTrees s.leaves ((ownedNewNotes w).map hashCommitment).length := by
+          rw [hlenEq]
+        obtain ⟨base, hbaselen, hbase⟩ := insertResult_leavesAt_new_matches s.closedTrees s.leaves
+            s.roots ((ownedNewNotes w).map hashCommitment)
+            (insertTreeNumber s.closedTrees s.leaves ((ownedNewNotes w).map hashCommitment).length) rfl
+        rw [← htn] at hbase
+        rw [hlenEq] at hbaselen
+        have htn' := withTreePositionsFrom_treeNumber _ _ _ _ hnew
+        simp only at htn'
+        have hleaf := withTreePositionsFrom_leaf_matches hashCommitment base
+          (insertTreeNumber s.closedTrees s.leaves (ownedNewNotes w).length)
+          (insertStartPos s.leaves (ownedNewNotes w).length) (ownedNewNotes w) hbaselen (Term.val 0)
+          ((tn, pos), pre) hnew
+        dsimp only [PoolState.leavesAt']
+        rw [htn', hbase]
+        exact hleaf
+      · have hmemold : ((tn, pos), pre) ∈ s.live w.token :=
+          (removeAll_perm hRemove).mem_iff.mpr (List.mem_append_right _ hrest)
+        have hmatch := ihmatch w.token tn pos pre hmemold
+        have hr := ihrange w.token tn pos pre hmemold
+        dsimp only [PoolState.leavesAt']
+        rw [insertResult_leavesAt_stable s.closedTrees s.leaves s.roots
+          ((ownedNewNotes w).map hashCommitment) tn pos (Term.val 0) hr]
+        exact hmatch
+    · simp only [if_neg ht] at hmem
+      have hmatch := ihmatch t tn pos pre hmem
+      have hr := ihrange t tn pos pre hmem
+      dsimp only [PoolState.leavesAt']
+      rw [insertResult_leavesAt_stable s.closedTrees s.leaves s.roots
+        ((ownedNewNotes w).map hashCommitment) tn pos (Term.val 0) hr]
+      exact hmatch
+  | admin shieldsPaused =>
+    exact ihmatch
+
+/-- Every live entry at every reachable state still holds, at its own recorded
+    position, a leaf that hashes to its own recorded preimage. -/
+theorem reachable_live_leaf_matches {s : PoolState} (h : Reachable s) :
+    ∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t →
+      (s.leavesAt' tn).getD pos (Term.val 0) = hashCommitment pre := by
+  induction h with
+  | genesis => intro t tn pos pre hmem; simp [genesis] at hmem
+  | step hs hstep ih =>
+    exact step_live_leaf_matches hstep ih (reachable_live_spent_invariant hs).1
+
+/--
+**A live entry's position names the leaf that holds its commitment.** For any
+reachable state and any live entry `((tn, pos), pre) ∈ s.live t`, the leaf the pool
+stored at `(tn, pos)` is exactly `hashCommitment pre` — never any other value.
+Proved by induction: at the step that minted the entry, `insertResult_leavesAt`'s
+exact equation pins the newly-appended leaf to the preimage that produced it
+(`insertResult_leavesAt_new_matches`); at every later step while the entry stays
+live, `leaf_stable`'s own mechanism (`insertResult_leavesAt_stable`) keeps the leaf
+unchanged. Ties an adjudicator's holding — a recorded `(treeNumber, position)` and
+preimage — to the actual on-chain leaf at that position, so a payout spend's Merkle
+membership proof is the real leaf, not a forged one. -/
+theorem live_leaf_matches {s : PoolState} (h : Reachable s) (t tn pos : Nat)
+    (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.live t) :
+    (s.leavesAt' tn).getD pos (Term.val 0) = hashCommitment pre :=
+  reachable_live_leaf_matches h t tn pos pre hmem
+
 /-! ### Every live note's value fits the circuit's own field width -/
 
 /-- Every live note's value is below `2 ^ 120`. -/
