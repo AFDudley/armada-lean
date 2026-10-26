@@ -519,13 +519,32 @@ theorem value_leaves_only_via_transfer_of_finalized_channel
     (∃ fp candidate, channelId fp = cid ∧ call = .bulkConcludeAndTransferAllAssets fp candidate) := by
   sorry
 
-/-- MISSING DEFINITION, pre-existing gap: `cumulative_payout_never_exceeds_
-    allocation`'s own doc comment references this name ("above") but no
-    definition exists in this file or `Outcome.lean`, in any commit. A
-    real definition is owed before `cumulative_payout_never_exceeds_
-    allocation` can be proved — this `True` placeholder only lets the
-    file build; it asserts nothing. -/
-def TransferOnlyDerivedFrom (o o' : Outcome) (paid : Nat → Nat → Nat) : Prop := True
+/-- Like `OutcomeDerivedFrom`, but excluding `.reclaimStep`: reached
+    from `o` by `.transfer` rewrites only, no `.reclaim` in between —
+    what A-14 needs ("no `reclaim` on `c`"), since `.reclaimStep` is the
+    one rewrite that can INCREASE an entry's own amount (crediting a
+    guarantee's two destinations), breaking monotone decrease.
+    Carries a THIRD index, `paid`: `paid i k` is the TOTAL amount asset
+    `i`'s allocation `k` has been paid across the whole chain so far —
+    at each `.transferStep`, the amount `.transfer` ACTUALLY pays entry
+    `k` is the `afford`-computed amount at `k` when `k` is selected
+    (the same value `A-01` uses), zero when `k` is not selected or the
+    step touches a different asset. This is independent of
+    `transferEffects`'s own old-minus-new arithmetic, so the theorem
+    below is a real claim about what `.transfer` computes, not a
+    restatement of subtraction. -/
+inductive TransferOnlyDerivedFrom : Outcome → Outcome → (Nat → Nat → Nat) → Prop where
+  | refl (o : Outcome) : TransferOnlyDerivedFrom o o (fun _ _ => 0)
+  | transferStep {o mid : Outcome} {paid : Nat → Nat → Nat} (assetIndex : Nat)
+      (h : assetIndex < mid.length) (heldBefore : Nat) (indices : List Nat)
+      (hmid : TransferOnlyDerivedFrom o mid paid) :
+      TransferOnlyDerivedFrom o
+        (mid.mapIdx fun i exit => if i ≠ assetIndex then exit else
+          { exit with allocations :=
+              (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 })
+        (fun i k => paid i k + (if i = assetIndex ∧ (indices = [] ∨ k ∈ indices) then
+            (afford (mid.get ⟨assetIndex, h⟩).allocations heldBefore).getD k 0
+          else 0))
 
 /-- A-14 — cumulative payout to an entry never exceeds its allocation:
     across any `.transfer`-only call sequence from a finalized outcome
