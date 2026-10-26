@@ -4198,7 +4198,6 @@ theorem checkpoint_can_happen
     unfold update
     rw [if_pos rfl]
 
-set_option maxRecDepth 4000 in
 /-- The real construction behind `deposit_can_happen`, below, carrying
     three extra facts its own build already has on hand — the pre-deposit
     state's `channels`/`holdings` equal `genesis`'s own, and its own
@@ -4565,7 +4564,6 @@ theorem guarantee_reallocation_order_dependent
   rw [hheld_sC2, hheld_s1, hbefore, hafter]
   omega
 
-set_option maxRecDepth 8000 in
 /-- A top-up can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     two deposits into the same channel, with the second deposit MERGING
     its fresh note with the first deposit's holding
@@ -5084,7 +5082,6 @@ theorem conclude_can_happen
     else if g1.now ≤ g1.now then ChannelMode.finalized else ChannelMode.challenge) = .finalized
   simp [g1]
 
-set_option maxRecDepth 8000 in
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
     to fund a channel, a `.conclude` (needing `now ≠ 0`, so a `.tick`
     comes first) finalizes it, and a `.transfer` call pays the entire
@@ -5634,7 +5631,6 @@ theorem bulk_conclude_and_transfer_all_assets_effect
   obtain ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan, _⟩ := hstep
   exact ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan⟩
 
-set_option maxRecDepth 8000 in
 /-- B4 — a bulk conclude-and-transfer can happen: for all
     `HashAssumptions`/`SignatureAssumptions`, there is an execution from
     `genesis` — a `.sign` call for every one of `fp`'s participants on
@@ -5910,7 +5906,6 @@ theorem bulk_conclude_and_transfer_can_happen
     rw [hlen]
     simp [withTreePositionsFrom, withPositionsFrom]
 
-set_option maxRecDepth 8000 in
 /-- A later `.transfer` call can happen after an earlier `.transfer`
     call on the SAME channel already left a nonzero remainder: paying
     one entry of a finalized two-entry outcome does not lock the
