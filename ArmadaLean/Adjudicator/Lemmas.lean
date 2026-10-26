@@ -3738,11 +3738,37 @@ theorem deposit_frame (sig : SignatureAssumptions)
       · obtain ⟨qpos, qc⟩ := hpair
         obtain ⟨pre_old, hpre_old, _hval_old, hconsist_old⟩ := hinv asset' cid' qpos qc hh'
         dsimp only; rw [hpoolEq, hchain qc pre_old hpre_old hconsist_old, hpre_old]
-  · -- SORRY (tree-rollover rework pending, successor handoff): needs
-    -- re-verification against the corrected `hmerge`/`heq'` tree-paired
-    -- shape (same family of fix as the other `.deposit`-some-holding cases
-    -- in this file).
-    sorry
+  · obtain ⟨⟨_oldTreeNum, _oldPosNat⟩, oldHoldingVal⟩ := oldHolding
+    rw [hh] at hmatch
+    obtain ⟨merged, mergeSpendTreeNumber, mergedTreeNumber, mergedPos, hmergestep, hholdseq⟩ := hmatch
+    obtain ⟨_hmergedTN, _hmergedPosEq, w', pub', hC', _rest', _spent'', _r', randomOut', _hNonZero',
+      _hself', _htoken', _hnpkOut0', _hmergedEq, _hleaf0', _hleaf1', _hcommitOld', _hcommitNew',
+      _holdTN', _hnewTN', _hroot', _hremove', _hnullify', _hrandomOut', heq'⟩ := hmergestep
+    have hvalid' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
+      ownedOutputRecords_valid hC'
+    have hchain' : ∀ qc pre, midPool.preimageOf qc = some pre → hashCommitment pre = qc →
+        s'.pool.preimageOf qc = some pre := fun qc pre hpre hconsist => by
+      rw [heq']; exact applyRecords_preserves_known hvalid' midPool.preimageOf qc pre hpre hconsist
+    rw [hholdseq]
+    unfold update
+    by_cases ha : asset' = asset
+    · subst ha
+      by_cases hcid : cid' = channelId
+      · subst hcid; exact absurd rfl hne
+      · rw [if_pos rfl, if_neg hcid]
+        rcases hh' : s.holdings asset' cid' with _ | hpair
+        · rfl
+        · obtain ⟨qpos, qc⟩ := hpair
+          obtain ⟨pre_old, hpre_old, _hval_old, hconsist_old⟩ := hinv asset' cid' qpos qc hh'
+          dsimp only
+          rw [hchain' qc pre_old (hchain qc pre_old hpre_old hconsist_old) hconsist_old, hpre_old]
+    · rw [if_neg ha]
+      rcases hh' : s.holdings asset' cid' with _ | hpair
+      · rfl
+      · obtain ⟨qpos, qc⟩ := hpair
+        obtain ⟨pre_old, hpre_old, _hval_old, hconsist_old⟩ := hinv asset' cid' qpos qc hh'
+        dsimp only
+        rw [hchain' qc pre_old (hchain qc pre_old hpre_old hconsist_old) hconsist_old, hpre_old]
 
 /-- A channel id is never an external (address-sized) destination:
     `channelId fp` is always a `Term.hash` term (`channelIdOf`'s own
