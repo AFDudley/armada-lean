@@ -52,3 +52,15 @@ no two distinct positions a spend removes can ever collapse onto the one nullifi
 theorem nullifier_pos_inj {nk : Term} {a b : Nat} (h : nullifier nk a = nullifier nk b) :
     a = b :=
   Term.val.inj (Term.hash2_inj h).2
+
+/--
+**A nullifier collision forces both the key and the position equal.** The full
+injectivity `nullifier_pos_inj` only states for one fixed key: `Term.hash2_inj`
+already gives both halves, this just surfaces the first one too (the
+nullifying key, read back out of `Term.hash2`'s left argument). Used by
+`ArmadaLean.PoolSafety.live_note_unspent`: a live position's nullifier, under
+any key, cannot coincide with a different spend's nullifier unless that spend
+named the exact same key and position. -/
+theorem nullifier_inj {nk1 nk2 : Term} {a b : Nat}
+    (h : nullifier nk1 a = nullifier nk2 b) : nk1 = nk2 ∧ a = b :=
+  ⟨(Term.hash2_inj h).1, Term.val.inj (Term.hash2_inj h).2⟩

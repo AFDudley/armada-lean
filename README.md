@@ -61,18 +61,21 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `transactOwned_spends_only_owned` | `PoolSafety` | an owned transact spends only notes owned by the calling contract | `TransactModule.sol:636-639` | lifts `PoolOwned.owned_owner_binding` |
 | `transact_cannot_be_blocked` | `PoolSafety` | no step any caller can take, the owner included, makes an otherwise-valid transact fail | `TransactModule.sol:460-475`, `PrivacyPool.sol:466-470` | DEPARTURE, see module comment |
 | `transactOwned_cannot_be_blocked` | `PoolSafety` | no step any caller can take, the owner included, makes an otherwise-valid owned transact fail | `TransactModule.sol:460-475,491-492` | DEPARTURE, see module comment |
-| `spend_live_exact` | `PoolSafety` | a spend removes exactly the leaf positions it names and adds exactly its new notes | `Step.transact`/`Step.transactOwned` | S-RG, "How Does RAILGUN Work?" |
+| `spend_live_exact` | `PoolSafety` | a spend removes exactly the `(treeNumber, position)` pairs it names and adds exactly its new notes, tagged with the tree and positions they land at | `Step.transact`/`Step.transactOwned` | S-RG, "How Does RAILGUN Work?" |
 | `transact_unshield_exact` | `PoolSafety` | an unshield sends out exactly the value of the notes it spends minus what stays in new notes | `TransactModule.sol:401-424` | value conservation |
-| `shield_creates_exactly` | `PoolSafety` | a shield creates exactly one note of the shielded amount minus the fee; no second note | `ShieldModule.sol:277-341` | DEPARTURE, see module comment |
-| `transact_root_was_produced` | `PoolSafety` | a transact names only a root the pool itself produced, or the genesis root | `TransactModule.sol:538` | S-RG, "RAILGUN Core System & Protocol" |
+| `shield_creates_exactly` | `PoolSafety` | a shield creates exactly one note of the shielded amount minus the fee, at the `(treeNumber, position)` it reports; no second note; no capacity hypothesis — a full tree rolls over instead | `ShieldModule.sol:277-341`, `MerkleModule.sol:62-70` | DEPARTURE, see module comment |
+| `transact_root_was_produced` | `PoolSafety` | a transact names only a root the pool itself produced for that tree, or that tree's genesis root | `TransactModule.sol:538` | S-RG, "RAILGUN Core System & Protocol" |
 | `pool_preimageOf_consistent` | `PoolSafety` | every entry the pool has ever written to `preimageOf` hashes to the commitment it is recorded under | `TransactModule.sol:590-604`, `ShieldModule.sol:71,136` | lifts `PoolOwned.preimageOf_consistent` |
 | `transactOwned_records_all` | `PoolSafety` | after an owned transact, `preimageOf` returns the recorded preimage for each of its outputs | `TransactModule.sol:630-634` | full disclosure, `requireAll = true` |
 | `shield_can_happen` | `PoolSafety` | a shield of a positive amount, while not paused, succeeds | `ShieldModule.sol:45-90` | shield can happen |
 | `transact_can_happen` | `PoolSafety` | a private transfer by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | transact can happen |
 | `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | unshield can happen |
 | `owned_transact_can_happen` | `PoolSafety` | an owned transact by the real owner, with an accepted proof, succeeds | `TransactModule.sol:488-519` | owned transact can happen |
-| `leaf_has_merkle_witness` | `PoolSafety` | every leaf the pool has ever inserted has a real Merkle path to a root the pool produced | `MerkleModule.sol:54-121` | tree is computed, not chosen |
-| `owned_spend_witness_exists` | `PoolSafety` | a live owned note with a recorded preimage has a constructible `OwnedConstrained` spend witness, built entirely from public data | `TransactOwned.circom:66-87` | spend-construction |
+| `leaf_has_merkle_witness` | `PoolSafety` | every leaf the pool has ever inserted into any tree has a real Merkle path to a root the pool produced for that tree | `MerkleModule.sol:54-121` | tree is computed, not chosen |
+| `owned_spend_witness_exists` | `PoolSafety` | a live owned note with a recorded preimage has a constructible `OwnedConstrained` spend witness, built entirely from public data, against any tree's leaf list | `TransactOwned.circom:66-87` | spend-construction |
+| `live_values_lt_2pow120` | `PoolSafety` | every note the pool records as live has a value below `2 ^ 120`, pool-wide | `PoolTypes.sol:79-83` | `CommitmentPreimage.value : uint120` |
+| `leaf_stable` | `PoolSafety` | a leaf, once inserted at a `(treeNumber, position)`, never changes in any later reachable state | `Step`'s own construction | insertion only ever appends |
+| `live_note_unspent` | `PoolSafety` | a live note's nullifier is not in `spent`, in every reachable state, under any nullifying key | `TransactModule.sol:379-386` | adjudicator payout freshness |
 | `live_positions_distinct_nullifiers` | `PoolSafety` | two different live leaf positions never share a nullifier, for a fixed spender key | `Transact.circom:97-101`, `TransactOwned.circom:89-97` | position identity is sound |
 | `pool_ownedRandomOf_consistent` | `PoolSafety` | every entry the pool has ever written to `ownedRandomOf` genuinely reconstructs the matching note's `npk` | `PoolOwned.OwnedDisclosure` module comment | DEPARTURE, approved design |
 
