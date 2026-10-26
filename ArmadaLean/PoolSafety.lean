@@ -289,12 +289,12 @@ theorem spent_monotone {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
   | transact w pub treeNumber hN hM hC newNotes unshieldTail rest spent' records ownedRecords
       hRoot hSplit hUnshieldLen hRemove hNullify hRecords hOwnedRecords =>
     by_cases htn : tn = treeNumber
-    · subst tn; simp only [if_pos rfl]; exact markSpent_subset hNullify
+    · subst tn; simp only; exact markSpent_subset hNullify
     · simp only [if_neg htn]; exact fun n hn => hn
   | transactOwned w pub treeNumber hN hM hC caller hCaller rest spent' ownedOutputs
       hRoot hRemove hNullify hNonZero hOwnedOutputs =>
     by_cases htn : tn = treeNumber
-    · subst tn; simp only [if_pos rfl]; exact markSpent_subset hNullify
+    · subst tn; simp only; exact markSpent_subset hNullify
     · simp only [if_neg htn]; exact fun n hn => hn
   | admin shieldsPaused =>
     exact fun n hn => hn
@@ -1156,7 +1156,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t tn pos pre hmem
       by_cases ht : t = token
       · subst t
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
         · injection heq with h1 h2
           injection h1 with h1a h1b
@@ -1173,7 +1173,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t t' tn pos pre pre' hmem hmem'
       by_cases ht : t = token <;> by_cases ht' : t' = token
       · subst t; subst t'
-        simp only [if_pos rfl] at hmem hmem'
+        simp only at hmem hmem'
         rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem <;>
           rcases List.eq_or_mem_of_mem_cons hmem' with heq' | hmem'
         · exact ⟨rfl, (congrArg Prod.snd heq).trans (congrArg Prod.snd heq').symm⟩
@@ -1191,7 +1191,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
           omega
         · exact ih2 token token tn pos pre pre' hmem hmem'
       · subst t
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         simp only [if_neg ht'] at hmem'
         rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
         · exfalso
@@ -1202,7 +1202,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
           omega
         · exact ih2 token t' tn pos pre pre' hmem hmem'
       · subst t'
-        simp only [if_pos rfl] at hmem'
+        simp only at hmem'
         simp only [if_neg ht] at hmem
         rcases List.eq_or_mem_of_mem_cons hmem' with heq' | hmem'
         · exfalso
@@ -1222,7 +1222,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t tn pos pre hmem nk
       by_cases ht : t = token
       · subst t
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
         · injection heq with h1 _
           injection h1 with h1a h1b
@@ -1236,7 +1236,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t
       by_cases ht : t = token
       · subst t
-        simp only [if_pos rfl, if_true]
+        simp only [if_true]
         rw [List.nodup_cons]
         refine ⟨?_, ih5 token⟩
         intro hmem
@@ -1260,7 +1260,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t tn pos pre hmem
       by_cases ht : t = w.token
       · subst ht
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases List.mem_append.mp hmem with hnew | hrest
         · have htn := withTreePositionsFrom_treeNumber _ _ _ _ hnew
           simp only at htn
@@ -1280,7 +1280,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t t' tn pos pre pre' hmem hmem'
       by_cases ht : t = w.token <;> by_cases ht' : t' = w.token
       · subst ht; subst ht'
-        simp only [if_pos rfl] at hmem hmem'
+        simp only at hmem hmem'
         rcases List.mem_append.mp hmem with hnew | hrest <;>
           rcases List.mem_append.mp hmem' with hnew' | hrest'
         · exact ⟨rfl, withTreePositionsFrom_unique _ _ _ _ _ hnew hnew' rfl⟩
@@ -1310,7 +1310,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
             hperm.mem_iff.mpr (List.mem_append_right _ hrest')
           exact ih2 w.token w.token tn pos pre pre' hmemold hmemold'
       · subst ht
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         simp only [if_neg ht'] at hmem'
         rcases List.mem_append.mp hmem with hnew | hrest
         · exfalso
@@ -1325,7 +1325,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
             hperm.mem_iff.mpr (List.mem_append_right _ hrest)
           exact ih2 w.token t' tn pos pre pre' hmemold hmem'
       · subst ht'
-        simp only [if_pos rfl] at hmem'
+        simp only at hmem'
         simp only [if_neg ht] at hmem
         rcases List.mem_append.mp hmem' with hnew' | hrest'
         · exfalso
@@ -1345,7 +1345,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro tn pos nk hmem
       by_cases htn2 : tn = treeNumber
       · subst tn
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases markSpent_superset hNullify (nullifier nk pos) hmem with hold | hnewmark
         · have hlt := ih3 treeNumber pos nk hold
           have hle := hlenge treeNumber
@@ -1371,7 +1371,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t tn pos pre hmem nk
       by_cases ht : t = w.token
       · subst ht
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases List.mem_append.mp hmem with hnew | hrest
         · have htn := withTreePositionsFrom_treeNumber _ _ _ _ hnew
           simp only at htn
@@ -1436,7 +1436,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
       · simp only [if_neg ht] at hmem
         by_cases htn2 : tn = treeNumber
         · subst tn
-          simp only [if_pos rfl] at *
+          simp only at *
           intro hcon
           rcases markSpent_superset hNullify (nullifier nk pos) hcon with hold | hnewmark
           · exact ih4 t treeNumber pos pre hmem nk hold
@@ -1460,7 +1460,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t
       by_cases ht : t = w.token
       · subst ht
-        simp only [if_pos rfl, if_true]
+        simp only [if_true]
         rw [List.nodup_append]
         refine ⟨withTreePositionsFrom_nodup _ _ _, removeAll_nodup hpoolNodup hRemove, ?_⟩
         intro a ha b hb heq
@@ -1487,7 +1487,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t tn pos pre hmem
       by_cases ht : t = w.token
       · subst ht
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases List.mem_append.mp hmem with hnew | hrest
         · have htn := withTreePositionsFrom_treeNumber _ _ _ _ hnew
           simp only at htn
@@ -1507,7 +1507,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t t' tn pos pre pre' hmem hmem'
       by_cases ht : t = w.token <;> by_cases ht' : t' = w.token
       · subst ht; subst ht'
-        simp only [if_pos rfl] at hmem hmem'
+        simp only at hmem hmem'
         rcases List.mem_append.mp hmem with hnew | hrest <;>
           rcases List.mem_append.mp hmem' with hnew' | hrest'
         · exact ⟨rfl, withTreePositionsFrom_unique _ _ _ _ _ hnew hnew' rfl⟩
@@ -1537,7 +1537,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
             hperm.mem_iff.mpr (List.mem_append_right _ hrest')
           exact ih2 w.token w.token tn pos pre pre' hmemold hmemold'
       · subst ht
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         simp only [if_neg ht'] at hmem'
         rcases List.mem_append.mp hmem with hnew | hrest
         · exfalso
@@ -1552,7 +1552,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
             hperm.mem_iff.mpr (List.mem_append_right _ hrest)
           exact ih2 w.token t' tn pos pre pre' hmemold hmem'
       · subst ht'
-        simp only [if_pos rfl] at hmem'
+        simp only at hmem'
         simp only [if_neg ht] at hmem
         rcases List.mem_append.mp hmem' with hnew' | hrest'
         · exfalso
@@ -1572,7 +1572,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro tn pos nk hmem
       by_cases htn2 : tn = treeNumber
       · subst tn
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases markSpent_superset hNullify (nullifier nk pos) hmem with hold | hnewmark
         · have hlt := ih3 treeNumber pos nk hold
           have hle := hlenge treeNumber
@@ -1598,7 +1598,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t tn pos pre hmem nk
       by_cases ht : t = w.token
       · subst ht
-        simp only [if_pos rfl] at hmem
+        simp only at hmem
         rcases List.mem_append.mp hmem with hnew | hrest
         · have htn := withTreePositionsFrom_treeNumber _ _ _ _ hnew
           simp only at htn
@@ -1662,7 +1662,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
       · simp only [if_neg ht] at hmem
         by_cases htn2 : tn = treeNumber
         · subst tn
-          simp only [if_pos rfl] at *
+          simp only at *
           intro hcon
           rcases markSpent_superset hNullify (nullifier nk pos) hcon with hold | hnewmark
           · exact ih4 t treeNumber pos pre hmem nk hold
@@ -1685,7 +1685,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
     · intro t
       by_cases ht : t = w.token
       · subst ht
-        simp only [if_pos rfl, if_true]
+        simp only [if_true]
         rw [List.nodup_append]
         refine ⟨withTreePositionsFrom_nodup _ _ _, removeAll_nodup hpoolNodup hRemove, ?_⟩
         intro a ha b hb heq
@@ -1805,7 +1805,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
     intro t tn pos pre hmem
     by_cases ht : t = token
     · subst t
-      simp only [if_pos rfl] at hmem
+      simp only at hmem
       rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
       · obtain ⟨base, hbaselen, hbase⟩ := insertResult_leavesAt_new_matches s.closedTrees s.leaves
             s.roots [hashCommitment (⟨npk, token, shieldBase feeBP grossAmount⟩ : CommitmentPreimage)]
@@ -1838,7 +1838,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
     have hlenEq : (newNotes.map hashCommitment).length = newNotes.length := by simp
     by_cases ht : t = w.token
     · subst ht
-      simp only [if_pos rfl] at hmem
+      simp only at hmem
       rcases List.mem_append.mp hmem with hnew | hrest
       · have htn : insertTreeNumber s.closedTrees s.leaves newNotes.length =
             insertTreeNumber s.closedTrees s.leaves (newNotes.map hashCommitment).length := by
@@ -1877,7 +1877,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
     have hlenEq : ((ownedNewNotes w).map hashCommitment).length = (ownedNewNotes w).length := by simp
     by_cases ht : t = w.token
     · subst ht
-      simp only [if_pos rfl] at hmem
+      simp only at hmem
       rcases List.mem_append.mp hmem with hnew | hrest
       · have htn : insertTreeNumber s.closedTrees s.leaves (ownedNewNotes w).length =
             insertTreeNumber s.closedTrees s.leaves ((ownedNewNotes w).map hashCommitment).length := by
@@ -1957,7 +1957,7 @@ theorem step_preserves_live_values_bounded {s s' : PoolState} (ih : LiveValuesBo
     intro t p hp
     by_cases ht : t = token
     · subst t
-      simp only [if_pos rfl] at hp
+      simp only at hp
       rcases List.eq_or_mem_of_mem_cons hp with heq | hp
       · rw [heq]
         exact rangeCheck120_sound _ hRange
@@ -1969,7 +1969,7 @@ theorem step_preserves_live_values_bounded {s s' : PoolState} (ih : LiveValuesBo
     intro t p hp
     by_cases ht : t = w.token
     · subst ht
-      simp only [if_pos rfl] at hp
+      simp only at hp
       rcases List.mem_append.mp hp with hnew | hrest
       · have hqnew : p.2 ∈ newNotes := withTreePositionsFrom_snd_mem _ _ _ _ hnew
         have hmemall : p.2 ∈ transactAllOutputs w := by
@@ -1988,7 +1988,7 @@ theorem step_preserves_live_values_bounded {s s' : PoolState} (ih : LiveValuesBo
     intro t p hp
     by_cases ht : t = w.token
     · subst ht
-      simp only [if_pos rfl] at hp
+      simp only at hp
       rcases List.mem_append.mp hp with hnew | hrest
       · have hqnew : p.2 ∈ ownedNewNotes w := withTreePositionsFrom_snd_mem _ _ _ _ hnew
         unfold ownedNewNotes at hqnew
