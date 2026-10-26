@@ -1654,7 +1654,9 @@ theorem live_note_nullifier_unspent_placeholder (sig : SignatureAssumptions)
     `removeAll` obligation on a singleton `ownedSpentPositions`. -/
 theorem removeAll_singleton_of_mem {α : Type} [DecidableEq α] {l : List α} {x : α}
     (h : x ∈ l) : removeAll l [x] = some (l.erase x) := by
-  sorry
+  unfold removeAll
+  rw [if_pos (List.elem_iff.mpr h)]
+  rfl
 
 /-- The full per-step invariant `holdings_position_live_step` (`Lemmas.lean`)
     preserves, lifted to any reachable state: a holding's own position is
@@ -1700,7 +1702,9 @@ theorem holdings_point_to_live_notes
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
     (hholds : s.holdings asset cid = some (pos, c)) :
     PoolIsLive s.pool c := by
-  sorry
+  obtain ⟨⟨pre, _hpre, hconsist, _hval, _htok, hlive, _r, _hnpk, _hown⟩, _, _⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c hholds
+  exact ⟨asset, pos.1, pos.2, pre, hlive, hconsist⟩
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
     interface: `AdjudicatorState` has no raw-balance field anywhere, and
@@ -1718,7 +1722,15 @@ theorem value_exists_only_as_notes
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
     ∃ pos c, s.holdings asset cid = some (pos, c) ∧ PoolIsLive s.pool c ∧
       (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
-  sorry
+  rcases hh : s.holdings asset cid with _ | ⟨pos, c⟩
+  · exfalso
+    simp only [heldValue, hh] at hheld
+    omega
+  · obtain ⟨⟨pre, hpre, hconsist, _hval, _htok, hlive, _r, _hnpk, _hown⟩, _, _⟩ :=
+      holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c hh
+    refine ⟨pos, c, rfl, ⟨asset, pos.1, pos.2, pre, hlive, hconsist⟩, ?_⟩
+    simp only [heldValue, hh, hpre, Option.map_some, Option.getD_some] at hheld
+    simp only [hpre, Option.map_some, hheld]
 
 /-- Given a finalized channel at `mid` naming `curOutcome` at
     `assetIndex`, with `destIdx` still affording `x` (`haffordable`), a
@@ -1869,6 +1881,66 @@ theorem unbeatable_pays_after_timeout
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
   sorry
 
+/-- `DepositStep`'s effect on `PoolState.notedValue`: the fresh notes minted
+    from one deposit's own spent inputs always sum to the inputs' own
+    total value (`transact_balance`'s own conservation, upgraded past
+    `removeAll`), so the pool's own per-token noted total is unchanged —
+    `notedValue_conserved`'s own `.deposit` FIRST-TIME case. -/
+theorem DepositStep_notedValue_conserved {N M : Nat}
+    (pool pool' : PoolState) (self : Term) (token amount : Nat)
+    (w : TransactWitness N M) (pub : TransactPublic N M) (idx : Fin M)
+    (spendTreeNumber treeNumber position : Nat)
+    (hstep : DepositStep pool self token amount w pub idx spendTreeNumber treeNumber position pool') :
+    ∀ t, pool'.notedValue t = pool.notedValue t := by
+  intro t
+  unfold DepositStep at hstep
+  obtain ⟨r, hnpkOut, hcommOut, htoken, htreeNumber, hposition, hN, hM, hC, rest, spent', records,
+    hroot, hremove, hmark, hsub, hmem, heq⟩ := hstep
+  unfold PoolState.notedValue
+  rw [heq]
+  dsimp only
+  by_cases ht : t = w.token
+  · rw [ht, if_pos rfl]
+    have hbal := transact_balance spendTreeNumber hN hM hC
+      (newNotes := transactAllOutputs w) (unshieldTail := []) (by simp)
+    simp only [List.map_nil, listSum] at hbal
+    have hsum := removeAll_sum (fun p => p.2.value) hremove
+    have hpos := withTreePositionsFrom_map CommitmentPreimage.value treeNumber
+      (insertStartPos pool.leaves M) (transactAllOutputs w)
+    rw [List.map_append, listSum_append, hpos]
+    omega
+  · rw [if_neg ht]
+
+/-- `DepositMergeStep`'s effect on `PoolState.notedValue`: a top-up merge
+    nullifies the old holding and the fresh deposit note, and mints their
+    sum as one merged note — `transactOwned_balance`'s own conservation
+    upgraded past `removeAll`, `notedValue_conserved`'s own `.deposit`
+    TOP-UP case. -/
+theorem DepositMergeStep_notedValue_conserved
+    (pool pool' : PoolState) (self : Term) (token : Nat)
+    (oldTreeNumber oldPos : Nat) (oldHolding : Term) (newTreeNumber newPos : Nat)
+    (newNote merged : Term) (spendTreeNumber mergedTreeNumber mergedPos : Nat)
+    (hstep : DepositMergeStep pool self token oldTreeNumber oldPos oldHolding newTreeNumber newPos
+      newNote merged spendTreeNumber mergedTreeNumber mergedPos pool') :
+    ∀ t, pool'.notedValue t = pool.notedValue t := by
+  intro t
+  unfold DepositMergeStep at hstep
+  obtain ⟨hmergedTree, hmergedPos, w, pub, hC, rest, spent', r, randomOut, hNonZero, hself, htoken,
+    hnpkOut0, hmergedEq, hleaf0, hleaf1, hcommitOld, hcommitNew, holdTree, hnewTree, hroot,
+    hremove, hmark, hnpkRandomOut, heq⟩ := hstep
+  unfold PoolState.notedValue
+  rw [heq]
+  dsimp only
+  by_cases ht : t = token
+  · rw [ht, if_pos rfl]
+    have hbal := transactOwned_balance spendTreeNumber (by decide) (by decide) hC
+    have hsum := removeAll_sum (fun p => p.2.value) hremove
+    have hpos := withTreePositionsFrom_map CommitmentPreimage.value mergedTreeNumber mergedPos
+      (ownedNewNotes w)
+    rw [List.map_append, listSum_append, hpos]
+    omega
+  · rw [if_neg ht]
+
 /-- Which harm this rules out: no single call can mint value into the pool
     or burn value out of it — every call only moves WHICH note backs a
     given token's value, never how much. One-step form; `Reachability.lean`
@@ -1880,7 +1952,59 @@ theorem notedValue_conserved
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (token : Nat)
     (hstep : Step sig appRel actor s call s') :
     s'.pool.notedValue token = s.pool.notedValue token := by
-  sorry
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, hinner, _⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, spendTreeNumber, treeNumber, position, midPool, hdstep,
+      _hpoolsigned, hmatch⟩ := hinner
+    have hmidConserved := DepositStep_notedValue_conserved s.pool midPool s.self asset amount w pub
+      idx spendTreeNumber treeNumber position hdstep token
+    rcases hh : s.holdings asset channelId with _ | ⟨⟨oldTreeNumber, oldPos⟩, oldHoldingVal⟩
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _⟩ := hmatch
+      rw [hpoolEq]
+      exact hmidConserved
+    · rw [hh] at hmatch
+      obtain ⟨merged, mergeSpendTreeNumber, mergedTreeNumber, mergedPos, hmerge, _⟩ := hmatch
+      have hmergeConserved := DepositMergeStep_notedValue_conserved midPool s'.pool s.self asset
+        oldTreeNumber oldPos oldHoldingVal treeNumber position (pub.commitmentsOut idx) merged
+        mergeSpendTreeNumber mergedTreeNumber mergedPos hmerge token
+      rw [hmergeConserved]
+      exact hmidConserved
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨_, _, _, _, _, hinner, _⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+    exact PoolOwnedSpendStep_notedValue_conserved _ _ _ _ _ _ _ hmatch token
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | reclaim a b c d e f g =>
+    obtain ⟨_, _, _, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨hmode, hsh, hoh, newOutcome, hfold, hchanseq, _⟩ := hstep
+    exact bulkTransferFold_notedValue_conserved s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold token
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨hnotfinal, hfinal, hsigned, newOutcome, hfold, hchanseq, _⟩ := hstep
+    exact bulkTransferFold_notedValue_conserved s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold token
+  | tick newNow =>
+    obtain ⟨_, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | sign p d =>
+    obtain ⟨_, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpool, _⟩ := hstep
+    rw [hpool]
 
 /-- The reachable-set form of `notedValue_conserved`, stated over the
     REACHABLE set rather than over one step from a chosen state: every
@@ -1894,7 +2018,11 @@ theorem notedValue_conserved_reachable
     (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
     (s : AdjudicatorState) (token : Nat)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) :
-    s.pool.notedValue token = pool0.notedValue token := sorry
+    s.pool.notedValue token = pool0.notedValue token :=
+  reachable_preserves (P := fun s => s.pool.notedValue token = pool0.notedValue token) rfl
+    (fun actor call s s' hP hstep =>
+      (notedValue_conserved sig appRel actor s s' call token hstep).trans hP)
+    hreach
 
 /-- The real ConsensusApp's rule (`ConsensusApp.sol`/`Consensus.sol`,
     quoted above): empty proof, and every participant has authorized the
@@ -2244,7 +2372,16 @@ theorem payout_takes_no_fee
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
       totalPayouts + (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid - totalPayouts)
         = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
-  sorry
+  intro h
+  show (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 +
+      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)
+      = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid
+  have hle := transferEffects_totalPayouts_le (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
+  omega
 
 /-- `conclude` finalizes without moving value: `conclude`'s `Step` case
     touches only `s'.channels`; `s'.pool` and `s'.holdings` are provably
@@ -2255,7 +2392,8 @@ theorem conclude_moves_no_value
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
     (hstep : Step sig appRel actor s (.conclude fp candidate) s') :
-    s'.pool = s.pool ∧ s'.holdings = s.holdings := sorry
+    s'.pool = s.pool ∧ s'.holdings = s.holdings :=
+  ⟨hstep.2.2.2.2.1, hstep.2.2.2.2.2.1⟩
 
 /-- B4 — `bulkTransferAllAssets` has EXACTLY `transferAllAssets`'s own
     documented effect (`DOC/0080:77`, `0080-defunding-a-channel.md`:
@@ -2281,7 +2419,8 @@ theorem bulk_transfer_all_assets_effect
     ∃ newOutcome : Outcome,
       bulkTransferFold s.self cid outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
       s'.channels = update s.channels cid { s.channels cid with outcomeHash := outcomeHashOf newOutcome } := by
-  sorry
+  obtain ⟨hmode, hsh, hoh, newOutcome, hfold, hchan, _⟩ := hstep
+  exact ⟨hmode, hsh, hoh, newOutcome, hfold, hchan⟩
 
 /-- B4 — `bulkConcludeAndTransferAllAssets` has EXACTLY `concludeAndTransferAllAssets`'s
     own documented effect (`DOC/0080:77`, quoted above): `.conclude`'s own
@@ -2303,7 +2442,8 @@ theorem bulk_conclude_and_transfer_all_assets_effect
       s'.channels = update s.channels (channelId fp)
         { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0,
           outcomeHash := outcomeHashOf newOutcome } := by
-  sorry
+  obtain ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan, _⟩ := hstep
+  exact ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan⟩
 
 /-- B4 — a bulk conclude-and-transfer can happen: for all
     `HashAssumptions`/`SignatureAssumptions`, there is an execution from
@@ -2392,7 +2532,10 @@ theorem holdings_never_zero_valued
     (hholds : s.holdings asset cid = some (pos, c))
     (hpre : s.pool.preimageOf c = some pre) :
     pre.value ≠ 0 := by
-  sorry
+  obtain ⟨⟨pre', hpre', _hconsist, hval', _htok, _hlive, _r, _hnpk, _hown⟩, _, _⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c hholds
+  rw [hpre] at hpre'
+  exact (Option.some.inj hpre') ▸ hval'
 
 /-- Closes the `heldValue`'s `commitment == 0` miss (old offset 2549): an
     empty commitment reads as `0`, and — the mutant's blind spot — this
@@ -2415,7 +2558,26 @@ theorem heldValue_zero_iff_no_collateral
     heldValue s asset cid = 0 ↔
       s.holdings asset cid = none ∨
       ∃ pos c, s.holdings asset cid = some (pos, c) ∧ s.pool.preimageOf c = none := by
-  sorry
+  unfold heldValue
+  rcases hc : s.holdings asset cid with _ | ⟨pos, c⟩
+  · simp [hc]
+  · simp only [hc]
+    rcases hp : s.pool.preimageOf c with _ | pre
+    · constructor
+      · intro _
+        exact Or.inr ⟨pos, c, rfl, hp⟩
+      · intro _
+        simp [hp]
+    · simp only [hp, Option.map_some, Option.getD_some]
+      constructor
+      · intro hv
+        exact absurd hv (holdings_never_zero_valued sig appRel assets selfInputs pool0 s asset cid
+          pos c pre hreach hc hp)
+      · rintro (h1 | ⟨pos2, c2, hc2, hp2⟩)
+        · exact absurd h1 (by simp)
+        · have hceq : (pos, c) = (pos2, c2) := Option.some.inj hc2
+          rw [(show c = c2 from (congrArg Prod.snd hceq : (pos, c).snd = (pos2, c2).snd)), hp2] at hp
+          exact absurd hp (by simp)
 
 /-- Closes the constructor's `configuredAssets[...] = true` miss
     (`armada-nitro@5519526c:docs/tasks/
@@ -2430,7 +2592,10 @@ theorem configuredAssets_invariant
     (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
     (s : AdjudicatorState)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) :
-    s.configuredAssets = assets := sorry
+    s.configuredAssets = assets :=
+  reachable_preserves (P := fun s => s.configuredAssets = assets) rfl
+    (fun actor call s s' hP hstep => (step_configuredAssets sig appRel actor s s' call hstep).trans hP)
+    hreach
 
 /-- Closes two of the five `_mintTransferPayout` misses (old offsets
     11666, 11738): an allocation paid exactly `0` mints no note at all —
@@ -2463,7 +2628,58 @@ theorem zero_payout_mints_nothing
     ¬ ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
         (∃ pos, (pos, pre) ∈ s'.pool.live pre.token) ∧
         (∀ pos, (pos, pre) ∉ s.pool.live pre.token) := by
-  sorry
+  obtain ⟨hassetIdx, hmode, hsh, hoh, hstrict, hinner, _⟩ := hstep
+  obtain ⟨hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+  rintro ⟨pre, _hnpk, hval, ⟨pos, hin⟩, hnin⟩
+  unfold PoolOwnedSpendStep at hmatch
+  by_cases htok : pre.token = (outcome.get ⟨assetIndex, hassetIdx⟩).asset
+  · rw [htok] at hin
+    have hnz := payout_outputs_nonzero
+      (transferEffects (outcome.get ⟨assetIndex, hassetIdx⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid) indices).2.1
+      (heldValue s (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, hassetIdx⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid) indices).2.2)
+      (outcome.get ⟨assetIndex, hassetIdx⟩).asset s.self r
+    rcases hc : s.holdings (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid with _ | c0
+    · rw [hc] at hmatch
+      obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot, hmark,
+        hRandomOut, heq⟩ := hmatch
+      rw [heq] at hin
+      dsimp only at hin
+      rw [if_pos rfl] at hin
+      rcases List.mem_append.mp hin with hc1 | hc2
+      · exact hnz pre (withTreePositionsFrom_snd_mem _ _ _ (pos, pre) hc1) hval
+      · exact hnin pos (htok ▸ hc2)
+    · rw [hc] at hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+        hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+      rw [heq] at hin
+      dsimp only at hin
+      rw [if_pos rfl] at hin
+      rcases List.mem_append.mp hin with hc1 | hc2
+      · exact hnz pre (withTreePositionsFrom_snd_mem _ _ _ (pos, pre) hc1) hval
+      · have hperm := removeAll_perm hremove
+        have hmem : (pos, pre) ∈ s.pool.live (outcome.get ⟨assetIndex, hassetIdx⟩).asset :=
+          (List.Perm.mem_iff hperm).mpr (List.mem_append.mpr (Or.inr hc2))
+        exact hnin pos (htok ▸ hmem)
+  · have heqlive : s'.pool.live pre.token = s.pool.live pre.token := by
+      rcases hc : s.holdings (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid with _ | c0
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot,
+          hmark, hRandomOut, heq⟩ := hmatch
+        rw [heq]
+        dsimp only
+        rw [if_neg htok]
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+          hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+        rw [heq]
+        dsimp only
+        rw [if_neg htok]
+    rw [heqlive] at hin
+    exact hnin pos hin
 
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
@@ -2493,7 +2709,41 @@ theorem full_payout_leaves_no_remainder
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 =
       heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) :
     s'.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
-  sorry
+  obtain ⟨hassetIdx, hmode, hsh, hoh, hstrict, hinner, _⟩ := hstep
+  obtain ⟨hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+  have hidx_eq : (⟨assetIndex, hassetIdx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hholdseq
+  rw [hholdseq]
+  have hgen : ∀ (remainder : Nat) (X : Option ((Nat × Nat) × Term)),
+      remainder = 0 →
+      (update s.holdings (outcome.get ⟨assetIndex, h⟩).asset
+        (update (s.holdings (outcome.get ⟨assetIndex, h⟩).asset) cid
+          (if remainder = 0 then none else X)))
+        (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
+    intro remainder X hr
+    rw [hr]
+    unfold update
+    simp
+  refine hgen _ _ ?_
+  show heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+      (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 = 0
+  omega
+
+/-- Where a `NullifierSet` gets a fresh entry at exactly one key, and the
+    fresh entry equals the OLD entry at that key (so nothing actually
+    changed), the whole function is unchanged — `nullify_iff_commitment_
+    was_some`'s own `none`-case argument, packaged generically over
+    `PoolOwnedSpendStep`'s own `spent` update shape. -/
+theorem spent_update_eq_self_of_markSpent_nil (f : Nat → NullifierSet) (x : Nat)
+    (y : NullifierSet) (hm : markSpent (f x) [] = some y) :
+    (fun n => if n = x then y else f n) = f := by
+  have hy : f x = y := Option.some.inj hm
+  funext n
+  by_cases hn : n = x
+  · rw [hn, hy, if_pos rfl]
+  · rw [if_neg hn]
 
 /-- Closes the fifth `_mintTransferPayout` miss (old offset 12743): the
     old collateral commitment is nullified if and only if one existed —
@@ -2518,6 +2768,42 @@ theorem nullify_iff_commitment_was_some
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
       s'.pool.spent = s.pool.spent := by
-  sorry
+  obtain ⟨hassetIdx, hmode, hsh, hoh, hstrict, hinner, _⟩ := hstep
+  obtain ⟨hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+  have hidx_eq : (⟨assetIndex, hassetIdx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hmatch
+  unfold PoolOwnedSpendStep at hmatch
+  constructor
+  · intro hnone
+    rw [hnone] at hmatch
+    obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot, hmark,
+      hRandomOut, heq⟩ := hmatch
+    have hofn : List.ofFn pub.nullifiers = ([] : List Term) := by simp
+    rw [hofn] at hmark
+    rw [heq]
+    dsimp only
+    exact spent_update_eq_self_of_markSpent_nil s.pool.spent _ spent' hmark
+  · intro hpost
+    rcases hc : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | ⟨⟨spendTreeNumber, pos⟩, cm⟩
+    · rfl
+    · exfalso
+      rw [hc] at hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+        hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+      rw [heq] at hpost
+      dsimp only at hpost
+      have hspenteq := congrFun hpost spendTreeNumber
+      rw [if_pos rfl] at hspenteq
+      have hofn1 : List.ofFn pub.nullifiers = [pub.nullifiers 0] := by
+        rw [List.ofFn_succ, List.ofFn_zero]
+      rw [hofn1, markSpent_single] at hmark
+      split at hmark
+      · exact absurd hmark (by simp)
+      · rename_i hne
+        have heq2 : pub.nullifiers 0 :: s.pool.spent spendTreeNumber = spent' :=
+          Option.some.inj hmark
+        have hlen := congrArg List.length (heq2.trans hspenteq)
+        simp at hlen
 
 end ArmadaLean.Adjudicator
