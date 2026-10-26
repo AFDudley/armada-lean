@@ -1701,7 +1701,10 @@ theorem holdings_never_zero_valued
     (hholds : s.holdings asset cid = some (pos, c))
     (hpre : s.pool.preimageOf c = some pre) :
     pre.value ≠ 0 := by
-  sorry
+  obtain ⟨⟨pre', hpre', _hconsist, hval', _htok, _hlive, _r, _hnpk, _hown⟩, _, _⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c hholds
+  rw [hpre] at hpre'
+  exact (Option.some.inj hpre') ▸ hval'
 
 /-- Closes the `heldValue`'s `commitment == 0` miss (old offset 2549): an
     empty commitment reads as `0`, and — the mutant's blind spot — this
@@ -1724,7 +1727,26 @@ theorem heldValue_zero_iff_no_collateral
     heldValue s asset cid = 0 ↔
       s.holdings asset cid = none ∨
       ∃ pos c, s.holdings asset cid = some (pos, c) ∧ s.pool.preimageOf c = none := by
-  sorry
+  unfold heldValue
+  rcases hc : s.holdings asset cid with _ | ⟨pos, c⟩
+  · simp [hc]
+  · simp only [hc]
+    rcases hp : s.pool.preimageOf c with _ | pre
+    · constructor
+      · intro _
+        exact Or.inr ⟨pos, c, rfl, hp⟩
+      · intro _
+        simp [hp]
+    · simp only [hp, Option.map_some, Option.getD_some]
+      constructor
+      · intro hv
+        exact absurd hv (holdings_never_zero_valued sig appRel assets selfInputs pool0 s asset cid
+          pos c pre hreach hc hp)
+      · rintro (h1 | ⟨pos2, c2, hc2, hp2⟩)
+        · exact absurd h1 (by simp)
+        · have hceq : (pos, c) = (pos2, c2) := Option.some.inj hc2
+          rw [(show c = c2 from (congrArg Prod.snd hceq : (pos, c).snd = (pos2, c2).snd)), hp2] at hp
+          exact absurd hp (by simp)
 
 /-- Closes the constructor's `configuredAssets[...] = true` miss
     (`armada-nitro@5519526c:docs/tasks/
@@ -1739,7 +1761,10 @@ theorem configuredAssets_invariant
     (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
     (s : AdjudicatorState)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) :
-    s.configuredAssets = assets := sorry
+    s.configuredAssets = assets :=
+  reachable_preserves (P := fun s => s.configuredAssets = assets) rfl
+    (fun actor call s s' hP hstep => (step_configuredAssets sig appRel actor s s' call hstep).trans hP)
+    hreach
 
 /-- Closes two of the five `_mintTransferPayout` misses (old offsets
     11666, 11738): an allocation paid exactly `0` mints no note at all —
