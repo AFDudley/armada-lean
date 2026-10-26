@@ -2656,6 +2656,56 @@ theorem bulkTransferFold_preimage_nonzero (self : Nat) (cid : Term) :
           · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl)
         hmatch hinv
 
+/-- The `ownedRandomOf` sibling of `bulkTransferFold_preimage_nonzero`:
+    an `ownerField`-based owned disclosure survives the whole fold, one
+    `PoolOwnedSpend_update_owned_disclosure` application per asset in
+    the fold's own list, carried forward by induction. What
+    `held_note_owned_disclosure_step`'s own bulk cases need. -/
+theorem bulkTransferFold_owned_disclosure (self : Nat) (cid : Term) :
+    ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
+      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+    bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
+    (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
+      ∃ pre ownerField r, pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        self = addressOf ownerField ∧ pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
+        npk (Term.val ownerField) r = pre.npk) →
+    ∀ qasset qcid qpos qc, holdingsF qasset qcid = some (qpos, qc) →
+      ∃ pre ownerField r, poolF.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        self = addressOf ownerField ∧ poolF.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
+        npk (Term.val ownerField) r = pre.npk := by
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold hinv
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hpoolEq, hholdEq⟩ := hfold
+      rw [hholdEq, hpoolEq]
+      exact hinv
+    | cons _ _ =>
+      unfold bulkTransferFold at hfold
+      exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold hinv
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguarantee, _hnewExit, r, midPool, hmatch, hrec⟩ := hfold
+      refine ih newRest midPool poolF _ holdingsF hrec ?_
+      exact PoolOwnedSpend_update_owned_disclosure pool midPool self exit.asset cid _ r _
+        holdings
+        (fun pre hpre => by
+          obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+          by_cases hamt : a.amount = 0
+          · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+          · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl)
+        hmatch hinv
+
+
 /-- `bulkTransferFold`'s own frame fact: every channel OTHER than `cid`
     (the one the whole fold pays out) keeps every asset's own held value
     UNCHANGED — one application of `PoolOwnedSpendStep_frame` per asset
@@ -4831,8 +4881,14 @@ theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
     rw [hholdEq] at hc
     obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
     exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
-  | bulkTransferAllAssets channelId outcome claimedStateHash => sorry
-  | bulkConcludeAndTransferAllAssets fp candidate => sorry
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_owned_disclosure s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold hinv
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_owned_disclosure s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold hinv
   | tick newNow =>
     obtain ⟨_, _, hpoolEq, hholdEq, _⟩ := hstep
     intro qasset qcid qpos qc hc
