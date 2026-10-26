@@ -2440,6 +2440,49 @@ theorem transfer_step_pays_selected
     rw [if_pos rfl]
     exact List.mem_append.mpr (Or.inl hposmem)
 
+/-- Not-yet-finalized plus `SignedByAll` always lets `h` (or anyone)
+    reach a finalized state naming `candidate`: one `.conclude`
+    (`ChannelStatus.mode` reads `.open` when `finalizesAt = 0`, so
+    `.conclude` right at `mid.now = 0` would set `finalizesAt := 0`
+    again, NOT actually finalizing — the caller supplies `hnowpos` to
+    rule this out; ticking first is NOT a safe general fix, since a
+    channel already in `.challenge` mode with `finalizesAt` exactly
+    one tick away would then finalize via the CHALLENGE timeout
+    instead, with the challenge's own `outcomeHash`, not
+    `candidate`'s). Self/ownerField-representation-independent:
+    `.conclude` touches no `pool`/`holdings`/`self` field at all
+    (`Operations.lean`'s own `.conclude` case, every pool/holdings
+    field an equation to the PRIOR state). What `unbeatable_pays`'s
+    own B case needs before handing off to
+    `transfer_step_pays_selected`. -/
+theorem conclude_step_finalizes
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (mid : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+    (hnotfinal : (mid.channels (channelId fp)).mode mid.now ≠ .finalized)
+    (hnowpos : 0 < mid.now)
+    (hfinal : candidate.isFinal = true)
+    (hsigned : SignedByAll sig mid fp candidate) :
+    ∃ (payCalls : List (Actor × Call)) (mid1 : AdjudicatorState),
+      AppliesAll sig appRel mid payCalls mid1 ∧
+      (mid1.channels (channelId fp)).mode mid1.now = .finalized ∧
+      (mid1.channels (channelId fp)).outcomeHash = outcomeHashOf candidate.outcome ∧
+      mid1.pool = mid.pool ∧ mid1.holdings = mid.holdings ∧ mid1.self = mid.self ∧
+      mid1.signedBy = mid.signedBy ∧ mid1.poolSignedBy = mid.poolSignedBy := by
+  let newStatus : ChannelStatus :=
+    ⟨0, mid.now, Term.val 0, outcomeHashOf candidate.outcome⟩
+  have hconcludestep : Step sig appRel actor mid (.conclude fp candidate)
+      { mid with channels := update mid.channels (channelId fp) newStatus } :=
+    ⟨hnotfinal, hfinal, hsigned, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨[(actor, .conclude fp candidate)], _, ⟨_, hconcludestep, rfl⟩, ?_, ?_, rfl, rfl, rfl, rfl, rfl⟩
+  · show (update mid.channels (channelId fp) newStatus (channelId fp)).mode mid.now = .finalized
+    unfold update; rw [if_pos rfl]; unfold ChannelStatus.mode
+    rw [if_neg (show mid.now ≠ 0 by omega)]
+    rw [if_pos (Nat.le_refl _)]
+  · show (update mid.channels (channelId fp) newStatus (channelId fp)).outcomeHash =
+      outcomeHashOf candidate.outcome
+    unfold update; rw [if_pos rfl]
+
 /-- Which harm this rules out: once all participants have signed a final
     state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
     point, Figure 11), no other caller's actions — in any number, in any
