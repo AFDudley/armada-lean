@@ -69,6 +69,14 @@ import ArmadaLean.Adjudicator.Lemmas
 
 namespace ArmadaLean.Adjudicator
 
+-- Several theorem signatures below carry a hypothesis kept only for
+-- interface stability (so a later construction change never touches the
+-- public signature) and not read by the current proof body. Each such
+-- case is a deliberate, named choice, documented at its own theorem; the
+-- linter cannot tell "kept for stability" from "forgotten", so this file
+-- turns the warning off once, rather than once per theorem.
+set_option linter.unusedVariables false
+
 /-- A channel is finalized, right now, with exactly this `stateHash`/
     `outcomeHash` pair (S4 `0040-lifecycle-of-a-channel.md`, "Channel
     Modes"). A convenience predicate so the theorems below read as
@@ -2564,7 +2572,7 @@ theorem removeAll_singleton_of_mem {α : Type} [DecidableEq α] {l : List α} {x
   rw [if_pos (List.elem_iff.mpr h)]
   rfl
 
-/-- The full per-step invariant `holdings_position_live_step` (`Lemmas.lean`)
+/-- The full per-step holdings-position invariant (`Lemmas.lean`)
     preserves, lifted to any reachable state: a holding's own position is
     live with the holding's own commitment (naming the EXACT `(position,
     preimage)` pair, not just that SOME live note matches the
@@ -2734,7 +2742,7 @@ theorem transfer_step_exists
     rw [transferEffects_eq_sel allocs held [destIdx]] at hx
     obtain ⟨i, _, hseli, hxeq⟩ := transferEffectsSel_exit_forall allocs held
       (fun i => [destIdx].isEmpty || i ∈ [destIdx]) x hx
-    simp only [List.isEmpty_cons, List.isEmpty_nil, Bool.false_or, List.mem_singleton,
+    simp only [List.isEmpty_cons, Bool.false_or, List.mem_singleton,
       decide_eq_true_eq] at hseli
     subst hseli
     rw [hallocsD, hpaidDef] at hxeq
@@ -4052,6 +4060,52 @@ def consensusRelation (sig : SignatureAssumptions) (s : AdjudicatorState)
     (fp : FixedPart) (proof : List VariablePart) (candidate : VariablePart) : Prop :=
   proof = [] ∧ SignedByAll sig s fp candidate
 
+/-- A `.sign` call by `p` on `d` always succeeds from any state `st`:
+    `.sign`'s own `Step` case (`Operations.lean`) checks only `actor =
+    .nitro p` and touches only `signedBy`. Shared by every can-happen
+    proof below that builds a `.sign` call. -/
+theorem sign_step (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (st : AdjudicatorState) (p : Nat) (d : Term) :
+    Step sig appRel (Actor.nitro p) st (.sign p d)
+      { st with signedBy := fun p' d' => (p' = p ∧ d' = d) ∨ st.signedBy p' d' } :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- A `.signNote` call by `pk` on `msgHash` always succeeds from any
+    state `st`: `.signNote`'s own `Step` case (`Operations.lean`) checks
+    only `actor = .pool pk` and touches only `poolSignedBy`. Shared by
+    every can-happen proof below that builds a `.signNote` call. -/
+theorem signNote_step (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (st : AdjudicatorState) (pk : Nat × Nat) (msgHash : Term) :
+    Step sig appRel (Actor.pool pk) st (.signNote pk msgHash)
+      { st with poolSignedBy := fun pk' m' => (pk' = pk ∧ m' = msgHash) ∨ st.poolSignedBy pk' m' } :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- One `_root_.Step.shield` at zero fee, computed the same way
+    `_root_.Step.shield`'s own conclusion is (`Pool.lean`) — a `def`,
+    not a hand-written record, so `(shieldPool pool token amount
+    npkV).leaves`/`.roots`/`.live` reduce exactly the way the shield
+    step's own target state does. Shared by every can-happen proof
+    below that starts from one shielded note. -/
+def shieldPool (pool : PoolState) (token amount : Nat) (npkV : Term) : PoolState :=
+  let note : CommitmentPreimage := ⟨npkV, token, shieldBase 0 amount⟩
+  let tn := insertTreeNumber pool.closedTrees pool.leaves 1
+  let pos := insertStartPos pool.leaves 1
+  let res := insertResult pool.closedTrees pool.leaves pool.roots [hashCommitment note]
+  { pool with
+      live := fun t => if t = token then ((tn, pos), note) :: pool.live t else pool.live t,
+      held := fun t => if t = token then pool.held t + note.value else pool.held t,
+      closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
+      preimageOf := recordStep pool.preimageOf (hashCommitment note) note }
+
+/-- `shieldPool`'s own `_root_.Step`. -/
+theorem shieldPool_step (pool : PoolState) (token amount : Nat) (npkV : Term)
+    (hNotPaused : pool.shieldsPaused = false) (hValue : 0 < amount)
+    (hRange : RangeChecked120 (shieldBase 0 amount)) :
+    _root_.Step pool (shieldPool pool token amount npkV) :=
+  _root_.Step.shield token amount 0 npkV hNotPaused hValue (by decide) hRange
+
 /-!
 ## D. "Can happen": the adjudicator's reason for existing
 
@@ -4120,16 +4174,12 @@ theorem checkpoint_can_happen
   let g := genesis assets selfInputs pool0
   let mid1 : AdjudicatorState := { g with
     signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate0) ∨ g.signedBy p' d' }
-  have hsignstep1 : Step sig (consensusRelation sig) (Actor.nitro 0) g
-      (.sign 0 (stateHash fp candidate0)) mid1 :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep1 := sign_step sig (consensusRelation sig) g 0 (stateHash fp candidate0)
   have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep1
   let mid1b : AdjudicatorState := { mid1 with
     signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ mid1.signedBy p' d' }
-  have hsignstep1b : Step sig (consensusRelation sig) (Actor.nitro 0) mid1
-      (.sign 0 (stateHash fp candidate)) mid1b :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep1b := sign_step sig (consensusRelation sig) mid1 0 (stateHash fp candidate)
   have hreach1b : Reachable sig (consensusRelation sig) g mid1b :=
     reachable_step hreach1 hsignstep1b
   let s : AdjudicatorState := { mid1b with
@@ -4198,7 +4248,6 @@ theorem checkpoint_can_happen
     unfold update
     rw [if_pos rfl]
 
-set_option maxRecDepth 4000 in
 /-- The real construction behind `deposit_can_happen`, below, carrying
     three extra facts its own build already has on hand — the pre-deposit
     state's `channels`/`holdings` equal `genesis`'s own, and its own
@@ -4244,21 +4293,12 @@ theorem deposit_can_happen_witness
   let channelId : Term := channelId fp1
   let note : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note],
-        roots := treeRoot TreeDepth [hashCommitment note] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note) note }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   have hleavesAt : pool0.leavesAt' 0 = pool0.leaves := rfl
@@ -4277,9 +4317,7 @@ theorem deposit_can_happen_witness
   let g := genesis assets selfInputs pool0
   let mid : AdjudicatorState := { g with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub) ∨ g.poolSignedBy pk' m' }
-  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
-      (.signNote publicKey (msgHashOf pub)) mid :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep := signNote_step sig (consensusRelation sig) g publicKey (msgHashOf pub)
   have hreach : Reachable sig (consensusRelation sig) g mid :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
   have hsigned : mid.poolSignedBy publicKey (msgHashOf pub) := Or.inl ⟨rfl, rfl⟩
@@ -4565,7 +4603,6 @@ theorem guarantee_reallocation_order_dependent
   rw [hheld_sC2, hheld_s1, hbefore, hafter]
   omega
 
-set_option maxRecDepth 8000 in
 /-- A top-up can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     two deposits into the same channel, with the second deposit MERGING
     its fresh note with the first deposit's holding
@@ -4603,38 +4640,22 @@ theorem topup_can_happen
   let cid : Term := channelId fp1
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amt1⟩
-  let pool_a : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool_a : PoolState := shieldPool _root_.genesis token amt1 note1.npk
   have hNotPaused_a : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue_a : 0 < amt1 := by decide
-  have hFeeBP_a : (0 : Nat) ≤ BASIS := by decide
   have hRange_a : RangeChecked120 (shieldBase 0 amt1) := rangeCheck120_complete _ (by decide)
   have hshield_a : _root_.Step (_root_.genesis : PoolState) pool_a :=
-    _root_.Step.shield token amt1 0 note1.npk hNotPaused_a hValue_a hFeeBP_a hRange_a
+    shieldPool_step _root_.genesis token amt1 note1.npk hNotPaused_a hValue_a hRange_a
   have hReach_a : _root_.Reachable pool_a :=
     _root_.Reachable.step _root_.Reachable.genesis hshield_a
   let note2 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 1, token, shieldBase 0 amt2⟩
-  let pool0 : PoolState :=
-    { pool_a with
-        live := fun t => if t = token then ((0, 1), note2) :: pool_a.live t else pool_a.live t,
-        held := fun t => if t = token then pool_a.held t + note2.value else pool_a.held t,
-        leaves := pool_a.leaves ++ [hashCommitment note2],
-        roots := treeRoot TreeDepth (pool_a.leaves ++ [hashCommitment note2]) :: pool_a.roots,
-        preimageOf := recordStep pool_a.preimageOf (hashCommitment note2) note2 }
+  let pool0 : PoolState := shieldPool pool_a token amt2 note2.npk
   have hNotPaused_b : pool_a.shieldsPaused = false := rfl
   have hValue_b : 0 < amt2 := by decide
-  have hFeeBP_b : (0 : Nat) ≤ BASIS := by decide
   have hRange_b : RangeChecked120 (shieldBase 0 amt2) := rangeCheck120_complete _ (by decide)
   have hshield_b : _root_.Step pool_a pool0 :=
-    _root_.Step.shield token amt2 0 note2.npk hNotPaused_b hValue_b hFeeBP_b hRange_b
+    shieldPool_step pool_a token amt2 note2.npk hNotPaused_b hValue_b hRange_b
   have hReachPool : _root_.Reachable pool0 := _root_.Reachable.step hReach_a hshield_b
   have hleaves0 : pool0.leaves = [hashCommitment note1, hashCommitment note2] := rfl
   let root0 : Term := treeRoot TreeDepth pool0.leaves
@@ -4657,9 +4678,7 @@ theorem topup_can_happen
   let g := genesis assets selfInputs pool0
   let mid0 : AdjudicatorState := { g with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d1) ∨ g.poolSignedBy pk' m' }
-  have hsignstep1 : Step sig (consensusRelation sig) (Actor.pool publicKey) g
-      (.signNote publicKey (msgHashOf pub_d1)) mid0 :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep1 := signNote_step sig (consensusRelation sig) g publicKey (msgHashOf pub_d1)
   have hreach0 : Reachable sig (consensusRelation sig) g mid0 :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep1
   have hsigned1 : mid0.poolSignedBy publicKey (msgHashOf pub_d1) := Or.inl ⟨rfl, rfl⟩
@@ -4667,9 +4686,7 @@ theorem topup_can_happen
     poolSigLive.eddsaCompleteness mid0.poolSignedBy publicKey (msgHashOf pub_d1) hsigned1
   let mid1 : AdjudicatorState := { mid0 with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d2) ∨ mid0.poolSignedBy pk' m' }
-  have hsignstep2 : Step sig (consensusRelation sig) (Actor.pool publicKey) mid0
-      (.signNote publicKey (msgHashOf pub_d2)) mid1 :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep2 := signNote_step sig (consensusRelation sig) mid0 publicKey (msgHashOf pub_d2)
   have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
     reachable_step hreach0 hsignstep2
   have hsigned2 : mid1.poolSignedBy publicKey (msgHashOf pub_d2) := Or.inl ⟨rfl, rfl⟩
@@ -4961,9 +4978,7 @@ theorem challenge_can_happen
   let g := genesis assets selfInputs pool0
   let mid : AdjudicatorState := { g with
     signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ g.signedBy p' d' }
-  have hsignstep : Step sig (consensusRelation sig) (Actor.nitro 0) g
-      (.sign 0 (stateHash fp candidate)) mid :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep := sign_step sig (consensusRelation sig) g 0 (stateHash fp candidate)
   have hreach1 : Reachable sig (consensusRelation sig) g mid :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
   have hauth : AuthorizedBy sig mid 0 (stateHash fp candidate) := Or.inl (Or.inl ⟨rfl, rfl⟩)
@@ -5084,7 +5099,6 @@ theorem conclude_can_happen
     else if g1.now ≤ g1.now then ChannelMode.finalized else ChannelMode.challenge) = .finalized
   simp [g1]
 
-set_option maxRecDepth 8000 in
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
     to fund a channel, a `.conclude` (needing `now ≠ 0`, so a `.tick`
     comes first) finalizes it, and a `.transfer` call pays the entire
@@ -5129,21 +5143,12 @@ theorem payout_can_happen
   let cid : Term := channelId fp
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note1.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note1.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   let root1 : Term := treeRoot TreeDepth pool0.leaves
@@ -5158,9 +5163,7 @@ theorem payout_can_happen
   let g := genesis assets selfInputs pool0
   let mid1 : AdjudicatorState := { g with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d) ∨ g.poolSignedBy pk' m' }
-  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
-      (.signNote publicKey (msgHashOf pub_d)) mid1 :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep := signNote_step sig (consensusRelation sig) g publicKey (msgHashOf pub_d)
   have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
   have hsigned : mid1.poolSignedBy publicKey (msgHashOf pub_d) := Or.inl ⟨rfl, rfl⟩
@@ -5634,7 +5637,6 @@ theorem bulk_conclude_and_transfer_all_assets_effect
   obtain ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan, _⟩ := hstep
   exact ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan⟩
 
-set_option maxRecDepth 8000 in
 /-- B4 — a bulk conclude-and-transfer can happen: for all
     `HashAssumptions`/`SignatureAssumptions`, there is an execution from
     `genesis` — a `.sign` call for every one of `fp`'s participants on
@@ -5669,21 +5671,12 @@ theorem bulk_conclude_and_transfer_can_happen
   let cid : Term := channelId fp
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note1.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note1.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   let root1 : Term := treeRoot TreeDepth pool0.leaves
@@ -5698,9 +5691,7 @@ theorem bulk_conclude_and_transfer_can_happen
   let g := genesis assets selfInputs pool0
   let mid1 : AdjudicatorState := { g with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d) ∨ g.poolSignedBy pk' m' }
-  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
-      (.signNote publicKey (msgHashOf pub_d)) mid1 :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep := signNote_step sig (consensusRelation sig) g publicKey (msgHashOf pub_d)
   have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
   have hsigned : mid1.poolSignedBy publicKey (msgHashOf pub_d) := Or.inl ⟨rfl, rfl⟩
@@ -5910,7 +5901,6 @@ theorem bulk_conclude_and_transfer_can_happen
     rw [hlen]
     simp [withTreePositionsFrom, withPositionsFrom]
 
-set_option maxRecDepth 8000 in
 /-- A later `.transfer` call can happen after an earlier `.transfer`
     call on the SAME channel already left a nonzero remainder: paying
     one entry of a finalized two-entry outcome does not lock the
@@ -5959,21 +5949,12 @@ theorem transfer_after_transfer_can_happen
   let cid : Term := channelId fp
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note1.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note1.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   let root1 : Term := treeRoot TreeDepth pool0.leaves
@@ -5988,9 +5969,7 @@ theorem transfer_after_transfer_can_happen
   let g := genesis assets selfInputs pool0
   let mid1 : AdjudicatorState := { g with
     poolSignedBy := fun pk' m' => (pk' = publicKey ∧ m' = msgHashOf pub_d) ∨ g.poolSignedBy pk' m' }
-  have hsignstep : Step sig (consensusRelation sig) (Actor.pool publicKey) g
-      (.signNote publicKey (msgHashOf pub_d)) mid1 :=
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hsignstep := signNote_step sig (consensusRelation sig) g publicKey (msgHashOf pub_d)
   have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
     reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
   have hsigned : mid1.poolSignedBy publicKey (msgHashOf pub_d) := Or.inl ⟨rfl, rfl⟩
@@ -6222,7 +6201,7 @@ theorem transfer_after_transfer_can_happen
     have hget : outcome.get ⟨0, hassetIdx⟩ = ⟨token, [dest1, dest2]⟩ := rfl
     rw [hget, hheld4, htransferEffects1]
     refine ⟨by decide, r1, ?_⟩
-    simp only [Nat.sub_self]
+    simp only []
     exact ⟨hospend1, rfl, rfl⟩
   have hOwnedRandom : mid5.pool.ownedRandomOf
       (commitment (npk selfTerm r1) token 1) = some ⟨selfTerm, r1⟩ := by
@@ -6471,15 +6450,15 @@ theorem heldValue_zero_iff_no_collateral
       ∃ pos c, s.holdings asset cid = some (pos, c) ∧ s.pool.preimageOf c = none := by
   unfold heldValue
   rcases hc : s.holdings asset cid with _ | ⟨pos, c⟩
-  · simp [hc]
-  · simp only [hc]
+  · simp
+  · simp only []
     rcases hp : s.pool.preimageOf c with _ | pre
     · constructor
       · intro _
         exact Or.inr ⟨pos, c, rfl, hp⟩
       · intro _
-        simp [hp]
-    · simp only [hp, Option.map_some, Option.getD_some]
+        simp
+    · simp only [Option.map_some, Option.getD_some]
       constructor
       · intro hv
         exact absurd hv (holdings_never_zero_valued sig appRel assets selfInputs pool0 s asset cid
