@@ -632,6 +632,48 @@ theorem transferEffectsSel_exit_mem (allocs : List Allocation) (surplus : Nat) (
   dsimp only
   exact List.mem_filterMap.mpr ⟨_, hmemIndexed, by rw [if_pos hsel]⟩
 
+/-- The converse of `transferEffectsSel_exit_mem`: EVERY member of
+    `exitAllocations` (`.2.1`) comes from some selected index `i`, equal
+    to that index's own entry, `afford`'s own paid amount included.
+    What `unbeatable_pays`'s `.transfer` witness needs to show
+    `exitAllocs`'s own guarantee-type precondition (`Operations.lean`'s
+    `.transfer`) from `curOutcome`'s own allocations alone, for a
+    SINGLE selected `destIdx` (`sel = (· = destIdx)`): every exit entry
+    is `destIdx`'s own allocation, so `hnoguarantee` (stated over every
+    allocation) already covers it. -/
+theorem transferEffectsSel_exit_forall (allocs : List Allocation) (surplus : Nat)
+    (sel : Nat → Bool) :
+    ∀ x ∈ (transferEffectsSel allocs surplus sel).2.1,
+      ∃ i, i < allocs.length ∧ sel i = true ∧
+        x = { allocs.getD i Allocation.default with
+          amount := (afford allocs surplus).getD i 0 } := by
+  intro x hx
+  unfold transferEffectsSel at hx
+  dsimp only at hx
+  obtain ⟨⟨i, a, paid⟩, hmem, heq⟩ := List.mem_filterMap.mp hx
+  by_cases hsel : sel i = true
+  · rw [if_pos hsel] at heq
+    obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hmem
+    rw [List.getElem?_zip_eq_some] at hj
+    obtain ⟨hj1, hj2⟩ := hj
+    rw [List.getElem?_zip_eq_some] at hj2
+    obtain ⟨hj2a, hj2b⟩ := hj2
+    dsimp only at hj2a hj2b
+    have hjlt : j < allocs.length := by
+      have := List.getElem?_eq_some_iff.mp hj1
+      simpa using this.1
+    have hieq : i = j := by
+      have := List.getElem?_eq_some_iff.mp hj1
+      simpa using this.2.symm
+    subst hieq
+    have ha : a = allocs.getD i Allocation.default := by
+      rw [List.getD_eq_getElem?_getD, hj2a]; rfl
+    have hpaid : paid = (afford allocs surplus).getD i 0 := by
+      rw [List.getD_eq_getElem?_getD, hj2b]; rfl
+    refine ⟨i, hjlt, hsel, ?_⟩
+    have hxeq := Option.some.inj heq.symm
+    rw [hxeq, ha, hpaid]
+  · rw [if_neg hsel] at heq; exact absurd heq (by simp)
 
 /-- `transferEffectsSel`'s own `newAllocations`, decomposed one entry at
     a time: the head is paid out (or not) by `sel 0` alone, and the
