@@ -2512,25 +2512,11 @@ theorem heldValue_range_placeholder (sig : SignatureAssumptions)
     simp only [hpre, Option.map_some, Option.getD_some]
     exact rangeCheck120_complete pre.value hlt
 
-/-- **Needed pool fact, not yet proved on this branch**: a live entry's
-    own position names the EXACT leaf holding its own commitment — the
-    leaf `insertResult` writes at mint time (`Pool.lean`'s
-    `insertResult_leavesAt`, applied through `withTreePositionsFrom`'s
-    own position tagging), carried forward unchanged by `leaf_stable`
-    once written (a leaf, once inserted, never changes). This is a
-    pool-model fact (`ArmadaLean.PoolSafety`), not an adjudicator one —
-    reported to the pool-model coordinator; replace this placeholder
-    with the pool model's own proved version. -/
-theorem live_leaf_matches_placeholder {s : PoolState} (h : _root_.Reachable s)
-    (t tn pos : Nat) (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.live t) :
-    (s.leavesAt' tn).getD pos (Term.val 0) = hashCommitment pre := by
-  sorry
-
 /-- A channel's own recorded holding position names the EXACT pool leaf
     its own commitment lives at, at ANY reachable state:
     `holdingWellFormed_reachable` gives the holding's own live membership,
-    `live_leaf_matches_placeholder` reads that membership's own leaf
-    content back. -/
+    `live_leaf_matches` (`PoolSafety.lean`) reads that membership's own
+    leaf content back. -/
 theorem holdings_position_leaf_value_placeholder (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
@@ -2544,7 +2530,7 @@ theorem holdings_position_leaf_value_placeholder (sig : SignatureAssumptions)
   have hReachMidPool : _root_.Reachable mid.pool :=
     adjudicator_pool_reachable sig appRel assets selfInputs pool0 hReachPool mid hreach
   rw [← hconsist]
-  exact live_leaf_matches_placeholder hReachMidPool asset pos.1 pos.2 pre hlive
+  exact live_leaf_matches hReachMidPool asset pos.1 pos.2 pre hlive
 
 /-- A live, owned note's own nullifier is never already spent — true
     because a note leaves `live` the SAME step its nullifier enters
