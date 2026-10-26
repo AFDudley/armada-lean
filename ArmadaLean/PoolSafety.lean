@@ -990,7 +990,9 @@ theorem owned_spend_witness_exists {N M : Nat}
       pub.merkleRoot = treeRoot TreeDepth leaves ∧
       pub.ownerField = ownerField ∧
       w.token = token ∧
-      (∀ i, w.valueIn i = (preimages i).value) := by
+      (∀ i, w.valueIn i = (preimages i).value) ∧
+      (∀ i, commitment (npk (Term.val ownerField) (w.randomIn i)) w.token (w.valueIn i) =
+        hashCommitment (preimages i)) := by
   let randomIn : Fin N → Nat := fun i => (hOwned i).choose
   have hRandomReg : ∀ i, ownedRandomOf (hashCommitment (preimages i)) =
       some ⟨ownerField, randomIn i⟩ := fun i => (hOwned i).choose_spec.1
@@ -1021,4 +1023,4 @@ theorem owned_spend_witness_exists {N M : Nat}
     { pathLen := fun i => treePath_length TreeDepth leaves (leavesIndices i),
       merkle := hmerkle, nullifiers := fun _ => rfl, outputs := fun _ => rfl,
       rangeIn := hRangeIn, rangeOut := hRangeOut, balance := congrArg (· % p) hBalance }
-  exact ⟨w, pub, hC, rfl, rfl, rfl, fun _ => rfl⟩
+  exact ⟨w, pub, hC, rfl, rfl, rfl, fun _ => rfl, fun i => (hcommit i).symm⟩
