@@ -1302,7 +1302,100 @@ theorem cumulative_payout_never_exceeds_allocation
     ((o'.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount + paid i k =
       ((o.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount ∧
     paid i k ≤ ((o.getD i ⟨0, []⟩).allocations.getD k Allocation.default).amount := by
-  sorry
+  induction hder with
+  | refl => simp
+  | @transferStep mid paid0 assetIndex h heldBefore indices hmid ih =>
+    obtain ⟨iheq, ihle⟩ := ih
+    have hgetD : ((mid.mapIdx fun j exit => if j ≠ assetIndex then exit else
+        { exit with allocations :=
+            (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 }).getD i
+        ⟨0, []⟩) =
+        (if i ≠ assetIndex then mid.getD i ⟨0, []⟩ else
+          { mid.get ⟨assetIndex, h⟩ with allocations :=
+              (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 }) := by
+      by_cases hi : i < mid.length
+      · rw [mapIdx_getD mid _ i hi ⟨0, []⟩]
+        by_cases hia : i = assetIndex
+        · subst hia; simp
+        · rw [if_pos hia, if_pos hia]
+          congr 1
+          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
+          rfl
+      · have h1 : (mid.mapIdx fun j exit => if j ≠ assetIndex then exit else
+            { exit with allocations :=
+                (transferEffects (mid.get ⟨assetIndex, h⟩).allocations heldBefore indices).1 }).getD i
+            ⟨0, []⟩ = ⟨0, []⟩ := by
+          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by simpa using hi)]
+          rfl
+        have h2 : mid.getD i ⟨0, []⟩ = ⟨0, []⟩ := by
+          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+          rfl
+        have hia : i ≠ assetIndex := fun he => hi (he ▸ h)
+        rw [h1, h2, if_pos hia]
+    by_cases hia : i = assetIndex
+    · subst hia
+      rw [hgetD, if_neg (fun hne => hne rfl)]
+      dsimp only
+      have hlink : mid.getD i (⟨0, []⟩ : SingleAssetExit) = mid.get ⟨i, h⟩ := by
+        rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h]; rfl
+      rw [hlink] at iheq
+      have hle := afford_le_getD (mid.get ⟨i, h⟩).allocations heldBefore k
+      by_cases hsel : indices = [] ∨ k ∈ indices
+      · have hval : ((transferEffects (mid.get ⟨i, h⟩).allocations heldBefore indices).1.getD k
+            Allocation.default).amount =
+            ((mid.get ⟨i, h⟩).allocations.getD k Allocation.default).amount -
+              (afford (mid.get ⟨i, h⟩).allocations heldBefore).getD k 0 := by
+          by_cases hik : k < (mid.get ⟨i, h⟩).allocations.length
+          · have hget := transferEffects_newAllocations_getD (mid.get ⟨i, h⟩).allocations heldBefore
+              indices k hik
+            have hselb : (indices.isEmpty || k ∈ indices) = true := by
+              rcases hsel with h0 | h0 <;> simp [h0]
+            rw [hselb, if_pos rfl] at hget
+            exact hget
+          · have h1 : (mid.get ⟨i, h⟩).allocations.getD k Allocation.default = Allocation.default := by
+              rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+            have hlen := transferEffects_newAllocations_length (mid.get ⟨i, h⟩).allocations
+              heldBefore indices
+            have h2 : (transferEffects (mid.get ⟨i, h⟩).allocations heldBefore indices).1.getD k
+                Allocation.default = Allocation.default := by
+              rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+            have hafford0' : (afford (mid.get ⟨i, h⟩).allocations heldBefore).getD k 0 = 0 := by
+              have hlen2 := afford_length (mid.get ⟨i, h⟩).allocations heldBefore
+              rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+            rw [h1, h2, hafford0']
+            omega
+        rw [hval]
+        split
+        · omega
+        · rename_i hc
+          exact absurd ⟨rfl, hsel⟩ hc
+      · have hval : ((transferEffects (mid.get ⟨i, h⟩).allocations heldBefore indices).1.getD k
+            Allocation.default).amount = ((mid.get ⟨i, h⟩).allocations.getD k Allocation.default).amount := by
+          by_cases hik : k < (mid.get ⟨i, h⟩).allocations.length
+          · have hget := transferEffects_newAllocations_getD (mid.get ⟨i, h⟩).allocations heldBefore
+              indices k hik
+            have hselb : (indices.isEmpty || k ∈ indices) = false := by
+              rw [not_or] at hsel
+              simp [hsel.1, hsel.2]
+            rw [hselb, if_neg (by simp)] at hget
+            exact hget
+          · have h1 : (mid.get ⟨i, h⟩).allocations.getD k Allocation.default = Allocation.default := by
+              rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+            have hlen := transferEffects_newAllocations_length (mid.get ⟨i, h⟩).allocations
+              heldBefore indices
+            have h2 : (transferEffects (mid.get ⟨i, h⟩).allocations heldBefore indices).1.getD k
+                Allocation.default = Allocation.default := by
+              rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+            rw [h1, h2]
+        rw [hval]
+        split
+        · rename_i hc
+          exact absurd hc.2 hsel
+        · omega
+    · rw [hgetD, if_pos hia]
+      dsimp only
+      rw [if_neg (fun hc => hia hc.1)]
+      omega
 
 /-- `unbeatable_pays`/`unbeatable_pays_after_timeout`'s own interleaving
     invariant, carried one `Step` at a time: at any state, EITHER (B)
