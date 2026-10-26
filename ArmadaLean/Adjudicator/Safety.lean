@@ -1878,7 +1878,41 @@ theorem full_payout_leaves_no_remainder
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 =
       heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) :
     s'.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
-  sorry
+  obtain ⟨hassetIdx, hmode, hsh, hoh, hstrict, hinner, _⟩ := hstep
+  obtain ⟨hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+  have hidx_eq : (⟨assetIndex, hassetIdx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hholdseq
+  rw [hholdseq]
+  have hgen : ∀ (remainder : Nat) (X : Option ((Nat × Nat) × Term)),
+      remainder = 0 →
+      (update s.holdings (outcome.get ⟨assetIndex, h⟩).asset
+        (update (s.holdings (outcome.get ⟨assetIndex, h⟩).asset) cid
+          (if remainder = 0 then none else X)))
+        (outcome.get ⟨assetIndex, h⟩).asset cid = none := by
+    intro remainder X hr
+    rw [hr]
+    unfold update
+    simp
+  refine hgen _ _ ?_
+  show heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+      (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 = 0
+  omega
+
+/-- Where a `NullifierSet` gets a fresh entry at exactly one key, and the
+    fresh entry equals the OLD entry at that key (so nothing actually
+    changed), the whole function is unchanged — `nullify_iff_commitment_
+    was_some`'s own `none`-case argument, packaged generically over
+    `PoolOwnedSpendStep`'s own `spent` update shape. -/
+theorem spent_update_eq_self_of_markSpent_nil (f : Nat → NullifierSet) (x : Nat)
+    (y : NullifierSet) (hm : markSpent (f x) [] = some y) :
+    (fun n => if n = x then y else f n) = f := by
+  have hy : f x = y := Option.some.inj hm
+  funext n
+  by_cases hn : n = x
+  · rw [hn, hy, if_pos rfl]
+  · rw [if_neg hn]
 
 /-- Closes the fifth `_mintTransferPayout` miss (old offset 12743): the
     old collateral commitment is nullified if and only if one existed —
@@ -1903,6 +1937,42 @@ theorem nullify_iff_commitment_was_some
     (h : assetIndex < outcome.length) :
     (s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid = none) ↔
       s'.pool.spent = s.pool.spent := by
-  sorry
+  obtain ⟨hassetIdx, hmode, hsh, hoh, hstrict, hinner, _⟩ := hstep
+  obtain ⟨hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+  have hidx_eq : (⟨assetIndex, hassetIdx⟩ : Fin outcome.length) = ⟨assetIndex, h⟩ := rfl
+  rw [hidx_eq] at hmatch
+  unfold PoolOwnedSpendStep at hmatch
+  constructor
+  · intro hnone
+    rw [hnone] at hmatch
+    obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot, hmark,
+      hRandomOut, heq⟩ := hmatch
+    have hofn : List.ofFn pub.nullifiers = ([] : List Term) := by simp
+    rw [hofn] at hmark
+    rw [heq]
+    dsimp only
+    exact spent_update_eq_self_of_markSpent_nil s.pool.spent _ spent' hmark
+  · intro hpost
+    rcases hc : s.holdings (outcome.get ⟨assetIndex, h⟩).asset cid with _ | ⟨⟨spendTreeNumber, pos⟩, cm⟩
+    · rfl
+    · exfalso
+      rw [hc] at hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+        hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+      rw [heq] at hpost
+      dsimp only at hpost
+      have hspenteq := congrFun hpost spendTreeNumber
+      rw [if_pos rfl] at hspenteq
+      have hofn1 : List.ofFn pub.nullifiers = [pub.nullifiers 0] := by
+        rw [List.ofFn_succ, List.ofFn_zero]
+      rw [hofn1, markSpent_single] at hmark
+      split at hmark
+      · exact absurd hmark (by simp)
+      · rename_i hne
+        have heq2 : pub.nullifiers 0 :: s.pool.spent spendTreeNumber = spent' :=
+          Option.some.inj hmark
+        have hlen := congrArg List.length (heq2.trans hspenteq)
+        simp at hlen
 
 end ArmadaLean.Adjudicator
