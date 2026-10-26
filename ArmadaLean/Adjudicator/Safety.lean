@@ -2468,7 +2468,17 @@ theorem unbeatable_pays
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           x ≤ pre.value ∧
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
-  sorry
+  intro interleaved mid happ hexcl hexclTick
+  have hinv_s : UnbeatablePaysInv sig fp candidate assetIndex destIdx hAssetIdx x dest s :=
+    Or.inl ⟨hnotfinal, hsigned, haffordable⟩
+  obtain ⟨hinv_mid, _hsrow_mid, _hprow_mid⟩ := unbeatablePaysInv_appliesAll sig appRel h fp candidate
+    hp hduration assetIndex destIdx hAssetIdx x hxpos dest pk nk r hh_dest s hdest hassetunique
+    hnoguarantee hhonest hhonestPool assets self pool0 hreach happ hexcl hexclTick rfl rfl hinv_s
+  rcases hinv_mid with hB | hA1 | hA2
+  · sorry
+  · sorry
+  · obtain ⟨pre, hnpk, htoken, hval, hlive⟩ := hA2
+    exact ⟨[], mid, rfl, pre, hnpk, htoken, hval, hlive⟩
 
 /-- Which harm this rules out: the same guarantee for the "sad path"
     (ForceMove-2018.pdf §1.2: "the adjudicator releases funds according to
