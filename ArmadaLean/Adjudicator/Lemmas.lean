@@ -2493,31 +2493,96 @@ theorem withPositionsFrom_mem_fwd {α : Type} {start : Nat} {l : List α} {a : �
     · obtain ⟨pos, hpos⟩ := ih hmem (start := start + 1)
       exact ⟨pos, List.mem_cons_of_mem _ hpos⟩
 
+/-- `withTreePositionsFrom` splits across `++`, the tree-tagged counterpart of
+    `withPositionsFrom_append`, composing it with the tag-preserving `map`. -/
+theorem withTreePositionsFrom_append {α : Type} (treeNumber start : Nat) (l1 l2 : List α) :
+    withTreePositionsFrom treeNumber start (l1 ++ l2) =
+      withTreePositionsFrom treeNumber start l1 ++
+        withTreePositionsFrom treeNumber (start + l1.length) l2 := by
+  unfold withTreePositionsFrom
+  rw [withPositionsFrom_append, List.map_append]
 
-/-- One `PoolOwnedSpendStep`-backed holdings update's effect on the
-    `holdings_position_live_step` invariant — the position-live sibling
-    of `PoolOwnedSpend_update_preimage_nonzero`, generalizing `.transfer`'s
-    own reasoning so `bulkTransferFold`'s induction can reuse it once per
-    asset instead of re-deriving it. -/
-theorem PoolOwnedSpend_update_position_live
+/-- `withTreePositionsFrom` of a one-element list tags that element with `start`
+    directly — the base case `withTreePositionsFrom_append` needs to pin a batch's
+    LAST element to its exact landing key. -/
+theorem withTreePositionsFrom_singleton {α : Type} (treeNumber start : Nat) (a : α) :
+    withTreePositionsFrom treeNumber start [a] = [((treeNumber, start), a)] := by
+  unfold withTreePositionsFrom withPositionsFrom
+  rfl
+
+/-- A freshly-inserted batch's own tree, read off BEFORE the insertion, already has
+    exactly `insertStartPos` many leaves (`insertStartPos_eq_leavesAt_length`); read off
+    AFTER the insertion, it has `insertStartPos + outputs.length` many
+    (`insertResult_leavesAt_target_length`, composed with `List.length_map` since the
+    batch pushed is `outputs.map hashCommitment`, not `outputs` itself). The two bounds
+    `PoolOwnedSpend_update_position_live` needs to place a batch's own positions past
+    every position any earlier holding could have named, and within the tree's own new
+    length. -/
+theorem PoolOwnedSpendStep_fresh_position_bounds
+    (closedTrees : List TreeState) (curLeaves curRoots : List Term)
+    (outputs : List CommitmentPreimage) :
+    (PoolState.leavesAt
+        (insertResult closedTrees curLeaves curRoots (outputs.map hashCommitment)).1
+        (insertResult closedTrees curLeaves curRoots (outputs.map hashCommitment)).2.1
+        (insertResult closedTrees curLeaves curRoots (outputs.map hashCommitment)).2.2
+        (insertTreeNumber closedTrees curLeaves outputs.length)).length
+      = insertStartPos curLeaves outputs.length + outputs.length ∧
+    (PoolState.leavesAt closedTrees curLeaves curRoots
+        (insertTreeNumber closedTrees curLeaves outputs.length)).length
+      = insertStartPos curLeaves outputs.length := by
+  constructor
+  · have h := insertResult_leavesAt_target_length closedTrees curLeaves curRoots
+      (outputs.map hashCommitment)
+    rw [List.length_map] at h
+    exact h
+  · exact (insertStartPos_eq_leavesAt_length closedTrees curLeaves curRoots outputs.length).symm
+
+
+/-- The branch-independent core of `PoolOwnedSpend_update_position_live`: given the
+    `.live`/tree-length facts common to BOTH `PoolOwnedSpendStep`'s "none" and "some"
+    branches (`hliveT`/`hge`/`hlevA'`), plus a proof that an untouched key's OLD live
+    entry survives into whichever `baseline` list that branch actually appends onto
+    (`hbaseline` — trivial for "none", a `removeAll` argument for "some"), the
+    position-live update fact holds uniformly. Lets the two branches of
+    `PoolOwnedSpend_update_position_live` share one proof of the touched-key and
+    bound/uniqueness reasoning, which never depends on which branch produced
+    `pool'`. -/
+theorem PoolOwnedSpend_update_position_live_core
     (pool pool' : PoolState) (self : Term) (asset : Nat) (cid : Term) (remainder r : Nat)
     (payoutOutputs : List CommitmentPreimage)
     (holdings : Nat → Term → Option ((Nat × Nat) × Term))
-    (hmatch : PoolOwnedSpendStep pool self asset (holdings asset cid) payoutOutputs
-      (if remainder = 0 then [] else [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])
-      pool')
     (hinv : ∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       (∃ pre, (qpos, pre) ∈ pool.live qasset ∧ hashCommitment pre = qc ∧
         ((∃ ownerField r, self = ownerField ∧ pre.npk = npk ownerField r) ∨
           ∃ r, pre.npk = npk self r)) ∧
       qpos.2 < (pool.leavesAt' qpos.1).length ∧
       (∀ qasset' qcid' qpos' qc', holdings qasset' qcid' = some (qpos', qc') →
-        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos)) :
-    -- SORRY (tree-rollover rework pending, successor handoff): the single-tree
-    -- `qpos < pool.leaves.length` uniqueness bound became `qpos.2 < (pool.leavesAt'
-    -- qpos.1).length`, and the proof needs `withTreePositionsFrom_append`/
-    -- `withTreePositionsFrom_nodup` in place of the old `withPositionsFrom`
-    -- lemmas the pre-rollover proof used.
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos))
+    (baseline : List ((Nat × Nat) × CommitmentPreimage))
+    (hliveT : ∀ t, pool'.live t = if t = asset
+        then withTreePositionsFrom (insertTreeNumber pool.closedTrees pool.leaves
+              (payoutOutputs ++ (if remainder = 0 then [] else
+                [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length)
+            (insertStartPos pool.leaves
+              (payoutOutputs ++ (if remainder = 0 then [] else
+                [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length)
+            (payoutOutputs ++ (if remainder = 0 then [] else
+              [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])) ++ baseline
+        else pool.live t)
+    (hge : ∀ tn, (pool.leavesAt' tn).length ≤ (pool'.leavesAt' tn).length)
+    (hlevA' : ∀ tn, pool'.leavesAt' tn = PoolState.leavesAt
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).1
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.1
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.2 tn)
+    (hbaseline : ∀ qasset'' qcid'' qpos qc'', holdings qasset'' qcid'' = some (qpos, qc'') →
+      (qasset'', qcid'') ≠ (asset, cid) → ∀ qpre, (qpos, qpre) ∈ pool.live asset →
+      (qpos, qpre) ∈ baseline) :
     ∀ qasset qcid qpos qc, (update holdings asset
         (update (holdings asset) cid
           (if remainder = 0 then none
@@ -2547,7 +2612,318 @@ theorem PoolOwnedSpend_update_position_live
                      [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
                commitment (npk self r) asset remainder)))) qasset' qcid' = some (qpos', qc') →
         (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos) := by
-  sorry
+  intro qasset qcid qpos qc hc
+  unfold update at hc
+  by_cases heqch : qasset = asset ∧ qcid = cid
+  · obtain ⟨ha, hcidEq⟩ := heqch
+    rw [ha, hcidEq] at hc ⊢
+    rw [if_pos rfl, if_pos rfl] at hc
+    by_cases hrem : remainder = 0
+    · rw [if_pos hrem] at hc; exact absurd hc (by simp)
+    · simp only [if_neg hrem] at hc
+      rw [if_neg hrem] at hliveT hlevA'
+      injection hc with hc1
+      injection hc1 with hqpos hqcEq
+      subst hqpos; subst hqcEq
+      have hlen1 : 1 ≤ (payoutOutputs ++
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length := by simp
+      have hb1 : (pool'.leavesAt' (insertTreeNumber pool.closedTrees pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length)).length
+          = insertStartPos pool.leaves
+              (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length +
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length := by
+        rw [hlevA']
+        have h := insertResult_leavesAt_target_length pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).map
+            hashCommitment)
+        rw [List.length_map] at h
+        exact h
+      have hb2 : (pool.leavesAt' (insertTreeNumber pool.closedTrees pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length)).length
+          = insertStartPos pool.leaves
+              (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length := by
+        unfold PoolState.leavesAt'
+        exact (insertStartPos_eq_leavesAt_length pool.closedTrees pool.leaves pool.roots
+          (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length).symm
+      refine ⟨⟨(⟨npk self r, asset, remainder⟩ : CommitmentPreimage), ?_, rfl, Or.inr ⟨r, rfl⟩⟩,
+        ?_, ?_⟩
+      · rw [hliveT, if_pos rfl]
+        apply List.mem_append_left
+        have hsplit := withTreePositionsFrom_append
+          (insertTreeNumber pool.closedTrees pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length)
+          (insertStartPos pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length)
+          payoutOutputs [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]
+        rw [hsplit, withTreePositionsFrom_singleton]
+        have hposeq : insertStartPos pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length +
+            payoutOutputs.length
+            = insertStartPos pool.leaves
+              (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length +
+              (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length - 1 := by
+          simp
+        rw [hposeq]
+        exact List.mem_append_right _ (List.mem_singleton_self _)
+      · rw [hb1]; omega
+      · intro qasset' qcid' qpos' qc' hc' hne'
+        have hc'' : holdings qasset' qcid' = some (qpos', qc') := by
+          unfold update at hc'
+          by_cases ha2 : qasset' = asset
+          · subst ha2
+            rw [if_pos rfl] at hc'
+            by_cases hcid2 : qcid' = cid
+            · exact absurd (by rw [hcid2]) hne'
+            · rwa [if_neg hcid2] at hc'
+          · rwa [if_neg ha2] at hc'
+        have h2 := (hinv qasset' qcid' qpos' qc' hc'').2.1
+        intro hcontra
+        rw [hcontra] at h2
+        rw [hb2] at h2
+        omega
+  · have hc'' : holdings qasset qcid = some (qpos, qc) := by
+      by_cases ha : qasset = asset
+      · subst ha
+        rw [if_pos rfl] at hc
+        by_cases hcid : qcid = cid
+        · exact absurd ⟨rfl, hcid⟩ heqch
+        · rwa [if_neg hcid] at hc
+      · rwa [if_neg ha] at hc
+    have hne_prod : (qasset, qcid) ≠ (asset, cid) :=
+      fun h => heqch ⟨congrArg Prod.fst h, congrArg Prod.snd h⟩
+    obtain ⟨⟨pre, hmemOld, hhashOld, hownOld⟩, hboundOld, huniqOld⟩ := hinv qasset qcid qpos qc hc''
+    have hboundNew : qpos.2 < (pool'.leavesAt' qpos.1).length := by
+      have h := hge qpos.1
+      omega
+    have hneFresh : qpos ≠ (insertTreeNumber pool.closedTrees pool.leaves
+          (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length,
+        insertStartPos pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length +
+          (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length - 1) := by
+      intro hcontra
+      have hqp1 : qpos.1 = insertTreeNumber pool.closedTrees pool.leaves
+          (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length :=
+        congrArg Prod.fst hcontra
+      have hqp2 : qpos.2 = insertStartPos pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length +
+          (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length - 1 :=
+        congrArg Prod.snd hcontra
+      rw [hqp1] at hboundOld
+      have hb2 : (pool.leavesAt' (insertTreeNumber pool.closedTrees pool.leaves
+            (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length)).length
+          = insertStartPos pool.leaves
+              (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length := by
+        unfold PoolState.leavesAt'
+        exact (insertStartPos_eq_leavesAt_length pool.closedTrees pool.leaves pool.roots
+          (payoutOutputs ++ [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length).symm
+      rw [hb2] at hboundOld
+      have hlen1 : 1 ≤ (payoutOutputs ++
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)]).length := by simp
+      omega
+    have huniqNew : ∀ qasset' qcid' qpos' qc', (update holdings asset
+        (update (holdings asset) cid
+          (if remainder = 0 then none
+           else some ((insertTreeNumber pool.closedTrees pool.leaves
+                 (payoutOutputs ++ (if remainder = 0 then [] else
+                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length,
+               insertStartPos pool.leaves
+                 (payoutOutputs ++ (if remainder = 0 then [] else
+                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length +
+                 (payoutOutputs ++ (if remainder = 0 then [] else
+                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
+             commitment (npk self r) asset remainder)))) qasset' qcid' = some (qpos', qc') →
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos := by
+      intro qasset' qcid' qpos' qc' hc' hne'
+      by_cases hother : (qasset', qcid') = (asset, cid)
+      · injection hother with ha2 hcid2
+        rw [ha2, hcid2] at hc'
+        unfold update at hc'
+        rw [if_pos rfl, if_pos rfl] at hc'
+        by_cases hrem : remainder = 0
+        · rw [if_pos hrem] at hc'; exact absurd hc' (by simp)
+        · simp only [if_neg hrem] at hc'
+          injection hc' with hc'1
+          injection hc'1 with hqp' _hqc'
+          rw [← hqp']
+          exact hneFresh.symm
+      · have hc2 : holdings qasset' qcid' = some (qpos', qc') := by
+          unfold update at hc'
+          by_cases ha2 : qasset' = asset
+          · subst ha2
+            rw [if_pos rfl] at hc'
+            by_cases hcid2 : qcid' = cid
+            · exact absurd (by rw [hcid2]) hother
+            · rwa [if_neg hcid2] at hc'
+          · rwa [if_neg ha2] at hc'
+        exact huniqOld qasset' qcid' qpos' qc' hc2 hne'
+    by_cases hqa : qasset = asset
+    · refine ⟨⟨pre, ?_, hhashOld, hownOld⟩, hboundNew, huniqNew⟩
+      rw [hliveT, hqa, if_pos rfl]
+      exact List.mem_append_right _
+        (hbaseline asset qcid qpos qc (hqa ▸ hc'') (hqa ▸ hne_prod) pre (hqa ▸ hmemOld))
+    · exact ⟨⟨pre, by rw [hliveT, if_neg hqa]; exact hmemOld, hhashOld, hownOld⟩, hboundNew, huniqNew⟩
+
+/-- One `PoolOwnedSpendStep`-backed holdings update's effect on the
+    `holdings_position_live_step` invariant — the position-live sibling
+    of `PoolOwnedSpend_update_preimage_nonzero`, generalizing `.transfer`'s
+    own reasoning so `bulkTransferFold`'s induction can reuse it once per
+    asset instead of re-deriving it. -/
+theorem PoolOwnedSpend_update_position_live
+    (pool pool' : PoolState) (self : Term) (asset : Nat) (cid : Term) (remainder r : Nat)
+    (payoutOutputs : List CommitmentPreimage)
+    (holdings : Nat → Term → Option ((Nat × Nat) × Term))
+    (hmatch : PoolOwnedSpendStep pool self asset (holdings asset cid) payoutOutputs
+      (if remainder = 0 then [] else [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])
+      pool')
+    (hinv : ∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
+      (∃ pre, (qpos, pre) ∈ pool.live qasset ∧ hashCommitment pre = qc ∧
+        ((∃ ownerField r, self = ownerField ∧ pre.npk = npk ownerField r) ∨
+          ∃ r, pre.npk = npk self r)) ∧
+      qpos.2 < (pool.leavesAt' qpos.1).length ∧
+      (∀ qasset' qcid' qpos' qc', holdings qasset' qcid' = some (qpos', qc') →
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos)) :
+    ∀ qasset qcid qpos qc, (update holdings asset
+        (update (holdings asset) cid
+          (if remainder = 0 then none
+           else some ((insertTreeNumber pool.closedTrees pool.leaves
+                 (payoutOutputs ++ (if remainder = 0 then [] else
+                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length,
+               insertStartPos pool.leaves
+                 (payoutOutputs ++ (if remainder = 0 then [] else
+                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length +
+                 (payoutOutputs ++ (if remainder = 0 then [] else
+                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
+             commitment (npk self r) asset remainder)))) qasset qcid = some (qpos, qc) →
+      (∃ pre, (qpos, pre) ∈ pool'.live qasset ∧ hashCommitment pre = qc ∧
+        ((∃ ownerField r, self = ownerField ∧ pre.npk = npk ownerField r) ∨
+          ∃ r, pre.npk = npk self r)) ∧
+      qpos.2 < (pool'.leavesAt' qpos.1).length ∧
+      (∀ qasset' qcid' qpos' qc', (update holdings asset
+          (update (holdings asset) cid
+            (if remainder = 0 then none
+             else some ((insertTreeNumber pool.closedTrees pool.leaves
+                   (payoutOutputs ++ (if remainder = 0 then [] else
+                     [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length,
+                 insertStartPos pool.leaves
+                   (payoutOutputs ++ (if remainder = 0 then [] else
+                     [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length +
+                   (payoutOutputs ++ (if remainder = 0 then [] else
+                     [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
+               commitment (npk self r) asset remainder)))) qasset' qcid' = some (qpos', qc') →
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos) := by
+  rcases hc0 : holdings asset cid with _ | c0
+  · simp only [hc0] at hmatch
+    obtain ⟨_w, _pub, _hM, _hC, _spent', _ownedOutputs, _hNonZero, _hself, _htoken, _hnewnotes,
+      _hroot, _hmark, _hRandomOut, heq⟩ := hmatch
+    have hliveT : ∀ t, pool'.live t = if t = asset
+        then withTreePositionsFrom (insertTreeNumber pool.closedTrees pool.leaves
+              (payoutOutputs ++ (if remainder = 0 then [] else
+                [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length)
+            (insertStartPos pool.leaves
+              (payoutOutputs ++ (if remainder = 0 then [] else
+                [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length)
+            (payoutOutputs ++ (if remainder = 0 then [] else
+              [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])) ++ pool.live asset
+        else pool.live t := fun t => by
+          rw [heq]
+          by_cases ht : t = asset <;> simp [ht, List.length_append]
+    have hclosed : pool'.closedTrees = (insertResult pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).1 := by
+      rw [heq]
+    have hleaves : pool'.leaves = (insertResult pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.1 := by
+      rw [heq]
+    have hroots : pool'.roots = (insertResult pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.2 := by
+      rw [heq]
+    have hlevA' : ∀ tn, pool'.leavesAt' tn = PoolState.leavesAt
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).1
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.1
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.2 tn := by
+      intro tn
+      unfold PoolState.leavesAt'
+      rw [hclosed, hleaves, hroots]
+    have hge : ∀ tn, (pool.leavesAt' tn).length ≤ (pool'.leavesAt' tn).length := by
+      intro tn
+      rw [hlevA']
+      exact insertResult_leavesAt_length_ge pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment) tn
+    exact PoolOwnedSpend_update_position_live_core pool pool' self asset cid remainder r
+      payoutOutputs holdings hinv (pool.live asset) hliveT hge hlevA'
+      (fun _ _ _ _ _ _ qpre hmem => hmem)
+  · simp only [hc0] at hmatch
+    obtain ⟨w, pub, _hM, _hC, rest, _spent', _ownedOutputs, _hNonZero, _hself, _htoken,
+      _hnewnotes, hleavesIdx, _hcommit, _hroot, hremove, _hmark, _hRandomOut, heq⟩ := hmatch
+    have hliveT : ∀ t, pool'.live t = if t = asset
+        then withTreePositionsFrom (insertTreeNumber pool.closedTrees pool.leaves
+              (payoutOutputs ++ (if remainder = 0 then [] else
+                [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length)
+            (insertStartPos pool.leaves
+              (payoutOutputs ++ (if remainder = 0 then [] else
+                [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length)
+            (payoutOutputs ++ (if remainder = 0 then [] else
+              [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])) ++ rest
+        else pool.live t := fun t => by rw [heq]; simp only [List.length_append]
+    have hclosed : pool'.closedTrees = (insertResult pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).1 := by
+      rw [heq]
+    have hleaves : pool'.leaves = (insertResult pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.1 := by
+      rw [heq]
+    have hroots : pool'.roots = (insertResult pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.2 := by
+      rw [heq]
+    have hlevA' : ∀ tn, pool'.leavesAt' tn = PoolState.leavesAt
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).1
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.1
+        (insertResult pool.closedTrees pool.leaves pool.roots
+          ((payoutOutputs ++ (if remainder = 0 then [] else
+            [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment)).2.2 tn := by
+      intro tn
+      unfold PoolState.leavesAt'
+      rw [hclosed, hleaves, hroots]
+    have hge : ∀ tn, (pool.leavesAt' tn).length ≤ (pool'.leavesAt' tn).length := by
+      intro tn
+      rw [hlevA']
+      exact insertResult_leavesAt_length_ge pool.closedTrees pool.leaves pool.roots
+        ((payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).map hashCommitment) tn
+    have hwanted1 : ∀ y ∈ ownedSpentPositions c0.1.1 pub w, y.1 = c0.1 := by
+      intro y hy
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hy
+      have hi0 : i = 0 := by omega
+      rw [← hi, hi0]
+      show (c0.1.1, w.leavesIndices 0) = c0.1
+      rw [hleavesIdx]
+    exact PoolOwnedSpend_update_position_live_core pool pool' self asset cid remainder r
+      payoutOutputs holdings hinv rest hliveT hge hlevA'
+      (fun qasset'' qcid'' qpos qc'' hcall hne'' qpre hmem => by
+        have hqposNe : qpos ≠ c0.1 := by
+          have h3 := (hinv asset cid c0.1 c0.2 hc0).2.2
+          exact h3 qasset'' qcid'' qpos qc'' hcall hne''
+        have hnotwanted : (qpos, qpre) ∉ ownedSpentPositions c0.1.1 pub w := by
+          intro hbad
+          exact hqposNe (hwanted1 _ hbad)
+        rcases List.mem_append.mp ((removeAll_perm hremove).mem_iff.mp hmem) with hin | hin
+        · exact absurd hin hnotwanted
+        · exact hin)
 
 /-- `bulkTransferFold`'s own invariant for `holdings_position_live_step` —
     the position-live sibling of `bulkTransferFold_preimage_nonzero`: one
