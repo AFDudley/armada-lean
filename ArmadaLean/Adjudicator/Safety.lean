@@ -3090,6 +3090,62 @@ theorem transfer_step_exists
   rw [hassetDef, hallocsDef, hheldDef, hTotalPayoutsDef, hRemDef, hPayoutDef]
   exact ⟨hnoguarantee', 0, hospendstep, rfl, rfl⟩
 
+/-- The payout step of `FinalizedPaysInv`. At a reachable state where the
+    invariant holds, `actor` makes at most one call. After it,
+    `dest.destination` holds a live note worth at least `x`. Under A2 the
+    note exists already, and no call is necessary. Under A1,
+    `transfer_step_exists` gives a `.transfer` that selects only
+    `destIdx`, and `transfer_step_pays_selected` shows that this call
+    mints the note. -/
+theorem finalizedPaysInv_pays
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (hReachPool : _root_.Reachable pool0) (actor : Actor)
+    (cid : Term) (o : Outcome) (assetIndex destIdx : Nat) (hAI : assetIndex < o.length) (x : Nat)
+    (hxpos : 0 < x) (dest : Allocation) (mid : AdjudicatorState)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid)
+    (hinv : FinalizedPaysInv cid o assetIndex destIdx hAI x dest mid) :
+    ∃ (payCalls : List (Actor × Call)) (final : AdjudicatorState),
+      AppliesAll sig appRel mid payCalls final ∧
+      ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧
+        pre.token = (o.get ⟨assetIndex, hAI⟩).asset ∧
+        x ≤ pre.value ∧
+        PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
+  rcases hinv with ⟨curOutcome, hci, hfinA1, hohA1, _, hnogA1, hassetA1, hgetDA1, haffA1⟩ | hA2
+  · have hdestlt_cur : destIdx < (curOutcome.get ⟨assetIndex, hci⟩).allocations.length := by
+      rcases Nat.lt_or_ge destIdx (curOutcome.get ⟨assetIndex, hci⟩).allocations.length with
+        hlt | hge
+      · exact hlt
+      · exfalso
+        have hafford0 : (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
+            (heldValue mid (o.get ⟨assetIndex, hAI⟩).asset cid)).getD destIdx 0 = 0 := by
+          have hlen := afford_length (curOutcome.get ⟨assetIndex, hci⟩).allocations
+            (heldValue mid (o.get ⟨assetIndex, hAI⟩).asset cid)
+          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+        omega
+    have hdest_cur : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? = some dest := by
+      have h1 : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? =
+          some ((curOutcome.get ⟨assetIndex, hci⟩).allocations.getD destIdx Allocation.default) := by
+        rw [List.getD_eq_getElem?_getD]
+        cases hdd : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? with
+        | none => rw [List.getElem?_eq_none_iff] at hdd; omega
+        | some a => simp
+      rw [h1, hgetDA1]
+    have haffordable_cur : x ≤ (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
+        (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid)).getD destIdx 0 := by
+      rw [hassetA1]; exact haffA1
+    obtain ⟨final0, hstepTransfer⟩ := transfer_step_exists sig appRel assets selfInputs pool0
+      hReachPool actor mid assetIndex cid curOutcome destIdx hci
+      hreach hfinA1 hohA1 dest hdest_cur hnogA1 x hxpos haffordable_cur
+    obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := transfer_step_pays_selected sig appRel
+      actor mid final0 assetIndex cid (mid.channels cid).stateHash
+      curOutcome destIdx hstepTransfer hci dest hdest_cur hnogA1 x hxpos haffordable_cur
+    refine ⟨[(actor, .transfer assetIndex cid (mid.channels cid).stateHash curOutcome [destIdx])],
+      final0, ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, ?_, hxlepre, hlive⟩
+    rw [hpreTok, hassetA1]
+  · exact ⟨[], mid, rfl, hA2⟩
+
 /-- Which harm this rules out: once all participants have signed a final
     state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
     point, Figure 11), no other caller's actions — in any number, in any
@@ -3234,7 +3290,7 @@ theorem unbeatable_pays
   have hreach_mid : Reachable sig appRel (genesis assets selfInputs pool0) mid := by
     obtain ⟨calls0, happ0⟩ := hreach
     exact ⟨calls0 ++ interleaved, appliesAll_append happ0 happ⟩
-  rcases hinv_mid with hB | hA1 | hA2
+  rcases hinv_mid with hB | hF
   · obtain ⟨hnotfinal_mid, hsigned_mid, haffordable_mid⟩ := hB
     have hnow_mid : mid.now = s.now := appliesAll_now_frame sig appRel s mid interleaved happ hexclTick
     have hnowpos_mid : 0 < mid.now := hnow_mid ▸ hnowpos
@@ -3262,42 +3318,8 @@ theorem unbeatable_pays
       [(Actor.nitro h, .transfer assetIndex (channelId fp) (mid1.channels (channelId fp)).stateHash
         candidate.outcome [destIdx])], final0,
       appliesAll_append happ1 ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
-  · obtain ⟨curOutcome, hci, hfinA1, hohA1, _hmapA1, hnogA1, hassetA1, hgetDA1, haffA1⟩ := hA1
-    have hdestlt_cur : destIdx < (curOutcome.get ⟨assetIndex, hci⟩).allocations.length := by
-      rcases Nat.lt_or_ge destIdx (curOutcome.get ⟨assetIndex, hci⟩).allocations.length with
-        hlt | hge
-      · exact hlt
-      · exfalso
-        have hafford0 : (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
-            (heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
-              (channelId fp))).getD destIdx 0 = 0 := by
-          have hlen := afford_length (curOutcome.get ⟨assetIndex, hci⟩).allocations
-            (heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))
-          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
-        omega
-    have hdest_cur : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? = some dest := by
-      have h1 : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? =
-          some ((curOutcome.get ⟨assetIndex, hci⟩).allocations.getD destIdx Allocation.default) := by
-        rw [List.getD_eq_getElem?_getD]
-        cases hdd : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? with
-        | none => rw [List.getElem?_eq_none_iff] at hdd; omega
-        | some a => simp
-      rw [h1, hgetDA1]
-    have haffordable_cur : x ≤ (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
-        (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset (channelId fp))).getD destIdx 0 := by
-      rw [hassetA1]; exact haffA1
-    obtain ⟨final0, hstepTransfer⟩ := transfer_step_exists sig appRel assets selfInputs pool0
-      hReachPool (Actor.nitro h) mid assetIndex (channelId fp) curOutcome destIdx hci
-      hreach_mid hfinA1 hohA1 dest hdest_cur hnogA1 x hxpos haffordable_cur
-    obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := transfer_step_pays_selected sig appRel
-      (Actor.nitro h) mid final0 assetIndex (channelId fp) (mid.channels (channelId fp)).stateHash
-      curOutcome destIdx hstepTransfer hci dest hdest_cur hnogA1 x hxpos haffordable_cur
-    refine ⟨[(Actor.nitro h, .transfer assetIndex (channelId fp)
-      (mid.channels (channelId fp)).stateHash curOutcome [destIdx])], final0,
-      ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, ?_, hxlepre, hlive⟩
-    rw [hpreTok, hassetA1]
-  · obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := hA2
-    exact ⟨[], mid, rfl, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
+  · exact finalizedPaysInv_pays sig appRel assets selfInputs pool0 hReachPool (Actor.nitro h)
+      (channelId fp) candidate.outcome assetIndex destIdx hAssetIdx x hxpos dest mid hreach_mid hF
 
 /-- `.challenge`'s own effect sets `turnNumRecord := candidate'.turnNum` together with
     `stateHash := stateHash fp' candidate'` (`Operations.lean`). `.checkpoint`/`.conclude`
@@ -3684,9 +3706,10 @@ theorem TimeoutInv_appliesAll
             rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]
           exact Or.inr ⟨by rw [hchanEq]; exact hTchan, hT2_mid, by rw [hheldEq]; exact hTaff⟩
       | transfer assetIndex' cid claimedStateHash outcome indices =>
-        obtain ⟨hidx, hmodeT, hshT, hohT, hstrict, hinner, _hcfg, _hself, hnow, hsb⟩ := hstep
-        obtain ⟨_hguarantee, hrest'⟩ := hinner
-        obtain ⟨r, hospend, hholdseq, hchan⟩ := hrest'
+        have hheldEq := transfer_heldValue_frame sig appRel assets selfInputs pool0 actor st mid
+          assetIndex' cid claimedStateHash outcome indices hreach hstep
+          (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp)
+        obtain ⟨_, hmodeT, _, _, _, ⟨_, _, _, _, hchan⟩, _⟩ := hstep
         by_cases hcc : cid = channelId fp
         · exfalso
           have hm : (st.channels (channelId fp)).mode st.now = .challenge := by
@@ -3695,32 +3718,8 @@ theorem TimeoutInv_appliesAll
           exact absurd hmodeT (by decide)
         · have hchanEq : mid.channels (channelId fp) = st.channels (channelId fp) := by
             rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]
-          have htokPayout : ∀ pre ∈ (transferEffects (outcome.get ⟨assetIndex', hidx⟩).allocations
-              (heldValue st (outcome.get ⟨assetIndex', hidx⟩).asset cid) indices).2.1
-              |>.filterMap (fun a => if a.amount = 0 then none else
-                some (⟨a.destination, (outcome.get ⟨assetIndex', hidx⟩).asset, a.amount⟩ :
-                  CommitmentPreimage)),
-              pre.token = (outcome.get ⟨assetIndex', hidx⟩).asset := by
-            intro pre hpre
-            obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
-            by_cases hamt : a.amount = 0
-            · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
-            · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl
-          have hholdinv : ∀ qasset qcid qpos qc, st.holdings qasset qcid = some (qpos, qc) →
-              ∃ pre, st.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc := by
-            intro qasset qcid qpos qc hc
-            obtain ⟨⟨pre, hpre, hconsist, hval, _⟩, _⟩ :=
-              holdingWellFormed_reachable sig appRel assets selfInputs pool0 st hreach qasset qcid
-                qpos qc hc
-            exact ⟨pre, hpre, hval, hconsist⟩
-          have hheldFrame := PoolOwnedSpendStep_frame st.pool mid.pool st.self
-            (outcome.get ⟨assetIndex', hidx⟩).asset cid _ r _ st.holdings htokPayout hospend
-            hholdinv (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp)
-            (fun heq => hcc (congrArg Prod.snd heq).symm)
-          have hheldEq : heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
-              (channelId fp) = heldValue st (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
-              (channelId fp) := by unfold heldValue; rw [hholdseq]; exact hheldFrame
-          exact Or.inr ⟨by rw [hchanEq]; exact hTchan, hT2_mid, by rw [hheldEq]; exact hTaff⟩
+          exact Or.inr ⟨by rw [hchanEq]; exact hTchan, hT2_mid,
+            by rw [hheldEq (Ne.symm hcc)]; exact hTaff⟩
       | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
           targetAssetIndex claimedTargetStateHash =>
         obtain ⟨hmodeSrc, hohSrc, hsa, hidx1, hguarantee, hrest', hspool, hsholdeq, _hcfg, _hself,
@@ -3932,7 +3931,7 @@ theorem unbeatable_pays_after_timeout
     obtain ⟨calls0, happ0⟩ := hreach
     exact ⟨calls0 ++ interleaved, appliesAll_append happ0 happ⟩
   rcases hinv_mid with ⟨hUBP, hcandfinal⟩ | hTmid
-  · rcases hUBP with hB | hA1 | hA2
+  · rcases hUBP with hB | hF
     · obtain ⟨hnotfinal_mid, hsigned_mid, haffordable_mid⟩ := hB
       have hnow_mid_eq : mid.now = s.now :=
         appliesAll_now_frame sig appRel s mid interleaved happ hexclTick
@@ -3960,42 +3959,8 @@ theorem unbeatable_pays_after_timeout
         [(Actor.nitro h, .transfer assetIndex (channelId fp) (mid1.channels (channelId fp)).stateHash
           candidate.outcome [destIdx])], final0,
         appliesAll_append happ1 ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
-    · obtain ⟨curOutcome, hci, hfinA1, hohA1, _hmapA1, hnogA1, hassetA1, hgetDA1, haffA1⟩ := hA1
-      have hdestlt_cur : destIdx < (curOutcome.get ⟨assetIndex, hci⟩).allocations.length := by
-        rcases Nat.lt_or_ge destIdx (curOutcome.get ⟨assetIndex, hci⟩).allocations.length with
-          hlt | hge
-        · exact hlt
-        · exfalso
-          have hafford0 : (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
-              (heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
-                (channelId fp))).getD destIdx 0 = 0 := by
-            have hlen := afford_length (curOutcome.get ⟨assetIndex, hci⟩).allocations
-              (heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))
-            rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
-          omega
-      have hdest_cur : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? = some dest := by
-        have h1 : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? =
-            some ((curOutcome.get ⟨assetIndex, hci⟩).allocations.getD destIdx Allocation.default) := by
-          rw [List.getD_eq_getElem?_getD]
-          cases hdd : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? with
-          | none => rw [List.getElem?_eq_none_iff] at hdd; omega
-          | some a => simp
-        rw [h1, hgetDA1]
-      have haffordable_cur : x ≤ (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
-          (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset (channelId fp))).getD destIdx 0 := by
-        rw [hassetA1]; exact haffA1
-      obtain ⟨final0, hstepTransfer⟩ := transfer_step_exists sig appRel assets selfInputs pool0
-        hReachPool (Actor.nitro h) mid assetIndex (channelId fp) curOutcome destIdx hci
-        hreach_mid hfinA1 hohA1 dest hdest_cur hnogA1 x hxpos haffordable_cur
-      obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := transfer_step_pays_selected sig appRel
-        (Actor.nitro h) mid final0 assetIndex (channelId fp) (mid.channels (channelId fp)).stateHash
-        curOutcome destIdx hstepTransfer hci dest hdest_cur hnogA1 x hxpos haffordable_cur
-      refine ⟨[(Actor.nitro h, .transfer assetIndex (channelId fp)
-        (mid.channels (channelId fp)).stateHash curOutcome [destIdx])], final0,
-        ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, ?_, hxlepre, hlive⟩
-      rw [hpreTok, hassetA1]
-    · obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := hA2
-      exact ⟨[], mid, rfl, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
+    · exact finalizedPaysInv_pays sig appRel assets selfInputs pool0 hReachPool (Actor.nitro h)
+        (channelId fp) candidate.outcome assetIndex destIdx hAssetIdx x hxpos dest mid hreach_mid hF
   · obtain ⟨hTchanMid, hTnowMid, hTaffMid⟩ := hTmid
     have hmode_mid : (mid.channels (channelId fp)).mode mid.now = .challenge := by
       rw [hTchanMid, hTnowMid]; exact hregistered.1
@@ -4098,7 +4063,17 @@ theorem finalized_affordable_pays
           pre.token = (o.get ⟨assetIndex, hci⟩).asset ∧
           x ≤ pre.value ∧
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
-  sorry
+  intro interleaved mid happ hexcl
+  have hinv_s : FinalizedPaysInv cid o assetIndex destIdx hci x dest s :=
+    Or.inl ⟨o, hci, hmode, hoh, rfl, hnoguarantee, rfl,
+      by rw [List.getD_eq_getElem?_getD, hdest]; rfl, haffordable⟩
+  have hreach_mid : Reachable sig appRel (genesis assets selfInputs pool0) mid := by
+    obtain ⟨calls0, happ0⟩ := hreach
+    exact ⟨calls0 ++ interleaved, appliesAll_append happ0 happ⟩
+  exact finalizedPaysInv_pays sig appRel assets selfInputs pool0 hReachPool (Actor.pool pk) cid o
+    assetIndex destIdx hci x hxpos dest mid hreach_mid
+    (finalizedPaysInv_appliesAll sig appRel cid o assetIndex destIdx hci x hxpos dest pk nk r
+      hh_dest s hassetunique hhonestPool assets selfInputs pool0 hreach happ hexcl rfl hinv_s)
 
 /-- `DepositStep`'s effect on `PoolState.notedValue`: the fresh notes minted
     from one deposit's own spent inputs always sum to the inputs' own
