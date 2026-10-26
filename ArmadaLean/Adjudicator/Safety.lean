@@ -1152,7 +1152,110 @@ theorem value_leaves_only_via_transfer_of_finalized_channel
     (∃ outcome claimedStateHash, call = .bulkTransferAllAssets cid outcome claimedStateHash ∧
       (s.channels cid).mode s.now = .finalized) ∨
     (∃ fp candidate, channelId fp = cid ∧ call = .bulkConcludeAndTransferAllAssets fp candidate) := by
-  sorry
+  have hwf := holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach
+  have hinv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc := by
+    intro qasset qcid qpos qc hc
+    obtain ⟨⟨pre, hpre, hcons, hval, _⟩, _⟩ := hwf qasset qcid qpos qc hc
+    exact ⟨pre, hpre, hval, hcons⟩
+  cases call with
+  | deposit channelId0 expectedHeld asset0 amount =>
+    exfalso
+    by_cases hp : (asset0, channelId0) = (asset, cid)
+    · have ha : asset0 = asset := congrArg Prod.fst hp
+      have hc : channelId0 = cid := congrArg Prod.snd hp
+      subst ha; subst hc
+      have hinc := (deposit_effect sig appRel assets selfInputs pool0 actor s s' channelId0
+        expectedHeld asset0 amount hreach hstep).1
+      omega
+    · have heq := deposit_frame sig appRel actor s s' channelId0 expectedHeld asset0 amount hstep
+        hinv asset cid (Ne.symm hp)
+      omega
+  | challenge fp proof candidate challenger =>
+    exfalso
+    obtain ⟨_, _, _, _, _, hpool, hhold, _, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
+  | checkpoint fp proof candidate =>
+    exfalso
+    obtain ⟨_, _, _, _, hpool, hhold, _, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
+  | conclude fp candidate =>
+    exfalso
+    obtain ⟨_, _, _, _, hpool, hhold, _, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
+  | transfer assetIndex cid0 claimedStateHash outcome indices =>
+    by_cases hcc : cid0 = cid
+    · subst hcc
+      obtain ⟨h, hmode, _, _, _, _, _, _, _, _⟩ := hstep
+      exact Or.inl ⟨⟨assetIndex, claimedStateHash, outcome, indices, rfl⟩, hmode⟩
+    · exfalso
+      obtain ⟨h, _hmode, _, _, _, hinner, _, _, _, _⟩ := hstep
+      obtain ⟨_hexit, hrest⟩ := hinner
+      obtain ⟨r, hmatch, hholdseq, _hchan⟩ := hrest
+      have hframe := PoolOwnedSpendStep_frame s.pool s'.pool s.self
+        (outcome.get ⟨assetIndex, h⟩).asset cid0 _ r _ s.holdings
+        (fun pre hpre => by
+          obtain ⟨a, _, hfa⟩ := List.mem_filterMap.mp hpre
+          by_cases hamt : a.amount = 0
+          · rw [if_pos hamt] at hfa; exact absurd hfa (by simp)
+          · rw [if_neg hamt] at hfa; exact (Option.some.inj hfa) ▸ rfl)
+        hmatch hinv asset cid (fun hh => hcc (congrArg Prod.snd hh).symm)
+      have heq : heldValue s' asset cid = heldValue s asset cid := by
+        unfold heldValue; rw [hholdseq]; exact hframe
+      omega
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    exfalso
+    obtain ⟨_, _, _, _, _, _, hpool, hhold, _, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
+  | bulkTransferAllAssets cid0 outcome claimedStateHash =>
+    by_cases hcc : cid0 = cid
+    · subst hcc
+      obtain ⟨hmode, _, _, newOutcome, _, _, _, _, _, _⟩ := hstep
+      exact Or.inr (Or.inl ⟨outcome, claimedStateHash, rfl, hmode⟩)
+    · exfalso
+      obtain ⟨_hmode, _, _, newOutcome, hfold, _, _, _, _, _⟩ := hstep
+      have hframe := bulkTransferFold_frame s.self cid0 outcome newOutcome s.pool s'.pool
+        s.holdings s'.holdings hfold hinv asset cid (Ne.symm hcc)
+      have heq : heldValue s' asset cid = heldValue s asset cid := by
+        unfold heldValue; exact hframe
+      omega
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    by_cases hcc : channelId fp = cid
+    · exact Or.inr (Or.inr ⟨fp, candidate, hcc, rfl⟩)
+    · exfalso
+      obtain ⟨_hnotfin, _, _, newOutcome, hfold, _, _, _, _, _⟩ := hstep
+      have hframe := bulkTransferFold_frame s.self (channelId fp) candidate.outcome newOutcome
+        s.pool s'.pool s.holdings s'.holdings hfold hinv asset cid (Ne.symm hcc)
+      have heq : heldValue s' asset cid = heldValue s asset cid := by
+        unfold heldValue; exact hframe
+      omega
+  | tick newNow =>
+    exfalso
+    obtain ⟨_, _, hpool, hhold, _, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
+  | sign p d =>
+    exfalso
+    obtain ⟨_, _, hpool, _, hhold, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
+  | signNote pk msgHash =>
+    exfalso
+    obtain ⟨_, _, hpool, _, hhold, _, _, _, _⟩ := hstep
+    have heq : heldValue s' asset cid = heldValue s asset cid := by
+      unfold heldValue; rw [hhold, hpool]
+    omega
 
 /-- Like `OutcomeDerivedFrom`, but excluding `.reclaimStep`: reached
     from `o` by `.transfer` rewrites only, no `.reclaim` in between —
