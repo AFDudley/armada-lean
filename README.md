@@ -76,6 +76,7 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `live_values_lt_2pow120` | `PoolSafety` | every note the pool records as live has a value below `2 ^ 120`, pool-wide | `PoolTypes.sol:79-83` | `CommitmentPreimage.value : uint120` |
 | `leaf_stable` | `PoolSafety` | a leaf, once inserted at a `(treeNumber, position)`, never changes in any later reachable state | `Step`'s own construction | insertion only ever appends |
 | `live_note_unspent` | `PoolSafety` | a live note's nullifier is not in `spent`, in every reachable state, under any nullifying key | `TransactModule.sol:379-386` | adjudicator payout freshness |
+| `live_leaf_matches` | `PoolSafety` | a live entry's position names the leaf that holds its commitment, in every reachable state | `Step`'s own construction | adjudicator payout witness |
 | `live_positions_distinct_nullifiers` | `PoolSafety` | two different live leaf positions never share a nullifier, for a fixed spender key | `Transact.circom:97-101`, `TransactOwned.circom:89-97` | position identity is sound |
 | `pool_ownedRandomOf_consistent` | `PoolSafety` | every entry the pool has ever written to `ownedRandomOf` genuinely reconstructs the matching note's `npk` | `PoolOwned.OwnedDisclosure` module comment | DEPARTURE, approved design |
 
