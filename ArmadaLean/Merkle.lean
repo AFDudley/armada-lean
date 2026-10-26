@@ -59,16 +59,19 @@ define directly, non-incrementally, since this project only needs the tree's fin
 value and leaf-membership facts, never a gas analysis. `TreeDepth` mirrors
 `PrivacyPoolStorage.TREE_DEPTH` (PrivacyPoolStorage.sol:144).
 
-DEPARTURE (contract, one tree only): `MerkleModule.insertLeaves` rolls over to a fresh
-tree, `treeNumber += 1`, when a batch would overflow the current one
-(MerkleModule.sol:62-70); `PrivacyPoolStorage.rootHistory` and `nullifiers` are then
-keyed by `treeNumber` (PrivacyPoolStorage.sol:171,174), so a later tree's roots and
-nullifier space are independent of an earlier tree's. This model represents exactly one
-tree, with no rollover: every theorem that inserts leaves (`ArmadaLean.Pool.Step
-.shield`/`.transact`/`.transactOwned`) takes an explicit capacity hypothesis,
-`(leaves so far).length ≤ 2 ^ TreeDepth`, so a step that would overflow the tree simply
-has no witness — the model treats "the pool's lifetime activity exceeds one tree's
-65536-leaf capacity" as out of scope, not as silent data loss. -/
+DEPARTURE, now closed: an earlier version of this model represented exactly one tree,
+with no rollover, taking an explicit capacity hypothesis on every leaf-inserting step.
+`MerkleModule.insertLeaves` actually rolls over to a fresh tree, `treeNumber += 1`, when
+a batch would overflow the current one (MerkleModule.sol:62-70); `PrivacyPoolStorage
+.rootHistory` and `nullifiers` are then keyed by `treeNumber` (PrivacyPoolStorage.sol
+:171,174), so a later tree's roots and nullifier space are independent of an earlier
+tree's. `ArmadaLean.Pool`'s `TreeState`/`insertResult`/`PoolState.closedTrees` model
+this forest directly: a `shield`/`transact`/`transactOwned` step that would overflow
+the current tree rolls into a fresh one instead of having no witness, and no capacity
+hypothesis gates any of the three any more
+(`ArmadaLean.PoolSafety.reachable_leavesAt_capacity` proves every tree, including a
+freshly-rolled-into one, stays within `2 ^ TreeDepth` leaves on its own, by induction,
+not by hypothesis). -/
 
 /-- The production Merkle tree depth (`PrivacyPoolStorage.TREE_DEPTH`,
     PrivacyPoolStorage.sol:144): `2^16 = 65536` leaves per tree. -/
