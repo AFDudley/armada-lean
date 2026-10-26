@@ -174,7 +174,7 @@ def DepositStep {N M : Nat} (before : PoolState) (self : Term) (token amount : N
   w.token = token ∧
   treeNumber = insertTreeNumber before.closedTrees before.leaves M ∧
   position = insertStartPos before.leaves M + idx.val ∧
-  ∃ (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
+  ∃ (_hN : N ≤ 8) (_hM : M ≤ 4) (_hC : Constrained w pub)
     (rest : List ((Nat × Nat) × CommitmentPreimage)) (spent' : NullifierSet)
     (records : List (Term × CommitmentPreimage)),
     pub.merkleRoot ∈ before.rootsAt' spendTreeNumber ∧
@@ -288,9 +288,9 @@ def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
   | none =>
     ∃ (w : TransactOwnedWitness 0 M)
       (pub : TransactOwnedPublic 0 M)
-      (hM : M ≤ 4) (hC : OwnedConstrained w pub)
+      (_hM : M ≤ 4) (_hC : OwnedConstrained w pub)
       (spent' : NullifierSet) (ownedRandom : Fin ownedPreimages.length → Nat)
-      (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
+      (_hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
       self = pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputs ∧
@@ -312,10 +312,10 @@ def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
   | some ((spendTreeNumber, pos), c) =>
     ∃ (w : TransactOwnedWitness 1 M)
       (pub : TransactOwnedPublic 1 M)
-      (hM : M ≤ 4) (hC : OwnedConstrained w pub)
+      (_hM : M ≤ 4) (_hC : OwnedConstrained w pub)
       (rest : List ((Nat × Nat) × CommitmentPreimage)) (spent' : NullifierSet)
       (ownedRandom : Fin ownedPreimages.length → Nat)
-      (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
+      (_hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
       self = pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputs ∧
@@ -372,9 +372,9 @@ def DepositMergeStep (before : PoolState) (self : Term) (token : Nat)
   mergedTreeNumber = insertTreeNumber before.closedTrees before.leaves 1 ∧
   mergedPos = insertStartPos before.leaves 1 ∧
   ∃ (w : TransactOwnedWitness 2 1) (pub : TransactOwnedPublic 2 1)
-    (hC : OwnedConstrained w pub)
+    (_hC : OwnedConstrained w pub)
     (rest : List ((Nat × Nat) × CommitmentPreimage)) (spent' : NullifierSet) (r randomOut : Nat)
-    (hNonZero : ¬ isZeroPreimage (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage)),
+    (_hNonZero : ¬ isZeroPreimage (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage)),
     self = pub.ownerField ∧
     w.token = token ∧
     w.npkOut 0 = npk self r ∧
