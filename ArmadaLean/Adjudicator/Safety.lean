@@ -3152,6 +3152,185 @@ theorem unbeatable_pays
   · obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := hA2
     exact ⟨[], mid, rfl, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
 
+/-- `.challenge`'s own effect sets `turnNumRecord := candidate'.turnNum` together with
+    `stateHash := stateHash fp' candidate'` (`Operations.lean`). `.checkpoint`/`.conclude`
+    (and `.bulkConcludeAndTransferAllAssets`) instead clear `stateHash` to `Term.val 0`,
+    never a genuine hash (`Term.val_ne_hash`); `.transfer`/`.reclaim`/
+    `.bulkTransferAllAssets` only ever rewrite a channel's own `outcomeHash`, leaving
+    `stateHash`/`turnNumRecord` as they found them. So whenever a reachable channel's
+    own `stateHash` reads as SOME `stateHash fp candidate` (a genuine hash, never the
+    cleared sentinel), the LAST write to it was a `.challenge` registering exactly
+    `candidate` — `stateHashOf_inj` (the variable part's own hash includes `turnNum`)
+    pins `turnNumRecord` to `candidate.turnNum`, whatever mode the channel is in now.
+    What `unbeatable_pays_after_timeout` needs: a rival `.challenge`/`.checkpoint`
+    cannot displace the registered challenge unless its own turn number exceeds
+    `candidate.turnNum`, which `hnohigher` rules out. -/
+theorem challenge_mode_status_matches
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (s : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
+    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
+    (hsh : (s.channels (channelId fp)).stateHash = stateHash fp candidate) :
+    (s.channels (channelId fp)).turnNumRecord = candidate.turnNum := by
+  have hinv : ∀ fp' candidate', (s.channels (channelId fp')).stateHash =
+      stateHash fp' candidate' → (s.channels (channelId fp')).turnNumRecord = candidate'.turnNum :=
+    reachable_preserves
+      (P := fun st => ∀ fp' candidate', (st.channels (channelId fp')).stateHash =
+        stateHash fp' candidate' → (st.channels (channelId fp')).turnNumRecord = candidate'.turnNum)
+      (by
+        intro fp' candidate' hsh0
+        exfalso
+        have hne : Term.val 0 ≠ stateHash fp' candidate' := by
+          unfold stateHash stateHashOf Term.keccak
+          exact Term.val_ne_hash 0 .keccak _
+        exact hne hsh0)
+      (by
+        intro actor call st st' hP hstep
+        intro fp' candidate' hsh'
+        cases call with
+        | deposit cid expectedHeld asset amount =>
+          obtain ⟨_, _, _, _, _, hchan, _, _, _, _, _⟩ := hstep
+          rw [hchan] at hsh' ⊢; exact hP fp' candidate' hsh'
+        | sign p d =>
+          obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+          rw [hchan] at hsh' ⊢; exact hP fp' candidate' hsh'
+        | signNote pk' msgHash =>
+          obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+          rw [hchan] at hsh' ⊢; exact hP fp' candidate' hsh'
+        | tick newNow =>
+          obtain ⟨_, _, _, _, hchan, _, _, _, _⟩ := hstep
+          rw [hchan] at hsh' ⊢; exact hP fp' candidate' hsh'
+        | challenge fp'' proof candidate'' challenger =>
+          obtain ⟨_, _, _, _, hchan, _, _, _, _, _, _⟩ := hstep
+          by_cases hcc : channelId fp'' = channelId fp'
+          · have hchanEq : st'.channels (channelId fp') =
+                { turnNumRecord := candidate''.turnNum,
+                  finalizesAt := st.now + fp''.challengeDuration,
+                  stateHash := stateHash fp'' candidate'',
+                  outcomeHash := outcomeHashOf candidate''.outcome } := by
+              rw [hchan]; unfold update; rw [if_pos hcc.symm]
+            rw [hchanEq] at hsh' ⊢
+            dsimp only at hsh' ⊢
+            exact (stateHashOf_inj hsh').2.2.2.1
+          · have hchanEq : st'.channels (channelId fp') = st.channels (channelId fp') := by
+              rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]
+            rw [hchanEq] at hsh' ⊢
+            exact hP fp' candidate' hsh'
+        | checkpoint fp'' proof candidate'' =>
+          obtain ⟨_, _, _, hchan, _, _, _, _, _, _, _⟩ := hstep
+          by_cases hcc : channelId fp'' = channelId fp'
+          · exfalso
+            have hchanEq : st'.channels (channelId fp') =
+                { turnNumRecord := candidate''.turnNum, finalizesAt := 0,
+                  stateHash := Term.val 0, outcomeHash := Term.val 0 } := by
+              rw [hchan]; unfold update; rw [if_pos hcc.symm]
+            rw [hchanEq] at hsh'
+            dsimp only at hsh'
+            have hne : Term.val 0 ≠ stateHash fp' candidate' := by
+              unfold stateHash stateHashOf Term.keccak
+              exact Term.val_ne_hash 0 .keccak _
+            exact hne hsh'
+          · have hchanEq : st'.channels (channelId fp') = st.channels (channelId fp') := by
+              rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]
+            rw [hchanEq] at hsh' ⊢
+            exact hP fp' candidate' hsh'
+        | conclude fp'' candidate'' =>
+          obtain ⟨_, _, _, hchan, _, _, _, _, _, _⟩ := hstep
+          by_cases hcc : channelId fp'' = channelId fp'
+          · exfalso
+            have hchanEq : st'.channels (channelId fp') =
+                { turnNumRecord := 0, finalizesAt := st.now,
+                  stateHash := Term.val 0, outcomeHash := outcomeHashOf candidate''.outcome } := by
+              rw [hchan]; unfold update; rw [if_pos hcc.symm]
+            rw [hchanEq] at hsh'
+            dsimp only at hsh'
+            have hne : Term.val 0 ≠ stateHash fp' candidate' := by
+              unfold stateHash stateHashOf Term.keccak
+              exact Term.val_ne_hash 0 .keccak _
+            exact hne hsh'
+          · have hchanEq : st'.channels (channelId fp') = st.channels (channelId fp') := by
+              rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]
+            rw [hchanEq] at hsh' ⊢
+            exact hP fp' candidate' hsh'
+        | transfer assetIndex' cid claimedStateHash outcome indices =>
+          obtain ⟨hidx, hmodeT, hshT, hohT, hstrict, hinner, _hcfg, _hself, hnow, hsb⟩ := hstep
+          obtain ⟨_hguarantee, hrest⟩ := hinner
+          obtain ⟨r, hospend, hholdseq, hchan⟩ := hrest
+          have hstateEq : (st'.channels (channelId fp')).stateHash =
+              (st.channels (channelId fp')).stateHash := by
+            rw [hchan]; unfold update
+            by_cases hcc : channelId fp' = cid
+            · rw [if_pos hcc, hcc]
+            · rw [if_neg hcc]
+          have hturnEq : (st'.channels (channelId fp')).turnNumRecord =
+              (st.channels (channelId fp')).turnNumRecord := by
+            rw [hchan]; unfold update
+            by_cases hcc : channelId fp' = cid
+            · rw [if_pos hcc, hcc]
+            · rw [if_neg hcc]
+          rw [hstateEq] at hsh'
+          rw [hturnEq]
+          exact hP fp' candidate' hsh'
+        | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource
+            targetOutcome targetAssetIndex claimedTargetStateHash =>
+          obtain ⟨_, _, _, _, _, hrest, _, _, _, _, _, _, _⟩ := hstep
+          obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hchan⟩ := hrest
+          have hstateEq : (st'.channels (channelId fp')).stateHash =
+              (st.channels (channelId fp')).stateHash := by
+            rw [hchan]; unfold update
+            by_cases hcc : channelId fp' = sourceChannelId
+            · rw [if_pos hcc, hcc]
+            · rw [if_neg hcc]
+          have hturnEq : (st'.channels (channelId fp')).turnNumRecord =
+              (st.channels (channelId fp')).turnNumRecord := by
+            rw [hchan]; unfold update
+            by_cases hcc : channelId fp' = sourceChannelId
+            · rw [if_pos hcc, hcc]
+            · rw [if_neg hcc]
+          rw [hstateEq] at hsh'
+          rw [hturnEq]
+          exact hP fp' candidate' hsh'
+        | bulkTransferAllAssets cid outcome claimedStateHash =>
+          obtain ⟨hmodeBulk, hshBulk, hohBulk, newOutcome, hfold, hchan, _hcfg, _hself, hnow, hsb⟩ :=
+            hstep
+          have hstateEq : (st'.channels (channelId fp')).stateHash =
+              (st.channels (channelId fp')).stateHash := by
+            rw [hchan]; unfold update
+            by_cases hcc : channelId fp' = cid
+            · rw [if_pos hcc, hcc]
+            · rw [if_neg hcc]
+          have hturnEq : (st'.channels (channelId fp')).turnNumRecord =
+              (st.channels (channelId fp')).turnNumRecord := by
+            rw [hchan]; unfold update
+            by_cases hcc : channelId fp' = cid
+            · rw [if_pos hcc, hcc]
+            · rw [if_neg hcc]
+          rw [hstateEq] at hsh'
+          rw [hturnEq]
+          exact hP fp' candidate' hsh'
+        | bulkConcludeAndTransferAllAssets fp'' candidate'' =>
+          obtain ⟨hprecond, hisfinal, hcsigned, newOutcome, hfold, hchan, _hcfg, _hself, hnow, hsb⟩ :=
+            hstep
+          by_cases hcc : channelId fp'' = channelId fp'
+          · exfalso
+            have hchanEq : st'.channels (channelId fp') =
+                { turnNumRecord := 0, finalizesAt := st.now,
+                  stateHash := Term.val 0, outcomeHash := outcomeHashOf newOutcome } := by
+              rw [hchan]; unfold update; rw [if_pos hcc.symm]
+            rw [hchanEq] at hsh'
+            dsimp only at hsh'
+            have hne : Term.val 0 ≠ stateHash fp' candidate' := by
+              unfold stateHash stateHashOf Term.keccak
+              exact Term.val_ne_hash 0 .keccak _
+            exact hne hsh'
+          · have hchanEq : st'.channels (channelId fp') = st.channels (channelId fp') := by
+              rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]
+            rw [hchanEq] at hsh' ⊢
+            exact hP fp' candidate' hsh')
+      hreach
+  exact hinv fp candidate hsh
+
 /-- Which harm this rules out: the same guarantee for the "sad path"
     (ForceMove-2018.pdf §1.2: "the adjudicator releases funds according to
     the resolution specified by the most recently known state at the time
