@@ -1433,17 +1433,6 @@ def UnbeatablePaysInv (sig : SignatureAssumptions) (fp : FixedPart) (candidate :
     pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧ x ≤ pre.value ∧
     PoolIsLive mid.pool (commitment pre.npk pre.token pre.value))
 
-/-- Converse of `withPositionsFrom_mem_snd`, tagged with a fixed tree
-    number: anything already in the underlying list gets SOME position
-    once tagged — what `transfer_step_pays_selected` needs to turn "this
-    output is one of `.transfer`'s own `payoutOutputs`" into an ACTUAL
-    `((treeNumber, pos), pre) ∈ final.pool.live asset` fact. -/
-theorem withTreePositionsFrom_mem_fwd {α : Type} {treeNumber start : Nat} {l : List α} {a : α}
-    (h : a ∈ l) : ∃ pos, ((treeNumber, pos), a) ∈ withTreePositionsFrom treeNumber start l := by
-  unfold withTreePositionsFrom
-  obtain ⟨pos, hpos⟩ := withPositionsFrom_mem_fwd (start := start) h
-  exact ⟨pos, List.mem_map.mpr ⟨(pos, a), hpos, rfl⟩⟩
-
 /-- `UnbeatablePaysInv`'s own one-step preservation: given an actor OTHER
     than `h`/`h`'s own pool key, and `h`'s `signedBy`/`poolSignedBy` rows
     still exactly their `s0` (anchor) values, the invariant survives. -/
