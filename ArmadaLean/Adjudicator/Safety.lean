@@ -1541,7 +1541,16 @@ theorem payout_takes_no_fee
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
       totalPayouts + (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid - totalPayouts)
         = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid := by
-  sorry
+  intro h
+  show (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2 +
+      (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.2)
+      = heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid
+  have hle := transferEffects_totalPayouts_le (outcome.get ⟨assetIndex, h⟩).allocations
+    (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices
+  omega
 
 /-- `conclude` finalizes without moving value: `conclude`'s `Step` case
     touches only `s'.channels`; `s'.pool` and `s'.holdings` are provably
@@ -1552,7 +1561,8 @@ theorem conclude_moves_no_value
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
     (actor : Actor) (s s' : AdjudicatorState) (fp : FixedPart) (candidate : VariablePart)
     (hstep : Step sig appRel actor s (.conclude fp candidate) s') :
-    s'.pool = s.pool ∧ s'.holdings = s.holdings := sorry
+    s'.pool = s.pool ∧ s'.holdings = s.holdings :=
+  ⟨hstep.2.2.2.2.1, hstep.2.2.2.2.2.1⟩
 
 /-- B4 — `bulkTransferAllAssets` has EXACTLY `transferAllAssets`'s own
     documented effect (`DOC/0080:77`, `0080-defunding-a-channel.md`:
@@ -1578,7 +1588,8 @@ theorem bulk_transfer_all_assets_effect
     ∃ newOutcome : Outcome,
       bulkTransferFold s.self cid outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
       s'.channels = update s.channels cid { s.channels cid with outcomeHash := outcomeHashOf newOutcome } := by
-  sorry
+  obtain ⟨hmode, hsh, hoh, newOutcome, hfold, hchan, _⟩ := hstep
+  exact ⟨hmode, hsh, hoh, newOutcome, hfold, hchan⟩
 
 /-- B4 — `bulkConcludeAndTransferAllAssets` has EXACTLY `concludeAndTransferAllAssets`'s
     own documented effect (`DOC/0080:77`, quoted above): `.conclude`'s own
@@ -1600,7 +1611,8 @@ theorem bulk_conclude_and_transfer_all_assets_effect
       s'.channels = update s.channels (channelId fp)
         { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0,
           outcomeHash := outcomeHashOf newOutcome } := by
-  sorry
+  obtain ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan, _⟩ := hstep
+  exact ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan⟩
 
 /-- B4 — a bulk conclude-and-transfer can happen: for all
     `HashAssumptions`/`SignatureAssumptions`, there is an execution from
