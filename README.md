@@ -83,6 +83,7 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder succeeds and pays its recipient — **`sorry`** (type changed: P-1, P-2, P-7) | `TransactModule.sol:43-96` | unshield can happen |
 | `owned_transact_can_happen` | `PoolSafety` | an owned transact by the real owner, with an accepted proof, succeeds — **`sorry`** (type changed: P-1, P-2, P-4) | `TransactModule.sol:488-519` | owned transact can happen |
 | `leaf_has_merkle_witness` | `PoolSafety` | every leaf in any tree has a real Merkle path to a root the pool produced for that tree — **`sorry`** (type changed: P-8) | `MerkleModule.sol:54-121` | tree is computed, not chosen |
+| `leaf_stable` | `PoolSafety` | a leaf, once inserted at a `(treeNumber, position)`, stays in range and keeps its value in every later reachable state (`Option` lookup, type changed: P-8; proved) | `MerkleModule.sol:12,54-121` | append-only incremental Merkle tree; S-RG, "batch incremental Merkle trees" |
 | `owned_spend_witness_exists` | `PoolSafety` | an owned note with a recorded preimage and a published opening has a constructible `OwnedConstrained` spend witness, built from public data — **`sorry`** (type changed: P-1, P-2, P-8, P-10) | `TransactOwned.circom:66-87` | spend construction |
 | `live_values_spendable` | `PoolSafety` | every live note passes the circuit's input range check (`Spendable`) — **`sorry`** (type changed: P-6; was `live_values_lt_2pow120`) | `PoolTypes.sol:82` | lemma of `owned_merge_can_happen` (P-5) |
 | `live_note_unspent` | `PoolSafety` | a live note's nullifier is not in `spent`, in every reachable state, under any nullifying key | `TransactModule.sol:379-386` | lemma of `owned_merge_can_happen`, `spend_not_blocked` (P-5) |
@@ -91,8 +92,7 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 
 **Removed** (details in `docs/pool-symbolic-changes.md`):
 `transact_cannot_be_blocked`, `transactOwned_cannot_be_blocked` (P-3: they covered only
-the admin step; `spend_not_blocked` replaces them); `leaf_stable` (P-5: only the
-adjudicator's `holdings` slot used it); `live_values_lt_2pow120` (P-6: renamed
+the admin step; `spend_not_blocked` replaces them); `live_values_lt_2pow120` (P-6: renamed
 `live_values_spendable`, bound moved to the circuit layer); `pool_ownedRandomOf_consistent`
 (P-10: no `ownedRandomOf` map); `fee_exact_50bps` (P-9: no basis-point constant).
 

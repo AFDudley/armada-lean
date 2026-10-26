@@ -830,6 +830,59 @@ theorem leaf_has_merkle_witness {s : PoolState} (h : Reachable s) (tn : Nat)
       treeRoot TreeDepth (s.leavesAt' tn) ∈ s.rootsAt' tn := by
   sorry
 
+/-! ### A leaf, once inserted, never moves
+
+The pool's Merkle tree is append-only. `MerkleModule` is an "Append-only incremental
+binary Merkle tree over Poseidon" (MerkleModule.sol:12). `insertLeaves`
+(MerkleModule.sol:54-121) writes new leaves at `nextLeafIndex` and later positions only,
+and no function removes or rewrites a leaf. The Railgun whitepaper (S-RG, "RAILGUN
+Core System & Protocol"; armada-laconic `.scratch/rewrite-B/railgun-whitepaper-2021.txt`
+:161-163 and :234-235) keeps the notes in "batch incremental Merkle trees", and "The
+hashes of the output UTXOs are then added to the Merkle tree so they can be spent in
+the future." -/
+
+/-- One step either leaves tree `tn`'s leaves unchanged or appends to them
+    (`insertLeaves_leavesAt_length_ge`, `insertLeaves_leavesAt`), applied to whichever
+    batch and tree a `Step` constructor inserts. A position in range stays in range and
+    keeps its leaf. -/
+theorem step_leavesAt_stable {s s' : PoolState} (hstep : Step s s') (tn pos : Nat)
+    (hpos : pos < (s.leavesAt' tn).length) :
+    pos < (s'.leavesAt' tn).length ∧ (s'.leavesAt' tn)[pos]? = (s.leavesAt' tn)[pos]? := by
+  have key : ∀ newLeaves : List Term,
+      pos < (leavesAt (insertLeaves s.trees newLeaves) tn).length ∧
+        (leavesAt (insertLeaves s.trees newLeaves) tn)[pos]? = (leavesAt s.trees tn)[pos]? := by
+    intro newLeaves
+    have hpos' : pos < (leavesAt s.trees tn).length := hpos
+    refine ⟨Nat.lt_of_lt_of_le hpos' (insertLeaves_leavesAt_length_ge s.trees newLeaves tn), ?_⟩
+    rw [insertLeaves_leavesAt]
+    by_cases h : tn = insertTree s.trees newLeaves.length
+    · rw [if_pos h, List.getElem?_append_left hpos']
+    · rw [if_neg h]
+  cases hstep with
+  | shield token value npk hValue hSpendable => exact key _
+  | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
+      openings hRoot hRemove hNullify hRecords => exact key _
+  | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
+      openings hRoot hRemove hNullify => exact key _
+
+/--
+**A leaf, once inserted at a position, never changes in any later reachable state.**
+For any `ReachableFrom s s'` and any position in range at `s`
+(`pos < (s.leavesAt' tn).length`), the position stays in range at `s'` and holds the same
+leaf. The tree is append-only (section comment: MerkleModule.sol:12, :54-121; S-RG,
+"batch incremental Merkle trees"). Proved by induction on `ReachableFrom` with
+`step_leavesAt_stable`. The lookup is an `Option`, not a lookup with a default value
+(finding P-8). -/
+theorem leaf_stable {s s' : PoolState} (h : ReachableFrom s s') (tn pos : Nat)
+    (hpos : pos < (s.leavesAt' tn).length) :
+    pos < (s'.leavesAt' tn).length ∧ (s'.leavesAt' tn)[pos]? = (s.leavesAt' tn)[pos]? := by
+  induction h with
+  | refl => exact ⟨hpos, rfl⟩
+  | step _ hstep ih =>
+    obtain ⟨ihlen, iheq⟩ := ih
+    obtain ⟨hlen2, heq2⟩ := step_leavesAt_stable hstep tn pos ihlen
+    exact ⟨hlen2, heq2.trans iheq⟩
+
 /-! ### A live owned note with a published opening has a constructible spend witness -/
 
 /--

@@ -70,8 +70,24 @@ Toolchain: Lean v4.33.1, no Mathlib.
 
 ### P-5. Position statements for the adjudicator's `holdings` slot
 
-- Deleted `leaf_stable` and its step lemma `step_leavesAt_stable`. No pool theorem
-  needs them.
+- `leaf_stable` and its step lemma `step_leavesAt_stable` are kept (operator ruling,
+  2026-10-26). The first version of this branch deleted them; that deletion was wrong.
+  The audit's word "slot" meant the adjudicator's EVM storage slot (`holdings`). The
+  append-only property of the Merkle tree is Railgun protocol meaning, not a slot, and
+  it holds independently of any adjudicator use. Source: `MerkleModule` is an
+  "Append-only incremental binary Merkle tree over Poseidon" (MerkleModule.sol:12;
+  insertion at MerkleModule.sol:54-121), and the Railgun whitepaper keeps notes in
+  "batch incremental Merkle trees" to which "The hashes of the output UTXOs are then
+  added" (armada-laconic `.scratch/rewrite-B/railgun-whitepaper-2021.txt`:161-163,
+  :234-235). The doc comments now cite these sources and do not mention the
+  adjudicator.
+- `leaf_stable`: type changed only for P-8. Before, `(s'.leavesAt' tn).getD pos d =
+  (s.leavesAt' tn).getD pos d` with a default `d : Term`; after,
+  `(s'.leavesAt' tn)[pos]? = (s.leavesAt' tn)[pos]?`, with no default. The range
+  conjunct `pos < (s'.leavesAt' tn).length` and the hypothesis are unchanged. Proved,
+  not `sorry`: `step_leavesAt_stable` is 19 lines (built on `insertLeaves_leavesAt` and
+  `insertLeaves_leavesAt_length_ge`) and `leaf_stable` is 9 lines. `#print axioms
+  leaf_stable` lists `EdDSAVerify, propext, Quot.sound` (no `sorryAx`).
 - Kept as lemmas, each with the reason in its doc comment:
   `live_note_unspent` (theorems 1 and 3 need a live note's nullifier to be fresh),
   `live_leaf_matches` (theorem 3 builds each input's Merkle path from it),
@@ -352,6 +368,9 @@ Proof repaired (type changed only by a moved definition): `commitment_owner_inj`
 `commitment_mpk_inj`, `spend_live_exact`, `live_note_unspent`,
 `transact_spend_can_happen`.
 
+Restored with a changed type (P-8: `Option` lookup for `getD` with a default), proved
+by operator ruling: `leaf_stable`, `step_leavesAt_stable` (see P-5).
+
 Helpers with a new or changed type, proved: `tokenId_inj`, `hashBoundParams_inj`,
 `optionTerm_inj`, `unshieldTerm_inj`, `treePath_correct`, `treePath_correct_of_getElem?`,
 `value_ofFn_eq`, `value_ofFn_pos_eq`, `transact_balance`, `unshieldRefines_length_le`,
@@ -364,7 +383,6 @@ lemmas, `step_live_leaf_matches`, `reachable_live_leaf_matches`,
 | Theorem | Finding | Reason |
 |---|---|---|
 | `transact_cannot_be_blocked`, `transactOwned_cannot_be_blocked` | P-3 | covered only `Step.admin`; replaced by theorem 1 |
-| `leaf_stable` (and `step_leavesAt_stable`) | P-5 | used only for the adjudicator's `holdings` slot |
 | `live_values_lt_2pow120` | P-6 | renamed `live_values_spendable`; the bound is `Spendable` |
 | `pool_ownedRandomOf_consistent` | P-10 | no `ownedRandomOf` map; the pool does not check openings |
 | `npk_preimage_not_zero` | P-4 | no zero sentinel |
