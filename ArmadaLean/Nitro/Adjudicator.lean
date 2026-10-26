@@ -137,8 +137,10 @@ def Adjudicator.reclaim (s : Adjudicator) (l v : FixedPart) : Option Adjudicator
     | _ => none
   | _, _ => none
 
-/-- S3:300-315 `challenge` (Listing 1) with S1:1340-1354 `forceMove`. The
-    channel must be open (S3:303), the proof must support the candidate
+/-- S3:300-315 `challenge` (Listing 1) with S1:1340-1354 `forceMove`. No
+    challenge may be in progress and the channel must not be terminated
+    (S1:1341-1342 `!challengeInProgress`, `!isTerminated`), the proof must
+    support the candidate
     (S3:304), and the candidate's turn must be at least the recorded one
     (S3:305). The challenger must be a participant (S1:1545-1548, the
     certificate extension). The result stores the candidate with
@@ -146,7 +148,7 @@ def Adjudicator.reclaim (s : Adjudicator) (l v : FixedPart) : Option Adjudicator
     `now() + defaultExpirationTime`). -/
 noncomputable def Adjudicator.challenge (apps : Apps) (s : Adjudicator) (challenger : Participant)
     (c : FixedPart) (proof : SupportProof) (candidate : State) : Option Adjudicator :=
-  if challenger ∈ c.participants ∧ (s.statusOf c).IsOpen s.now ∧
+  if challenger ∈ c.participants ∧ (s.statusOf c).mode s.now = .open ∧
       (apps c.appDef).supports c proof candidate ∧ candidate.channel = c ∧
       (s.statusOf c).turnNumRecord ≤ candidate.turnNum then
     some (s.setStatus c (.challenged candidate.turnNum ⟨candidate, s.now + c.challengeDuration⟩))
