@@ -254,7 +254,7 @@ theorem withTreePositionsFrom_treeNumber {α : Type} (treeNumber start : Nat) (l
 
 /-- `withPositionsFrom`'s tags never go below `start`: every assigned position is at
     least `start`. Half of `live_note_unspent`'s fresh-position argument (the other
-    half is `insertStartPos_eq_leavesAt_length`). -/
+    half is `insertStart_eq`). -/
 theorem withPositionsFrom_pos_ge {α : Type} (start : Nat) (l : List α) (p : Nat × α)
     (hp : p ∈ withPositionsFrom start l) : start ≤ p.1 := by
   induction l generalizing start with
@@ -373,7 +373,7 @@ theorem withTreePositionsFrom_nodup {α : Type} (treeNumber start : Nat) (l : Li
 /-- Every element `withPositionsFrom` tags came from the original list — the position
     tag never changes which values are present, only labels them. Used to trace a live
     note's value back to the circuit output it came from
-    (`ArmadaLean.PoolSafety.live_values_lt_2pow120`). -/
+    (`ArmadaLean.PoolSafety.live_values_spendable`). -/
 theorem withPositionsFrom_snd_mem {α : Type} (start : Nat) (l : List α) (p : Nat × α)
     (hp : p ∈ withPositionsFrom start l) : p.2 ∈ l := by
   induction l generalizing start with
@@ -393,8 +393,8 @@ theorem withTreePositionsFrom_snd_mem {α : Type} (treeNumber start : Nat) (l : 
   exact withPositionsFrom_snd_mem start l q hq
 
 /-- `(l ++ l').getD i d = l.getD i d` once `i` is within `l`'s own length: appending
-    never disturbs an existing index. The "a leaf, once placed, never moves" fact
-    (`ArmadaLean.PoolSafety.leaf_stable`) rests on this. -/
+    never disturbs an existing index. `insertLeaves_leavesAt_stable` ("a leaf, once
+    placed, never moves") rests on this. -/
 theorem List.getD_append_of_lt {α : Type} (l l' : List α) (i : Nat) (d : α)
     (h : i < l.length) : (l ++ l').getD i d = l.getD i d := by
   induction l generalizing i with
@@ -794,8 +794,8 @@ theorem insertLeaves_target_length (trees : List TreeState) (newLeaves : List Te
   rfl
 
 /-- `(l ++ [x]).getD l.length d = x`: the element just appended sits at the position
-    right past the original list's own length. The "what landed in the frozen tree"
-    half of `insertResult`'s own root/leaf shape lemmas below. -/
+    right past the original list's own length. Used to locate a shield's new leaf
+    (`ArmadaLean.PoolSafety.step_live_leaf_matches`). -/
 theorem List.getD_concat_length {α : Type} (l : List α) (x : α) (d : α) :
     (l ++ [x]).getD l.length d = x := by
   induction l with
@@ -804,9 +804,9 @@ theorem List.getD_concat_length {α : Type} (l : List α) (x : α) (d : α) :
 
 /-- A batch tagged by `withPositionsFrom` always lands, in the appended leaf list, at
     exactly the leaf `f` of its own preimage — no other value could appear there.
-    `base` is whatever already sat before the batch (the current tree's own prior
-    leaves, or empty on a fresh roll); `hstart` pins `base`'s length to the batch's own
-    starting position, matching `insertStartPos`'s own convention. -/
+    `base` is whatever already sat before the batch (the target tree's prior leaves,
+    empty for a new tree); `hstart` pins `base`'s length to the batch's own starting
+    position, matching `insertStart`. -/
 theorem withPositionsFrom_leaf_matches {α β : Type} (f : α → β) (base : List β) (start : Nat)
     (l : List α) (hstart : base.length = start) (d : β)
     (p : Nat × α) (hp : p ∈ withPositionsFrom start l) :

@@ -4,6 +4,8 @@
 -/
 import ArmadaLean.Field
 import ArmadaLean.Poseidon
+import ArmadaLean.Token
+import ArmadaLean.BoundParams
 import ArmadaLean.RangeCheck
 import ArmadaLean.ValueConservation
 import ArmadaLean.Nullifier

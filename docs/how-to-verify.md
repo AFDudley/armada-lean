@@ -43,7 +43,9 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result: **no output**.
+Expected result on branch `pool-symbolic`: only the theorems whose type is new or
+changed, each listed in `docs/pool-symbolic-changes.md`. Their proofs wait for the
+operator's approval of the types.
 
 ## 4. Audit the assumptions (the important part)
 
@@ -76,7 +78,8 @@ Compare against the recorded output in `docs/axioms-circuit.txt` and
 - **`no_wraparound_minting` and all vault/fee theorems** depend only on
   `propext` / `Quot.sound` — Lean's standard logical axioms, i.e. they are
   unconditional mathematics.
-- **`sorryAx` must never appear** — that would indicate a hidden `sorry`.
+- **`sorryAx` appears only for the theorems listed in `docs/pool-symbolic-changes.md`** —
+  anywhere else it would indicate a hidden `sorry`.
 
 ## 5. Check the model matches the real code (the human part)
 
@@ -91,7 +94,7 @@ order (~30 min):
 | `ArmadaLean/Merkle.lean` (`merkleStep`, `merkleRoot`) | `armada-circuits/src/lib/merkle.circom:39-54` |
 | `ArmadaLean/RangeCheck.lean` (`bitsVal`) | circomlib `Num2Bits` semantics |
 | `ArmadaLean/Vault.lean` (`c2s`, `c2a`) | `armada-poc/contracts/yield/ArmadaYieldVault.sol:492-515` |
-| `ArmadaLean/Fee.lean` (`shieldFee`, `shieldBase`) | `armada-poc/contracts/privacy-pool/modules/ShieldModule.sol:336-354` |
+| `ArmadaLean/Fee.lean` (`shieldFee`, `shieldBase`) | `armada-poc/contracts/privacy-pool/modules/ShieldModule.sol:353-371` |
 
 ## 6. (Optional) Modify something and watch it break
 

@@ -20,8 +20,14 @@ automatically):
 
 ```bash
 lake build                        # checks every proof
-grep -rn "sorry\|admit" ArmadaLean/   # → no output: no unfinished proofs
+grep -rn "sorry\|admit" ArmadaLean/   # → only the theorems marked `sorry` below
 ```
+
+**Branch `pool-symbolic`:** the pool model has no contract layout or encoding
+(findings P-1 to P-11 of armada-laconic `labbook/2026-10-26-pool-layout-audit.md`).
+A theorem whose type is new or changed has the proof `sorry` until the operator
+approves the type. The tables mark each one. `docs/pool-symbolic-changes.md` lists
+every change and every changed type.
 
 No dependencies (no mathlib) — a fresh clone builds in seconds.
 
@@ -49,7 +55,8 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `owned_owner_binding` | `PoolOwned` | no one except the owning contract can spend its note | `TransactModule.sol:636-639` | labbook decision 2 |
 | `owned_no_double_spend` | `PoolOwned` | an accepted call's nullifiers are pairwise distinct and were not already spent | `TransactModule.sol:379-386` | Finding 2, pool-level |
 | `preimageOf_consistent` | `PoolOwned` | every recorded preimage hashes to the commitment it is recorded for | `TransactModule.sol:550-604` | labbook §3a (registry defect) |
-| `owned_spend_can_happen` | `PoolOwned` | the real owner's spend, with an accepted proof, clears every modeled pool gate | `TransactModule.sol:488-519,609-647` | proof completeness |
+| `owned_spend_can_happen` | `PoolOwned` | the real owner's spend, with an accepted proof, clears every modeled pool gate — **`sorry`** (type changed: P-1, P-2, P-4) | `TransactModule.sol:488-519,609-647` | proof completeness |
+| `hashBoundParams_inj` | `BoundParams` | two different bound-parameter records never give the same `boundParamsHash` (symbolic Keccak) | `PrivacyPoolStorage.sol:46-57` | P-2 |
 
 ### Pool contract (`armada-poc` `PrivacyPool.sol`, `ShieldModule.sol`, `TransactModule.sol`, `MerkleModule.sol`)
 
@@ -59,26 +66,35 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `pool_no_double_spend` | `PoolSafety` | no nullifier is ever accepted twice, across the pool's whole history | `TransactModule.sol:379-386` | S-RG, "RAILGUN Core System & Protocol" |
 | `transact_spends_only_owned` | `PoolSafety` | a transact spends only notes whose owner key derives from keys the spender holds | `Transact.circom:142-150` | plain-path owner binding |
 | `transactOwned_spends_only_owned` | `PoolSafety` | an owned transact spends only notes owned by the calling contract | `TransactModule.sol:636-639` | lifts `PoolOwned.owned_owner_binding` |
-| `transact_cannot_be_blocked` | `PoolSafety` | no step any caller can take, the owner included, makes an otherwise-valid transact fail | `TransactModule.sol:460-475`, `PrivacyPool.sol:466-470` | DEPARTURE, see module comment |
-| `transactOwned_cannot_be_blocked` | `PoolSafety` | no step any caller can take, the owner included, makes an otherwise-valid owned transact fail | `TransactModule.sol:460-475,491-492` | DEPARTURE, see module comment |
+| `spend_not_blocked` | `PoolSafety` | for every reachable state, no step by any caller disables a pending spend unless the step spends one of the same notes — **`sorry`** (new) | `TransactModule.sol:373-399,538` | channel design, theorem 1 |
+| `transact_not_blocked` | `PoolSafety` | `spend_not_blocked` for a pending `transact` — **`sorry`** (new) | same | channel design, theorem 1 |
+| `transactOwned_not_blocked` | `PoolSafety` | `spend_not_blocked` for a pending `transactOwned` — **`sorry`** (new) | same | channel design, theorem 1 |
+| `spend_bound_to_adapt` | `PoolSafety` | a transaction bound to `(adaptContract, adaptParams)` executes only by that contract, only with those bound parameters — **`sorry`** (new) | `TransactModule.sol:530-532`, `PrivacyPoolStorage.sol:46-57` | channel design, theorem 2 |
+| `owned_merge_can_happen` | `PoolSafety` | an owner can merge `N ≤ 8` live notes into one note of their exact sum, value conserved — **`sorry`** (new) | `TransactModule.sol:488-519` | channel design, theorem 3 |
 | `spend_live_exact` | `PoolSafety` | a spend removes exactly the `(treeNumber, position)` pairs it names and adds exactly its new notes, tagged with the tree and positions they land at | `Step.transact`/`Step.transactOwned` | S-RG, "How Does RAILGUN Work?" |
-| `transact_unshield_exact` | `PoolSafety` | an unshield sends out exactly the value of the notes it spends minus what stays in new notes | `TransactModule.sol:401-424` | value conservation |
-| `shield_creates_exactly` | `PoolSafety` | a shield creates exactly one note of the shielded amount minus the fee, at the `(treeNumber, position)` it reports; no second note; no capacity hypothesis — a full tree rolls over instead | `ShieldModule.sol:277-341`, `MerkleModule.sol:62-70` | DEPARTURE, see module comment |
+| `transact_unshield_exact` | `PoolSafety` | an unshield pays exactly the bound recipient exactly the spent value minus the new notes' value, and custody falls by that amount — **`sorry`** (type changed: P-7) | `TransactModule.sol:401-424` | S-RG, "RAILGUN Core System & Protocol" |
+| `shield_creates_exactly` | `PoolSafety` | a shield creates exactly one note, at a position that held no leaf before; no second note; no capacity hypothesis — **`sorry`** (type changed: P-3, P-6, P-9, P-11) | `ShieldModule.sol:45-90`, `MerkleModule.sol:62-70` | DEPARTURE, see module comment |
 | `transact_root_was_produced` | `PoolSafety` | a transact names only a root the pool itself produced for that tree, or that tree's genesis root | `TransactModule.sol:538` | S-RG, "RAILGUN Core System & Protocol" |
 | `pool_preimageOf_consistent` | `PoolSafety` | every entry the pool has ever written to `preimageOf` hashes to the commitment it is recorded under | `TransactModule.sol:590-604`, `ShieldModule.sol:71,136` | lifts `PoolOwned.preimageOf_consistent` |
-| `transactOwned_records_all` | `PoolSafety` | after an owned transact, `preimageOf` returns the recorded preimage for each of its outputs | `TransactModule.sol:630-634` | full disclosure, `requireAll = true` |
-| `shield_can_happen` | `PoolSafety` | a shield of a positive amount, while not paused, succeeds | `ShieldModule.sol:45-90` | shield can happen |
-| `transact_can_happen` | `PoolSafety` | a private transfer by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | transact can happen |
-| `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder, with an accepted proof, succeeds | `TransactModule.sol:43-96` | unshield can happen |
-| `owned_transact_can_happen` | `PoolSafety` | an owned transact by the real owner, with an accepted proof, succeeds | `TransactModule.sol:488-519` | owned transact can happen |
-| `leaf_has_merkle_witness` | `PoolSafety` | every leaf the pool has ever inserted into any tree has a real Merkle path to a root the pool produced for that tree | `MerkleModule.sol:54-121` | tree is computed, not chosen |
-| `owned_spend_witness_exists` | `PoolSafety` | a live owned note with a recorded preimage has a constructible `OwnedConstrained` spend witness, built entirely from public data, against any tree's leaf list | `TransactOwned.circom:66-87` | spend-construction |
-| `live_values_lt_2pow120` | `PoolSafety` | every note the pool records as live has a value below `2 ^ 120`, pool-wide | `PoolTypes.sol:79-83` | `CommitmentPreimage.value : uint120` |
-| `leaf_stable` | `PoolSafety` | a leaf, once inserted at a `(treeNumber, position)`, never changes in any later reachable state | `Step`'s own construction | insertion only ever appends |
-| `live_note_unspent` | `PoolSafety` | a live note's nullifier is not in `spent`, in every reachable state, under any nullifying key | `TransactModule.sol:379-386` | adjudicator payout freshness |
-| `live_leaf_matches` | `PoolSafety` | a live entry's position names the leaf that holds its commitment, in every reachable state | `Step`'s own construction | adjudicator payout witness |
+| `transactOwned_records_all` | `PoolSafety` | after an owned transact, `preimageOf` returns the recorded preimage for each of its outputs — **`sorry`** (type changed: P-4) | `TransactModule.sol:630-634` | full disclosure, `requireAll = true` |
+| `shield_can_happen` | `PoolSafety` | a shield of a positive, spendable value succeeds — **`sorry`** (type changed: P-3, P-6, P-9) | `ShieldModule.sol:45-90` | shield can happen |
+| `transact_spend_can_happen` | `PoolSafety` | a key holder's spend, with an accepted proof, satisfies the circuit and clears the nullifier check | `Transact.circom:57-186` | proof completeness |
+| `transact_can_happen` | `PoolSafety` | a private transfer by a real key holder, with an accepted proof, succeeds — **`sorry`** (type changed: P-1, P-2) | `TransactModule.sol:43-96` | transact can happen |
+| `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder succeeds and pays its recipient — **`sorry`** (type changed: P-1, P-2, P-7) | `TransactModule.sol:43-96` | unshield can happen |
+| `owned_transact_can_happen` | `PoolSafety` | an owned transact by the real owner, with an accepted proof, succeeds — **`sorry`** (type changed: P-1, P-2, P-4) | `TransactModule.sol:488-519` | owned transact can happen |
+| `leaf_has_merkle_witness` | `PoolSafety` | every leaf in any tree has a real Merkle path to a root the pool produced for that tree — **`sorry`** (type changed: P-8) | `MerkleModule.sol:54-121` | tree is computed, not chosen |
+| `owned_spend_witness_exists` | `PoolSafety` | an owned note with a recorded preimage and a published opening has a constructible `OwnedConstrained` spend witness, built from public data — **`sorry`** (type changed: P-1, P-2, P-8, P-10) | `TransactOwned.circom:66-87` | spend construction |
+| `live_values_spendable` | `PoolSafety` | every live note passes the circuit's input range check (`Spendable`) — **`sorry`** (type changed: P-6; was `live_values_lt_2pow120`) | `PoolTypes.sol:82` | lemma of `owned_merge_can_happen` (P-5) |
+| `live_note_unspent` | `PoolSafety` | a live note's nullifier is not in `spent`, in every reachable state, under any nullifying key | `TransactModule.sol:379-386` | lemma of `owned_merge_can_happen`, `spend_not_blocked` (P-5) |
+| `live_leaf_matches` | `PoolSafety` | a live entry's position holds the leaf of its commitment (`Option` lookup) — **`sorry`** (type changed: P-1, P-8) | `Step`'s own construction | lemma of `owned_merge_can_happen` (P-5) |
 | `live_positions_distinct_nullifiers` | `PoolSafety` | two different live leaf positions never share a nullifier, for a fixed spender key | `Transact.circom:97-101`, `TransactOwned.circom:89-97` | position identity is sound |
-| `pool_ownedRandomOf_consistent` | `PoolSafety` | every entry the pool has ever written to `ownedRandomOf` genuinely reconstructs the matching note's `npk` | `PoolOwned.OwnedDisclosure` module comment | DEPARTURE, approved design |
+
+**Removed** (details in `docs/pool-symbolic-changes.md`):
+`transact_cannot_be_blocked`, `transactOwned_cannot_be_blocked` (P-3: they covered only
+the admin step; `spend_not_blocked` replaces them); `leaf_stable` (P-5: only the
+adjudicator's `holdings` slot used it); `live_values_lt_2pow120` (P-6: renamed
+`live_values_spendable`, bound moved to the circuit layer); `pool_ownedRandomOf_consistent`
+(P-10: no `ownedRandomOf` map); `fee_exact_50bps` (P-9: no basis-point constant).
 
 ### Yield vault (`armada-poc/contracts/yield/ArmadaYieldVault.sol`, issue #365)
 
@@ -89,12 +105,15 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 
 ### Shield fee (`armada-poc/contracts/privacy-pool/modules/ShieldModule.sol`, audit C-3)
 
+The fee is a ratio `num / den` fixed at deployment, with floor division (P-9). The
+contract's basis-point rate is the case `den = 10000`.
+
 | Lean theorem | Module | Property | Contract code |
 |---|---|---|---|
-| `fee_conservation` | `Fee` | `base + fee = amount` | `_getFee`, `ShieldModule.sol:336-354` |
-| `fee_bounded` | `Fee` | `fee ≤ amount` | same |
-| `fee_monotone` | `Fee` | larger amount ⇒ no smaller fee | same |
-| `fee_zero_below_threshold` | `Fee` | amounts `< 200` pay zero fee at 50 bps | same |
+| `fee_conservation` | `Fee` | `base + fee = amount` — **`sorry`** (type changed: P-9) | `_getFee`, `ShieldModule.sol:353-371` |
+| `fee_bounded` | `Fee` | `fee ≤ amount` — **`sorry`** (type changed: P-9) | same |
+| `fee_monotone` | `Fee` | larger amount ⇒ no smaller fee — **`sorry`** (type changed: P-9) | same |
+| `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) — **`sorry`** (type changed: P-9) | same |
 
 ## Trust base & scope
 
@@ -108,7 +127,10 @@ construction (the type's own constructors), not as an axiom on a concrete
 numeric function — no `poseidon2`/`poseidon3`/`keccak`/injectivity axiom
 exists in this project. EdDSA stays an abstract unforgeable signature scheme —
 an **explicit axiom** (`EdDSAVerify`), visible per-theorem via `#print axioms`
-(see `docs/axioms-*.txt`).
+(see `docs/axioms-*.txt`). The Groth16 verifiers are the uninterpreted predicates
+`VerifyAccepts` and `VerifyOwnedAccepts`, also declared with `axiom`; only the
+can-happen theorems mention them. The empty leaf `ZERO_VALUE` is the opaque constant
+`emptyLeaf`, not an axiom.
 What is and isn't covered, in plain English: **[docs/what-the-proofs-mean.md](docs/what-the-proofs-mean.md)**.
 
 Out of scope: Groth16, the circom compiler, Poseidon's concrete parameters,
@@ -122,6 +144,8 @@ modeled formulas. This project complements (does not replace) static analysis
 ArmadaLean/
   Field.lean              BN254 scalar-field modulus + mod lemmas
   Poseidon.lean           symbolic (Dolev-Yao) Term model of Poseidon + Keccak
+  Token.lean              a token as a symbolic address (P-1)
+  BoundParams.lean        bound parameters and their symbolic hash (P-2, P-7)
   RangeCheck.lean         Num2Bits(120) semantics
   ValueConservation.lean  no-wraparound minting theorem
   Nullifier.lean          double-spend impossibility
@@ -138,4 +162,5 @@ docs/
   how-to-verify.md      step-by-step independent verification guide
   axioms-circuit.txt    #print axioms audit output (circuit theorems)
   axioms-contracts.txt    #print axioms audit output (vault/fee theorems)
+  pool-symbolic-changes.md  the P-1..P-11 changes, the new theorems, the changed types
 ```

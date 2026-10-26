@@ -120,13 +120,12 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       exact hinv t
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     intro t
     by_cases ht : t = w.token
     · subst ht
       simp only [if_pos]
       have hsum := removeAll_sum (fun p => p.2.value) hRemove
-      have hbal := transact_balance treeNumber hN hM hC hOutputs
+      have hbal := transact_balance bp.treeNumber hN hM hC hOutputs
       have hinv_t := hinv w.token
       have hpos := withTreePositionsFrom_map CommitmentPreimage.value
         (insertTree s.trees newNotes.length)
@@ -138,13 +137,12 @@ theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
       exact hinv t
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     intro t
     by_cases ht : t = w.token
     · subst ht
       simp only [if_pos]
       have hsum := removeAll_sum (fun p => p.2.value) hRemove
-      have hbal := transactOwned_balance treeNumber hN hM hC
+      have hbal := transactOwned_balance bp.treeNumber hN hM hC
       have hinv_t := hinv w.token
       have hpos := withTreePositionsFrom_map CommitmentPreimage.value
         (insertTree s.trees (ownedNewNotes w).length)
@@ -417,9 +415,9 @@ theorem shield_creates_exactly {s : PoolState} (token : Token) (value : Nat) (np
 
 /-! ### A transact names only a root the pool actually produced -/
 
-/-- One step either leaves tree `tn`'s roots unchanged (`Step.admin`, or any
-    `shield`/`transact`/`transactOwned` step that inserted into a *different* tree) or
-    prepends exactly one new root to it (`insertResult_rootsAt`, applied to whichever
+/-- One step either leaves tree `tn`'s roots unchanged (a step that inserted into a
+    *different* tree) or prepends exactly one new root to it
+    (`insertLeaves_rootsAt_shape`, applied to whichever
     batch the constructor inserts) — the structural fact `rootsAt_grounded` needs,
     stated without naming the pushed root's value, since each constructor computes a
     different one. -/
@@ -431,11 +429,9 @@ theorem step_rootsAt_shape {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
       [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     exact insertLeaves_rootsAt_shape s.trees (newNotes.map hashCommitment) tn
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     exact insertLeaves_rootsAt_shape s.trees
       ((ownedNewNotes w).map hashCommitment) tn
 
@@ -489,12 +485,10 @@ theorem pool_preimageOf_consistent {s : PoolState}
       exact recordStep_preserves_consistency ih rfl
     | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
         openings hRoot hRemove hNullify hRecords =>
-      generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
       exact applyRecords_preserves_consistency ih
         (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
     | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
         openings hRoot hRemove hNullify =>
-      generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
       exact applyRecords_preserves_consistency ih (ownedOutputRecords_valid hC)
 
 /--
@@ -736,7 +730,7 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
 
 /-- One step either leaves tree `tn`'s leaves and roots both unchanged, or appends to
     `leavesAt' tn` and pushes exactly `ArmadaLean.Merkle.treeRoot TreeDepth` of the
-    result to `rootsAt' tn` — `insertResult_rootsAt_matches_leavesAt`, applied to
+    result to `rootsAt' tn` — `insertLeaves_rootsAt_matches_leavesAt`, applied to
     whichever batch and tree a `Step` constructor targets. A standalone wrapper
     (states inferred from `hstep`, as `step_rootsAt_shape` already is) so
     `reachable_rootAt_matches_leavesAt`'s induction never needs to name the previous
@@ -750,12 +744,10 @@ theorem step_leavesAt_rootsAt_matches {s s' : PoolState} (hstep : Step s s') (tn
       [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     exact insertLeaves_rootsAt_matches_leavesAt s.trees
       (newNotes.map hashCommitment) tn
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     exact insertLeaves_rootsAt_matches_leavesAt s.trees
       ((ownedNewNotes w).map hashCommitment) tn
 
@@ -797,7 +789,6 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
       (newNotes.map hashCommitment) tn (by simp; unfold TreeDepth; omega) hOldCap
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     have hlen : (ownedNewNotes w).length ≤ 4 := by
       unfold ownedNewNotes
       simp only [List.length_ofFn]
@@ -1525,7 +1516,6 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
       exact hmatch
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     intro t tn pos pre hmem
     have hlenEq : (newNotes.map hashCommitment).length = newNotes.length := by simp
     by_cases ht : t = w.token
@@ -1564,7 +1554,6 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
       exact hmatch
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
-    generalize bp.treeNumber = treeNumber at hRoot hRemove hNullify ⊢
     intro t tn pos pre hmem
     have hlenEq : ((ownedNewNotes w).map hashCommitment).length = (ownedNewNotes w).length := by simp
     by_cases ht : t = w.token
@@ -1698,4 +1687,123 @@ an input. The number 120 stays in the circuit layer (finding P-6). Kept because
 `owned_merge_can_happen` needs it for its inputs (finding P-5). -/
 theorem live_values_spendable {s : PoolState} (h : Reachable s) :
     LiveValuesSpendable s := by
+  sorry
+
+/-! ### No step blocks a pending spend (theorem 1 of the channel design)
+
+The pool has no pause and no admin (module comment of `ArmadaLean.Pool`, finding P-3).
+`Step.transact` and `Step.transactOwned` read the pool state in three checks only:
+`hRoot`, `hRemove` and `hNullify`. `SpendEnabled` is those three checks. Every other
+hypothesis of the two constructors reads only the transaction, so a step from `s'` with
+the same transaction exists exactly when `SpendEnabled` holds at `s'`. -/
+
+/-- The checks of a spend that read the pool state: the root is one of tree `tn`'s roots,
+    the spent entries are live notes of `token`, and the nullifiers are fresh in tree
+    `tn`. -/
+def SpendEnabled (s : PoolState) (tn : Nat) (root : Term) (token : Token)
+    (entries : List ((Nat × Nat) × CommitmentPreimage)) (nulls : List Term) : Prop :=
+  root ∈ s.rootsAt' tn ∧
+  (∃ rest, removeAll (s.live token) entries = some rest) ∧
+  ∃ spent', markSpent (s.spent tn) nulls = some spent'
+
+/-- The step from `s` to `s'` spends the note `e` of token `t`: `e` was live before the
+    step and is not live after it. -/
+def Spends (s s' : PoolState) (t : Token) (e : (Nat × Nat) × CommitmentPreimage) : Prop :=
+  e ∈ s.live t ∧ e ∉ s'.live t
+
+/--
+**Non-interference: no step by any caller disables a pending spend, unless the step
+spends one of the same notes.** Take a reachable state `s`, a spend of the live entries
+`entries` of `token` in tree `tn`, with nullifiers `nullifier nk pos` derived from the
+entries' positions, that is enabled at `s`. Then after any step `s → s'` (a shield, a
+transact or an owned transact, by any caller) that spends none of `entries`, the same
+spend is still enabled. Roots only accumulate (`step_rootsAt_shape`); a step removes
+only the notes it spends (`removeAll_perm`); and a step marks only the nullifiers of the
+positions it spends, which differ from the pending positions
+(`live_positions_distinct_nullifiers`, `LiveSpentInvariant`). Replaces
+`transact_cannot_be_blocked`/`transactOwned_cannot_be_blocked`, which covered only the
+removed admin step (finding P-3). -/
+theorem spend_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
+    {tn : Nat} {root nk : Term} {token : Token}
+    {entries : List ((Nat × Nat) × CommitmentPreimage)}
+    (hTree : ∀ e ∈ entries, e.1.1 = tn)
+    (hEnabled : SpendEnabled s tn root token entries (entries.map fun e => nullifier nk e.1.2))
+    (hDisjoint : ∀ e ∈ entries, ¬ Spends s s' token e) :
+    SpendEnabled s' tn root token entries (entries.map fun e => nullifier nk e.1.2) := by
+  sorry
+
+/-- `spend_not_blocked` for a pending `Step.transact`: its state checks stay true across
+    any step that spends none of its input notes. -/
+theorem transact_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
+    {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M} {bp : BoundParams}
+    (hC : Constrained w pub)
+    (hEnabled : SpendEnabled s bp.treeNumber pub.merkleRoot w.token
+      (transactSpentPositions bp.treeNumber w) (List.ofFn pub.nullifiers))
+    (hDisjoint : ∀ e ∈ transactSpentPositions bp.treeNumber w, ¬ Spends s s' w.token e) :
+    SpendEnabled s' bp.treeNumber pub.merkleRoot w.token
+      (transactSpentPositions bp.treeNumber w) (List.ofFn pub.nullifiers) := by
+  sorry
+
+/-- `spend_not_blocked` for a pending `Step.transactOwned`: its state checks stay true
+    across any step that spends none of its input notes. -/
+theorem transactOwned_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
+    {N M : Nat} {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M}
+    {bp : BoundParams} (hC : OwnedConstrained w pub)
+    (hEnabled : SpendEnabled s bp.treeNumber pub.merkleRoot w.token
+      (ownedSpentPositions bp.treeNumber pub w) (List.ofFn pub.nullifiers))
+    (hDisjoint : ∀ e ∈ ownedSpentPositions bp.treeNumber pub w, ¬ Spends s s' w.token e) :
+    SpendEnabled s' bp.treeNumber pub.merkleRoot w.token
+      (ownedSpentPositions bp.treeNumber pub w) (List.ofFn pub.nullifiers) := by
+  sorry
+
+/-! ### A spend bound to an adapt contract (theorem 2 of the channel design) -/
+
+/--
+**Spend binding: a transaction bound to `(adaptContract, adaptParams)` executes only by
+that contract and only with those parameters.** A proof fixes its public input
+`boundHash`. If the bound parameters `bp₀` behind it name the adapt contract `a`, then
+any step that executes the proof — `Step.transact` or `Step.transactOwned`, whose
+`hBound` and `hAdapt` are the two hypotheses `hStep` and `hAdapt` here — has caller `a`
+and bound parameters exactly `bp₀`, so the same `adaptParams` (the channel) and the
+same unshield. A deposit spend therefore cannot be redirected to another contract or
+another channel. The binding rests on `hashBoundParams_inj` (symbolic Keccak,
+finding P-2) and on the adapt check (TransactModule.sol:530-532). -/
+theorem spend_bound_to_adapt {boundHash : Term} {bp₀ bp : BoundParams} {a caller : Term}
+    (hProof : boundHash = hashBoundParams bp₀) (hA : bp₀.adaptContract = some a)
+    (hStep : boundHash = hashBoundParams bp) (hAdapt : AdaptAllows bp caller) :
+    caller = a ∧ bp = bp₀ := by
+  sorry
+
+/-! ### An owned merge (theorem 3 of the channel design) -/
+
+/--
+**Can happen: an owned transact merges several notes of one owner into one note.** In a
+reachable state, take `N` (`1 ≤ N ≤ 8`) live notes of `token` at distinct positions of
+tree `bp.treeNumber`, all owned by `owner` (`hOpen`: each note's `npk` is
+`npk owner (random i)`). If the sum of their values passes the circuit's range check
+(`hSum`), the owner can spend all of them in one `Step.transactOwned` with one output
+of exactly that sum, to the note key `npkOut`. After the step none of the inputs is
+live, the output is live, and the pool's custody of `token` is unchanged: value is
+conserved. The witness comes from public data (`owned_spend_witness_exists`,
+`live_leaf_matches`, `live_note_unspent`, `live_values_spendable`).
+
+The deployed owned circuits have one input only (`main_{1x1,1x2,1x3}_owned.circom`).
+The model's owned path admits `N ≤ 8`, so this theorem needs owned verifying keys with
+`N > 1` at deployment. -/
+theorem owned_merge_can_happen {s : PoolState} (hs : Reachable s) {N : Nat}
+    (hN0 : 0 < N) (hN : N ≤ 8)
+    (owner : Term) (token : Token) (bp : BoundParams)
+    (hNoUnshield : bp.unshield = none) (hAdapt : AdaptAllows bp owner)
+    (pos : Fin N → Nat) (pre : Fin N → CommitmentPreimage) (random : Fin N → Nat)
+    (hLive : ∀ i, ((bp.treeNumber, pos i), pre i) ∈ s.live token)
+    (hDistinct : (List.ofFn pos).Pairwise (· ≠ ·))
+    (hOpen : ∀ i, npk owner (random i) = (pre i).npk)
+    (npkOut : Term)
+    (hSum : Spendable (listSum (List.ofFn fun i => (pre i).value))) :
+    ∃ s', Step s s' ∧
+      (∀ i, ((bp.treeNumber, pos i), pre i) ∉ s'.live token) ∧
+      (∃ tn' pos' : Nat, ((tn', pos'),
+        (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage))
+          ∈ s'.live token) ∧
+      s'.held token = s.held token := by
   sorry
