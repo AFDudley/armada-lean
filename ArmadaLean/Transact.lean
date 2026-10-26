@@ -12,16 +12,19 @@
     (SECURITY_REVIEW.md Finding 1 fix; the in-field check at :141-143 cannot be
     exploited by wraparound).
 
-  Commitments, nullifiers, note public keys, master public keys and Merkle
-  roots are `Term`s (`ArmadaLean.Poseidon`, the symbolic Dolev-Yao hash model);
-  note values, token amounts and range checks stay `Nat`. `msgHashOf`, the
-  variable-arity EdDSA message hash, is now defined directly as a `Term.hash` call
-  rather than left as an axiom — the generic `Term.hash : HashFn → List Term → Term`
-  constructor, tagged `.poseidon`, represents exactly what `Poseidon(2+N+M)` computes,
-  so no separate assumption is needed for this one arity.
+  Commitments, nullifiers, note public keys, master public keys, Merkle roots and
+  the bound-parameters hash are `Term`s (`ArmadaLean.Poseidon`, the symbolic
+  Dolev-Yao hash model). A token is a `Token` (`ArmadaLean.Token`), an address term.
+  Note values and range checks stay `Nat`: values are numbers, and the circuit's
+  field arithmetic on them is the one place where the 120-bit bound matters
+  (`no_wraparound_minting`). `msgHashOf`, the variable-arity EdDSA message hash, is
+  defined directly as a `Term.hash` call — the generic `Term.hash : HashFn → List
+  Term → Term` constructor, tagged `.poseidon`, represents exactly what
+  `Poseidon(2+N+M)` computes, so no separate assumption is needed for this one arity.
 -/
 import ArmadaLean.Field
 import ArmadaLean.Poseidon
+import ArmadaLean.Token
 import ArmadaLean.RangeCheck
 import ArmadaLean.ValueConservation
 import ArmadaLean.Nullifier
@@ -56,12 +59,12 @@ def masterPublicKey (pk : Nat × Nat) (nk : Nat) : Term :=
     `Term.val`. -/
 def npk (mpk : Term) (r : Nat) : Term := Term.hash2 mpk (Term.val r)
 
-/-- Note commitment = Poseidon(npk, token, value)
+/-- Note commitment = Poseidon(npk, tokenId, value)
     (Transact.circom:80-84 for inputs, :105-113 for outputs). `npk` is already
-    a `Term`; `token`/`value` are raw numbers (a token ID field element and a
-    note value), embedded as `Term.val`. -/
-def commitment (npk : Term) (token value : Nat) : Term :=
-  Term.hash3 npk (Term.val token) (Term.val value)
+    a `Term`; the token enters as its id term (`ArmadaLean.Token.tokenId`); `value`
+    is a raw number (a note value), embedded as `Term.val`. -/
+def commitment (npk : Term) (token : Token) (value : Nat) : Term :=
+  Term.hash3 npk (tokenId token) (Term.val value)
 
 /-- Private witness of the Transact circuit — mirrors the private signals
     (Transact.circom:41-55). Arrays indexed by `Fin N` / `Fin M` play the role
@@ -69,7 +72,7 @@ def commitment (npk : Term) (token value : Nat) : Term :=
     `i` (the flat `pathElements[N*16]` signal at :50, sliced per note). -/
 structure TransactWitness (N M : Nat) where
   /-- tokenHash — all inputs/outputs share this (:42) -/
-  token : Nat
+  token : Token
   /-- spending public key [x, y] on BabyJubJub (:43) -/
   publicKey : Nat × Nat
   /-- EdDSA signature [R_x, R_y, S] (:44) -/
@@ -92,15 +95,13 @@ structure TransactWitness (N M : Nat) where
   /-- output values (:55) -/
   valueOut : Fin M → Nat
 
-/-- Public inputs of the Transact circuit (Transact.circom:35-39). `merkleRoot`,
-    `nullifiers` and `commitmentsOut` are terms; `boundParamsHash` is a plain
-    field element (`keccak256(...) % SNARK_SCALAR_FIELD`,
-    `PrivacyPoolStorage._boundParamsHash`) — a different hash family this
-    project has never modeled via Poseidon, so it stays a raw `Nat`, exactly
-    as the numeric model already treated it. -/
+/-- Public inputs of the Transact circuit (Transact.circom:35-39). Every field is a
+    term. `boundParamsHash` is the hash of the transaction's bound parameters
+    (`ArmadaLean.BoundParams.hashBoundParams`, symbolic); the pool checks that the
+    two agree (`ArmadaLean.Pool.Step.transact`, `hBound`). -/
 structure TransactPublic (N M : Nat) where
   merkleRoot : Term
-  boundParamsHash : Nat
+  boundParamsHash : Term
   nullifiers : Fin N → Term
   commitmentsOut : Fin M → Term
 
@@ -110,7 +111,7 @@ structure TransactPublic (N M : Nat) where
     represents a Poseidon call of any arity, so this is a direct, computable
     transcription of the circuit's own packing — not a separate assumption. -/
 def msgHashOf {N M : Nat} (pub : TransactPublic N M) : Term :=
-  Term.hash .poseidon (pub.merkleRoot :: Term.val pub.boundParamsHash ::
+  Term.hash .poseidon (pub.merkleRoot :: pub.boundParamsHash ::
     (List.ofFn pub.nullifiers ++ List.ofFn pub.commitmentsOut))
 
 /--
@@ -214,7 +215,7 @@ This is the Poseidon-injectivity core of "a transact spends only notes whose own
 derives from keys the spender holds" (`ArmadaLean.PoolSafety.transact_spends_only_owned`
 adds the circuit's EdDSA check on top, the plain-path counterpart of
 `ArmadaLean.PoolOwned.owned_owner_binding`). -/
-theorem commitment_mpk_inj {mpk₁ mpk₂ : Term} {r₁ r₂ token value : Nat}
+theorem commitment_mpk_inj {mpk₁ mpk₂ : Term} {r₁ r₂ value : Nat} {token : Token}
     (h : commitment (npk mpk₁ r₁) token value = commitment (npk mpk₂ r₂) token value) :
     mpk₁ = mpk₂ := by
   obtain ⟨hnpk, -, -⟩ := Term.hash3_inj h

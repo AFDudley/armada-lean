@@ -1,5 +1,5 @@
 /-
-  ArmadaLean.Pool — the privacy pool contract's state and operations.
+  ArmadaLean.Pool — the privacy pool's state and operations.
 
   Why this model exists (see `.scratch/rewrite-B/POOL-model.md` in armada-laconic): the
   Armada pool holds other people's tokens. Its central promise is that value in the pool
@@ -7,75 +7,52 @@
   armada-lean already proves the cryptographic core (ArmadaLean.Transact,
   ArmadaLean.TransactOwned): one valid proof spends distinct notes and conserves value,
   and a contract-owned spend is bound to its owner. This module adds the bookkeeping the
-  pool contract itself performs across many calls: which notes are live, which nullifiers
-  are spent, which roots are valid, and which tokens the pool holds.
+  pool performs across many calls: which notes are live, which nullifiers are spent,
+  which roots are valid, and which tokens the pool holds.
+
+  The symbolic layer holds no contract layout and no encoding (operator ruling,
+  2026-10-26; armada-laconic `labbook/2026-10-26-pool-layout-audit.md`, findings P-1 to
+  P-11). Hashes and addresses are Dolev-Yao terms (`ArmadaLean.Poseidon`). A token is a
+  `Token`, not a number. "Absent" is `Option` or an empty list, never a zero value. The
+  trees are a list of trees, as the protocol defines them, not the contract's storage
+  split. Note values are numbers; the 120-bit width stays in the circuit layer
+  (`Spendable`, `ArmadaLean.RangeCheck`). `docs/pool-symbolic-changes.md` records each
+  change.
 
   A note is identified by its tree number and Merkle leaf position, not by its content:
   the circuit derives a spend's nullifier as `Poseidon(nullifyingKey, leafIndex)`
   (Transact.circom:97-101) or `Poseidon(ownerField, leafIndex)`
-  (TransactOwned.circom:89-97) — a leaf position within a tree the proof also names
-  (`boundParams.treeNumber`, PrivacyPoolStorage.sol:48, `BoundParamsCore.treeNumber`),
-  never a scan for a matching value. Two live notes can carry the identical preimage
-  (two separate shields of the same amount to the same recipient); they can never share
-  a `(treeNumber, position)` pair. `PoolState.live` is keyed accordingly: `live t` is a
-  list of `((treeNumber, position), preimage)` entries, one per currently-unspent note of
-  token `t`, and a spend removes exactly the positions its witness names within the one
-  tree its proof is against (`ArmadaLean.Nullifier.nullifier_pos_inj`: distinct positions
-  can never collapse onto one nullifier, so this removal is never ambiguous).
+  (TransactOwned.circom:89-97) — a leaf position within the tree that the transaction's
+  bound parameters name (`BoundParams.treeNumber`). Two live notes can carry the
+  identical preimage; they can never share a `(treeNumber, position)` pair.
+  `PoolState.live t` lists `((treeNumber, position), preimage)` entries, one per unspent
+  note of token `t`, and a spend removes exactly the positions its witness names
+  (`ArmadaLean.Nullifier.nullifier_pos_inj`: distinct positions never collapse onto one
+  nullifier).
 
-  The pool cannot see a note's value; it only ever reads a note's commitment (a Poseidon
-  hash, modeled symbolically — `ArmadaLean.Poseidon.Term`). `PoolState.live` is therefore
-  GHOST state: the model's own knowledge of every live note's real preimage, which the
-  contract itself never stores for an encrypted output. This is what lets the theorems in
-  ArmadaLean.PoolSafety state the value invariant at all. `PoolState.preimageOf`, by
-  contrast, mirrors the real public `PrivacyPoolStorage.preimageOf` mapping
-  (PrivacyPoolStorage.sol:248): the pool writes an entry there only for a commitment it
-  has itself hashed and matched to a proof. `PoolState.ownedRandomOf` is a second public
-  registry the approved design adds on top: see `ArmadaLean.PoolOwned`'s module comment
-  on `OwnedDisclosure` for the departure this closes (the real contract records no
-  random value at all) and `ArmadaLean.PoolSafety.owned_spend_witness_exists` for what it
-  buys — a live owned note's whole spend witness, built from public data alone.
+  The pool cannot see a note's value; it reads only a note's commitment. `PoolState.live`
+  is therefore GHOST state: the model's own knowledge of every live note's preimage.
+  `PoolState.preimageOf` mirrors the public `PrivacyPoolStorage.preimageOf` mapping
+  (PrivacyPoolStorage.sol:248). `PoolState.published` and `PoolState.payouts` are ghost
+  records of public data: the owned-note openings that transactions publish
+  (labbook `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`, decision 11) and
+  the unshield payouts.
 
   Scope: local `shield` (ShieldModule.sol:45-90), local `transact` including a local
   unshield (TransactModule.sol:43-96), and `transactOwned` (TransactModule.sol:488-519).
-  Out of scope, per the brief: `processIncomingShield` and `atomicCrossChainUnshield`
-  (CCTP-mediated token movement; CCTP is out of scope and these two entry points' only
-  pool-relevant difference from the local paths is where the moved tokens come from or
-  go, which this model does not represent) and the yield vault. The pool's own books do
-  not otherwise depend on CCTP: nullifier marking, Merkle insertion and the preimage
-  registry follow the same shape on every entry point, and the local paths exercise that
-  shape in full.
+  Out of scope: `processIncomingShield` and `atomicCrossChainUnshield` (CCTP-mediated
+  token movement) and the yield vault. Nullifier marking, Merkle insertion and the
+  preimage registry follow the same shape on every entry point.
 
   A spend's circuit-level facts (Merkle membership, nullifier derivation, value
   conservation) come from `ArmadaLean.Transact.Constrained` /
-  `ArmadaLean.TransactOwned.OwnedConstrained`, exactly as ArmadaLean.PoolOwned already
-  takes them. `PoolState.leaves`/`.roots` are the CURRENT tree's leaf list and root
-  history; `PoolState.closedTrees` holds every earlier tree, frozen — the ordered list of
-  every commitment `MerkleModule.insertLeaves` (MerkleModule.sol:54-121) has ever
-  inserted, public exactly as the real leaves are (`Shield`/`Transact`/`TransactOwned`
-  events carry every commitment hash). Every root a `Step` pushes is
-  `ArmadaLean.Merkle.treeRoot TreeDepth` of whichever tree's leaf list it just extended,
-  computed from that list, not chosen — so a step cannot name a root that does not match
-  what it actually inserted, and `ArmadaLean.PoolSafety.leaf_has_merkle_witness` proves
-  every inserted leaf has a real Merkle path to a root the pool produced, in the tree it
-  actually landed in. ABDK's 2021-04-01 audit of Railgun's `Commitments.sol`
+  `ArmadaLean.TransactOwned.OwnedConstrained`. Every root a `Step` pushes is
+  `ArmadaLean.Merkle.treeRoot TreeDepth` of the leaf list it just extended, computed,
+  not chosen. ABDK's 2021-04-01 audit of Railgun's `Commitments.sol`
   (`.scratch/rewrite-B/sources/railgun-audit-2021-04-01-ABDK.pdf`, sha256
   `3b2129ab6440272f8dbe70f843a8a9e61068d644d1a860b61c36ce93339e380a`) spends findings
-  CVF-33, CVF-34, CVF-41 and CVF-42 entirely on the gas-optimized incremental-insertion
-  algorithm (the same `filledSubTrees`/rollover shape `MerkleModule.insertLeaves` uses);
-  every one of those findings is about gas, not soundness — `ArmadaLean.Merkle.treeRoot`
-  computes the same final value that algorithm does, non-incrementally.
-
-  DEPARTURE, now closed: an earlier version of this model represented one tree only, with
-  an explicit capacity hypothesis on every leaf-inserting `Step` (a step that would
-  overflow the tree simply had no witness). That is not what the contract does: a batch
-  that cannot fit the current tree rolls over to a fresh one instead
-  (`MerkleModule.insertLeaves`, MerkleModule.sol:62-70, `nextLeafIndex + count >
-  2 ** TREE_DEPTH`; an exactly-full tree does not roll over). Capped capacity meant an
-  adversary who fills the tree could block every later spend in this model, which the
-  real contract's rollover prevents. `PoolState.closedTrees` plus the `insert` helper
-  below model rollover exactly, and every leaf-inserting `Step` constructor below carries
-  no capacity hypothesis at all: a step is never blocked by a full tree.
+  CVF-33, CVF-34, CVF-41 and CVF-42 on the gas-optimized incremental insertion; every one
+  is about gas, not soundness.
 
   S-RG: RAILGUN Project Whitepaper, 2021-07-14.
   <https://resources.cryptocompare.com/asset-management/1823/1674569706520.pdf>,
@@ -83,66 +60,35 @@
   "RAILGUN Core System & Protocol" splits the checks between the circuit and the
   contract; this model cites only the contract's share, at the definitions below. S-RG is
   a 2021 pre-launch design: Armada's contracts, not S-RG, are the source wherever they
-  differ. S-RG's ADD/SPLIT/REMOVE names are not used here (Armada's contracts say
-  `shield`/`transact`/`transactOwned`); S-RG's 25-basis-point deposit AND withdrawal fees
-  do not match Armada, which charges a shield-in fee only (`shieldFee`, Fee.lean,
-  ShieldModule.sol:343-371) and no withdrawal fee (TransactModule.sol:32, "Unshields are
-  always free").
+  differ. Armada charges a shield-in fee only (`ArmadaLean.Fee`) and no withdrawal fee
+  (TransactModule.sol:32, "Unshields are always free").
 
-  DEPARTURE (contract, confirmed by reading the source): the brief that commissioned this
-  model expected a shield to create "one fee note for the fee", matching the design at
-  `labbook/2026-10-18-treasury-governance-baal-safe-shielded.md` decision 15 ("ShieldModule
-  creates the fee note to the Safe's npk"). The merged `ShieldModule.sol` does not do this.
-  `_transferTokenIn`'s flat-fee branch (ShieldModule.sol:324-340) and fee-module branch
-  (ShieldModule.sol:295-323) both pay the fee leg with
-  `token.safeTransferFrom(msg.sender, treasury, ...)` — straight from the caller's wallet
-  to `treasury`, never through the pool's own balance and never as a commitment. No fee
-  note is created on the `shield` path; `Step.shield` below models this (one note, of the
-  post-fee value, and no second note). Separately, `_recognizeFee`
-  (PrivacyPoolStorage.sol:280-285) recognizes ANY output — shield, transact or
-  transactOwned — whose `npk` equals the governance `feeRecipient`, which is the already-
-  named departure (brief, "transact outputs counted as fees"): `TransactModule
-  ._recordPreimages` (TransactModule.sol:587-604) calls `_recognizeFee` for every
-  transact/transactOwned public output, not only a genuine shield-in fee, against
-  labbook T9.
+  DEPARTURE (contract, confirmed by reading the source): no fee note. `_transferTokenIn`
+  pays the fee leg with `token.safeTransferFrom(msg.sender, treasury, ...)`
+  (ShieldModule.sol:295-340), straight from the caller's wallet, never through the pool
+  and never as a commitment. `Step.shield` creates one note, of the post-fee value.
+  Separately, `_recognizeFee` (PrivacyPoolStorage.sol:280-285) recognizes ANY output
+  whose `npk` equals the governance `feeRecipient`, against labbook T9.
 
   DEPARTURE (contract, `testingMode`): `PrivacyPool.verify`/`verifyOwned`
-  (PrivacyPool.sol:506-601) return `true` unconditionally when `testingMode` is on, with
-  no witness at all. `Step.transact`/`Step.transactOwned` below always require a genuine
-  `Constrained`/`OwnedConstrained` witness to transition, i.e. they model the pool exactly
-  when `testingMode` is off (or, equivalently, whenever the submitted proof happens to be
-  genuine regardless of the flag); the safety theorems in ArmadaLean.PoolSafety hold under
-  that same restriction, stated at each theorem, not as a global axiom. This mirrors a
-  historical Railgun defect: ABDK finding CVF-58 (Critical, Fixed) on `Snark.sol`: "The
-  function always returns true. It should return (out[0] != 0)" — an unconditional-accept
-  verifier bug, fixed before Railgun's launch. Armada's `testingMode`/`VERIFICATION_BYPASS`
-  (PrivacyPool.sol:508-510, 547-549, 564-566, 596-598) is the same defect, kept
-  intentionally for testing and never removed from the merged contract (the sibling
-  labbook entry's R8 calls for its removal; it is still present).
+  (PrivacyPool.sol:506-601) return `true` with no witness when `testingMode` is on.
+  `Step.transact`/`Step.transactOwned` always require a genuine
+  `Constrained`/`OwnedConstrained` witness, so they model the pool with `testingMode`
+  off. This mirrors ABDK finding CVF-58 (Critical, Fixed) on Railgun's `Snark.sol`.
 
-  DEPARTURE (contract → design, owner-controlled freeze removed): the merged contract
-  lets the owner block every spend and unshield at any time. `PrivacyPool
-  .setShieldPauseContract` (PrivacyPool.sol:466-470) is owner-gated with no restriction
-  on when or to what address it is called, and it installs an `IShieldPauseController`
-  whose `emergencyPaused()` or `withdrawOnlyMode()` `TransactModule` reads before every
-  `transact` and `transactOwned` (`_requireNotEmergencyPaused`/`_requireNotWithdrawOnly`,
-  TransactModule.sol:460-475, called at :48, :52, :491-492): an emergency pause blocks
-  every spend outright, and withdraw-only mode blocks a pure transfer (a `transact` with
-  no unshield output) and blocks every owned transaction unconditionally (the owned
-  path's `unshield` is always `NONE`, so it can never satisfy
-  `_requireNotWithdrawOnly`'s `unshield != NONE` escape). The Armada design removes this
-  owner power entirely: `Step.transact` and `Step.transactOwned` below carry no pause
-  check of any kind, so no step any caller — the owner included — can take ever blocks
-  an otherwise-valid spend
-  (`ArmadaLean.PoolSafety.transact_cannot_be_blocked`/`.transactOwned_cannot_be_blocked`).
-  `PoolState` below therefore drops `emergencyPaused` and `withdrawOnlyMode`; only
-  `shieldsPaused` remains, and it gates `Step.shield` alone — a shield pause, if the
-  design keeps one, blocks only new value entering the pool, never an existing note's
-  owner from spending or exiting it.
+  DEPARTURE (contract → design, no pause and no admin): the merged contract lets the
+  owner install a pause controller (`PrivacyPool.setShieldPauseContract`,
+  PrivacyPool.sol:466-470) that can block shields (`_requireShieldsNotPaused`,
+  ShieldModule.sol:394-399), every spend (`_requireNotEmergencyPaused`) and every
+  transfer (`_requireNotWithdrawOnly`, TransactModule.sol:460-475). Armada decision 7
+  (labbook `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`) deploys the pool with
+  no admin. This model has no pause of any kind and no admin step (operator ruling on
+  finding P-3). `ArmadaLean.PoolSafety.spend_not_blocked` states that no step by any
+  caller disables a pending spend unless it spends one of the same notes.
 -/
 import ArmadaLean.PoolOwned
 import ArmadaLean.Transact
-import ArmadaLean.Fee
+import ArmadaLean.BoundParams
 
 /-! ### Removing a sub-multiset of live notes, by key
 
@@ -517,6 +463,7 @@ theorem applyRecords_append (reg : PreimageRegistry) (l1 l2 : List (Term × Comm
 theorem hashCommitment_inj {p1 p2 : CommitmentPreimage} (h : hashCommitment p1 = hashCommitment p2) :
     p1 = p2 := by
   obtain ⟨h1, h2, h3⟩ := Term.hash3_inj h
+  have ht := tokenId_inj h2
   cases p1; cases p2
   simp_all [Term.val.injEq]
 
@@ -536,36 +483,27 @@ theorem applyRecords_preserves_key {reg : PreimageRegistry} {records : List (Ter
     refine ih ?_ (fun cp hcp => hagree cp (List.mem_cons_of_mem _ hcp))
     show recordStep reg c' p' c = some p
     unfold recordStep
-    by_cases hz : isZeroPreimage p'
-    · rw [if_pos hz]; exact hreg
-    · rw [if_neg hz]
-      by_cases hcc : c = c'
-      · rw [if_pos hcc]
-        have := hagree (c', p') List.mem_cons_self hcc.symm
-        simp only [] at this
-        rw [this]
-      · rw [if_neg hcc]; exact hreg
+    by_cases hcc : c = c'
+    · rw [if_pos hcc]
+      have := hagree (c', p') List.mem_cons_self hcc.symm
+      simp only [] at this
+      rw [this]
+    · rw [if_neg hcc]; exact hreg
 
-/-- **A valid, non-zero batch is recoverable from the registry it produces.** If every
-    record in a batch hashes to its own key, and the looked-up record itself is never
-    the zero preimage (so `recordStep` never skips writing it — `_validatePublicOutputs`'s
-    non-zero requirement), then `applyRecords` settles on `p` at key `c`, whatever else
-    is in the batch: a later record sharing key `c` must, by `hashCommitment_inj`, carry
-    the identical preimage `p`, so even an overwrite leaves the answer unchanged. Only
-    the looked-up record's own non-zero-ness is needed — the batch may contain other,
-    possibly-zero records elsewhere (a plain `transact`'s disclosure, unlike
-    `transactOwned`'s, does not require every output non-zero). The key lemma behind
-    `transactOwned_records_all` and `pool_ownedRandomOf_consistent`. -/
+/-- **A valid batch is recoverable from the registry it produces.** If every record in a
+    batch hashes to its own key, then `applyRecords` settles on `p` at key `c` for every
+    record `(c, p)` of the batch: a later record sharing key `c` must, by
+    `hashCommitment_inj`, carry the identical preimage `p`. The key lemma behind
+    `transactOwned_records_all`. -/
 theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × CommitmentPreimage)}
     (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
-    {c : Term} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) (hNonZero : ¬ isZeroPreimage p) :
+    {c : Term} {p : CommitmentPreimage} (hmem : (c, p) ∈ records) :
     applyRecords reg records c = some p := by
   obtain ⟨pre, post, hsplit⟩ := List.append_of_mem hmem
   rw [hsplit, applyRecords_append]
   unfold applyRecords
   apply applyRecords_preserves_key
   · unfold recordStep
-    rw [if_neg hNonZero]
     simp
   · intro cp hcp hcpeq
     have hcpmem : cp ∈ records := by
@@ -575,42 +513,6 @@ theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × C
     have hpval := hvalid (c, p) hmem
     rw [hcpeq] at hcpval
     exact hashCommitment_inj (hcpval.trans hpval.symm)
-
-/-- `recordStep` leaves any OTHER already-consistent key's answer unchanged: a write at
-    `newc` can only coincide with `c` if the written preimage genuinely hashes to `c`
-    too, in which case — since `pre` is ALREADY known to hash to `c`
-    (`hashCommitment_inj`) — the write is a no-op value-wise. The one-record case of
-    `applyRecords_preserves_other`, used directly by `Step.shield` (which calls
-    `recordStep`, not `applyRecords`). -/
-theorem recordStep_preserves_other {reg : PreimageRegistry}
-    {c newc : Term} {newpre pre : CommitmentPreimage}
-    (hc : hashCommitment pre = c) (hcreg : reg c = some pre) (hvalid : hashCommitment newpre = newc) :
-    recordStep reg newc newpre c = some pre := by
-  unfold recordStep
-  by_cases hz : isZeroPreimage newpre
-  · rw [if_pos hz]; exact hcreg
-  · rw [if_neg hz]
-    by_cases heq : c = newc
-    · rw [if_pos heq]
-      rw [heq] at hc
-      have hveq := hashCommitment_inj (hc.trans hvalid.symm)
-      rw [hveq]
-    · rw [if_neg heq]; exact hcreg
-
-/-- `applyRecords` leaves any OTHER already-consistent key's answer unchanged — the
-    batch generalization of `recordStep_preserves_other`, used by `Step.transact`'s
-    optional owned-disclosure batch. -/
-theorem applyRecords_preserves_other {reg : PreimageRegistry}
-    {records : List (Term × CommitmentPreimage)}
-    (hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1)
-    {c : Term} {pre : CommitmentPreimage} (hc : hashCommitment pre = c) (hcreg : reg c = some pre) :
-    applyRecords reg records c = some pre := by
-  induction records generalizing reg with
-  | nil => exact hcreg
-  | cons cp rest ih =>
-    obtain ⟨c', p'⟩ := cp
-    apply ih (fun cp' hcp' => hvalid cp' (List.mem_cons_of_mem _ hcp'))
-    exact recordStep_preserves_other hc hcreg (hvalid (c', p') List.mem_cons_self)
 
 /-- The `(commitment, preimage)` pair a plain `Transact` output would record, if
     disclosed — the full candidate batch `Step.transact`'s `records` is a sublist of. -/
@@ -646,100 +548,250 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
   rw [← hj]
   exact (hC.outputs j).symm
 
-/-! ### The public owned-random registry
-
-`ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure` records the departure: the
-real contract never stores a note's random value, so only its creator can spend it. The
-approved design closes this for contract-owned notes; `applyOwnedRecords` lifts one
-commitment's disclosure (`ArmadaLean.PoolOwned.recordOwnedStep`) to a whole batch, the
-same way `applyRecords` lifts `recordStep`. -/
-
-/-- Apply a batch of `(commitment, disclosure)` records to the owned-random registry,
-    in order. -/
-def applyOwnedRecords (rreg : OwnedRandomRegistry) :
-    List (Term × OwnedDisclosure) → OwnedRandomRegistry
-  | [] => rreg
-  | (c, d) :: rest => applyOwnedRecords (recordOwnedStep rreg c d) rest
-
-/-- `applyOwnedRecords` preserves `OwnedRandomConsistent` against a FIXED preimage
-    registry `reg`, given every record's random genuinely reconstructs the npk of
-    whatever `reg` already holds at that key — exactly the shape
-    `applyRecords_preserves_consistency` has for `PreimageRegistry` alone. -/
-theorem applyOwnedRecords_preserves_consistency {reg : PreimageRegistry} {rreg : OwnedRandomRegistry}
-    (hconsistent : OwnedRandomConsistent reg rreg)
-    {records : List (Term × OwnedDisclosure)}
-    (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
-      npk cd.2.ownerField cd.2.random = pre.npk) :
-    OwnedRandomConsistent reg (applyOwnedRecords rreg records) := by
-  induction records generalizing rreg with
-  | nil => exact hconsistent
-  | cons cd rest ih =>
-    obtain ⟨c, d⟩ := cd
-    apply ih
-    · obtain ⟨pre, hreg, hnpk⟩ := hvalid (c, d) List.mem_cons_self
-      exact recordOwnedStep_preserves_consistency hconsistent hreg hnpk
-    · intro cd' hcd'
-      exact hvalid cd' (List.mem_cons_of_mem (c, d) hcd')
-
 /-! ### The Merkle tree forest
 
-One tree holds at most `2 ^ TreeDepth` leaves (`ArmadaLean.Merkle`'s module comment); the
-contract rolls over to a fresh tree rather than refusing an insertion that would overflow
-the current one (`MerkleModule.insertLeaves`, MerkleModule.sol:62-70). `TreeState` is one
-tree's leaf list and root history — exactly the two fields `PoolState` used to carry
-directly, for the single tree the earlier version of this model assumed. -/
+The protocol keeps a sequence of Merkle trees. Each tree holds at most `2 ^ TreeDepth`
+leaves (`ArmadaLean.Merkle`). New leaves go into the last tree; a batch that does not
+fit starts a new tree (`MerkleModule.insertLeaves`, MerkleModule.sol:62-70; an exactly
+full tree does not roll over). Every tree keeps every root it ever had
+(`rootHistory`, PrivacyPoolStorage.sol:171, S-RG: "the current or a previous Merkle
+root"). The model is a list of trees, numbered by position. The contract's split into a
+current-tree pointer and per-tree maps (`treeNumber`, `nextLeafIndex`, `rootHistory`,
+PrivacyPoolStorage.sol:150-171) is storage layout; audit finding P-11 records the
+earlier `closedTrees`/`leaves`/`roots` copy of it. -/
 
-/-- One tree's leaves and the root history it has produced — `ArmadaLean.Merkle.treeRoot
-    TreeDepth leaves` is always `roots.head?` once any leaf has been inserted, the same
-    invariant the single-tree model already proved, now per tree
-    (`ArmadaLean.PoolSafety.reachable_rootAt_matches_leavesAt`). -/
+/-- One tree: its leaves, in insertion order, and every root it has had, newest first. -/
 structure TreeState where
   leaves : List Term
   roots : List Term
 
-/-- The root history of tree `treeNumber`: every tree before the current one is frozen
-    in `closedTrees[k]` = tree `k` (`closedTrees.length` is the current tree's own
-    number, still open to new insertions, `PoolState.leaves`/`.roots` directly).
-    `s.roots` if it is the current tree, otherwise whatever `s.closedTrees` recorded
-    for it (the empty list if `treeNumber` names a tree that does not exist yet — no
-    proof can ever name a root from a not-yet-existing tree, since `[].contains _` is
-    always `False`). -/
-def PoolState.rootsAt (closedTrees : List TreeState) (_curLeaves curRoots : List Term)
-    (treeNumber : Nat) : List Term :=
-  if treeNumber = closedTrees.length then curRoots
-  else (closedTrees.getD treeNumber ⟨[], []⟩).roots
+/-- A tree with no leaves and no roots: the starting point of a tree that a batch opens. -/
+def TreeState.empty : TreeState := ⟨[], []⟩
 
-/-- The leaf list of tree `treeNumber`, the same convention as `rootsAt`. -/
-def PoolState.leavesAt (closedTrees : List TreeState) (curLeaves _curRoots : List Term)
-    (treeNumber : Nat) : List Term :=
-  if treeNumber = closedTrees.length then curLeaves
-  else (closedTrees.getD treeNumber ⟨[], []⟩).leaves
+/-- Append `newLeaves` to a tree and record the new root, `treeRoot` of the new leaf
+    list (computed, not chosen). -/
+def TreeState.extend (t : TreeState) (newLeaves : List Term) : TreeState :=
+  ⟨t.leaves ++ newLeaves, treeRoot TreeDepth (t.leaves ++ newLeaves) :: t.roots⟩
 
-/-- Where a batch of `count` new leaves lands: the current tree, unless it would
-    overflow (`MerkleModule.sol:66`, `nextLeafIndex + count > 2 ^ TREE_DEPTH` — an
-    exactly-full tree does not roll over), in which case a fresh tree, numbered one past
-    the last closed tree. -/
-def insertTreeNumber (closedTrees : List TreeState) (curLeaves : List Term) (count : Nat) :
-    Nat :=
-  if curLeaves.length + count > 2 ^ TreeDepth then closedTrees.length + 1 else closedTrees.length
+/-- The leaves of tree `tn`. A tree that does not exist has no leaves. -/
+def leavesAt (trees : List TreeState) (tn : Nat) : List Term :=
+  match trees[tn]? with
+  | some t => t.leaves
+  | none => []
 
-/-- The leaf position the first of a new batch lands at: `0` on rollover (a fresh tree
-    starts empty), otherwise right after the current tree's existing leaves. -/
-def insertStartPos (curLeaves : List Term) (count : Nat) : Nat :=
-  if curLeaves.length + count > 2 ^ TreeDepth then 0 else curLeaves.length
+/-- The root history of tree `tn`. A tree that does not exist has no roots, so no proof
+    can name a root of it. -/
+def rootsAt (trees : List TreeState) (tn : Nat) : List Term :=
+  match trees[tn]? with
+  | some t => t.roots
+  | none => []
 
-/-- The resulting `(closedTrees, leaves, roots)` after inserting `newLeaves`:
-    `MerkleModule.insertLeaves`'s rollover-then-insert, modeled non-incrementally
-    (`ArmadaLean.Merkle.treeRoot`'s own module comment). On rollover, the current tree
-    is frozen into `closedTrees` exactly as it stood, and the new tree starts from
-    `newLeaves` alone. -/
-def insertResult (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) : List TreeState × List Term × List Term :=
-  if curLeaves.length + newLeaves.length > 2 ^ TreeDepth then
-    (closedTrees ++ [⟨curLeaves, curRoots⟩], newLeaves, [treeRoot TreeDepth newLeaves])
-  else
-    let leaves' := curLeaves ++ newLeaves
-    (closedTrees, leaves', treeRoot TreeDepth leaves' :: curRoots)
+/-- The tree that a batch of `count` new leaves goes into: the last tree if the batch
+    fits, else a new tree after it (MerkleModule.sol:66). -/
+def insertTree (trees : List TreeState) (count : Nat) : Nat :=
+  match trees.getLast? with
+  | some cur => if cur.leaves.length + count ≤ 2 ^ TreeDepth then trees.length - 1 else trees.length
+  | none => trees.length
+
+/-- The position of the first leaf of a batch: the current leaf count of its tree. -/
+def insertStart (trees : List TreeState) (count : Nat) : Nat :=
+  (leavesAt trees (insertTree trees count)).length
+
+/-- `MerkleModule.insertLeaves` (MerkleModule.sol:54-121), non-incrementally: extend the
+    last tree, or start a new tree when the batch does not fit. -/
+def insertLeaves (trees : List TreeState) (newLeaves : List Term) : List TreeState :=
+  match trees.getLast? with
+  | some cur =>
+    if cur.leaves.length + newLeaves.length ≤ 2 ^ TreeDepth then
+      trees.dropLast ++ [cur.extend newLeaves]
+    else trees ++ [TreeState.empty.extend newLeaves]
+  | none => [TreeState.empty.extend newLeaves]
+
+theorem insertTree_nil (count : Nat) : insertTree [] count = 0 := rfl
+
+theorem insertLeaves_nil (newLeaves : List Term) :
+    insertLeaves [] newLeaves = [TreeState.empty.extend newLeaves] := rfl
+
+theorem insertTree_concat (init : List TreeState) (cur : TreeState) (count : Nat) :
+    insertTree (init ++ [cur]) count =
+      if cur.leaves.length + count ≤ 2 ^ TreeDepth then init.length else init.length + 1 := by
+  simp [insertTree]
+
+theorem insertLeaves_concat (init : List TreeState) (cur : TreeState) (newLeaves : List Term) :
+    insertLeaves (init ++ [cur]) newLeaves =
+      if cur.leaves.length + newLeaves.length ≤ 2 ^ TreeDepth then init ++ [cur.extend newLeaves]
+      else init ++ [cur, TreeState.empty.extend newLeaves] := by
+  simp [insertLeaves]
+
+theorem List.getElem?_concat_eq {α : Type} (l : List α) (x : α) (i : Nat) :
+    (l ++ [x])[i]? = if i < l.length then l[i]? else if i = l.length then some x else none := by
+  by_cases h1 : i < l.length
+  · rw [if_pos h1, List.getElem?_append_left h1]
+  · rw [if_neg h1, List.getElem?_append_right (by omega)]
+    by_cases h2 : i = l.length
+    · subst h2; simp
+    · rw [if_neg h2]; simp; omega
+
+theorem List.getElem?_concat2_eq {α : Type} (l : List α) (x y : α) (i : Nat) :
+    (l ++ [x, y])[i]? = if i < l.length then l[i]? else if i = l.length then some x
+      else if i = l.length + 1 then some y else none := by
+  by_cases h1 : i < l.length
+  · rw [if_pos h1, List.getElem?_append_left h1]
+  · rw [if_neg h1, List.getElem?_append_right (by omega)]
+    by_cases h2 : i = l.length
+    · subst h2; simp
+    · rw [if_neg h2]
+      by_cases h3 : i = l.length + 1
+      · subst h3; simp
+      · rw [if_neg h3]; simp; omega
+
+/-- **An insertion changes only the target tree, and it extends that tree.** The one
+    equation every other forest lemma below follows from. A target tree that does not
+    exist yet (a new tree) starts from `TreeState.empty`. -/
+theorem insertLeaves_getElem? (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
+    (insertLeaves trees newLeaves)[tn]? =
+      if tn = insertTree trees newLeaves.length then
+        some ((match trees[tn]? with | some t => t | none => TreeState.empty).extend newLeaves)
+      else trees[tn]? := by
+  rcases List.eq_nil_or_concat trees with h | ⟨init, cur, h⟩
+  · subst h
+    rw [insertLeaves_nil, insertTree_nil]
+    cases tn <;> simp
+  · rw [List.concat_eq_append] at h
+    subst h
+    rw [insertLeaves_concat, insertTree_concat]
+    by_cases hfit : cur.leaves.length + newLeaves.length ≤ 2 ^ TreeDepth
+    · rw [if_pos hfit, if_pos hfit, List.getElem?_concat_eq, List.getElem?_concat_eq]
+      by_cases h1 : tn < init.length
+      · rw [if_pos h1, if_neg (by omega), if_pos h1]
+      · rw [if_neg h1]
+        by_cases h2 : tn = init.length
+        · subst h2; simp
+        · rw [if_neg h2, if_neg h2, if_neg h1, if_neg h2]
+    · rw [if_neg hfit, if_neg hfit, List.getElem?_concat2_eq, List.getElem?_concat_eq]
+      by_cases h1 : tn < init.length
+      · rw [if_pos h1, if_neg (by omega), if_pos h1]
+      · rw [if_neg h1, if_neg h1]
+        by_cases h2 : tn = init.length
+        · rw [if_pos h2, if_neg (by omega), if_pos h2]
+        · rw [if_neg h2, if_neg h2]
+
+/-- The leaves of tree `tn` after an insertion: the target tree gains the batch at its
+    end; every other tree is unchanged. -/
+theorem insertLeaves_leavesAt (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
+    leavesAt (insertLeaves trees newLeaves) tn =
+      if tn = insertTree trees newLeaves.length then leavesAt trees tn ++ newLeaves
+      else leavesAt trees tn := by
+  unfold leavesAt
+  rw [insertLeaves_getElem?]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h, if_pos h]
+    cases trees[tn]? <;> simp [TreeState.extend, TreeState.empty]
+  · rw [if_neg h, if_neg h]
+
+/-- The roots of tree `tn` after an insertion: the target tree gains exactly the root of
+    its new leaf list; every other tree is unchanged. -/
+theorem insertLeaves_rootsAt (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
+    rootsAt (insertLeaves trees newLeaves) tn =
+      if tn = insertTree trees newLeaves.length then
+        treeRoot TreeDepth (leavesAt trees tn ++ newLeaves) :: rootsAt trees tn
+      else rootsAt trees tn := by
+  unfold rootsAt leavesAt
+  rw [insertLeaves_getElem?]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h, if_pos h]
+    cases trees[tn]? <;> simp [TreeState.extend, TreeState.empty]
+  · rw [if_neg h, if_neg h]
+
+/-- The target tree has room for a batch that fits in one tree. -/
+theorem insertLeaves_target_fits (trees : List TreeState) (newLeaves : List Term)
+    (hNew : newLeaves.length ≤ 2 ^ TreeDepth) :
+    (leavesAt trees (insertTree trees newLeaves.length)).length + newLeaves.length ≤
+      2 ^ TreeDepth := by
+  rcases List.eq_nil_or_concat trees with h | ⟨init, cur, h⟩
+  · subst h; simp [leavesAt, insertTree_nil, hNew]
+  · rw [List.concat_eq_append] at h
+    subst h
+    rw [insertTree_concat]
+    by_cases hfit : cur.leaves.length + newLeaves.length ≤ 2 ^ TreeDepth
+    · rw [if_pos hfit]
+      simp [leavesAt, hfit]
+    · rw [if_neg hfit]
+      simp [leavesAt, hNew]
+
+/-- `insertStart` is the target tree's leaf count, by definition. -/
+theorem insertStart_eq (trees : List TreeState) (count : Nat) :
+    insertStart trees count = (leavesAt trees (insertTree trees count)).length := rfl
+
+/-- One insertion either leaves tree `tn`'s roots unchanged or prepends exactly one new
+    root. -/
+theorem insertLeaves_rootsAt_shape (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
+    rootsAt (insertLeaves trees newLeaves) tn = rootsAt trees tn ∨
+      ∃ r, rootsAt (insertLeaves trees newLeaves) tn = r :: rootsAt trees tn := by
+  rw [insertLeaves_rootsAt]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h]; exact Or.inr ⟨_, rfl⟩
+  · rw [if_neg h]; exact Or.inl rfl
+
+/-- **One insertion's new root is `treeRoot TreeDepth` of the tree's new leaf list.**
+    Tree `tn` either sees no change, or its root history gains exactly that root. -/
+theorem insertLeaves_rootsAt_matches_leavesAt (trees : List TreeState) (newLeaves : List Term)
+    (tn : Nat) :
+    (leavesAt (insertLeaves trees newLeaves) tn = leavesAt trees tn ∧
+      rootsAt (insertLeaves trees newLeaves) tn = rootsAt trees tn) ∨
+    rootsAt (insertLeaves trees newLeaves) tn =
+      treeRoot TreeDepth (leavesAt (insertLeaves trees newLeaves) tn) :: rootsAt trees tn := by
+  rw [insertLeaves_rootsAt, insertLeaves_leavesAt]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h, if_pos h]; exact Or.inr rfl
+  · rw [if_neg h, if_neg h]; exact Or.inl ⟨rfl, rfl⟩
+
+/-- **A tree's leaf list never exceeds the one-tree capacity, after any insertion** —
+    given it did not before, and the batch itself fits in one tree. -/
+theorem insertLeaves_leavesAt_capacity (trees : List TreeState) (newLeaves : List Term)
+    (tn : Nat) (hNewCap : newLeaves.length ≤ 2 ^ TreeDepth)
+    (hOldCap : ∀ k, (leavesAt trees k).length ≤ 2 ^ TreeDepth) :
+    (leavesAt (insertLeaves trees newLeaves) tn).length ≤ 2 ^ TreeDepth := by
+  rw [insertLeaves_leavesAt]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h, List.length_append, h]
+    exact insertLeaves_target_fits trees newLeaves hNewCap
+  · rw [if_neg h]; exact hOldCap tn
+
+/-- **A leaf, once placed at a position, never moves.** Insertion only appends. -/
+theorem insertLeaves_leavesAt_stable (trees : List TreeState) (newLeaves : List Term)
+    (tn pos : Nat) (d : Term) (hpos : pos < (leavesAt trees tn).length) :
+    (leavesAt (insertLeaves trees newLeaves) tn).getD pos d = (leavesAt trees tn).getD pos d := by
+  rw [insertLeaves_leavesAt]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h]; exact List.getD_append_of_lt _ _ pos d hpos
+  · rw [if_neg h]
+
+/-- A tree's leaf list only grows. -/
+theorem insertLeaves_leavesAt_length_ge (trees : List TreeState) (newLeaves : List Term)
+    (tn : Nat) :
+    (leavesAt trees tn).length ≤ (leavesAt (insertLeaves trees newLeaves) tn).length := by
+  rw [insertLeaves_leavesAt]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h, List.length_append]; omega
+  · rw [if_neg h]; omega
+
+/-- **The target tree's leaves after an insertion are `base ++ newLeaves`, with `base` of
+    length `insertStart`.** Connects a step's reported position to the leaf it stores. -/
+theorem insertLeaves_leavesAt_new_matches (trees : List TreeState) (newLeaves : List Term)
+    (tn : Nat) (htn : tn = insertTree trees newLeaves.length) :
+    ∃ base : List Term, base.length = insertStart trees newLeaves.length ∧
+      leavesAt (insertLeaves trees newLeaves) tn = base ++ newLeaves := by
+  refine ⟨leavesAt trees tn, by rw [htn]; rfl, ?_⟩
+  rw [insertLeaves_leavesAt, if_pos htn]
+
+/-- The target tree's leaf count after an insertion is `insertStart` plus the batch
+    size. -/
+theorem insertLeaves_target_length (trees : List TreeState) (newLeaves : List Term) :
+    (leavesAt (insertLeaves trees newLeaves) (insertTree trees newLeaves.length)).length
+      = insertStart trees newLeaves.length + newLeaves.length := by
+  rw [insertLeaves_leavesAt, if_pos rfl, List.length_append]
+  rfl
 
 /-- `(l ++ [x]).getD l.length d = x`: the element just appended sits at the position
     right past the original list's own length. The "what landed in the frozen tree"
@@ -749,177 +801,6 @@ theorem List.getD_concat_length {α : Type} (l : List α) (x : α) (d : α) :
   induction l with
   | nil => rfl
   | cons a rest ih => simp
-
-/-- `l.getD i d = d` once `i` is past `l`'s own length — the out-of-range half of
-    `List.getD`'s definition, made explicit for `insertResult`'s shape lemmas. -/
-theorem List.getD_eq_default {α : Type} (l : List α) (i : Nat) (d : α) (h : l.length ≤ i) :
-    l.getD i d = d := by
-  induction l generalizing i with
-  | nil => rfl
-  | cons a rest ih =>
-    cases i with
-    | zero => simp at h
-    | succ i' =>
-      simp only [List.getD_cons_succ]
-      exact ih i' (by simp at h; omega)
-
-/-- One insertion either leaves tree `tn`'s root history unchanged (`tn` is neither the
-    tree extended nor the tree just rolled into) or prepends exactly one new root —
-    the uniform fact `rootsAt_grounded`/`transact_root_was_produced` need, true whether
-    `tn` is a closed tree, the current tree being extended, the current tree just frozen
-    by a rollover, or the fresh tree a rollover just opened: `PoolState.rootsAt`'s own
-    `getD`-with-empty-default convention makes "a tree that does not exist yet has no
-    roots" and "a tree that was just rolled past keeps exactly what it had" fall out of
-    the same case split, with no separate argument for rollover. -/
-theorem insertResult_rootsAt (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) (tn : Nat) :
-    let res := insertResult closedTrees curLeaves curRoots newLeaves
-    PoolState.rootsAt res.1 res.2.1 res.2.2 tn = PoolState.rootsAt closedTrees curLeaves curRoots tn ∨
-      ∃ r, PoolState.rootsAt res.1 res.2.1 res.2.2 tn =
-        r :: PoolState.rootsAt closedTrees curLeaves curRoots tn := by
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · have hres1 : (insertResult closedTrees curLeaves curRoots newLeaves).1
-        = closedTrees ++ [⟨curLeaves, curRoots⟩] := by unfold insertResult; rw [if_pos hover]
-    have hres22 : (insertResult closedTrees curLeaves curRoots newLeaves).2.2
-        = [treeRoot TreeDepth newLeaves] := by unfold insertResult; rw [if_pos hover]
-    have hlen : (closedTrees ++ [(⟨curLeaves, curRoots⟩ : TreeState)]).length = closedTrees.length + 1 := by
-      simp
-    simp only
-    rw [hres1, hres22]
-    unfold PoolState.rootsAt
-    rw [hlen]
-    by_cases htn : tn = closedTrees.length + 1
-    · right
-      refine ⟨treeRoot TreeDepth newLeaves, ?_⟩
-      rw [if_pos htn, if_neg (by omega : tn ≠ closedTrees.length)]
-      rw [List.getD_eq_default closedTrees tn ⟨[], []⟩ (by omega)]
-    · left
-      rw [if_neg htn]
-      by_cases htn2 : tn = closedTrees.length
-      · rw [if_pos htn2, htn2]
-        rw [List.getD_concat_length]
-      · rw [if_neg htn2]
-        by_cases hlt : tn < closedTrees.length
-        · rw [List.getD_append_of_lt closedTrees [(⟨curLeaves, curRoots⟩ : TreeState)] tn ⟨[], []⟩ hlt]
-        · rw [List.getD_eq_default (closedTrees ++ [(⟨curLeaves, curRoots⟩ : TreeState)]) tn ⟨[], []⟩
-            (by rw [hlen]; omega)]
-          rw [List.getD_eq_default closedTrees tn ⟨[], []⟩ (by omega)]
-  · have hres1 : (insertResult closedTrees curLeaves curRoots newLeaves).1 = closedTrees := by
-      unfold insertResult; rw [if_neg hover]
-    have hres22 : (insertResult closedTrees curLeaves curRoots newLeaves).2.2
-        = treeRoot TreeDepth (curLeaves ++ newLeaves) :: curRoots := by
-      unfold insertResult; rw [if_neg hover]
-    simp only
-    rw [hres1, hres22]
-    unfold PoolState.rootsAt
-    by_cases htn : tn = closedTrees.length
-    · right
-      exact ⟨treeRoot TreeDepth (curLeaves ++ newLeaves), by rw [if_pos htn, if_pos htn]⟩
-    · left
-      rw [if_neg htn, if_neg htn]
-
-/-- The precise leaf list of tree `tn` after an insertion: unchanged unless `tn` is the
-    tree the batch actually landed in (the current tree, extended, or — on rollover —
-    the fresh tree, which starts exactly at `newLeaves`). The equational form
-    `insertResult_rootsAt`'s disjunction is built from a weaker version of; stated as an
-    equation here because `insertResult_leavesAt_capacity`/`_stable` both need to know
-    exactly which branch, not just that one happened. -/
-theorem insertResult_leavesAt (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) (tn : Nat) :
-    PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-      (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-      (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn =
-      if curLeaves.length + newLeaves.length > 2 ^ TreeDepth then
-        (if tn = closedTrees.length + 1 then newLeaves
-         else PoolState.leavesAt closedTrees curLeaves curRoots tn)
-      else
-        (if tn = closedTrees.length then curLeaves ++ newLeaves
-         else PoolState.leavesAt closedTrees curLeaves curRoots tn) := by
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · have hres1 : (insertResult closedTrees curLeaves curRoots newLeaves).1
-        = closedTrees ++ [⟨curLeaves, curRoots⟩] := by unfold insertResult; rw [if_pos hover]
-    have hres21 : (insertResult closedTrees curLeaves curRoots newLeaves).2.1 = newLeaves := by
-      unfold insertResult; rw [if_pos hover]
-    have hlen : (closedTrees ++ [(⟨curLeaves, curRoots⟩ : TreeState)]).length = closedTrees.length + 1 := by
-      simp
-    rw [hres1, hres21]
-    unfold PoolState.leavesAt
-    rw [hlen, if_pos hover]
-    by_cases htn : tn = closedTrees.length + 1
-    · rw [if_pos htn, if_pos htn]
-    · rw [if_neg htn, if_neg htn]
-      by_cases htn2 : tn = closedTrees.length
-      · rw [if_pos htn2, htn2, List.getD_concat_length]
-      · rw [if_neg htn2]
-        by_cases hlt : tn < closedTrees.length
-        · rw [List.getD_append_of_lt closedTrees [(⟨curLeaves, curRoots⟩ : TreeState)] tn ⟨[], []⟩ hlt]
-        · rw [List.getD_eq_default (closedTrees ++ [(⟨curLeaves, curRoots⟩ : TreeState)]) tn ⟨[], []⟩
-            (by rw [hlen]; omega)]
-          rw [List.getD_eq_default closedTrees tn ⟨[], []⟩ (by omega)]
-  · have hres1 : (insertResult closedTrees curLeaves curRoots newLeaves).1 = closedTrees := by
-      unfold insertResult; rw [if_neg hover]
-    have hres21 : (insertResult closedTrees curLeaves curRoots newLeaves).2.1 = curLeaves ++ newLeaves := by
-      unfold insertResult; rw [if_neg hover]
-    rw [hres1, hres21]
-    unfold PoolState.leavesAt
-    rw [if_neg hover]
-    by_cases htn : tn = closedTrees.length
-    · simp only [if_pos htn]
-    · simp only [if_neg htn]
-
-/-- **A tree's leaf list never exceeds the one-tree capacity, after any insertion** —
-    given it did not before, and the batch itself does not (`hNewCap`: at most `M ≤ 4`
-    leaves per step, module comment, far below `2 ^ TreeDepth`). No capacity hypothesis
-    is needed on `Step`'s own constructors (the rollover departure): this is instead an
-    invariant proved once, over every reachable state
-    (`ArmadaLean.PoolSafety.reachable_leavesAt_capacity`). -/
-theorem insertResult_leavesAt_capacity (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) (tn : Nat) (hNewCap : newLeaves.length ≤ 2 ^ TreeDepth)
-    (hOldCap : ∀ k, (PoolState.leavesAt closedTrees curLeaves curRoots k).length ≤ 2 ^ TreeDepth) :
-    (PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-      (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-      (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn).length ≤ 2 ^ TreeDepth := by
-  rw [insertResult_leavesAt]
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · rw [if_pos hover]
-    by_cases htn : tn = closedTrees.length + 1
-    · rw [if_pos htn]; exact hNewCap
-    · rw [if_neg htn]; exact hOldCap tn
-  · rw [if_neg hover]
-    by_cases htn : tn = closedTrees.length
-    · rw [if_pos htn]; simp; omega
-    · rw [if_neg htn]; exact hOldCap tn
-
-/-- **A leaf, once placed at a position, never moves.** Insertion only ever appends: a
-    position already within tree `tn`'s leaf list keeps the exact same value after any
-    later insertion, whichever tree that insertion actually lands in. The structural
-    fact `ArmadaLean.PoolSafety.leaf_stable` lifts to every later reachable state. -/
-theorem insertResult_leavesAt_stable (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) (tn pos : Nat) (d : Term)
-    (hpos : pos < (PoolState.leavesAt closedTrees curLeaves curRoots tn).length) :
-    (PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-      (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-      (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn).getD pos d =
-      (PoolState.leavesAt closedTrees curLeaves curRoots tn).getD pos d := by
-  rw [insertResult_leavesAt]
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · rw [if_pos hover]
-    by_cases htn : tn = closedTrees.length + 1
-    · exfalso
-      unfold PoolState.leavesAt at hpos
-      rw [htn, if_neg (by omega : closedTrees.length + 1 ≠ closedTrees.length)] at hpos
-      rw [List.getD_eq_default closedTrees (closedTrees.length + 1) ⟨[], []⟩ (by omega)] at hpos
-      simp at hpos
-    · rw [if_neg htn]
-  · rw [if_neg hover]
-    by_cases htn : tn = closedTrees.length
-    · rw [if_pos htn]
-      have hcur : (PoolState.leavesAt closedTrees curLeaves curRoots tn) = curLeaves := by
-        unfold PoolState.leavesAt; rw [if_pos htn]
-      rw [hcur]
-      rw [hcur] at hpos
-      exact List.getD_append_of_lt curLeaves newLeaves pos d hpos
-    · rw [if_neg htn]
 
 /-- A batch tagged by `withPositionsFrom` always lands, in the appended leaf list, at
     exactly the leaf `f` of its own preimage — no other value could appear there.
@@ -956,230 +837,70 @@ theorem withTreePositionsFrom_leaf_matches {α : Type} (f : α → Term) (base :
   rw [← heq]
   exact withPositionsFrom_leaf_matches f base start l hstart d q hq
 
-/-- **A freshly-inserted batch's leaves, in the tree it actually lands in, are exactly
-    `base ++ newLeaves` for some `base` of length `insertStartPos`.** The precise
-    "what is this tree's leaf list now" fact `withPositionsFrom_leaf_matches` needs to
-    connect a `Step`'s own reported position to the leaf the pool actually stored
-    there (`ArmadaLean.PoolSafety.live_leaf_matches`). -/
-theorem insertResult_leavesAt_new_matches (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) (tn : Nat)
-    (htn : tn = insertTreeNumber closedTrees curLeaves newLeaves.length) :
-    ∃ base : List Term, base.length = insertStartPos curLeaves newLeaves.length ∧
-      PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn = base ++ newLeaves := by
-  rw [insertResult_leavesAt]
-  unfold insertStartPos
-  unfold insertTreeNumber at htn
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · rw [if_pos hover, if_pos hover]
-    rw [htn, if_pos hover, if_pos rfl]
-    exact ⟨[], rfl, by simp⟩
-  · rw [if_neg hover, if_neg hover]
-    rw [htn, if_neg hover, if_pos rfl]
-    exact ⟨curLeaves, rfl, rfl⟩
-
-/-- **One insertion's new root is always `treeRoot TreeDepth` of its own, post-insertion
-    leaf list.** Tree `tn` either sees no change at all, or its root history gains
-    exactly `treeRoot TreeDepth` of whatever its leaf list now is — combining
-    `insertResult_rootsAt`'s disjunction with `insertResult_leavesAt`'s exact equation
-    to pin the pushed root's VALUE down, not just its existence. The invariant
-    `ArmadaLean.PoolSafety.reachable_rootAt_matches_leavesAt` needs this exact match to
-    carry through induction. -/
-theorem insertResult_rootsAt_matches_leavesAt (closedTrees : List TreeState)
-    (curLeaves curRoots : List Term) (newLeaves : List Term) (tn : Nat) :
-    (PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn
-      = PoolState.leavesAt closedTrees curLeaves curRoots tn ∧
-     PoolState.rootsAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn
-      = PoolState.rootsAt closedTrees curLeaves curRoots tn) ∨
-    PoolState.rootsAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn
-      = treeRoot TreeDepth
-          (PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-            (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-            (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn)
-        :: PoolState.rootsAt closedTrees curLeaves curRoots tn := by
-  rw [insertResult_leavesAt]
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · have hres1 : (insertResult closedTrees curLeaves curRoots newLeaves).1
-        = closedTrees ++ [⟨curLeaves, curRoots⟩] := by unfold insertResult; rw [if_pos hover]
-    have hres22 : (insertResult closedTrees curLeaves curRoots newLeaves).2.2
-        = [treeRoot TreeDepth newLeaves] := by unfold insertResult; rw [if_pos hover]
-    have hlen : (closedTrees ++ [(⟨curLeaves, curRoots⟩ : TreeState)]).length = closedTrees.length + 1 := by
-      simp
-    rw [if_pos hover]
-    unfold PoolState.rootsAt
-    rw [hres1, hres22, hlen]
-    by_cases htn : tn = closedTrees.length + 1
-    · right
-      rw [if_pos htn, if_pos htn, if_neg (by omega : tn ≠ closedTrees.length)]
-      rw [List.getD_eq_default closedTrees tn ⟨[], []⟩ (by omega)]
-    · left
-      rw [if_neg htn, if_neg htn]
-      refine ⟨rfl, ?_⟩
-      by_cases htn2 : tn = closedTrees.length
-      · rw [if_pos htn2, htn2, List.getD_concat_length]
-      · rw [if_neg htn2]
-        by_cases hlt : tn < closedTrees.length
-        · rw [List.getD_append_of_lt closedTrees [(⟨curLeaves, curRoots⟩ : TreeState)] tn ⟨[], []⟩ hlt]
-        · rw [List.getD_eq_default (closedTrees ++ [(⟨curLeaves, curRoots⟩ : TreeState)]) tn ⟨[], []⟩
-            (by rw [hlen]; omega)]
-          rw [List.getD_eq_default closedTrees tn ⟨[], []⟩ (by omega)]
-  · have hres1 : (insertResult closedTrees curLeaves curRoots newLeaves).1 = closedTrees := by
-      unfold insertResult; rw [if_neg hover]
-    have hres22 : (insertResult closedTrees curLeaves curRoots newLeaves).2.2
-        = treeRoot TreeDepth (curLeaves ++ newLeaves) :: curRoots := by
-      unfold insertResult; rw [if_neg hover]
-    rw [if_neg hover]
-    unfold PoolState.rootsAt
-    rw [hres1, hres22]
-    by_cases htn : tn = closedTrees.length
-    · right
-      rw [if_pos htn, if_pos htn, if_pos htn]
-    · left
-      rw [if_neg htn, if_neg htn]
-      exact ⟨rfl, by rw [if_neg htn]⟩
-
-/-- A tree's leaf list only ever grows: `leaf_stable`'s companion fact — a position
-    already in range stays in range forever, not just unchanged in value. -/
-theorem insertResult_leavesAt_length_ge (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (newLeaves : List Term) (tn : Nat) :
-    (PoolState.leavesAt closedTrees curLeaves curRoots tn).length ≤
-      (PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.2 tn).length := by
-  rw [insertResult_leavesAt]
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · rw [if_pos hover]
-    by_cases htn : tn = closedTrees.length + 1
-    · rw [if_pos htn]
-      unfold PoolState.leavesAt
-      rw [htn, if_neg (by omega : closedTrees.length + 1 ≠ closedTrees.length)]
-      rw [List.getD_eq_default closedTrees (closedTrees.length + 1) ⟨[], []⟩ (by omega)]
-      simp
-    · rw [if_neg htn]; omega
-  · rw [if_neg hover]
-    by_cases htn : tn = closedTrees.length
-    · rw [if_pos htn]
-      unfold PoolState.leavesAt
-      rw [htn, if_pos rfl]
-      simp
-    · rw [if_neg htn]; omega
-
-/-- A fresh insertion's starting position is exactly the target tree's current leaf
-    count (whichever tree `insertTreeNumber` picks: the current tree extended, or a new
-    tree rolled into). Used by `PoolSafety.live_note_unspent` to show a just-inserted
-    position was never live before, hence never spent before either. -/
-theorem insertStartPos_eq_leavesAt_length (closedTrees : List TreeState) (curLeaves curRoots : List Term)
-    (count : Nat) :
-    insertStartPos curLeaves count =
-      (PoolState.leavesAt closedTrees curLeaves curRoots (insertTreeNumber closedTrees curLeaves count)).length := by
-  unfold insertStartPos insertTreeNumber PoolState.leavesAt
-  by_cases hover : curLeaves.length + count > 2 ^ TreeDepth
-  · rw [if_pos hover, if_pos hover]
-    rw [if_neg (by omega : closedTrees.length + 1 ≠ closedTrees.length)]
-    rw [List.getD_eq_default closedTrees (closedTrees.length + 1) ⟨[], []⟩ (by omega)]
-    simp
-  · rw [if_neg hover, if_neg hover, if_pos rfl]
-
-/-- A fresh batch's resulting leaf list, in the tree it actually lands in, has exactly
-    `insertStartPos` plus the batch size many leaves — the exact end-of-range
-    counterpart to `insertStartPos_eq_leavesAt_length`'s start-of-range fact. Pins a
-    fresh batch's positions to exactly `[insertStartPos, insertStartPos +
-    newLeaves.length)`, matching what `withTreePositionsFrom_pos_ge`/
-    `_pos_lt` give for the batch itself. -/
-theorem insertResult_leavesAt_target_length (closedTrees : List TreeState)
-    (curLeaves curRoots newLeaves : List Term) :
-    (PoolState.leavesAt (insertResult closedTrees curLeaves curRoots newLeaves).1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.1
-        (insertResult closedTrees curLeaves curRoots newLeaves).2.2
-        (insertTreeNumber closedTrees curLeaves newLeaves.length)).length
-      = insertStartPos curLeaves newLeaves.length + newLeaves.length := by
-  rw [insertResult_leavesAt]
-  unfold insertStartPos insertTreeNumber
-  by_cases hover : curLeaves.length + newLeaves.length > 2 ^ TreeDepth
-  · rw [if_pos hover, if_pos hover, if_pos rfl, if_pos hover]
-    omega
-  · rw [if_neg hover, if_neg hover, if_pos rfl, if_neg hover]
-    simp
-
 /-! ### Pool state -/
 
-/-- The pool's state, at the level this model needs. `live t` is the model's ghost
-    knowledge of every currently-unspent note of token `t`, as `((treeNumber, position),
-    preimage)` entries keyed by tree number and leaf position (module comment: a note is
-    identified by where it sits in the forest, never by a content scan). `spent tn` is
-    the nullifier set of tree `tn` (`ArmadaLean.PoolOwned.NullifierSet`,
-    `PrivacyPoolStorage.nullifiers`, PrivacyPoolStorage.sol:174, `mapping(uint256 =>
-    mapping(bytes32 => bool))` — genuinely per-tree, since the same `(nk, leafIndex)`
-    pair reused across two different trees derives the identical nullifier VALUE, and
-    only per-tree bookkeeping keeps that harmless). `closedTrees`/`leaves`/`roots` are
-    the tree forest (module comment on `TreeState`/`insertResult`) — always
-    `ArmadaLean.Merkle.treeRoot TreeDepth` of whichever leaves were pushed, never a free
-    choice. `held t` is the pool's own custody of token `t` — not `IERC20.balanceOf`,
-    which a caller can inflate with a raw, pool-unmediated `transfer` that credits no
-    note (sibling labbook entry §3a, the surplus/R4 discussion); `held` is the ledger the
-    three modeled operations maintain, which is exactly what the core invariant is about.
-    `preimageOf` mirrors `PrivacyPoolStorage.preimageOf`. `ownedRandomOf` is the second,
-    approved-design public registry (`ArmadaLean.PoolOwned`'s module comment on
-    `OwnedDisclosure`). `shieldsPaused` mirrors `IShieldPauseController.shieldsPaused`,
-    read by `ShieldModule._requireShieldsNotPaused` — the one freeze the Armada design
-    keeps, and it gates `Step.shield` alone (module comment, freeze-removal
-    departure). -/
+/-- One unshield payout: the pool sent `value` of `token` to the address `recipient`
+    (`_transferTokenOut`, TransactModule.sol:401-424). A ghost record of public data
+    (the `Unshield` event). -/
+structure Payout where
+  token : Token
+  recipient : Term
+  value : Nat
+  deriving DecidableEq
+
+/-- The pool's state, at the level this model needs.
+    * `live t`: ghost knowledge of every unspent note of token `t`, as
+      `((treeNumber, position), preimage)` entries (module comment).
+    * `spent tn`: the nullifier set of tree `tn` (`PrivacyPoolStorage.nullifiers`,
+      PrivacyPoolStorage.sol:174, per tree: the same `(key, leafIndex)` in two trees
+      gives the same nullifier value).
+    * `trees`: the Merkle trees (`TreeState`, `insertLeaves`).
+    * `held t`: the pool's custody of token `t` — the ledger the modeled operations
+      keep, not `IERC20.balanceOf`, which a raw `transfer` can inflate (labbook §3a).
+    * `preimageOf`: `PrivacyPoolStorage.preimageOf` (PrivacyPoolStorage.sol:248).
+    * `published`: ghost record of the owned-note openings that transactions
+      published (`ArmadaLean.PoolOwned.OwnedOpening`, decision 11).
+    * `payouts`: ghost record of unshield payouts (`Payout`). -/
 structure PoolState where
-  live : Nat → List ((Nat × Nat) × CommitmentPreimage)
+  live : Token → List ((Nat × Nat) × CommitmentPreimage)
   spent : Nat → NullifierSet
-  closedTrees : List TreeState
-  leaves : List Term
-  roots : List Term
-  held : Nat → Nat
+  trees : List TreeState
+  held : Token → Nat
   preimageOf : PreimageRegistry
-  ownedRandomOf : OwnedRandomRegistry
-  shieldsPaused : Bool
+  published : List (Term × OwnedOpening)
+  payouts : List Payout
 
-/-- The root history of tree `treeNumber`, read off `s`'s own fields. -/
+/-- The root history of tree `treeNumber`. -/
 def PoolState.rootsAt' (s : PoolState) (treeNumber : Nat) : List Term :=
-  PoolState.rootsAt s.closedTrees s.leaves s.roots treeNumber
+  rootsAt s.trees treeNumber
 
-/-- The leaf list of tree `treeNumber`, read off `s`'s own fields. -/
+/-- The leaf list of tree `treeNumber`. -/
 def PoolState.leavesAt' (s : PoolState) (treeNumber : Nat) : List Term :=
-  PoolState.leavesAt s.closedTrees s.leaves s.roots treeNumber
+  leavesAt s.trees treeNumber
 
 /-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
-    which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): no trees
-    closed, tree 0 empty, no spent nullifiers in any tree, the one root of the empty
-    tree (`ArmadaLean.Merkle.treeRoot TreeDepth []`, computed — not a free parameter
-    standing for the real pinned `ZERO_VALUE`-derived constant, PrivacyPoolStorage.sol
-    :150; see the module comment on `Term.val 0` as this model's stand-in zero value),
-    no custody, empty registries, not paused. -/
+    which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): one empty
+    tree whose one root is the empty-tree root (`treeRoot TreeDepth []`, computed), no
+    spent nullifiers, no custody, an empty registry, no published openings and no
+    payouts. -/
 def genesis : PoolState :=
-  { live := fun _ => [], spent := fun _ => [], closedTrees := [],
-    leaves := [], roots := [treeRoot TreeDepth []],
-    held := fun _ => 0, preimageOf := fun _ => none, ownedRandomOf := fun _ => none,
-    shieldsPaused := false }
+  { live := fun _ => [], spent := fun _ => [],
+    trees := [⟨[], [treeRoot TreeDepth []]⟩],
+    held := fun _ => 0, preimageOf := fun _ => none, published := [], payouts := [] }
 
 /-! ### Deriving notes from a witness
 
 A spend's input and output notes are never free choices: they are read off the witness
-a `Constrained`/`OwnedConstrained` proof already pins down. These definitions are
-the single place that reads them off, reused by every `Step` constructor and every
-`can_happen` theorem below, so "which notes did this spend touch" has exactly one
-answer, derived, not asserted. -/
+that a `Constrained`/`OwnedConstrained` proof pins down. These definitions are the one
+place that reads them off. -/
 
 /-- The `(treeNumber, position)`-keyed positions and preimages of a plain
-    `TransactWitness`'s `N` inputs, within the one tree `treeNumber` the proof's
-    `boundParams.treeNumber` names (PrivacyPoolStorage.sol:48,
-    `BoundParamsCore.treeNumber`; all `N` inputs of one transaction share this one
-    value — the circuit has no per-input tree field). Input `i` names leaf position
-    `w.leavesIndices i` (the same position `nullifier nk (leavesIndices i)` is derived
-    from, Transact.circom:97-101) and opens it as the commitment of `npk
-    (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i)` (Transact.circom
-    :74-84). -/
+    `TransactWitness`'s `N` inputs, within the one tree `treeNumber` that the bound
+    parameters name (all inputs of one transaction share it; the circuit has no
+    per-input tree field). Input `i` names leaf position `w.leavesIndices i` (the
+    position `nullifier nk (leavesIndices i)` is derived from, Transact.circom:97-101)
+    and opens it as the commitment of `npk (masterPublicKey w.publicKey
+    w.nullifyingKey) (w.randomIn i)` (Transact.circom:74-84). -/
 def transactSpentPositions {N M : Nat} (treeNumber : Nat) (w : TransactWitness N M) :
     List ((Nat × Nat) × CommitmentPreimage) :=
   List.ofFn fun i =>
@@ -1188,18 +909,27 @@ def transactSpentPositions {N M : Nat} (treeNumber : Nat) (w : TransactWitness N
         w.valueIn i⟩ : CommitmentPreimage))
 
 /-- The commitment preimages of a plain `TransactWitness`'s `M` outputs, in witness
-    order (Transact.circom:105-113). The circuit does not distinguish a kept note from
-    an unshield payout; `Step.transact` below splits this list into the two. -/
+    order (Transact.circom:105-113). -/
 def transactAllOutputs {N M : Nat} (w : TransactWitness N M) : List CommitmentPreimage :=
   List.ofFn fun j => (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)
 
+/-- **Refinement: how the circuit's outputs carry the bound unshield.** The circuit has
+    no unshield; it has `M` uniform outputs. The contract reads the last output
+    commitment as the unshield note, with the recipient address in its `npk`
+    (TransactModule.sol:313-331: "Hash must match last commitment"; PoolTypes.sol:78:
+    "For unshield outputs, `npk` encodes the recipient address"). That is an encoding
+    of the protocol's "withdraw this amount to this address" (`Unshield`, finding P-7).
+    This definition is the one place where the encoding appears. `newNotes` are the
+    outputs that stay in the pool as notes. -/
+def UnshieldRefines {N M : Nat} (w : TransactWitness N M) :
+    Option Unshield → List CommitmentPreimage → Prop
+  | none, newNotes => transactAllOutputs w = newNotes
+  | some u, newNotes => transactAllOutputs w = newNotes ++ [⟨u.recipient, w.token, u.value⟩]
+
 /-- The `(treeNumber, position)`-keyed positions and preimages of an owned
-    `TransactOwnedWitness`'s `N` inputs, within the one tree `treeNumber` the proof
-    names, the same convention as `transactSpentPositions`. Input `i` names leaf
-    position `w.leavesIndices i` (the same position `nullifier ownerField
-    (leavesIndices i)` is derived from, TransactOwned.circom:89-97) and opens it as the
-    commitment of `npk (Term.val pub.ownerField) (w.randomIn i)` (TransactOwned.circom
-    :66-76). -/
+    `TransactOwnedWitness`'s `N` inputs, the same convention as
+    `transactSpentPositions`. Input `i` opens the commitment of `npk pub.ownerField
+    (w.randomIn i)` (TransactOwned.circom:66-76). -/
 def ownedSpentPositions {N M : Nat} (treeNumber : Nat) (pub : TransactOwnedPublic N M)
     (w : TransactOwnedWitness N M) :
     List ((Nat × Nat) × CommitmentPreimage) :=
@@ -1215,257 +945,115 @@ def ownedNewNotes {N M : Nat} (w : TransactOwnedWitness N M) : List CommitmentPr
 
 /-! ### Operations
 
-Each constructor below takes, as explicit hypotheses, exactly the checks the named
-contract function performs before it changes state — "an accepted proof means its
-circuit constraints hold" is not reached for directly; the circuit-level facts
-(`Constrained`/`OwnedConstrained`) are discharged by the caller who builds a `Step` value,
-the same way `ArmadaLean.PoolOwned.owned_owner_binding` takes `OwnedConstrained` as a
-hypothesis rather than a global fact. -/
+Each constructor takes, as explicit hypotheses, exactly the checks the named contract
+function performs before it changes state. The circuit-level facts
+(`Constrained`/`OwnedConstrained`) are hypotheses that the builder of a `Step` value
+discharges. The caller of a step is the constructor argument `caller`; a shield's caller
+does not appear, because no check reads it. -/
 
 /-- One valid transition of the pool. -/
 inductive Step : PoolState → PoolState → Prop where
-  /-- Local `ShieldModule.shield` (ShieldModule.sol:45-90).
-      One `ShieldRequest` creates exactly one note of the shielded amount minus the fee
-      (`_transferTokenIn`/`_getFee`, ShieldModule.sol:277-371, reusing
-      `ArmadaLean.Fee.shieldBase`); see the module comment for why no second, fee, note
-      is created. `npk` is the shielded note's public key, a term the caller supplies
-      directly (the shield circuit does not derive it — the recipient computes their own
-      `npk` off-chain and the shielder just names it, same role as `npkOut` in a
-      `transact`). The note's commitment is appended to whichever tree currently has
-      room — `insertResult` rolls over to a fresh tree first if it does not
-      (`MerkleModule.insertLeaves`, MerkleModule.sol:54-121, rollover at :62-70); the
-      note lands at the position `live` records it under, in the tree it actually
-      landed in. The pushed root is `ArmadaLean.Merkle.treeRoot TreeDepth` of the
-      result — computed, not a free parameter — so a shield cannot name a root that
-      does not match the leaf it just inserted. No capacity hypothesis gates this
-      constructor: a full tree rolls over instead of blocking the shield (module
-      comment, rollover departure). `hNotPaused` is `_requireShieldsNotPaused`
-      (ShieldModule.sol:393-397). `hValue` is `_validateCommitmentPreimage`'s
-      `_note.value > 0` check (ShieldModule.sol:243-244) — the blocklist and
-      field-range checks on the same line are elided (Pool module comment: they gate
-      *which* shields succeed, not the value invariant). `hRange` is the note value's
-      own field width: `CommitmentPreimage.value` is `uint120`
-      (`PoolTypes.sol:79-83`), so every value the contract ever stores already fits —
-      `ArmadaLean.PoolSafety.live_values_lt_2pow120` is this fact lifted to every live
-      note, pool-wide. S-RG, "RAILGUN Core System & Protocol": "Then the smart contract
-      transfers tokens from the user wallet to itself, if a deposit amount is specified
-      ... The hashes of the output UTXOs are then added to the Merkle tree so they can
-      be spent in the future." -/
-  | shield {s : PoolState} (token grossAmount feeBP : Nat) (npk : Term)
-      (hNotPaused : s.shieldsPaused = false)
-      (hValue : 0 < grossAmount) (hFeeBP : feeBP ≤ BASIS)
-      (hRange : RangeChecked120 (shieldBase feeBP grossAmount)) :
+  /-- Local `ShieldModule.shield` (ShieldModule.sol:45-90). One `ShieldRequest` creates
+      exactly one note. `value` is the amount that enters the pool, after the fee
+      (`ArmadaLean.Fee.shieldBase`; the fee leg never passes through the pool, module
+      comment). `npk` is the note's public key, which the shielder names. The
+      commitment goes into the last tree, or a new tree if the last is full
+      (`insertLeaves`). `hValue` is `_validateCommitmentPreimage`'s `value > 0` check
+      (ShieldModule.sol:243-244); for a fee ratio below one, a positive gross amount
+      gives a positive `value`. `hSpendable` says the note's value passes the circuit's
+      input range check (`Spendable`). The contract gets this from the ABI type
+      `uint120 value` (PoolTypes.sol:82). Safety does not need it; spendability of every
+      live note does (`ArmadaLean.PoolSafety.live_values_spendable`, finding P-6).
+      S-RG, "RAILGUN Core System & Protocol": "Then the smart contract transfers tokens
+      from the user wallet to itself, if a deposit amount is specified ... The hashes of
+      the output UTXOs are then added to the Merkle tree so they can be spent in the
+      future." -/
+  | shield {s : PoolState} (token : Token) (value : Nat) (npk : Term)
+      (hValue : 0 < value) (hSpendable : Spendable value) :
       Step s
-        (let note : CommitmentPreimage := ⟨npk, token, shieldBase feeBP grossAmount⟩
-         let tn := insertTreeNumber s.closedTrees s.leaves 1
-         let pos := insertStartPos s.leaves 1
-         let res := insertResult s.closedTrees s.leaves s.roots [hashCommitment note]
+        (let note : CommitmentPreimage := ⟨npk, token, value⟩
+         let tn := insertTree s.trees 1
+         let pos := insertStart s.trees 1
          { s with
              live := fun t => if t = token then ((tn, pos), note) :: s.live t else s.live t,
              held := fun t => if t = token then s.held t + note.value else s.held t,
-             closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
+             trees := insertLeaves s.trees [hashCommitment note],
              preimageOf := recordStep s.preimageOf (hashCommitment note) note })
-  /-- Local `TransactModule.transact` (TransactModule.sol:43-96), covering both a pure
-      transfer and a transfer with a local unshield. `w`/`pub` are the proof's own
-      witness and public inputs; `hC : Constrained w pub` is the soundness hypothesis
-      ("an accepted proof means its circuit constraints hold") — this is what ties
-      `transactSpentPositions treeNumber w` to notes the spender actually derived from
-      keys it holds, not a free choice (see
-      `ArmadaLean.PoolSafety.transact_spends_only_owned`). `treeNumber` is the proof's
-      own `boundParams.treeNumber` (PrivacyPoolStorage.sol:48,
-      `BoundParamsCore.treeNumber`): the one tree every one of this transaction's
-      inputs' membership proofs and nullifiers are checked against — `hRoot`/
-      `hRemove`/`hNullify` all key off it, exactly as `_validateCommonContext`
-      (TransactModule.sol:538) and `_accumulateAndNullify` (TransactModule.sol
-      :381-385) do. `hN`/`hM` are the registered circuit shapes:
-      `VerifierModule.setVerificationKey` (VerifierModule.sol:32-47) registers one key
-      per `(nullifierCount, commitmentCount)` pair, and an unregistered shape reverts
-      (`verifyingKey.alpha1.x != 0` check, PrivacyPool.sol:519); the 19 registered plain
-      shapes (`armada-circuits/src/main/main_{1x1,1x2,1x3,2x1,2x2,2x3,3x1,3x2,3x3,4x1,
-      4x2,4x3,5x1,5x2,6x1,6x2,7x1,8x1,8x4}.circom`) all satisfy `N ≤ 8 ∧ M ≤ 4`, the
-      exact bound `transact_value_conserved` needs. `hSplit`/`hUnshieldLen` separate the
-      circuit's uniform `M` outputs (`transactAllOutputs`) into the notes that stay
-      live and, at most, one unshield payout — the circuit itself draws no such line
-      (TransactOwned.circom/Transact.circom treat every output alike); the pool does,
-      via `boundParams.unshield`/`commitmentCiphertext.length` (TransactModule.sol
-      :289-337). `hRemove` is the ghost-level half of "spend these inputs", keyed by
-      the leaf positions the witness names within tree `treeNumber`
-      (`transactSpentPositions`) — a spend of a position that is not live in that tree
-      has no step, since `removeAll` fails (`none`) the moment a requested position is
-      missing. `hNullify` is its on-chain half, `_accumulateAndNullify`
-      (TransactModule.sol:373-399), against tree `treeNumber`'s own nullifier set
-      (`s.spent treeNumber`). The kept outputs land wherever the CURRENT tree has room
-      (never necessarily tree `treeNumber` itself — a rollover may have moved on since
-      the spent inputs were created), at the positions `live` records them under. Every
-      output value's own `uint120` field width (`hRangeOut`'s role, `OwnedConstrained
-      .rangeOut`/`Constrained.rangeOut`, folded into `hC`) is already part of
-      `Constrained`, so no separate hypothesis is needed here for
-      `live_values_lt_2pow120`. `hRecords` is `_validatePublicOutputs (requireAll =
-      false)`/`_recordPreimages` (TransactModule.sol:544-604): disclosure is optional,
-      so `records` is any sublist of the outputs' own `(commitment, preimage)` pairs
-      (`transactOutputRecords`), in witness order — never an unrelated list, since
-      `List.Sublist` forces every disclosed entry to be one of the circuit's own
-      outputs (`transactOutputRecords_valid` then gives `hashCommitment` correctness
-      for free, not as a separate hypothesis). `ownedRecords`/`hOwnedRecords` are the
-      approved design's optional extra: for any disclosed output the discloser
-      additionally claims is contract-owned, it supplies `(ownerField, random)` and the
-      pool checks `npk (ownerField) random` matches that output's own `npk` —
-      `hOwnedRecords` requires every such claim to point at an already-disclosed,
-      matching entry (a deposit to the adjudicator is one scenario this covers;
-      `ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure` records the
-      departure). The balance fact itself is not a hypothesis here:
-      `ArmadaLean.PoolSafety.step_preserves_invariant` derives it from
-      `transact_value_conserved hN hM hC` at the point it is needed, exactly as the
-      contract's own guarantee rests on the circuit constraints and nothing else. S-RG:
-      "The contract checks to make sure: ... That it hasn't seen the nullifiers
-      before, eliminating any double spends[;] The Merkle root is the current or a
-      previous Merkle root, to prevent users from making up UTXOs." Zokyo's 2022-12-21
-      audit of `RailgunLogic.sol`
-      (`.scratch/rewrite-B/sources/railgun-audit-2022-12-21-Zokyo.pdf`, sha256
-      `b974caa94f7eee9f3f52e7996e4251ac1581523af161a5c83b7468cb06f3a9a9`), finding #1
-      ("Transaction validation is out of the scope", Medium, Resolved): "the current
-      implementation ... does not validate unshieldPreimage to contain a correct value
-      [;] anyone could call a function providing its own address and get all tokens."
-      Armada's `_validateTransaction` already carries this fix (TransactModule.sol
-      :295-331, the unshield npk/value/token checks and the
-      `_hashCommitment(unshieldPreimage) == commitments[last]` check), which is what
-      licenses `hSplit` reading the unshield payout off the circuit's own output. The
-      same audit, finding #2 ("Possible re-entrancy", Medium, Resolved), recommends
-      marking a transaction processed before any token moves; `_accumulateAndNullify`
-      already runs for every transaction in the batch (TransactModule.sol:63-73) before
-      any unshield payout (TransactModule.sol:76-80) — `hNullify` is taken before `held`
-      changes below for the same reason.
-
-      DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
-      `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before every `transact`
-      (called at TransactModule.sol:48, :52; the checks themselves at :460-475), which
-      can revert the whole call whenever the owner has installed a controller
-      (`PrivacyPool.setShieldPauseContract`, owner-gated, no restriction on when,
-      PrivacyPool.sol:466-470) whose `emergencyPaused()` or `withdrawOnlyMode()` returns
-      true. This constructor carries no such check: the Armada design removes the
-      owner's power to block a spend. `hRoot`, `hRemove` and `hNullify` are the only
-      preconditions that gate a `transact`, and none of them reads `s.shieldsPaused` —
-      `ArmadaLean.PoolSafety.transact_cannot_be_blocked` proves no step any caller can
-      take, the owner included, changes whether they hold. -/
-  | transact {s : PoolState} {N M : Nat} (w : TransactWitness N M) (pub : TransactPublic N M)
-      (treeNumber : Nat)
+  /-- Local `TransactModule.transact` (TransactModule.sol:43-96): a transfer, with an
+      optional local unshield. `hC` is soundness ("an accepted proof means its circuit
+      constraints hold"). `hBound` is the proof's binding of the bound parameters `bp`
+      (`_boundParamsHash`); `hAdapt` is the adapt-contract check on `caller`
+      (TransactModule.sol:530-532). `hN`/`hM` are the registered circuit shapes
+      (`main_{1x1,…,8x4}.circom`, all `N ≤ 8 ∧ M ≤ 4`). `hOutputs` splits the outputs
+      into new notes and the optional unshield (`UnshieldRefines`). `hRoot`, `hRemove`
+      and `hNullify` are the only checks that read the pool state: the root is one of
+      tree `bp.treeNumber`'s roots (TransactModule.sol:538), the spent positions are live
+      in that tree, and the nullifiers are fresh in that tree (`_accumulateAndNullify`,
+      TransactModule.sol:373-399). `records` is the optional disclosure
+      (`_validatePublicOutputs (requireAll = false)`/`_recordPreimages`,
+      TransactModule.sol:544-604): a sublist of the outputs' own records. `openings` are
+      owned-note openings that the transaction publishes (decision 11); the pool does
+      not check them. The custody of the token falls by the unshield amount, and the
+      payout record gains the payout. S-RG: "The contract checks to make sure: ... That
+      it hasn't seen the nullifiers before ... The Merkle root is the current or a
+      previous Merkle root". -/
+  | transact {s : PoolState} {N M : Nat} (caller : Term) (w : TransactWitness N M)
+      (pub : TransactPublic N M) (bp : BoundParams)
       (hN : N ≤ 8) (hM : M ≤ 4) (hC : Constrained w pub)
-      (newNotes unshieldTail : List CommitmentPreimage)
+      (hBound : pub.boundParamsHash = hashBoundParams bp) (hAdapt : AdaptAllows bp caller)
+      (newNotes : List CommitmentPreimage) (hOutputs : UnshieldRefines w bp.unshield newNotes)
       (rest : List ((Nat × Nat) × CommitmentPreimage)) (spent' : NullifierSet)
-      (records : List (Term × CommitmentPreimage))
-      (ownedRecords : List (Term × OwnedDisclosure))
-      (hRoot : pub.merkleRoot ∈ s.rootsAt' treeNumber)
-      (hSplit : transactAllOutputs w = newNotes ++ unshieldTail)
-      (hUnshieldLen : unshieldTail.length ≤ 1)
-      (hRemove : removeAll (s.live w.token) (transactSpentPositions treeNumber w) = some rest)
-      (hNullify : markSpent (s.spent treeNumber) (List.ofFn pub.nullifiers) = some spent')
-      (hRecords : records.Sublist (transactOutputRecords w pub))
-      (hOwnedRecords : ∀ cd ∈ ownedRecords, ∃ pre, (cd.1, pre) ∈ records ∧
-        npk cd.2.ownerField cd.2.random = pre.npk) :
+      (records : List (Term × CommitmentPreimage)) (openings : List (Term × OwnedOpening))
+      (hRoot : pub.merkleRoot ∈ s.rootsAt' bp.treeNumber)
+      (hRemove : removeAll (s.live w.token) (transactSpentPositions bp.treeNumber w) = some rest)
+      (hNullify : markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent')
+      (hRecords : records.Sublist (transactOutputRecords w pub)) :
       Step s
-        (let res := insertResult s.closedTrees s.leaves s.roots (newNotes.map hashCommitment)
-         let tn := insertTreeNumber s.closedTrees s.leaves newNotes.length
-         let pos := insertStartPos s.leaves newNotes.length
+        (let tn := insertTree s.trees newNotes.length
+         let pos := insertStart s.trees newNotes.length
          { s with
             live := fun t => if t = w.token
                 then withTreePositionsFrom tn pos newNotes ++ rest else s.live t,
-            spent := fun n => if n = treeNumber then spent' else s.spent n,
-            held := fun t => if t = w.token
-                then s.held t - listSum (unshieldTail.map CommitmentPreimage.value)
-                else s.held t,
-            closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
+            spent := fun n => if n = bp.treeNumber then spent' else s.spent n,
+            held := fun t => if t = w.token then s.held t - withdrawn bp.unshield else s.held t,
+            trees := insertLeaves s.trees (newNotes.map hashCommitment),
             preimageOf := applyRecords s.preimageOf records,
-            ownedRandomOf := applyOwnedRecords s.ownedRandomOf ownedRecords })
+            published := s.published ++ openings,
+            payouts := s.payouts ++
+              (bp.unshield.map fun u => (⟨w.token, u.recipient, u.value⟩ : Payout)).toList })
   /-- `TransactModule.transactOwned` (TransactModule.sol:488-519): the same bookkeeping
-      shape as `transact`, with no unshield (`_validateOwnedTransaction` rejects any
-      `unshield != NONE`, TransactModule.sol:619-623) and every output's preimage
-      mandatory (`_validatePublicOutputs(requireAll = true)`, TransactModule.sol:630-634):
-      every owned output is disclosed, so the registry update is fixed to
-      `ownedOutputRecords w pub` — the circuit's whole output batch, not a candidate
-      list a caller trims (unlike `transact`, where disclosure is optional). `hNonZero`
-      is `_validatePublicOutputs(requireAll = true)`'s own check that no owned output
-      may be the zero preimage (TransactModule.sol:567-571, "Missing public output").
-      `hC : OwnedConstrained w pub` is the soundness hypothesis; `caller`/`hCaller` is
-      the authorization check (`ownerField == msg.sender`,
-      TransactModule.sol:636-639) — together these are exactly what
-      `ArmadaLean.PoolSafety.transactOwned_spends_only_owned`
-      (`ArmadaLean.PoolOwned.owned_owner_binding`) needs. `hN`/`hM`: the registered owned
-      shapes (`armada-circuits/src/main/main_{1x1,1x2,1x3}_owned.circom`) all have
-      `N = 1 ≤ 8` and `M ≤ 3 ≤ 4`, well inside the bound
-      `transactOwned_value_conserved` needs; this model uses the same `N ≤ 8 ∧ M ≤ 4`
-      bound as the plain path rather than the tighter true one, since that is the bound
-      the existing proof already supplies. `treeNumber` is the proof's own
-      `boundParams.treeNumber`, the same role it plays for `Step.transact`. The spent
-      positions come from `ownedSpentPositions`; the spend removes exactly those
-      positions from `live`, within tree `treeNumber`, and a position that is not live
-      there has no step. The new outputs land wherever the current tree has room
-      (`insertResult`, rolling over first if needed), at the positions `live` records
-      them under. No capacity hypothesis gates this constructor (module comment,
-      rollover departure). `randomOut`/`hRandomOut`... no: `ownedOutputs`/
-      `hOwnedOutputs` are the approved design's owned-random disclosure, applied per
-      output, the same way `Step.transact`'s `ownedRecords` applies it: an owned spend
-      legitimately pays OUT to a recipient's own note key, not only re-mints notes to
-      itself (an adjudicator's payout output is one such case), so the random
-      disclosure cannot be mandatory for every output the way the preimage itself is
-      (`ownedOutputRecords w pub`, `requireAll = true`, unaffected). For each `(j,
-      ownerField, random)` the caller lists, output `j`'s own `npkOut` must equal
-      `npk (ownerField) random`; that output is then recorded into `ownedRandomOf`
-      alongside the `ownerField` claimed for it. An output whose index is not listed
-      is a plain user note — no owned disclosure, same as a `transact` output nobody
-      claims as owned.
-
-      DEPARTURE (contract, owner-controlled freeze removed): the merged contract checks
-      `_requireNotEmergencyPaused`/`_requireNotWithdrawOnly` before `transactOwned` too
-      (called at TransactModule.sol:491-492; the checks themselves at :460-475) —
-      withdraw-only mode in particular always blocks an owned transaction outright,
-      since the owned path's `unshield` is always `NONE` and `_requireNotWithdrawOnly`
-      demands `unshield != NONE` for every transaction while withdraw-only mode is on.
-      This constructor carries no such check: the Armada design removes the owner's
-      power to block a spend, owned included. `hRoot`, `hRemove` and `hNullify` are the
-      only preconditions that gate a `transactOwned`, and none of them reads
-      `s.shieldsPaused` — `ArmadaLean.PoolSafety.transactOwned_cannot_be_blocked` proves
-      no step any caller can take, the owner included, changes whether they hold. -/
+      as `transact`, with no unshield (`hNoUnshield`, `_validateOwnedTransaction`,
+      TransactModule.sol:619-623) and every output disclosed
+      (`_validatePublicOutputs(requireAll = true)`, TransactModule.sol:630-634), so the
+      registry update is the whole output batch `ownedOutputRecords w pub`. `hCaller` is
+      the authorization check (`ownerField == msg.sender`, TransactModule.sol:636-639).
+      `hBound`, `hAdapt`, `hRoot`, `hRemove` and `hNullify` are as for `transact`. The
+      registered owned shapes (`main_{1x1,1x2,1x3}_owned.circom`) have `N = 1` and
+      `M ≤ 3`; the model uses the plain bound `N ≤ 8 ∧ M ≤ 4`, which
+      `transactOwned_value_conserved` needs. `openings` are as for `transact`. -/
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
-      (pub : TransactOwnedPublic N M) (treeNumber : Nat) (hN : N ≤ 8) (hM : M ≤ 4)
+      (pub : TransactOwnedPublic N M) (bp : BoundParams) (hN : N ≤ 8) (hM : M ≤ 4)
       (hC : OwnedConstrained w pub) (caller : Term) (hCaller : caller = pub.ownerField)
+      (hBound : pub.boundParamsHash = hashBoundParams bp) (hAdapt : AdaptAllows bp caller)
+      (hNoUnshield : bp.unshield = none)
       (rest : List ((Nat × Nat) × CommitmentPreimage)) (spent' : NullifierSet)
-      (ownedOutputs : List (Fin M × OwnedDisclosure))
-      (hRoot : pub.merkleRoot ∈ s.rootsAt' treeNumber)
-      (hRemove : removeAll (s.live w.token) (ownedSpentPositions treeNumber pub w) = some rest)
-      (hNullify : markSpent (s.spent treeNumber) (List.ofFn pub.nullifiers) = some spent')
-      (hNonZero : ∀ j, ¬ isZeroPreimage
-        (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-      (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk x.2.ownerField x.2.random = w.npkOut x.1) :
+      (openings : List (Term × OwnedOpening))
+      (hRoot : pub.merkleRoot ∈ s.rootsAt' bp.treeNumber)
+      (hRemove : removeAll (s.live w.token) (ownedSpentPositions bp.treeNumber pub w) = some rest)
+      (hNullify : markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent') :
       Step s
-        (let res := insertResult s.closedTrees s.leaves s.roots ((ownedNewNotes w).map hashCommitment)
-         let tn := insertTreeNumber s.closedTrees s.leaves (ownedNewNotes w).length
-         let pos := insertStartPos s.leaves (ownedNewNotes w).length
+        (let tn := insertTree s.trees (ownedNewNotes w).length
+         let pos := insertStart s.trees (ownedNewNotes w).length
          { s with
             live := fun t => if t = w.token
                 then withTreePositionsFrom tn pos (ownedNewNotes w) ++ rest else s.live t,
-            spent := fun n => if n = treeNumber then spent' else s.spent n,
-            closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
+            spent := fun n => if n = bp.treeNumber then spent' else s.spent n,
+            trees := insertLeaves s.trees ((ownedNewNotes w).map hashCommitment),
             preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub),
-            ownedRandomOf := applyOwnedRecords s.ownedRandomOf
-              (ownedOutputs.map fun x => (pub.commitmentsOut x.1, x.2)) })
-  /-- The one remaining administrative path that changes pool state at all:
-      `setShieldPauseContract` installs a controller whose `IShieldPauseController
-      .shieldsPaused` this model reads (`ShieldModule._requireShieldsNotPaused`,
-      ShieldModule.sol:393-397) — the Armada design keeps this one freeze, and only
-      this one: it blocks `Step.shield` alone (module comment, freeze-removal
-      departure). Every other owner function (`setShieldFee`, `setFeeRecipient`,
-      `addToBlocklist`, `setVerificationKey`, `setVerificationKeyOwned`,
-      `setTestingMode`, ...) changes configuration this model does not represent and is
-      not modeled individually: none of them touches `live`, `spent`, `roots`, `held`,
-      `preimageOf` or `ownedRandomOf`, so every one of them is this same no-op on the
-      fields the safety theorems are about. -/
-  | admin {s : PoolState} (shieldsPaused : Bool) :
-      Step s { s with shieldsPaused := shieldsPaused }
+            published := s.published ++ openings })
 
 /-- Every state the pool can reach from deployment, by any sequence of calls from any
-    caller — the quantifier the brief's four promises range over. `genesis` is now a
-    concrete value (the empty-tree root is computed, not a free parameter — see
-    `genesis`'s doc comment), so `Reachable` no longer needs to be indexed by it. -/
+    caller. -/
 inductive Reachable : PoolState → Prop where
   | genesis : Reachable genesis
   | step {s s' : PoolState} (hs : Reachable s) (hstep : Step s s') :

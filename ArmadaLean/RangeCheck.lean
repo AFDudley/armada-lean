@@ -33,6 +33,13 @@ theorem bitsVal_lt_two_pow (bs : List Bool) : bitsVal bs < 2 ^ bs.length := by
 def RangeChecked120 (v : Nat) : Prop :=
   ∃ bs : List Bool, bs.length = 120 ∧ v = bitsVal bs
 
+/-- A note value that the circuits accept as an input: it passes the input range check
+    `Num2Bits(120)` (Transact.circom:120-124, TransactOwned.circom:112-116). The pool
+    layer uses this name and never the bit width: a note can be spent only if its
+    value is `Spendable`. Audit finding P-6 records the earlier `2 ^ 120` bound in the
+    pool state. -/
+def Spendable (v : Nat) : Prop := RangeChecked120 v
+
 /-- Soundness of the range check: any value passing `Num2Bits(120)` is below `2^120`.
     This is what keeps the value-conservation sum from wrapping around the field
     (SECURITY_REVIEW.md Finding 1; Transact.circom:116-119). -/

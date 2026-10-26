@@ -105,6 +105,10 @@ end
 
 instance : DecidableEq Term := Term.decEq
 
+/-- `Term` is inhabited. `opaque` constants of type `Term` (`ArmadaLean.Merkle
+    .emptyLeaf`) need the instance. No theorem reads the default value. -/
+instance : Inhabited Term := ⟨Term.hash .poseidon []⟩
+
 /-- The 2-argument Poseidon hash (used for note public keys, nullifiers, and every
     Merkle tree level: merkle.circom:40). -/
 def Term.hash2 (a b : Term) : Term := Term.hash .poseidon [a, b]

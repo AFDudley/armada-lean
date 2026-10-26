@@ -51,42 +51,44 @@ tree incrementally, using `filledSubTrees` as memoized partial roots, for gas (m
 comment there: "deliberately mutates `leafHashes` in place to save gas"). Whatever
 shortcuts the gas-optimized algorithm takes, the FINAL value it produces is the root of
 the standard binary Merkle tree over `2^TreeDepth` leaf slots, with the real leaves in
-insertion order at the low positions and the zero node (`ZERO_VALUE`,
-PrivacyPoolStorage.sol:150, modeled here as `Term.val 0` — the model does not recompute
-the real pinned constant, the same choice `ArmadaLean.Pool`'s module comment on `roots`
-already makes) filling every unused slot — that tree is what `treeRoot`/`treePath`
-define directly, non-incrementally, since this project only needs the tree's final
-value and leaf-membership facts, never a gas analysis. `TreeDepth` mirrors
+insertion order at the low positions and the empty leaf (`ZERO_VALUE`,
+PrivacyPoolStorage.sol:150, modeled as the opaque constant `emptyLeaf` below) filling
+every unused slot — that tree is what `treeRoot`/`treePath` define directly,
+non-incrementally, since this project only needs the tree's final value and
+leaf-membership facts, never a gas analysis. `TreeDepth` mirrors
 `PrivacyPoolStorage.TREE_DEPTH` (PrivacyPoolStorage.sol:144).
 
-DEPARTURE, now closed: an earlier version of this model represented exactly one tree,
-with no rollover, taking an explicit capacity hypothesis on every leaf-inserting step.
-`MerkleModule.insertLeaves` actually rolls over to a fresh tree, `treeNumber += 1`, when
-a batch would overflow the current one (MerkleModule.sol:62-70); `PrivacyPoolStorage
-.rootHistory` and `nullifiers` are then keyed by `treeNumber` (PrivacyPoolStorage.sol
-:171,174), so a later tree's roots and nullifier space are independent of an earlier
-tree's. `ArmadaLean.Pool`'s `TreeState`/`insertResult`/`PoolState.closedTrees` model
-this forest directly: a `shield`/`transact`/`transactOwned` step that would overflow
-the current tree rolls into a fresh one instead of having no witness, and no capacity
-hypothesis gates any of the three any more
-(`ArmadaLean.PoolSafety.reachable_leavesAt_capacity` proves every tree, including a
-freshly-rolled-into one, stays within `2 ^ TreeDepth` leaves on its own, by induction,
-not by hypothesis). -/
+An earlier version of this model used `Term.val 0` as the empty leaf. The same term
+also served as the "absent" default of a leaf lookup and as the "no disclosure"
+sentinel. Audit finding P-8 (armada-laconic `labbook/2026-10-26-pool-layout-audit.md`)
+records the removal: the empty leaf is now its own named constant, and a leaf lookup
+returns an `Option`.
+
+`ArmadaLean.Pool` models the forest of trees (`TreeState`, `insertLeaves`):
+`MerkleModule.insertLeaves` starts a fresh tree, `treeNumber += 1`, when a batch would
+overflow the current one (MerkleModule.sol:62-70). No capacity hypothesis gates a step
+(`ArmadaLean.PoolSafety.reachable_leavesAt_capacity` proves every tree stays within
+`2 ^ TreeDepth` leaves by induction). -/
 
 /-- The production Merkle tree depth (`PrivacyPoolStorage.TREE_DEPTH`,
     PrivacyPoolStorage.sol:144): `2^16 = 65536` leaves per tree. -/
 def TreeDepth : Nat := 16
 
+/-- The empty leaf `ZERO_VALUE` (PrivacyPoolStorage.sol:150), a pinned public constant.
+    It fills every unused leaf slot of a tree. No theorem reads its value, so the model
+    leaves it opaque. -/
+opaque emptyLeaf : Term
+
 /-- The root of the depth-`d` binary tree whose leaves, left to right, are `leaves`,
-    padded on the right with the zero node wherever `leaves` runs out. Defined by
+    padded on the right with `emptyLeaf` wherever `leaves` runs out. Defined by
     splitting the `2^d` leaf slots into a left half (`leaves.take (2^(d-1))`) and a
     right half (`leaves.drop (2^(d-1))`), recursively rooting each, and combining —
     the standard top-down definition of a binary Merkle tree, which computes the same
     value the bottom-up incremental algorithm does (module comment above). At `d = 0`
-    there is one leaf slot, filled by `leaves`' head if present or the zero sentinel
-    `Term.val 0` otherwise. -/
+    there is one leaf slot, filled by `leaves`' head if present or by `emptyLeaf`
+    otherwise. -/
 def treeRoot : Nat → List Term → Term
-  | 0, leaves => leaves.headD (Term.val 0)
+  | 0, leaves => leaves.headD emptyLeaf
   | d + 1, leaves =>
     let half := 2 ^ d
     merkleStep (treeRoot d (leaves.take half)) (treeRoot d (leaves.drop half)) false
@@ -166,13 +168,13 @@ construction half of "every leaf ever inserted has a Merkle witness to a root th
 produced" (`ArmadaLean.PoolSafety.leaf_has_merkle_witness`): the witness is `treePath`
 itself, not a free choice. -/
 theorem treePath_correct (d : Nat) (leaves : List Term) (i : Nat) (hi : i < 2 ^ d) :
-    merkleRoot (leaves.getD i (Term.val 0)) (treePath d leaves i) = treeRoot d leaves := by
+    merkleRoot (leaves.getD i emptyLeaf) (treePath d leaves i) = treeRoot d leaves := by
   induction d generalizing leaves i with
   | zero =>
     simp only [Nat.pow_zero] at hi
     have hi0 : i = 0 := by omega
     subst hi0
-    show merkleRoot (leaves.getD 0 (Term.val 0)) [] = leaves.headD (Term.val 0)
+    show merkleRoot (leaves.getD 0 emptyLeaf) [] = leaves.headD emptyLeaf
     unfold merkleRoot
     cases leaves <;> rfl
   | succ d ih =>
@@ -180,8 +182,8 @@ theorem treePath_correct (d : Nat) (leaves : List Term) (i : Nat) (hi : i < 2 ^ 
     · rw [treePath_succ_lt d leaves i hlt, treeRoot_succ]
       unfold merkleRoot
       rw [List.foldl_append]
-      have hget : (leaves.take (2 ^ d)).getD i (Term.val 0) = leaves.getD i (Term.val 0) :=
-        List.getD_take_of_lt leaves i (2 ^ d) hlt (Term.val 0)
+      have hget : (leaves.take (2 ^ d)).getD i emptyLeaf = leaves.getD i emptyLeaf :=
+        List.getD_take_of_lt leaves i (2 ^ d) hlt emptyLeaf
       rw [← hget]
       have hind := ih (leaves.take (2 ^ d)) i hlt
       unfold merkleRoot at hind
@@ -193,7 +195,7 @@ theorem treePath_correct (d : Nat) (leaves : List Term) (i : Nat) (hi : i < 2 ^ 
       have hi2 : i - 2 ^ d < 2 ^ d := by
         simp only [Nat.pow_succ] at hi
         omega
-      have hget : (leaves.drop (2 ^ d)).getD (i - 2 ^ d) (Term.val 0) = leaves.getD i (Term.val 0) := by
+      have hget : (leaves.drop (2 ^ d)).getD (i - 2 ^ d) emptyLeaf = leaves.getD i emptyLeaf := by
         rw [List.getD_drop_eq]
         congr 1
         omega
@@ -202,6 +204,17 @@ theorem treePath_correct (d : Nat) (leaves : List Term) (i : Nat) (hi : i < 2 ^ 
       unfold merkleRoot at hind
       rw [hind]
       rfl
+
+/-- `treePath_correct` for a leaf that exists: if position `i` of `leaves` holds `leaf`,
+    the path from `leaf` reconstructs the tree's root. The form that a pool theorem
+    states, with no default value (audit finding P-8). -/
+theorem treePath_correct_of_getElem? (d : Nat) (leaves : List Term) (i : Nat)
+    (hi : i < 2 ^ d) {leaf : Term} (hleaf : leaves[i]? = some leaf) :
+    merkleRoot leaf (treePath d leaves i) = treeRoot d leaves := by
+  have hget : leaves.getD i emptyLeaf = leaf := by
+    rw [List.getD_eq_getElem?_getD, hleaf, Option.getD_some]
+  rw [← hget]
+  exact treePath_correct d leaves i hi
 
 /-- A `treePath` at depth `d` always has exactly `d` entries — one `(sibling, bit)`
     pair per level, matching `Constrained.pathLen`/`OwnedConstrained.pathLen`'s own

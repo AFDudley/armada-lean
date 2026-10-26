@@ -54,7 +54,7 @@
   which is what `user_npk_ne_contract_npk` (`ArmadaLean.TransactOwned`) and
   every theorem below that touches `ownerField` are stated against.
 
-  `TransactOwnedPublic.ownerField`, `OwnedDisclosure.ownerField`, and every
+  `TransactOwnedPublic.ownerField`, `OwnedOpening.ownerField`, `Token.address`, and every
   `caller`/owning-party value in this file and `ArmadaLean.Pool` /
   `ArmadaLean.PoolSafety` are address terms accordingly — `Term`, never `Nat`.
   `addressOf` (EVM's `address(uint160(x))` truncation) is deleted along with
@@ -66,15 +66,13 @@
 -/
 import ArmadaLean.TransactOwned
 
-/-- The data committed into a Merkle leaf for a contract-owned output
-    (`PoolTypes.sol:79-83`, `struct CommitmentPreimage`). `npk` is a term (a
-    note public key); `token` abstracts `_getTokenID(token)` the same way
-    `TransactOwnedWitness.token` does (ArmadaLean.TransactOwned), and `value`
-    is the note value — both raw numbers, never hashed by this preimage
-    itself. -/
+/-- The data committed into a Merkle leaf (`PoolTypes.sol:79-83`, `struct
+    CommitmentPreimage`). `npk` is a term (a note public key); `token` is a symbolic
+    `Token` (`ArmadaLean.Token`), the same as `TransactOwnedWitness.token`; `value` is
+    the note value, a number. -/
 structure CommitmentPreimage where
   npk : Term
-  token : Nat
+  token : Token
   value : Nat
   deriving DecidableEq
 
@@ -84,19 +82,12 @@ structure CommitmentPreimage where
     second commitment hash is defined here. -/
 def hashCommitment (pre : CommitmentPreimage) : Term := commitment pre.npk pre.token pre.value
 
-/-- An output that stays ciphertext-only carries an all-zero preimage
-    (`_isZeroPreimage`, TransactModule.sol:582-585) and is skipped by
-    `_recordPreimages`. The real contract compares the raw stored `npk`
-    field to the literal `bytes32(0)`; the symbolic equivalent is comparing
-    the term to `Term.val 0`, the raw-value embedding of that same literal —
-    a genuine Poseidon output (`Term.hash ...`) can never equal `Term.val 0`
-    (`Term.val_ne_hash`), so this sentinel can only ever be set deliberately,
-    exactly as in the real contract, never hit by coincidence. -/
-def isZeroPreimage (pre : CommitmentPreimage) : Prop :=
-  pre.npk = Term.val 0 ∧ pre.value = 0 ∧ pre.token = 0
-
-instance (pre : CommitmentPreimage) : Decidable (isZeroPreimage pre) := by
-  unfold isZeroPreimage; infer_instance
+/- An output that stays ciphertext-only has no disclosed preimage. The contract encodes
+   "no preimage" as an all-zero `publicOutputs` entry (`_isZeroPreimage`,
+   TransactModule.sol:582-585). This model has no such sentinel: a disclosure is a list
+   of the outputs that are disclosed (`ArmadaLean.Pool.Step.transact`, `records`), and
+   the owned path discloses every output. Audit finding P-4 records the removal of the
+   earlier `isZeroPreimage`. -/
 
 /-! ### `verifyOwned` acceptance (PrivacyPool.sol:562-601)
 
@@ -234,12 +225,12 @@ abbrev PreimageRegistry := Term → Option CommitmentPreimage
 def RegistryConsistent (reg : PreimageRegistry) : Prop :=
   ∀ c pre, reg c = some pre → hashCommitment pre = c
 
-/-- Recording one output (TransactModule.sol:593-599): a zero preimage is
-    skipped (:594-596); otherwise the registry entry at `c` becomes
-    `preimage` (:598). -/
+/-- Recording one disclosed output (TransactModule.sol:593-599): the registry entry
+    at `c` becomes `preimage` (:598). The contract skips an all-zero entry (:594-596);
+    this model passes only disclosed outputs (module comment on finding P-4). -/
 def recordStep (reg : PreimageRegistry) (c : Term) (preimage : CommitmentPreimage) :
     PreimageRegistry :=
-  fun c' => if isZeroPreimage preimage then reg c' else if c' = c then some preimage else reg c'
+  fun c' => if c' = c then some preimage else reg c'
 
 /-- Recording every output of one transaction (`_recordPreimages`'s loop,
     TransactModule.sol:590-604), `commitments` and `publicOutputs` running
@@ -260,17 +251,13 @@ theorem recordStep_preserves_consistency {reg : PreimageRegistry} (hreg : Regist
     RegistryConsistent (recordStep reg c preimage) := by
   intro c' pre' hc'
   unfold recordStep at hc'
-  by_cases hz : isZeroPreimage preimage
-  · rw [if_pos hz] at hc'
+  by_cases heq : c' = c
+  · rw [if_pos heq] at hc'
+    cases hc'
+    rw [heq]
+    exact hvalid
+  · rw [if_neg heq] at hc'
     exact hreg c' pre' hc'
-  · rw [if_neg hz] at hc'
-    by_cases heq : c' = c
-    · rw [if_pos heq] at hc'
-      cases hc'
-      rw [heq]
-      exact hvalid
-    · rw [if_neg heq] at hc'
-      exact hreg c' pre' hc'
 
 theorem recordPreimages_preserves_consistency {K : Nat} (commitments : Fin K → Term)
     (publicOutputs : Fin K → CommitmentPreimage)
@@ -297,86 +284,29 @@ theorem preimageOf_consistent {K : Nat} (commitments : Fin K → Term)
   recordPreimages_preserves_consistency commitments publicOutputs hvalid
     (fun _ _ h => by simp at h)
 
-/-! ### Public random for a contract-owned note (`PoolTypes.sol:79-83`, `TransactModule
-._recordPreimages`, TransactModule.sol:590-604, DEPARTURE)
+/-! ### The published opening of a contract-owned note
 
-DEPARTURE (contract, confirmed by reading the source): the merged contract's
-`CommitmentPreimage` struct (`PoolTypes.sol:79-83`) has exactly three fields — `npk`,
-`token`, `value` — and `_recordPreimages` (TransactModule.sol:590-604) writes exactly
-that struct to `preimageOf`, nothing more. The random value behind a contract-owned
-note's `npk = Poseidon(ownerField, random)` (TransactOwned.circom:66-70) is never
-recorded anywhere the real contract exposes, so only the note's own creator — the one
-party who chose `random` — can ever build the `TransactOwned` proof that spends it. The
-approved design changes this: when a note is created for a contract owner, the creator
-additionally supplies `ownerField` and `random` alongside the preimage; the pool checks
-`npk ownerField random = npk` and records `random` (paired with `ownerField`, so a
-reader can tell which owner it is claimed for) in a second, public registry. This
-applies to any owned-path output the caller lists as staying contract-owned
-(`Step.transactOwned`'s `ownedOutputs`, one entry per such output — optional per output,
-unlike the note's own preimage, which `_validatePublicOutputs(requireAll = true)` still
-discloses for every output unconditionally: an owned spend legitimately pays OUT to a
-recipient's own note key, not only re-mints notes to itself, so the random disclosure
-cannot be mandatory for an output that is not staying contract-owned) and to any plain-
-`transact` output additionally disclosed as contract-owned (`Step.transact`'s
-`ownedRecords`, likewise optional — a deposit to the adjudicator is one such output on
-either path). Any later caller who knows its own `ownerField` can then read this
-registry and the ordinary `preimageOf` registry and construct a spend witness entirely
-from public data (`ArmadaLean.PoolSafety.owned_spend_witness_exists`). -/
+A contract-owned note has `npk = Poseidon(ownerField, random)`
+(TransactOwned.circom:66-70). The merged contract records only `npk`, `token` and
+`value` (`preimageOf`, `PoolTypes.sol:79-83`). Without `random`, only the creator of the
+note can build the proof that spends it. Armada decision 11 (labbook
+`2026-10-18-contract-owned-notes-and-zk-channel-apps.md`) fixes this: the creator
+publishes the opening in the creating transaction, inside `adaptParams`, and the
+adjudicator checks it against the proof's output commitment. An off-chain indexer
+extracts it. The pool keeps no storage for it.
 
-/-- One contract-owned note's recorded random, alongside the owner it was disclosed for
-    — `PoolState.ownedRandomOf`'s value type. `ownerField` is an address term (module
-    comment), never a raw `Nat`. -/
-structure OwnedDisclosure where
+This model puts the opening in the step's public data (`ArmadaLean.Pool.Step.transact`
+and `.transactOwned`, argument `openings`). The ghost record `PoolState.published`
+keeps every opening that a step carried. The pool does not check an opening; a reader
+checks it against the note's `npk` (`ArmadaLean.PoolSafety.owned_spend_witness_exists`).
+Audit finding P-10 records the removal of the earlier storage map `ownedRandomOf`. -/
+
+/-- The opening of a contract-owned note: the owner address and the note's random.
+    `npk ownerField random` is the note's public key when the opening is correct. -/
+structure OwnedOpening where
   ownerField : Term
   random : Nat
-
-/-- The public registry of disclosed owned-note randoms (`PoolState.ownedRandomOf`),
-    keyed by commitment, parallel to `PreimageRegistry`: `none` unless the note was
-    disclosed as contract-owned. -/
-abbrev OwnedRandomRegistry := Term → Option OwnedDisclosure
-
-/-- The registry invariant: every recorded owned disclosure's random genuinely
-    reconstructs the commitment's own `npk`, against the matching `preimageOf` entry —
-    the pool's own check before it ever writes an entry here. -/
-def OwnedRandomConsistent (reg : PreimageRegistry) (rreg : OwnedRandomRegistry) : Prop :=
-  ∀ c d, rreg c = some d → ∃ pre, reg c = some pre ∧ npk d.ownerField d.random = pre.npk
-
-/-- Recording one commitment's owned disclosure: unconditional overwrite at key `c`,
-    mirroring `recordStep`'s shape (no zero-skip here — an `npk` built from `random`
-    is always a genuine hash term, never the zero sentinel, `npk_preimage_not_zero`
-    below). -/
-def recordOwnedStep (rreg : OwnedRandomRegistry) (c : Term) (d : OwnedDisclosure) :
-    OwnedRandomRegistry :=
-  fun c' => if c' = c then some d else rreg c'
-
-/-- A preimage whose `npk` is reconstructed from an owner field and a random value can
-    never be the zero sentinel: `npk` is always `Term.hash2 ...` (a genuine Poseidon
-    output, whatever its first argument's own shape), and `Term.val 0` can never equal
-    a hash term (`Term.val_ne_hash`, by construction). This is what lets
-    `recordOwnedStep` skip no owned disclosure the way `recordStep` skips a zero
-    preimage. -/
-theorem npk_preimage_not_zero {ownerField : Term} {random : Nat} {pre : CommitmentPreimage}
-    (h : npk ownerField random = pre.npk) : ¬ isZeroPreimage pre := by
-  rintro ⟨hz, -, -⟩
-  rw [← h] at hz
-  unfold npk at hz
-  exact Term.val_ne_hash 0 .poseidon _ hz.symm
-
-/-- `recordOwnedStep` preserves `OwnedRandomConsistent`, given the new entry's random
-    genuinely reconstructs the npk of whatever `reg` already holds at that key. -/
-theorem recordOwnedStep_preserves_consistency {reg : PreimageRegistry} {rreg : OwnedRandomRegistry}
-    (hconsistent : OwnedRandomConsistent reg rreg)
-    {c : Term} {pre : CommitmentPreimage} {d : OwnedDisclosure}
-    (hreg : reg c = some pre) (hnpk : npk d.ownerField d.random = pre.npk) :
-    OwnedRandomConsistent reg (recordOwnedStep rreg c d) := by
-  intro c' d' hc'
-  unfold recordOwnedStep at hc'
-  by_cases heq : c' = c
-  · rw [if_pos heq] at hc'
-    cases hc'
-    exact ⟨pre, heq ▸ hreg, hnpk⟩
-  · rw [if_neg heq] at hc'
-    exact hconsistent c' d' hc'
+  deriving DecidableEq
 
 /-! ### Can happen (proof completeness) -/
 
@@ -385,18 +315,19 @@ theorem recordOwnedStep_preserves_consistency {reg : PreimageRegistry} {rreg : O
 succeeds. `ownerField`, `token`, `randomIn`, `valueIn`, `leavesIndices`,
 `pathElements`, `npkOut`, `valueOut` are the real owner's own data — the
 witness for `N` notes it genuinely holds at Merkle root `root`, re-minted
-into `M` fresh outputs of equal total value. `owned_spend_can_happen`
-clears every pool-level gate this model covers: the circuit constraints
-hold (`OwnedConstrained`, by construction), `verifyOwned` accepts
+into `M` fresh outputs of equal total value. `boundParamsHash` is the hash of the
+transaction's bound parameters (`ArmadaLean.BoundParams.hashBoundParams`).
+`owned_spend_can_happen` clears every pool-level gate this model covers: the circuit
+constraints hold (`OwnedConstrained`, by construction), `verifyOwned` accepts
 (`hComplete.complete`, the one completeness assumption), the caller is
-authorized (`hCaller`), every output's preimage is valid and non-zero so
+authorized (`hCaller`), every output's preimage hashes to its commitment so
 `_validatePublicOutputs(requireAll = true)` (TransactModule.sol:630-634)
 passes, and the nullifiers are fresh so `_accumulateAndNullify` does not
 revert (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers`
 from ArmadaLean.Nullifier to turn the owner's genuinely-distinct note
 positions into pairwise-distinct nullifiers). -/
 theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
-    (ownerField : Term) (token boundParamsHash : Nat) (root : Term)
+    (ownerField : Term) (token : Token) (boundParamsHash : Term) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool))
     (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
@@ -409,37 +340,12 @@ theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
     (spent : NullifierSet) (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ spent)
-    (hOutputsNonZero : ∀ j, npkOut j ≠ Term.val 0)
     (caller : Term) (hCaller : caller = ownerField) :
     ∃ (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M),
       OwnedConstrained w pub ∧
       VerifyOwnedAccepts pub ∧
+      pub.boundParamsHash = boundParamsHash ∧
       caller = pub.ownerField ∧
       (∀ j, hashCommitment ⟨npkOut j, token, valueOut j⟩ = pub.commitmentsOut j) ∧
-      (∀ j, ¬ isZeroPreimage (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage)) ∧
       ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
-  let w : TransactOwnedWitness N M :=
-    { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
-      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
-  let pub : TransactOwnedPublic N M :=
-    { merkleRoot := root, boundParamsHash := boundParamsHash,
-      nullifiers := fun i => nullifier ownerField (leavesIndices i),
-      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
-      ownerField := ownerField }
-  have hConstrained : OwnedConstrained w pub :=
-    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
-      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
-      balance := congrArg (· % p) hBalance }
-  refine ⟨w, pub, hConstrained, hComplete.complete hConstrained, hCaller, fun _ => rfl, ?_, ?_⟩
-  · intro j hz
-    exact hOutputsNonZero j hz.1
-  · apply markSpent_succeeds
-    · have hmap := distinct_leaves_distinct_nullifiers ownerField (List.ofFn leavesIndices)
-        hDistinctLeaves
-      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
-          = List.ofFn (fun i => nullifier ownerField (leavesIndices i)) := List.map_ofFn
-      rwa [heq] at hmap
-    · intro n hn
-      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
-      rw [← hi]
-      exact hFresh i
+  sorry

@@ -80,7 +80,7 @@ import ArmadaLean.Transact
     `nullifyingKey`: the owned path carries no EdDSA witness. -/
 structure TransactOwnedWitness (N M : Nat) where
   /-- tokenHash, shared by every input/output (:43). -/
-  token : Nat
+  token : Token
   /-- note randomness per input (:46). -/
   randomIn : Fin N → Nat
   /-- note value per input (:47). -/
@@ -95,10 +95,11 @@ structure TransactOwnedWitness (N M : Nat) where
   /-- output values (:53). -/
   valueOut : Fin M → Nat
 
-/-- Public inputs of the TransactOwned circuit (TransactOwned.circom:32-36). -/
+/-- Public inputs of the TransactOwned circuit (TransactOwned.circom:32-36).
+    `boundParamsHash` is a term, the same as `TransactPublic.boundParamsHash`. -/
 structure TransactOwnedPublic (N M : Nat) where
   merkleRoot : Term
-  boundParamsHash : Nat
+  boundParamsHash : Term
   nullifiers : Fin N → Term
   commitmentsOut : Fin M → Term
   /-- The calling contract's address (TransactOwned.circom:36; `ownerField =
@@ -173,7 +174,7 @@ the same commitment value cannot arise from two different `ownerField`
 terms. This is the Poseidon-injectivity core of owner binding
 (`owned_owner_binding` in ArmadaLean.PoolOwned adds the pool's authorization
 check on top). -/
-theorem commitment_owner_inj {owner₁ owner₂ : Term} {r₁ r₂ token value : Nat}
+theorem commitment_owner_inj {owner₁ owner₂ : Term} {r₁ r₂ value : Nat} {token : Token}
     (h : commitment (npk owner₁ r₁) token value =
          commitment (npk owner₂ r₂) token value) :
     owner₁ = owner₂ := by
