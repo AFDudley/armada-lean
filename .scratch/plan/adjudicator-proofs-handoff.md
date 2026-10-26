@@ -1,3 +1,122 @@
+# SUCCESSOR HANDOFF — adjudicator-model-v4, 3 of 4 owned-spend lemmas proved,
+# 1 reported false with a counterexample
+
+## State
+
+- Repo: `~/code/git_puller/repos/armada-lean-adjudicator-v4`, branch `adjudicator-model-v4`.
+- Head: `993a83b`. `lake build` exits 0.
+- Sorry count: 64 (`lake build 2>&1 | grep -c 'uses .sorry.'`), down from 67.
+- This session proved three of the four assigned owned-spend lemmas in
+  `ArmadaLean/Adjudicator/Lemmas.lean`:
+  `PoolOwnedSpend_update_position_live` (commit `d61e8d5`),
+  `PoolOwnedSpendStep_notedValue_conserved` (commit `fd27537`),
+  `PoolOwnedSpendStep_preserves_user_note` (commit `993a83b`).
+  Each commit's own `lake build` exited 0 before push.
+
+## `PoolOwnedSpendStep_ownedRandom_known` is FALSE as stated — not proved
+
+The fourth lemma (`ArmadaLean/Adjudicator/Lemmas.lean`, currently still
+`sorry`-stubbed near line 1800) is:
+
+```
+theorem PoolOwnedSpendStep_ownedRandom_known
+    (pool pool' : PoolState) (self : Term) (asset : Nat) (cid : Term) (remainder r : Nat)
+    (payoutOutputs : List CommitmentPreimage)
+    (holdings : Nat → Term → Option ((Nat × Nat) × Term))
+    (htokPayout : ∀ pre ∈ payoutOutputs, pre.token = asset)
+    (hmatch : PoolOwnedSpendStep pool self asset (holdings asset cid) payoutOutputs
+      (if remainder = 0 then [] else [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])
+      pool') :
+    (∀ qc pre' r', pool.preimageOf qc = some pre' → hashCommitment pre' = qc →
+      pre'.npk = npk self r' →
+      pool.ownedRandomOf qc = some ⟨self, r'⟩ →
+      pool'.ownedRandomOf qc = some ⟨self, r'⟩) ∧
+    (remainder ≠ 0 →
+      pool'.ownedRandomOf (commitment (npk self r) asset remainder) =
+        some ⟨self, r⟩)
+```
+
+**The first conjunct IS provable** (a known, already-disclosed preimage
+survives the step). Build it with `applyOwnedRecords_preserves_known`,
+`reg := pool'.preimageOf` (not `pool.preimageOf`), `hvalid` built from the
+step's own `∀ x ∈ ownedOutputs, npk x.2.ownerField x.2.random = w.npkOut
+(Fin.natAdd payoutOutputs.length x.1)` conjunct plus `applyRecords_reads`
+(the same pattern `PoolOwnedSpendStep_preimageOf_known`, already proved,
+already uses for `preimageOf`).
+
+**The second conjunct is FALSE.** `PoolOwnedSpendStep`'s own existential
+(`ArmadaLean/Adjudicator/Notes.lean:272-331`) names `ownedOutputs : List
+(Fin ownedPreimages.length × OwnedDisclosure)` as a FREE witness, with only
+one conjunct constraining it: `∀ x ∈ ownedOutputs, npk x.2.ownerField
+x.2.random = w.npkOut (Fin.natAdd payoutOutputs.length x.1)`. Nothing forces
+`ownedOutputs` to be non-empty, or to cover every index of
+`ownedPreimages`. `ownedOutputs` appears NOWHERE else in the existential
+except this one (vacuously-satisfiable-by-`[]`) conjunct and in computing
+`after.ownedRandomOf := applyOwnedRecords before.ownedRandomOf
+(ownedOutputs.map ...)`.
+
+Consequence: for ANY witness set that satisfies `PoolOwnedSpendStep` with
+`ownedOutputs := someList`, the SAME witness set with `ownedOutputs := []`
+ALSO satisfies `PoolOwnedSpendStep` (every other conjunct is untouched),
+producing a DIFFERENT `pool'` whose `ownedRandomOf` is
+`applyOwnedRecords pool.ownedRandomOf [] = pool.ownedRandomOf` — i.e.
+UNCHANGED from `pool`. Since the theorem also places no invariant on
+`pool.ownedRandomOf` (it is a fully free `(pool pool' : PoolState)` pair,
+no `hinv`/reachability hypothesis), picking `pool.ownedRandomOf := fun _ =>
+none` makes the second conjunct's conclusion
+(`pool'.ownedRandomOf (commitment (npk self r) asset remainder) = some ⟨self, r⟩`)
+read `none = some ⟨self, r⟩`, which is False.
+
+### Concrete instance
+
+`asset := 0`, `cid := Term.val 0`, `remainder := 1`, `r := 0`,
+`payoutOutputs := []`, `self` any `Term`,
+`holdings := fun _ _ => none` overridden so `holdings 0 cid = some ((0, 0),
+commitment (npk self 0) 0 1)` (so `nullified = some ((0,0), c0)`, the "some"
+branch — the "none" branch cannot produce `remainder ≠ 0` at all: `N = 0`
+forces `listSum valueIn = 0`, and `OwnedConstrained.balance` then forces
+`listSum valueOut = 0`, i.e. zero remainder). Witness `w : TransactOwnedWitness
+1 1`: `token := 0`, `randomIn _ := 0`, `valueIn _ := 1`, `pathElements _ :=
+List.replicate 16 (Term.val 0, false)`, `leavesIndices _ := 0`, `npkOut _ :=
+npk self 0`, `valueOut _ := 1`. `pub.ownerField := self`,
+`pub.merkleRoot := merkleRoot (commitment (npk self 0) 0 1) (w.pathElements
+0)` (defined AS the function's own output, so `OwnedConstrained.merkle`
+holds by `rfl`), `pub.nullifiers _ := nullifier self 0`,
+`pub.commitmentsOut _ := commitment (npk self 0) 0 1`. `ownedOutputs := []`.
+`pool.live 0 := [((0, 0), ⟨npk self 0, 0, 1⟩)]`, `pool.closedTrees := []`,
+`pool.leaves := []`, `pool.roots := [pub.merkleRoot]`, `pool.spent _ := ∅`
+(empty `NullifierSet`), `pool.ownedRandomOf := fun _ => none`. Every
+`OwnedConstrained`/`PoolOwnedSpendStep` conjunct checks out by direct
+computation (`rfl`/`removeAll` on a singleton list matching its one
+`wanted` entry exactly/`markSpent` on a fresh nullifier) — full field-by-
+field check is in this session's own working notes, not re-typed here, but
+every step is a closed, decidable computation, not an open research
+question. With `ownedOutputs := []`, `pool'.ownedRandomOf = pool.ownedRandomOf
+= fun _ => none`, so the theorem's own conclusion
+(`pool'.ownedRandomOf (commitment (npk self 0) 0 1) = some ⟨self, 0⟩`) is
+`none = some ⟨self, 0⟩` — False, with `remainder = 1 ≠ 0` satisfying the
+implication's own premise.
+
+### What this means for the successor
+
+The operator's own rule for this task is: do not change a theorem
+statement, do not add axioms, report a counterexample and stop on that
+lemma if the statement looks false. This lemma's SECOND conjunct is false
+as a consequence of `PoolOwnedSpendStep`'s own `ownedOutputs` existential
+being under-constrained (no completeness/totality requirement tying it to
+`ownedPreimages`), not a tactic gap. Fixing this needs a coordinator
+decision, not a proof: either (a) add a completeness hypothesis to
+`PoolOwnedSpendStep_ownedRandom_known`'s OWN signature (a statement change,
+needs approval), or (b) add a completeness conjunct to
+`PoolOwnedSpendStep`'s own existential in `Notes.lean` (a pool-model change,
+out of this branch's scope per the standing rule that pool facts go
+through the pool builder). Do not attempt either without asking. The first
+conjunct of this lemma IS provable on its own; splitting the lemma in two
+(dropping the false second conjunct into its own, separately-approved
+statement) is also a statement change and needs the same approval.
+
+---
+
 # SUCCESSOR HANDOFF — adjudicator-model-v4, step 2a reconnaissance done, no chunk pushed yet
 
 ## State
