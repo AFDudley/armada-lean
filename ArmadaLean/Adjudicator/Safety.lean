@@ -3078,7 +3078,79 @@ theorem unbeatable_pays
           pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧
           x ≤ pre.value ∧
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
-  sorry
+  intro interleaved mid happ hexcl hexclTick
+  have hinv_s : UnbeatablePaysInv sig fp candidate assetIndex destIdx hAssetIdx x dest s :=
+    Or.inl ⟨hnotfinal, hsigned, haffordable⟩
+  obtain ⟨hinv_mid, _, _⟩ := unbeatablePaysInv_appliesAll sig appRel h fp candidate hp hduration
+    assetIndex destIdx hAssetIdx x hxpos dest pk nk r hh_dest s hdest hassetunique hnoguarantee
+    hhonest hhonestPool assets selfInputs pool0 hreach happ hexcl hexclTick rfl rfl hinv_s
+  have hreach_mid : Reachable sig appRel (genesis assets selfInputs pool0) mid := by
+    obtain ⟨calls0, happ0⟩ := hreach
+    exact ⟨calls0 ++ interleaved, appliesAll_append happ0 happ⟩
+  rcases hinv_mid with hB | hA1 | hA2
+  · obtain ⟨hnotfinal_mid, hsigned_mid, haffordable_mid⟩ := hB
+    have hnow_mid : mid.now = s.now := appliesAll_now_frame sig appRel s mid interleaved happ hexclTick
+    have hnowpos_mid : 0 < mid.now := hnow_mid ▸ hnowpos
+    obtain ⟨payCalls1, mid1, happ1, hmode1, hoh1, hpool1, hhold1, _hself1, _hsigned1, _hpoolSigned1⟩ :=
+      conclude_step_finalizes sig appRel (Actor.nitro h) mid fp candidate hnotfinal_mid hnowpos_mid
+        hfinal hsigned_mid
+    have hreach_mid1 : Reachable sig appRel (genesis assets selfInputs pool0) mid1 := by
+      obtain ⟨calls0, happ0⟩ := hreach_mid
+      exact ⟨calls0 ++ payCalls1, appliesAll_append happ0 happ1⟩
+    have hheldeq : heldValue mid1 (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp) =
+        heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp) := by
+      unfold heldValue; rw [hhold1, hpool1]
+    have haffordable_mid1 : x ≤ (afford (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).allocations
+        (heldValue mid1 (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
+          (channelId fp))).getD destIdx 0 := by
+      rw [hheldeq]; exact haffordable_mid
+    obtain ⟨final0, hstepTransfer⟩ := transfer_step_exists sig appRel assets selfInputs pool0
+      hReachPool (Actor.nitro h) mid1 assetIndex (channelId fp) candidate.outcome destIdx hAssetIdx
+      hreach_mid1 hmode1 hoh1 dest hdest hnoguarantee x hxpos haffordable_mid1
+    obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := transfer_step_pays_selected sig appRel
+      (Actor.nitro h) mid1 final0 assetIndex (channelId fp) (mid1.channels (channelId fp)).stateHash
+      candidate.outcome destIdx hstepTransfer hAssetIdx dest hdest hnoguarantee x hxpos
+      haffordable_mid1
+    refine ⟨payCalls1 ++
+      [(Actor.nitro h, .transfer assetIndex (channelId fp) (mid1.channels (channelId fp)).stateHash
+        candidate.outcome [destIdx])], final0,
+      appliesAll_append happ1 ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
+  · obtain ⟨curOutcome, hci, hfinA1, hohA1, _hmapA1, hnogA1, hassetA1, hgetDA1, haffA1⟩ := hA1
+    have hdestlt_cur : destIdx < (curOutcome.get ⟨assetIndex, hci⟩).allocations.length := by
+      rcases Nat.lt_or_ge destIdx (curOutcome.get ⟨assetIndex, hci⟩).allocations.length with
+        hlt | hge
+      · exact hlt
+      · exfalso
+        have hafford0 : (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
+            (heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset
+              (channelId fp))).getD destIdx 0 = 0 := by
+          have hlen := afford_length (curOutcome.get ⟨assetIndex, hci⟩).allocations
+            (heldValue mid (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset (channelId fp))
+          rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]; rfl
+        omega
+    have hdest_cur : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? = some dest := by
+      have h1 : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? =
+          some ((curOutcome.get ⟨assetIndex, hci⟩).allocations.getD destIdx Allocation.default) := by
+        rw [List.getD_eq_getElem?_getD]
+        cases hdd : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? with
+        | none => rw [List.getElem?_eq_none_iff] at hdd; omega
+        | some a => simp
+      rw [h1, hgetDA1]
+    have haffordable_cur : x ≤ (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
+        (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset (channelId fp))).getD destIdx 0 := by
+      rw [hassetA1]; exact haffA1
+    obtain ⟨final0, hstepTransfer⟩ := transfer_step_exists sig appRel assets selfInputs pool0
+      hReachPool (Actor.nitro h) mid assetIndex (channelId fp) curOutcome destIdx hci
+      hreach_mid hfinA1 hohA1 dest hdest_cur hnogA1 x hxpos haffordable_cur
+    obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := transfer_step_pays_selected sig appRel
+      (Actor.nitro h) mid final0 assetIndex (channelId fp) (mid.channels (channelId fp)).stateHash
+      curOutcome destIdx hstepTransfer hci dest hdest_cur hnogA1 x hxpos haffordable_cur
+    refine ⟨[(Actor.nitro h, .transfer assetIndex (channelId fp)
+      (mid.channels (channelId fp)).stateHash curOutcome [destIdx])], final0,
+      ⟨final0, hstepTransfer, rfl⟩, pre, hpreNpk, ?_, hxlepre, hlive⟩
+    rw [hpreTok, hassetA1]
+  · obtain ⟨pre, hpreNpk, hpreTok, hxlepre, hlive⟩ := hA2
+    exact ⟨[], mid, rfl, pre, hpreNpk, hpreTok, hxlepre, hlive⟩
 
 /-- Which harm this rules out: the same guarantee for the "sad path"
     (ForceMove-2018.pdf §1.2: "the adjudicator releases funds according to
