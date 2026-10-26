@@ -1,3 +1,130 @@
+# SUCCESSOR HANDOFF — HoldingWellFormed built and proved, old four
+# lemmas not yet rewired/deleted (the remaining work is mechanical)
+
+## State
+
+- Repo: `~/code/git_puller/repos/armada-lean-adjudicator-v4`, branch `adjudicator-model-v4`.
+- Head: `ce6f4ad`. `lake build` exits 0 (full project, 26 jobs).
+- Sorry count: 63, UNCHANGED (`lake build 2>&1 | grep -c 'uses .sorry.'`). The
+  four target lemmas (task: merge them into `HoldingWellFormed`) still
+  carry their OWN original `sorry` bodies, untouched. The new proof this
+  session makes deleting their `sorry`s a mechanical rewiring job, not a
+  proof-engineering one. Read the task brief's four line items again
+  (merge, prove at genesis, prove the one step lemma, restate the four
+  as corollaries or delete) — items 1 and 2 are DONE; item 3 is NOT done.
+- `ArmadaLean/Adjudicator/Lemmas.lean`: 5456 lines (was 4520).
+
+## Done this session: `HoldingWellFormed` and its proof, in full
+
+Added, all sorry-free, each individually compiled against the full
+project (`lake build ArmadaLean.Adjudicator.Lemmas` exit 0):
+
+- `HoldingWellFormed` (line 4532): the one per-holding invariant,
+  bundling what the four old lemmas stated piecewise — preimageOf
+  known/nonzero/consistent, `pre.token`, live membership, position
+  bound, key uniqueness, and owned-random disclosure — behind ONE
+  shared `pre` witness per holding (unified across sub-facts via
+  `hashCommitment_inj`, never carried as two separate witnesses).
+- `holdingWellFormed_genesis` (4544): trivial, no channel holds
+  anything at genesis.
+- `PoolOwnedSpend_update_wellFormed` (4560) / `bulkTransferFold_
+  wellFormed` (4671): the `.transfer`/bulk-call case, built on the
+  already-proved `PoolOwnedSpend_update_preimage_nonzero`, `PoolOwnedSpend_
+  update_position_live`, `PoolOwnedSpendStep_ownedRandom_known` (NOT on
+  `PoolOwnedSpendStep_effects` directly — gluing its six conjuncts back
+  into one record needed more surgery than calling the three
+  already-proved lemmas it itself calls). The two separately-obtained
+  `pre` witnesses are unified via `hashCommitment_inj` at each use.
+- `DepositStep_frame_wellFormed` (4729) / `DepositStep_update_
+  wellFormed` (4821): the `.deposit` FIRST-TIME case — tree-rollover-
+  aware, NEW work (the old four lemmas all had `sorry` here; the
+  pre-rollover git history, commit `4884305` and `eb47c31`, had the
+  pre-rollover reasoning but in the bare-`position`/`withPositionsFrom`
+  shape, not the `(treeNumber, position)`/`withTreePositionsFrom` one —
+  ported, not reused verbatim). Depositor's own spent inputs are
+  USER-keyed (`user_npk_ne_contract_npk`), so they can never collide
+  with a contract-owned held note's own position — `userDisjoint`,
+  mirrors the old `holdings_position_live_step`'s own argument.
+- `DepositMergeStep_update_wellFormed` (4991): the `.deposit` TOP-UP
+  (merge) case — also new work, also previously all-`sorry`. Nullifies
+  TWO positions (old holding, `DepositStep`'s own fresh note, both read
+  off `midPool` via `DepositStep_frame_wellFormed`), mints one merged
+  note. The merged note's own `value ≠ 0` needs `transactOwned_value_
+  conserved` (the two nullified values are each already known nonzero,
+  so their sum is), since `¬isZeroPreimage` alone does not give
+  `value ≠ 0` (it is a 3-way disjunction's negation, not a value
+  projection). WATCH THE CONJUNCT ORDER inside `DepositMergeStep`
+  (`Notes.lean`): the THIRD conjunct (`hnpkOut0'` in this proof) is
+  `w.npkOut 0 = npk self r` (the EXISTENTIAL `r`, NOT `randomOut`); the
+  conjunct actually naming `randomOut` (`hrandomOut'`) is the
+  SECOND-TO-LAST, `npk pub.ownerField randomOut = w.npkOut 0`. A first
+  attempt this session assumed the wrong one at the wrong slot and cost
+  several failed-build iterations to find; `r = randomOut'` only holds
+  derived (`npk_inj` on the two conjuncts composed), not by construction.
+- `holdingWellFormed_step` (5277): the ONE step lemma over all 11
+  `Call` cases — `.deposit` via the two lemmas above, `.transfer`/bulk
+  via `PoolOwnedSpend_update_wellFormed`/`bulkTransferFold_wellFormed`,
+  the other 7 trivial (pool/holdings both unchanged).
+- `holdingWellFormed_reachable` (5446): the `reachable_preserves` lift.
+
+## NOT done: rewiring the four old lemmas, and the Safety.lean wrapper
+
+The old four step lemmas are UNCHANGED, still present, still `sorry` in
+exactly the branches they always were:
+- `holdings_preimage_nonzero_step` (2447)
+- `ownedRandom_known_step` (4038)
+- `held_note_owned_disclosure_step` (4171)
+- `holdings_position_live_step` (4296)
+
+Do this, in order, each ending with `lake build` exit 0, each its own
+commit, pushed:
+
+1. Check EVERY caller of each of the four (already done this session,
+   not yet acted on): `holdings_preimage_nonzero_step` and
+   `ownedRandom_known_step` have NO callers anywhere outside their own
+   declarations — DELETE both outright (with their own doc comments).
+   `held_note_owned_disclosure_step` is called by `held_note_owned_
+   disclosure_reachable` (Lemmas.lean, unchanged, keep). `holdings_
+   position_live_step` is called by `holdings_position_live_reachable`
+   (Safety.lean, line ~836, currently `sorry`).
+2. Rewrite `held_note_owned_disclosure_step`'s BODY (keep its exact
+   signature/statement — the task forbids touching statements) to:
+   `have h := holdingWellFormed_step sig appRel actor s s' call hinv hstep
+   qasset qcid qpos qc hc` (first unfold `HoldingWellFormed` on `hinv`
+   itself — its OWN hypothesis is already in the right per-holding
+   shape modulo the `ownerField` existential, which collapses to `s.self`
+   directly), then project `h.1` into the five-tuple
+   `⟨pre, ownerField := s.self, r, ...⟩` the old statement names.
+3. Rewrite `holdings_position_live_step`'s BODY the same way, projecting
+   `holdingWellFormed_step`'s output into the old statement's shape
+   (drop the `pre.token`/disclosure conjuncts the old statement does not
+   ask for).
+4. Delete `PoolOwnedSpend_update_owned_disclosure` (1583, itself
+   `sorry`), `bulkTransferFold_owned_disclosure` (2328),
+   `bulkTransferFold_preimage_nonzero` (2283), `bulkTransferFold_
+   position_live` (3099), `bulkTransferFold_ownedRandom_known` (3942) —
+   confirmed this session: each has ZERO callers once steps 1-3 land
+   (every one was only ever called from inside the four old lemmas).
+   `bulkTransferFold_preserves_user_note` and `bulkTransferFold_frame`
+   are DIFFERENT lemmas (not part of this list) — do not touch them.
+5. Fill `holdings_position_live_reachable`'s `sorry` (Safety.lean
+   ~836-848, target in scope per the task's own "Safety.lean
+   reachability wrappers... if any" line): it is a direct
+   `reachable_preserves (P := ...) (base) (step) hreach` call mirroring
+   `held_note_owned_disclosure_reachable`'s own shape (Lemmas.lean
+   ~4251), with `step := fun actor call s1 s2 hP hstep => holdings_
+   position_live_step sig appRel actor s1 s2 call hP hstep`.
+6. Re-run `lake build 2>&1 | grep -c 'uses .sorry.'`: expect 63 − 4 (the
+   four, now proved or deleted) − 1 (`holdings_position_live_reachable`,
+   step 5) = 58, PLUS whichever of the five deleted helpers (step 4)
+   were themselves silently unsound (built on the `sorry`d `PoolOwnedSpend_
+   update_owned_disclosure`) without showing their own `sorry` warning —
+   deleting them does not change the COUNT (they never showed a
+   warning) but does remove a real soundness gap the count never
+   reflected. Report the exact sha, final sorry count, and `Lemmas.lean`
+   line count in the completion message, per the task's own acceptance
+   criteria.
+
 # SUCCESSOR HANDOFF — adjudicator-model-v4, model fix done, ownedRandom_known
 # proved, step 2a done, steps 2b/2c not started
 
