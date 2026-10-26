@@ -2339,6 +2339,107 @@ theorem unbeatablePaysInv_appliesAll
       (fun actor' newNow' hc => hexclTick actor' newNow' (List.mem_cons_of_mem _ hc))
       hsrow_mid hprow_mid hinv_mid
 
+/-- Given a `.transfer` step that ALREADY exists (its own `PoolOwnedSpendStep`
+    witness supplied elsewhere — this theorem never inspects it), with
+    `indices = [destIdx]` naming a single selected allocation, the minted
+    payout note pays at least `x`: `destIdx`'s own allocation
+    (`hdest`) is `exitAllocations`'s own one member for a singleton
+    selection (`transferEffectsSel_exit_forall`, with `sel i = (i =
+    destIdx)` since `i ∈ [destIdx] ↔ i = destIdx`), so the minted
+    `payoutOutputs` is `[⟨dest.destination, asset, paidAmt⟩]` with
+    `paidAmt = (afford ...).getD destIdx 0 ≥ x` (`haffordable`), and
+    `PoolOwnedSpendStep`'s own `live` update lands it at the pool's
+    then-current leaf count — a live note `unbeatable_pays`/
+    `unbeatable_pays_after_timeout` can cite directly. Self/ownerField-
+    representation-independent: every fact here is `transferEffects`/
+    `afford`/`PoolOwnedSpendStep`'s own `live` update, none of
+    `PoolOwnedSpendStep`'s own owned-spend witness. -/
+theorem transfer_step_pays_selected
+    (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (mid final : AdjudicatorState) (assetIndex : Nat)
+    (cid claimedStateHash : Term) (curOutcome : Outcome) (destIdx : Nat)
+    (hstep : Step sig appRel actor mid
+      (.transfer assetIndex cid claimedStateHash curOutcome [destIdx]) final)
+    (hci : assetIndex < curOutcome.length) (dest : Allocation)
+    (hdest : (curOutcome.get ⟨assetIndex, hci⟩).allocations[destIdx]? = some dest)
+    (hnoguarantee : ∀ a ∈ (curOutcome.get ⟨assetIndex, hci⟩).allocations,
+      a.allocationType ≠ .guarantee)
+    (x : Nat) (hxpos : 0 < x)
+    (haffordable : x ≤ (afford (curOutcome.get ⟨assetIndex, hci⟩).allocations
+      (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid)).getD destIdx 0) :
+    ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧
+      pre.token = (curOutcome.get ⟨assetIndex, hci⟩).asset ∧ x ≤ pre.value ∧
+      PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, _hholdseq, _hchanseq⟩ := hrest
+  have hAO : curOutcome.get ⟨assetIndex, hidx⟩ = curOutcome.get ⟨assetIndex, hci⟩ := rfl
+  change PoolOwnedSpendStep mid.pool mid.self (curOutcome.get ⟨assetIndex, hci⟩).asset
+    (mid.holdings (curOutcome.get ⟨assetIndex, hci⟩).asset cid)
+    ((transferEffects (curOutcome.get ⟨assetIndex, hci⟩).allocations
+        (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) [destIdx]).2.1.filterMap (fun a =>
+      if a.amount = 0 then none
+      else some (⟨a.destination, (curOutcome.get ⟨assetIndex, hci⟩).asset, a.amount⟩ : CommitmentPreimage)))
+    (if heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid -
+        (transferEffects (curOutcome.get ⟨assetIndex, hci⟩).allocations
+          (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) [destIdx]).2.2 = 0
+     then []
+     else [(⟨npk (Term.val mid.self) r, (curOutcome.get ⟨assetIndex, hci⟩).asset,
+       heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid -
+         (transferEffects (curOutcome.get ⟨assetIndex, hci⟩).allocations
+           (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) [destIdx]).2.2⟩ : CommitmentPreimage)])
+    final.pool at hmatch
+  generalize hallocsDef : (curOutcome.get ⟨assetIndex, hci⟩).allocations = allocs
+    at hdest hnoguarantee haffordable hmatch
+  generalize hassetDef : (curOutcome.get ⟨assetIndex, hci⟩).asset = asset at haffordable hmatch
+  generalize hsurplusDef : heldValue mid asset cid = surplus at haffordable hmatch
+  have hdestlt : destIdx < allocs.length := (List.getElem?_eq_some_iff.mp hdest).1
+  have hexitmem := transferEffectsSel_exit_mem allocs surplus
+    (fun i => [destIdx].isEmpty || i ∈ [destIdx]) destIdx hdestlt (by simp)
+  rw [← transferEffects_eq_sel] at hexitmem
+  have hallocsD : allocs.getD destIdx Allocation.default = dest := by
+    rw [List.getD_eq_getElem?_getD, hdest]; rfl
+  rw [hallocsD] at hexitmem
+  generalize hpaidDef : (afford allocs surplus).getD destIdx 0 = paidAmt at haffordable hexitmem
+  generalize hPayoutDef : (transferEffects allocs surplus [destIdx]).2.1.filterMap (fun a =>
+      if a.amount = 0 then none else some (⟨a.destination, asset, a.amount⟩ : CommitmentPreimage)) =
+    payoutOutputs at hmatch
+  generalize hRemDef : surplus -
+    (transferEffects allocs surplus [destIdx]).2.2 = remainder at hmatch
+  have hpayoutmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈ payoutOutputs := by
+    rw [← hPayoutDef]
+    refine List.mem_filterMap.mpr ⟨{ dest with amount := paidAmt }, hexitmem, ?_⟩
+    rw [if_neg (show paidAmt ≠ 0 by omega)]
+  unfold PoolOwnedSpendStep at hmatch
+  rcases hc0 : mid.holdings asset cid with _ | c0
+  · rw [hc0] at hmatch
+    obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
+      hroot, hmark, hRandomOut, heq⟩ := hmatch
+    refine ⟨⟨dest.destination, asset, paidAmt⟩, rfl, rfl, haffordable, ?_⟩
+    have houtmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈
+        payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk (Term.val mid.self) r, asset, remainder⟩ : CommitmentPreimage)]) :=
+      List.mem_append_left _ hpayoutmem
+    obtain ⟨pos, hposmem⟩ := withPositionsFrom_mem_fwd (start := mid.pool.leaves.length) houtmem
+    refine ⟨asset, pos, ⟨dest.destination, asset, paidAmt⟩, ?_, rfl⟩
+    rw [heq]; dsimp only
+    rw [if_pos rfl]
+    exact List.mem_append.mpr (Or.inl hposmem)
+  · rw [hc0] at hmatch
+    obtain ⟨w, pub, hM, hC, rest, spent', randomOut, hNonZero, hCapacity, hown, htoken,
+      hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+    refine ⟨⟨dest.destination, asset, paidAmt⟩, rfl, rfl, haffordable, ?_⟩
+    have houtmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈
+        payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk (Term.val mid.self) r, asset, remainder⟩ : CommitmentPreimage)]) :=
+      List.mem_append_left _ hpayoutmem
+    obtain ⟨pos, hposmem⟩ := withPositionsFrom_mem_fwd (start := mid.pool.leaves.length) houtmem
+    refine ⟨asset, pos, ⟨dest.destination, asset, paidAmt⟩, ?_, rfl⟩
+    rw [heq]; dsimp only
+    rw [if_pos rfl]
+    exact List.mem_append.mpr (Or.inl hposmem)
+
 /-- Which harm this rules out: once all participants have signed a final
     state (Nitro-2019-219.pdf §4.4's "concluded" universally finalizable
     point, Figure 11), no other caller's actions — in any number, in any
