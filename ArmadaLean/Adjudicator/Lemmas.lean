@@ -3787,24 +3787,26 @@ theorem PoolOwnedSpendStep_preimageOf_known
     heldValue`, `PoolOwnedSpendStep_ownedRandom_known`,
     `PoolOwnedSpendStep_preimageOf_known`, `PoolOwnedSpend_update_
     preimage_nonzero`, and `PoolOwnedSpend_update_position_live`, in one
-    conjunction. The theorem's own hypotheses are the WEAKEST set under
-    which every conjunct holds (`htokPayout`, needed by five of the
-    six); the two holdings invariants `PoolOwnedSpendStep_frame`/
-    `PoolOwnedSpend_update_preimage_nonzero` share, and the different
-    invariant `PoolOwnedSpend_update_position_live` alone needs, are
-    NOT global hypotheses here — each stays a premise of its OWN
-    conjunct, so a caller who only needs the other four facts never
-    has to supply it. -/
+    conjunction. The theorem's own hypothesis is the WEAKEST one every
+    conjunct needs: the step itself, `hmatch`. `htokPayout` (needed by
+    five of the six) and the two different holdings invariants
+    `PoolOwnedSpendStep_frame`/`PoolOwnedSpend_update_preimage_nonzero`
+    share and `PoolOwnedSpend_update_position_live` alone needs are NOT
+    global hypotheses here — each stays a premise of its OWN conjunct,
+    matching exactly what each original lemma took, so a caller who
+    only needs `PoolOwnedSpend_update_position_live`'s own fact never
+    has to supply `htokPayout` either. -/
 theorem PoolOwnedSpendStep_effects
     (pool pool' : PoolState) (self : Term) (asset : Nat) (cid : Term) (remainder r : Nat)
     (payoutOutputs : List CommitmentPreimage)
     (holdings : Nat → Term → Option ((Nat × Nat) × Term))
-    (htokPayout : ∀ pre ∈ payoutOutputs, pre.token = asset)
     (hmatch : PoolOwnedSpendStep pool self asset (holdings asset cid) payoutOutputs
       (if remainder = 0 then [] else [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])
       pool') :
-    -- `PoolOwnedSpendStep_frame`, gated by its own holdings invariant.
-    ((∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
+    -- `PoolOwnedSpendStep_frame`, gated by `htokPayout` and its own holdings
+    -- invariant.
+    ((∀ pre ∈ payoutOutputs, pre.token = asset) →
+      (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
         ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
       ∀ qasset qcid, (qasset, qcid) ≠ (asset, cid) →
         (match (update holdings asset
@@ -3824,33 +3826,37 @@ theorem PoolOwnedSpendStep_effects
         (match holdings qasset qcid with
           | none => 0
           | some (_, c) => ((pool.preimageOf c).map CommitmentPreimage.value).getD 0)) ∧
-    -- `PoolOwnedSpendStep_sets_heldValue`.
-    (match (update holdings asset
-        (update (holdings asset) cid
-          (if remainder = 0 then none
-           else some ((insertTreeNumber pool.closedTrees pool.leaves
-                 (payoutOutputs ++ (if remainder = 0 then [] else
-                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length,
-               insertStartPos pool.leaves
-                 (payoutOutputs ++ (if remainder = 0 then [] else
-                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length +
-                 (payoutOutputs ++ (if remainder = 0 then [] else
-                   [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
-             commitment (npk self r) asset remainder)))) asset cid with
-      | none => (0 : Nat)
-      | some (_, c) => ((pool'.preimageOf c).map CommitmentPreimage.value).getD 0) = remainder ∧
-    -- `PoolOwnedSpendStep_ownedRandom_known`.
-    ((∀ qc pre' r', pool.preimageOf qc = some pre' → hashCommitment pre' = qc →
+    -- `PoolOwnedSpendStep_sets_heldValue`, gated by `htokPayout`.
+    ((∀ pre ∈ payoutOutputs, pre.token = asset) →
+      (match (update holdings asset
+          (update (holdings asset) cid
+            (if remainder = 0 then none
+             else some ((insertTreeNumber pool.closedTrees pool.leaves
+                   (payoutOutputs ++ (if remainder = 0 then [] else
+                     [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length,
+                 insertStartPos pool.leaves
+                   (payoutOutputs ++ (if remainder = 0 then [] else
+                     [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length +
+                   (payoutOutputs ++ (if remainder = 0 then [] else
+                     [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
+               commitment (npk self r) asset remainder)))) asset cid with
+        | none => (0 : Nat)
+        | some (_, c) => ((pool'.preimageOf c).map CommitmentPreimage.value).getD 0) = remainder) ∧
+    -- `PoolOwnedSpendStep_ownedRandom_known`, gated by `htokPayout`.
+    ((∀ pre ∈ payoutOutputs, pre.token = asset) →
+      (∀ qc pre' r', pool.preimageOf qc = some pre' → hashCommitment pre' = qc →
         pre'.npk = npk self r' → pool.ownedRandomOf qc = some ⟨self, r'⟩ →
         pool'.ownedRandomOf qc = some ⟨self, r'⟩) ∧
       (remainder ≠ 0 →
         pool'.ownedRandomOf (commitment (npk self r) asset remainder) = some ⟨self, r⟩)) ∧
-    -- `PoolOwnedSpendStep_preimageOf_known`.
-    (∀ qc pre, pool.preimageOf qc = some pre → hashCommitment pre = qc →
-      pool'.preimageOf qc = some pre) ∧
-    -- `PoolOwnedSpend_update_preimage_nonzero`, gated by the SAME holdings
-    -- invariant as `PoolOwnedSpendStep_frame`'s own conjunct.
-    ((∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
+    -- `PoolOwnedSpendStep_preimageOf_known`, gated by `htokPayout`.
+    ((∀ pre ∈ payoutOutputs, pre.token = asset) →
+      ∀ qc pre, pool.preimageOf qc = some pre → hashCommitment pre = qc →
+        pool'.preimageOf qc = some pre) ∧
+    -- `PoolOwnedSpend_update_preimage_nonzero`, gated by `htokPayout` and the
+    -- SAME holdings invariant as `PoolOwnedSpendStep_frame`'s own conjunct.
+    ((∀ pre ∈ payoutOutputs, pre.token = asset) →
+      (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
         ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
       ∀ qasset qcid qpos qc, (update holdings asset
           (update (holdings asset) cid
@@ -3865,8 +3871,9 @@ theorem PoolOwnedSpendStep_effects
                      [(⟨npk self r, asset, remainder⟩ : CommitmentPreimage)])).length - 1),
                commitment (npk self r) asset remainder)))) qasset qcid = some (qpos, qc) →
         ∃ pre, pool'.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) ∧
-    -- `PoolOwnedSpend_update_position_live`, gated by its OWN (different)
-    -- position-live holdings invariant.
+    -- `PoolOwnedSpend_update_position_live`, gated ONLY by its OWN
+    -- position-live holdings invariant — no `htokPayout`, matching its
+    -- own (narrower) hypothesis set.
     ((∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
         (∃ pre, (qpos, pre) ∈ pool.live qasset ∧ hashCommitment pre = qc ∧
           ((∃ ownerField r, self = ownerField ∧ pre.npk = npk ownerField r) ∨
@@ -3904,17 +3911,19 @@ theorem PoolOwnedSpendStep_effects
                  commitment (npk self r) asset remainder)))) qasset' qcid' = some (qpos', qc') →
           (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos)) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro hinv qasset qcid hne
+  · intro htokPayout hinv qasset qcid hne
     exact PoolOwnedSpendStep_frame pool pool' self asset cid remainder r payoutOutputs holdings
       htokPayout hmatch hinv qasset qcid hne
-  · exact PoolOwnedSpendStep_sets_heldValue pool pool' self asset cid remainder r payoutOutputs
+  · intro htokPayout
+    exact PoolOwnedSpendStep_sets_heldValue pool pool' self asset cid remainder r payoutOutputs
       holdings htokPayout hmatch
-  · exact PoolOwnedSpendStep_ownedRandom_known pool pool' self asset cid remainder r payoutOutputs
+  · intro htokPayout
+    exact PoolOwnedSpendStep_ownedRandom_known pool pool' self asset cid remainder r payoutOutputs
       holdings htokPayout hmatch
-  · intro qc pre hpre hconsist
+  · intro htokPayout qc pre hpre hconsist
     exact PoolOwnedSpendStep_preimageOf_known pool pool' self asset cid remainder r payoutOutputs
       holdings htokPayout hmatch qc pre hpre hconsist
-  · intro hinv
+  · intro htokPayout hinv
     exact PoolOwnedSpend_update_preimage_nonzero pool pool' self asset cid remainder r payoutOutputs
       holdings htokPayout hmatch hinv
   · intro hinv
