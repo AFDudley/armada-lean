@@ -93,7 +93,7 @@ inductive Call where
     rewritten allocations (mirroring `.transfer`'s own `newAllocs`); the
     final `(poolF, holdingsF)` is the pool/holdings state after every
     asset's own spend. -/
-def bulkTransferFold (self : Nat) (cid : Term) :
+def bulkTransferFold (self : Term) (cid : Term) :
     Outcome → PoolState → (Nat → Term → Option (Nat × Term)) →
     Outcome → PoolState → (Nat → Term → Option (Nat × Term)) → Prop
   | [], pool, holdings, [], poolF, holdingsF => poolF = pool ∧ holdingsF = holdings
@@ -109,7 +109,7 @@ def bulkTransferFold (self : Nat) (cid : Term) :
         if a.amount = 0 then none else some (⟨a.destination, exit.asset, a.amount⟩ : CommitmentPreimage))
       ∃ r : Nat,
       let remainderOutputs : List CommitmentPreimage :=
-        if remainder = 0 then [] else [(⟨npk (Term.val self) r, exit.asset, remainder⟩ :
+        if remainder = 0 then [] else [(⟨npk self r, exit.asset, remainder⟩ :
           CommitmentPreimage)]
       ∃ midPool,
         PoolOwnedSpendStep pool self exit.asset (holdings exit.asset cid) payoutOutputs remainderOutputs
@@ -118,7 +118,7 @@ def bulkTransferFold (self : Nat) (cid : Term) :
           (update (holdings exit.asset) cid
             (if remainder = 0 then none
              else some (pool.leaves.length + (payoutOutputs ++ remainderOutputs).length - 1,
-               commitment (npk (Term.val self) r) exit.asset remainder)))
+               commitment (npk self r) exit.asset remainder)))
          bulkTransferFold self cid rest midPool midHoldings newRest poolF holdingsF)))
   | _, _, _, _, _, _ => False
 
@@ -213,7 +213,7 @@ def Step (sig : SignatureAssumptions)
                (update (s.holdings asset) channelId (some (mergedPos, merged))))) ∧
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
-      s'.self = s.self ∧
+      s'.selfInputs = s.selfInputs ∧
       s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
@@ -261,7 +261,7 @@ def Step (sig : SignatureAssumptions)
           stateHash := stateHash fp candidate
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `checkpoint` — ForceMove.sol:90-119; S4 `0070-finalizing-a-channel.md`
@@ -289,7 +289,7 @@ def Step (sig : SignatureAssumptions)
         { turnNumRecord := candidate.turnNum, finalizesAt := 0, stateHash := Term.val 0,
           outcomeHash := Term.val 0 } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `conclude` — ForceMove.sol:127-170; S4 `0070-finalizing-a-channel.md`
@@ -323,7 +323,7 @@ def Step (sig : SignatureAssumptions)
         { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0
           outcomeHash := outcomeHashOf candidate.outcome } ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `transfer` — MultiAssetHolder.sol:135-191 (trusted, vendored
@@ -374,7 +374,7 @@ def Step (sig : SignatureAssumptions)
           else some (⟨a.destination, assetOutcome.asset, a.amount⟩ : CommitmentPreimage))
         ∃ r : Nat,
         let remainderOutputs : List CommitmentPreimage :=
-          if remainder = 0 then [] else [(⟨npk (Term.val s.self) r, assetOutcome.asset, remainder⟩ :
+          if remainder = 0 then [] else [(⟨npk s.self r, assetOutcome.asset, remainder⟩ :
             CommitmentPreimage)]
         let outputs := payoutOutputs ++ remainderOutputs
         PoolOwnedSpendStep s.pool s.self assetOutcome.asset
@@ -383,12 +383,12 @@ def Step (sig : SignatureAssumptions)
           (update (s.holdings assetOutcome.asset) cid
             (if remainder = 0 then none
              else some (s.pool.leaves.length + outputs.length - 1,
-               commitment (npk (Term.val s.self) r) assetOutcome.asset remainder))) ∧
+               commitment (npk s.self r) assetOutcome.asset remainder))) ∧
         s'.channels = update s.channels cid
           { s.channels cid with
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
               if i ≠ assetIndex then exit else { exit with allocations := newAllocs }) })) ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `reclaim` — MultiAssetHolder.sol:237-390 (trusted, vendored
@@ -455,7 +455,7 @@ def Step (sig : SignatureAssumptions)
              outcomeHash := outcomeHashOf
                (reallocateGuarantee sourceOutcome sourceAssetIndex indexOfTargetInSource left right a0 a1) }) ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `bulkTransferAllAssets`, `bulkConcludeAndTransferAllAssets` —
@@ -493,7 +493,7 @@ def Step (sig : SignatureAssumptions)
       ∃ newOutcome : Outcome,
         bulkTransferFold s.self cid outcome s.pool s.holdings newOutcome s'.pool s'.holdings ∧
         s'.channels = update s.channels cid { s.channels cid with outcomeHash := outcomeHashOf newOutcome } ∧
-        s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+        s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
         s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   | .bulkConcludeAndTransferAllAssets fp candidate => fun s' =>
       let cid := channelId fp
@@ -505,7 +505,7 @@ def Step (sig : SignatureAssumptions)
         s'.channels = update s.channels cid
           { turnNumRecord := 0, finalizesAt := s.now, stateHash := Term.val 0,
             outcomeHash := outcomeHashOf newOutcome } ∧
-        s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+        s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
         s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `tick` — the passive timeout transition
@@ -524,7 +524,7 @@ def Step (sig : SignatureAssumptions)
       newNow ≥ s.now ∧
       s'.now = newNow ∧
       s'.pool = s.pool ∧ s'.holdings = s.holdings ∧ s'.channels = s.channels ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧
       s'.signedBy = s.signedBy ∧ s'.poolSignedBy = s.poolSignedBy
   /-
   ### `sign` — the EOA half of assumption 2 (`Assumptions.lean`'s module
@@ -550,7 +550,7 @@ def Step (sig : SignatureAssumptions)
       actor = .nitro p ∧
       s'.signedBy = (fun p' d' => (p' = p ∧ d' = d) ∨ s.signedBy p' d') ∧
       s'.pool = s.pool ∧ s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.poolSignedBy = s.poolSignedBy
   /-
   ### `signNote` — the pool layer's own EdDSA signing action
@@ -570,7 +570,7 @@ def Step (sig : SignatureAssumptions)
       s'.poolSignedBy = (fun pk' m' => (pk' = pk ∧ m' = msgHash) ∨ s.poolSignedBy pk' m') ∧
       s'.pool = s.pool ∧
       s'.channels = s.channels ∧ s'.holdings = s.holdings ∧
-      s'.configuredAssets = s.configuredAssets ∧ s'.self = s.self ∧ s'.now = s.now ∧
+      s'.configuredAssets = s.configuredAssets ∧ s'.selfInputs = s.selfInputs ∧ s'.now = s.now ∧
       s'.signedBy = s.signedBy
 
 end ArmadaLean.Adjudicator

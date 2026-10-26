@@ -67,7 +67,7 @@ constructors (module comment), not an assumed structure field.
     `0010-states-channels.md`, "Channel IDs", quoted above): the symbolic
     hash of the four fields, participants embedded one `Term.val` each. -/
 def channelIdOf (participants : List Nat) (nonce appDef challengeDuration : Nat) : Term :=
-  Term.hash (participants.map Term.val ++
+  Term.keccak (participants.map Term.val ++
     [Term.val nonce, Term.val appDef, Term.val challengeDuration])
 
 /-- `channelIdOf` is injective — PROVED, from `Term.hash`'s own
@@ -78,7 +78,7 @@ theorem channelIdOf_inj {p₁ p₂ : List Nat} {n₁ n₂ a₁ a₂ d₁ d₂ : 
     (h : channelIdOf p₁ n₁ a₁ d₁ = channelIdOf p₂ n₂ a₂ d₂) :
     p₁ = p₂ ∧ n₁ = n₂ ∧ a₁ = a₂ ∧ d₁ = d₂ := by
   unfold channelIdOf at h
-  injection h with hl
+  injection h with _ hl
   have hlentotal : (p₁.map Term.val).length + 3 = (p₂.map Term.val).length + 3 := by
     have := congrArg List.length hl
     simpa using this
@@ -95,7 +95,7 @@ theorem channelIdOf_inj {p₁ p₂ : List Nat} {n₁ n₂ a₁ a₂ d₁ d₂ : 
     via its own `Term` encoding (`Outcome.toTerm`). -/
 def stateHashOf (cid : Term) (appData : Nat) (outcome : Outcome) (turnNum : Nat)
     (isFinal : Bool) : Term :=
-  Term.hash [cid, Term.val appData, outcome.toTerm, Term.val turnNum,
+  Term.keccak [cid, Term.val appData, outcome.toTerm, Term.val turnNum,
     Term.val (if isFinal then 1 else 0)]
 
 /-- `stateHashOf` is injective — PROVED (contrast the old
@@ -104,7 +104,7 @@ theorem stateHashOf_inj {c₁ c₂ : Term} {a₁ a₂ : Nat} {o₁ o₂ : Outcom
     {f₁ f₂ : Bool} (h : stateHashOf c₁ a₁ o₁ t₁ f₁ = stateHashOf c₂ a₂ o₂ t₂ f₂) :
     c₁ = c₂ ∧ a₁ = a₂ ∧ o₁ = o₂ ∧ t₁ = t₂ ∧ f₁ = f₂ := by
   unfold stateHashOf at h
-  injection h with hl
+  injection h with _ hl
   simp only [List.cons.injEq] at hl
   obtain ⟨h1, h2, h3, h4, h5, -⟩ := hl
   refine ⟨h1, Term.val.inj h2, Outcome.toTerm_inj h3, Term.val.inj h4, ?_⟩

@@ -127,17 +127,14 @@ same derivation `transactOwned`'s owner uses.
     `N`-note, EdDSA-signed spend (`ArmadaLean.Constrained`, the base
     circuit, registered-shape bound `hN`/`hM` — `ArmadaLean.Pool.
     Step.transact`'s own bound), with one of its `M` outputs disclosed as
-    a preimage owned by `ownerField`, on `token`, worth `amount`, landing
-    at leaf position `position`. `self = addressOf ownerField` (`Armada
-    Lean.addressOf`), the same owner-authorization convention `Pool
-    Owned`'s owned path uses (`PoolOwned.owned_owner_binding`'s `caller =
-    addressOf ownerField`): the real contract checks the deposited note's
-    own key against `Poseidon(ownerField, random)` for its own deployed
-    address, `uint256(uint160(address(this)))`, at most 160 bits, not
-    `self` directly — a bare `npk (Term.val self) r` would let a held
-    note name an owner no later owned spend (`.transfer`'s own remainder,
-    a merge) could ever match against `OwnedConstrained`'s `self =
-    addressOf pub.ownerField`. Every other output (private change) is
+    a preimage owned by `self`, on `token`, worth `amount`, landing
+    at leaf position `position`. `self` IS the owner field here, no
+    `addressOf` detour (`TransactOwned.circom:13`, `ownerField =
+    uint256(uint160(owner))` — a contract's own address, which this
+    model now represents as a `Term` directly, `ShieldedRagequit.sol:147`,
+    `bytes32(uint256(uint160(address(this))))`): the real contract checks
+    the deposited note's own key against `Poseidon(self, random)` for its
+    own deployed address directly. Every other output (private change) is
     also recorded, matching `Step.transact`'s own effect: all `M` outputs
     join the pool's live set, each at its own sequential position
     (`ArmadaLean.withPositionsFrom`), not only the adjudicator's own.
@@ -149,13 +146,13 @@ same derivation `transactOwned`'s owner uses.
     `records` (`holdings_never_zero_valued`'s own invariant needs this to
     read a value back at all), and this output is ADDITIONALLY disclosed
     as contract-owned through `ownedRecords`, with the same random `r`
-    and `ownerField` the holding's own `npk` names — this is what lets
+    the holding's own `npk` names — this is what lets
     `ArmadaLean.owned_spend_witness_exists` build a later spend witness
     for it from public data alone. -/
-def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
+def DepositStep {N M : Nat} (before : PoolState) (self : Term) (token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M) (idx : Fin M)
     (position : Nat) (after : PoolState) : Prop :=
-  ∃ r ownerField, self = addressOf ownerField ∧ w.npkOut idx = npk (Term.val ownerField) r ∧
+  ∃ r, w.npkOut idx = npk self r ∧
   pub.commitmentsOut idx = commitment (w.npkOut idx) token amount ∧
   w.token = token ∧
   position = before.leaves.length + idx.val ∧
@@ -178,7 +175,7 @@ def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
         before.roots,
       preimageOf := applyRecords before.preimageOf records,
       ownedRandomOf := applyOwnedRecords before.ownedRandomOf
-        [(pub.commitmentsOut idx, (⟨ownerField, r⟩ : OwnedDisclosure))] }
+        [(pub.commitmentsOut idx, (⟨self, r⟩ : OwnedDisclosure))] }
 
 /-- LIVENESS ASSUMPTION (EdDSA completeness, pool layer) — assumed, not
     proven. `eddsaCompleteness` says: if an execution's own ghost signing
@@ -221,9 +218,10 @@ own accuracy.
     recipient the adjudicator does not control (`.transfer`'s own payout
     outputs, `Operations.lean`); `ownedPreimages` are notes that stay
     contract-owned (a `.transfer` remainder). Requires the pool's OWN
-    owner-authorization convention (`self = ArmadaLean.addressOf
-    pub.ownerField`, matching `ArmadaLean.owned_owner_binding`'s `caller =
-    addressOf ownerField`) and the registered-shape bound (`hM`,
+    owner-authorization convention (`self = pub.ownerField`, matching
+    `Step.transactOwned`'s own `hCaller`, `caller = pub.ownerField` — a
+    direct `Term` equality, `self` now the contract's own Keccak address
+    term, no truncation) and the registered-shape bound (`hM`,
     `ArmadaLean.transactOwned_value_conserved`'s own requirement) — the
     adjudicator supplies no mechanism and no arithmetic of its own.
     `removeAll` (`Pool.lean`) removes the nullified note by its own leaf
@@ -239,16 +237,15 @@ own accuracy.
     disclosure (`Step.transactOwned`'s own hypotheses), but ONLY for the
     `ownedPreimages` SUFFIX (indices `payoutPreimages.length` and up, via
     `Fin.natAdd`): a payout note's own key is the recipient's, never one
-    the adjudicator (or anyone it can name as `ownerField`) derives
-    `npk (Term.val pub.ownerField) r` for, so no such disclosure could ever
-    exist for it — only a note that STAYS contract-owned carries one.
-    `hNonZero` carries the same check's rejection of a zero preimage;
-    `ArmadaLean.transactOwned_records_all` is what lets
-    `holdings_never_zero_valued` read each output's own preimage back.
-    `nullified`, when `some (pos, c)`, names both the position and the
-    commitment being spent — the commitment is a check against the
-    holding's own recorded value. -/
-def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
+    the adjudicator derives `npk pub.ownerField r` for, so no such
+    disclosure could ever exist for it — only a note that STAYS
+    contract-owned carries one. `hNonZero` carries the same check's
+    rejection of a zero preimage; `ArmadaLean.transactOwned_records_all`
+    is what lets `holdings_never_zero_valued` read each output's own
+    preimage back. `nullified`, when `some (pos, c)`, names both the
+    position and the commitment being spent — the commitment is a check
+    against the holding's own recorded value. -/
+def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
     (nullified : Option (Nat × Term))
     (payoutPreimages ownedPreimages : List CommitmentPreimage) (after : PoolState) : Prop :=
   match nullified with
@@ -260,12 +257,12 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
       (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
       (hCapacity : before.leaves.length + (payoutPreimages.length + ownedPreimages.length) ≤
         2 ^ TreeDepth),
-      self = addressOf pub.ownerField ∧
+      self = pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = payoutPreimages ++ ownedPreimages ∧
       pub.merkleRoot ∈ before.roots ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ j, npk (Term.val pub.ownerField) (randomOut j) =
+      (∀ j, npk pub.ownerField (randomOut j) =
         w.npkOut (Fin.natAdd payoutPreimages.length j)) ∧
       after = { before with
         live := fun t => if t = token
@@ -291,15 +288,15 @@ def PoolOwnedSpendStep (before : PoolState) (self token : Nat)
       (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
       (hCapacity : before.leaves.length + (payoutPreimages.length + ownedPreimages.length) ≤
         2 ^ TreeDepth),
-      self = addressOf pub.ownerField ∧
+      self = pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = payoutPreimages ++ ownedPreimages ∧
       w.leavesIndices 0 = pos ∧
-      commitment (npk (Term.val pub.ownerField) (w.randomIn 0)) w.token (w.valueIn 0) = c ∧
+      commitment (npk pub.ownerField (w.randomIn 0)) w.token (w.valueIn 0) = c ∧
       pub.merkleRoot ∈ before.roots ∧
       removeAll (before.live token) (ownedSpentPositions pub w) = some rest ∧
       markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ j, npk (Term.val pub.ownerField) (randomOut j) =
+      (∀ j, npk pub.ownerField (randomOut j) =
         w.npkOut (Fin.natAdd payoutPreimages.length j)) ∧
       after = { before with
         live := fun t => if t = token
@@ -338,11 +335,10 @@ inputs and `M = 1` minted output.
     output. The pool's own balance check (`OwnedConstrained.balance`,
     `ArmadaLean.transactOwned_value_conserved`) ties `merged`'s value to
     the sum of the two spent notes' true Merkle-tree values. `npk = npk
-    (Term.val self) r` for some secret `r`: the same convention
-    `DepositStep`'s own holding note uses, since this is still a
-    deposit-side note, not `.transfer`'s remainder (`npk = Term.val self`
-    directly). -/
-def DepositMergeStep (before : PoolState) (self token : Nat)
+    self r` for some secret `r`: the same convention `DepositStep`'s own
+    holding note uses, since this is still a deposit-side note, not
+    `.transfer`'s remainder. -/
+def DepositMergeStep (before : PoolState) (self : Term) (token : Nat)
     (oldPos : Nat) (oldHolding : Term) (newPos : Nat) (newNote : Term)
     (merged : Term) (mergedPos : Nat) (after : PoolState) : Prop :=
   mergedPos = before.leaves.length ∧
@@ -351,18 +347,18 @@ def DepositMergeStep (before : PoolState) (self token : Nat)
     (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet) (r randomOut : Nat)
     (hNonZero : ¬ isZeroPreimage (⟨w.npkOut 0, w.token, w.valueOut 0⟩ : CommitmentPreimage))
     (hCapacity : before.leaves.length + 1 ≤ 2 ^ TreeDepth),
-    self = addressOf pub.ownerField ∧
+    self = pub.ownerField ∧
     w.token = token ∧
-    w.npkOut 0 = npk (Term.val self) r ∧
+    w.npkOut 0 = npk self r ∧
     merged = pub.commitmentsOut 0 ∧
     w.leavesIndices 0 = oldPos ∧
     w.leavesIndices 1 = newPos ∧
-    commitment (npk (Term.val pub.ownerField) (w.randomIn 0)) w.token (w.valueIn 0) = oldHolding ∧
-    commitment (npk (Term.val pub.ownerField) (w.randomIn 1)) w.token (w.valueIn 1) = newNote ∧
+    commitment (npk pub.ownerField (w.randomIn 0)) w.token (w.valueIn 0) = oldHolding ∧
+    commitment (npk pub.ownerField (w.randomIn 1)) w.token (w.valueIn 1) = newNote ∧
     pub.merkleRoot ∈ before.roots ∧
     removeAll (before.live token) (ownedSpentPositions pub w) = some rest ∧
     markSpent before.spent (List.ofFn pub.nullifiers) = some spent' ∧
-    npk (Term.val pub.ownerField) randomOut = w.npkOut 0 ∧
+    npk pub.ownerField randomOut = w.npkOut 0 ∧
     after = { before with
       live := fun t => if t = token
         then withPositionsFrom before.leaves.length (ownedNewNotes w) ++ rest

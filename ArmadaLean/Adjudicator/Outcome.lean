@@ -80,7 +80,7 @@ def Allocation.default : Allocation := ⟨Term.val 0, 0, .simple, 0⟩
     (`Allocation.toTerm_inj`) by `Term.hash`'s own constructor
     injectivity, applied to this 4-field tuple. -/
 def Allocation.toTerm (a : Allocation) : Term :=
-  Term.hash [a.destination, Term.val a.amount, Term.val a.allocationType.toNat, Term.val a.metadata]
+  Term.keccak [a.destination, Term.val a.amount, Term.val a.allocationType.toNat, Term.val a.metadata]
 
 /-- If `f` is injective, mapping it over a list is injective. Core/Std
     carries no such lemma (it is a mathlib fact, `List.map_injective_iff`,
@@ -99,7 +99,7 @@ theorem List.map_injective_of_injective {α β : Type} {f : α → β}
 
 theorem Allocation.toTerm_inj {a b : Allocation} (h : a.toTerm = b.toTerm) : a = b := by
   unfold Allocation.toTerm at h
-  injection h with hl
+  injection h with _ hl
   simp only [List.cons.injEq] at hl
   obtain ⟨h1, h2, h3, h4⟩ := hl
   have ha := Term.val.inj h2
@@ -127,13 +127,13 @@ structure SingleAssetExit where
     (`List.map_injective_of_injective`, above) lifted from
     `Allocation.toTerm_inj`. -/
 def SingleAssetExit.toTerm (e : SingleAssetExit) : Term :=
-  Term.hash (Term.val e.asset :: e.allocations.map Allocation.toTerm)
+  Term.keccak (Term.val e.asset :: e.allocations.map Allocation.toTerm)
 
 /-- A single-asset-exit's `Term` encoding is injective. -/
 theorem SingleAssetExit.toTerm_inj {e1 e2 : SingleAssetExit} (h : e1.toTerm = e2.toTerm) :
     e1 = e2 := by
   unfold SingleAssetExit.toTerm at h
-  injection h with hl
+  injection h with _ hl
   simp only [List.cons.injEq] at hl
   obtain ⟨ha, hallocs⟩ := hl
   have ha' := Term.val.inj ha
@@ -154,11 +154,11 @@ abbrev Outcome := List SingleAssetExit
 /-- An outcome's `Term` encoding (`Assumptions.lean`'s `outcomeHashOf`).
     Injective (`Outcome.toTerm_inj`), the same proof shape as
     `SingleAssetExit.toTerm_inj` one layer up. -/
-def Outcome.toTerm (o : Outcome) : Term := Term.hash (o.map SingleAssetExit.toTerm)
+def Outcome.toTerm (o : Outcome) : Term := Term.keccak (o.map SingleAssetExit.toTerm)
 
 theorem Outcome.toTerm_inj {o1 o2 : Outcome} (h : o1.toTerm = o2.toTerm) : o1 = o2 := by
   unfold Outcome.toTerm at h
-  injection h with hl
+  injection h with _ hl
   exact List.map_injective_of_injective (fun a b => SingleAssetExit.toTerm_inj) o1 o2 hl
 
 /-- A destination is external when its top 96 bits are zero (S4

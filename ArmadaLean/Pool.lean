@@ -450,10 +450,10 @@ theorem applyOwnedRecords_preserves_consistency {reg : PreimageRegistry} {rreg :
 theorem applyOwnedRecords_preserves_known {reg : PreimageRegistry}
     {records : List (Term × OwnedDisclosure)}
     (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
-      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
-    (rreg : OwnedRandomRegistry) (c : Term) (self r : Nat) (pre : CommitmentPreimage)
+      npk cd.2.ownerField cd.2.random = pre.npk)
+    (rreg : OwnedRandomRegistry) (c : Term) (self : Term) (r : Nat) (pre : CommitmentPreimage)
     (hknown : rreg c = some ⟨self, r⟩) (hreg : reg c = some pre)
-    (hnpk : pre.npk = npk (Term.val self) r) :
+    (hnpk : pre.npk = npk self r) :
     applyOwnedRecords rreg records c = some ⟨self, r⟩ := by
   induction records generalizing rreg with
   | nil => exact hknown
@@ -470,7 +470,7 @@ theorem applyOwnedRecords_preserves_known {reg : PreimageRegistry}
 theorem applyOwnedRecords_reads {reg : PreimageRegistry}
     {records : List (Term × OwnedDisclosure)}
     (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
-      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
+      npk cd.2.ownerField cd.2.random = pre.npk)
     (rreg : OwnedRandomRegistry) (c : Term) (d : OwnedDisclosure)
     (hmem : (c, d) ∈ records) :
     applyOwnedRecords rreg records c = some d := by
@@ -491,6 +491,7 @@ theorem applyOwnedRecords_reads {reg : PreimageRegistry}
       exact this
     · exact ih (fun cd' hcd' => hvalid cd' (List.mem_cons_of_mem _ hcd')) (recordOwnedStep rreg c0 d0)
         hmem'
+
 
 
 

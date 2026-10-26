@@ -991,7 +991,7 @@ theorem owned_spend_witness_exists {N M : Nat}
       pub.ownerField = ownerField ∧
       w.token = token ∧
       (∀ i, w.valueIn i = (preimages i).value) ∧
-      (∀ i, commitment (npk (Term.val ownerField) (w.randomIn i)) w.token (w.valueIn i) =
+      (∀ i, commitment (npk ownerField (w.randomIn i)) w.token (w.valueIn i) =
         hashCommitment (preimages i)) := by
   let randomIn : Fin N → Nat := fun i => (hOwned i).choose
   have hRandomReg : ∀ i, ownedRandomOf (hashCommitment (preimages i)) =

@@ -61,7 +61,7 @@ structure AdjudicatorState where
   channels : Term → ChannelStatus
   holdings : Nat → Term → Option (Nat × Term)
   configuredAssets : Nat → Prop
-  self : Nat
+  selfInputs : List Term
   now : Nat
   signedBy : Nat → Term → Prop
   /-- The pool layer's own EOA signing record (the SAME kind of
@@ -75,6 +75,21 @@ structure AdjudicatorState where
       contract's own storage. `msgHash` is a `Term`
       (`ArmadaLean.Transact.EdDSAVerify`'s own signature). -/
   poolSignedBy : (Nat × Nat) → Term → Prop
+
+/-- The adjudicator contract's own address, derived from its creation
+    inputs, never stored as a raw term of its own: `CREATE`'s address is
+    `keccak256(rlp(creator, nonce))`'s low 160 bits and `CREATE2`'s is
+    `keccak256(0xff ++ creator ++ salt ++ keccak256(init_code))`'s low
+    160 bits (Ethereum Yellow Paper §7, "Contract Creation") — either
+    way, a Keccak hash of the deployment's own inputs, never a number
+    the contract independently "has". `AdjudicatorState.selfInputs`
+    names those inputs (`[creator, nonce]` for `CREATE`, `[creator,
+    salt, initCodeHash]` for `CREATE2`, whichever a given deployment
+    used — this model does not fix one); `self` derives the address
+    `Term.keccak`-shaped BY CONSTRUCTION, so `self = Term.keccak _`
+    holds by `rfl` wherever needed (`ArmadaLean.TransactOwned.
+    user_npk_ne_contract_npk`), with no separate hypothesis to carry. -/
+def AdjudicatorState.self (s : AdjudicatorState) : Term := Term.keccak s.selfInputs
 
 /-!
 The armada-nitro rule (`AdjudicatorState`'s `holdings` field, above),
@@ -173,12 +188,12 @@ def SignedByAll (sig : SignatureAssumptions) (s : AdjudicatorState)
     digest is signed before the first `.sign` call in the execution:
     signing is an action the execution carries, not a deploy-time
     given. -/
-def genesis (assets : Nat → Prop) (self : Nat) (pool : PoolState) : AdjudicatorState where
+def genesis (assets : Nat → Prop) (selfInputs : List Term) (pool : PoolState) : AdjudicatorState where
   pool := pool
   channels := fun _ => emptyStatus
   holdings := fun _ _ => none
   configuredAssets := assets
-  self := self
+  selfInputs := selfInputs
   now := 0
   signedBy := fun _ _ => False
   poolSignedBy := fun _ _ => False
