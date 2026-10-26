@@ -1393,7 +1393,10 @@ theorem deposit_can_happen
       Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) s ∧
       Step sig (consensusRelation sig) actor s
         (.deposit channelId expectedHeld asset amount) s' := by
-  sorry
+  obtain ⟨assets, selfInputs, pool0, s, s', channelId, expectedHeld, asset, amount, actor,
+    hReachPool, hReach, _, _, _, hstep⟩ := deposit_can_happen_witness hashA sig poolSigLive
+  exact ⟨assets, selfInputs, pool0, s, s', channelId, expectedHeld, asset, amount, actor,
+    hReachPool, hReach, hstep⟩
 
 /-- A-12 — guarantee reallocation can change a later transfer's payout:
     there is a reachable state `s` and a real `.reclaim` `Step` from `s`
@@ -1435,7 +1438,158 @@ theorem guarantee_reallocation_order_dependent
           (heldValue s asset cid) [dIdx]).2.2 ≠
       (transferEffects (outcome'.getD assetIndex ⟨0, []⟩).allocations
           (heldValue s1 asset cid) [dIdx]).2.2 := by
-  sorry
+  obtain ⟨assets, selfInputs, pool0, sPre, sPost, cid, expectedHeld, asset, amount, actor0,
+    hReachPool, hReachPre, hChanPre, hHoldPre, hCidEq, hDepStep⟩ :=
+    deposit_can_happen_witness hashA sig poolSigLive
+  have hamtPos : 0 < amount := hDepStep.2.2.2.1
+  have hde := deposit_effect sig (consensusRelation sig) assets selfInputs pool0 actor0 sPre sPost cid
+    expectedHeld asset amount hReachPre hDepStep
+  have hReachPost : Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) sPost :=
+    reachable_step hReachPre hDepStep
+  have hheldPre : heldValue sPre asset cid = 0 := by
+    unfold heldValue
+    rw [hHoldPre]; rfl
+  have hheldPost : heldValue sPost asset cid = amount := by rw [hde.1, hheldPre]; omega
+  have hchanPost : sPost.channels = sPre.channels := hde.2.2
+  let sPostTick : AdjudicatorState := { sPost with now := sPost.now + 1 }
+  have hstep_tick : Step sig (consensusRelation sig) (Actor.nitro 0) sPost (.tick (sPost.now + 1))
+      sPostTick := by
+    refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    omega
+  have hreach_tick : Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) sPostTick :=
+    reachable_step hReachPost hstep_tick
+  have hchanTick : sPostTick.channels = sPost.channels := rfl
+  have hheldTick : heldValue sPostTick asset cid = amount := hheldPost
+  let fp1 : FixedPart := ⟨[], 0, 0, 0⟩
+  let fp2 : FixedPart := ⟨[], 1, 0, 0⟩
+  let targetChannelId : Term := channelId fp2
+  have hidsNe : (channelId fp1 : Term) ≠ channelId fp2 := by
+    intro heq
+    have := (channelIdOf_inj heq).2.1
+    simp [fp1, fp2] at this
+  let guaranteeMetadata : Nat := 0
+  let left : Term := (decodeGuarantee guaranteeMetadata).1
+  let right : Term := (decodeGuarantee guaranteeMetadata).2
+  let destD : Term := Term.val 102
+  let allocA : Allocation := ⟨left, 0, .simple, 0⟩
+  let allocB : Allocation := ⟨right, 0, .simple, 0⟩
+  let allocD : Allocation := ⟨destD, amount, .simple, 0⟩
+  let guaranteeAlloc : Allocation := ⟨targetChannelId, amount, .guarantee, guaranteeMetadata⟩
+  let outcome : Outcome := [⟨asset, [allocA, allocB, allocD, guaranteeAlloc]⟩]
+  let alloc0 : Allocation := ⟨left, amount, .simple, 0⟩
+  let alloc1 : Allocation := ⟨right, 0, .simple, 0⟩
+  let targetOutcome : Outcome := [⟨asset, [alloc0, alloc1]⟩]
+  let candidate1 : VariablePart := ⟨outcome, 0, 0, true⟩
+  let sC1 : AdjudicatorState := { sPostTick with
+    channels := update sPostTick.channels (channelId fp1)
+      { turnNumRecord := 0, finalizesAt := sPostTick.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate1.outcome } }
+  have hmode1 : (sPostTick.channels (channelId fp1)).mode sPostTick.now ≠ .finalized := by
+    rw [← hCidEq, hchanTick, hchanPost, hChanPre]
+    simp [ChannelStatus.mode, genesis, emptyStatus]
+  have hstep_c1 : Step sig (consensusRelation sig) (Actor.nitro 0) sPostTick
+      (.conclude fp1 candidate1) sC1 := by
+    refine ⟨hmode1, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    intro p hp
+    cases hp
+  have hreach_c1 : Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) sC1 :=
+    reachable_step hreach_tick hstep_c1
+  let candidate2 : VariablePart := ⟨targetOutcome, 0, 0, true⟩
+  let sC2 : AdjudicatorState := { sC1 with
+    channels := update sC1.channels targetChannelId
+      { turnNumRecord := 0, finalizesAt := sC1.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate2.outcome } }
+  have hmode2 : (sC1.channels targetChannelId).mode sC1.now ≠ .finalized := by
+    show ((update sPostTick.channels (channelId fp1)
+        { turnNumRecord := 0, finalizesAt := sPostTick.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate1.outcome }) targetChannelId).mode sPostTick.now ≠
+        .finalized
+    unfold update
+    rw [if_neg (Ne.symm hidsNe), hchanTick, hchanPost, hChanPre]
+    simp [ChannelStatus.mode, genesis, emptyStatus]
+  have hstep_c2 : Step sig (consensusRelation sig) (Actor.nitro 0) sC1
+      (.conclude fp2 candidate2) sC2 := by
+    refine ⟨hmode2, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    intro p hp
+    cases hp
+  have hreach_c2 : Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) sC2 :=
+    reachable_step hreach_c1 hstep_c2
+  have hsrc_eq : sC2.channels (channelId fp1) =
+      { turnNumRecord := 0, finalizesAt := sPostTick.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf outcome } := by
+    show (update sC1.channels targetChannelId
+        { turnNumRecord := 0, finalizesAt := sC1.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate2.outcome }) (channelId fp1) = _
+    unfold update
+    rw [if_neg hidsNe]
+    show (update sPostTick.channels (channelId fp1)
+        { turnNumRecord := 0, finalizesAt := sPostTick.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate1.outcome }) (channelId fp1) = _
+    unfold update
+    rw [if_pos rfl]
+  have htgt_eq : sC2.channels targetChannelId =
+      { turnNumRecord := 0, finalizesAt := sC1.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf targetOutcome } := by
+    show (update sC1.channels targetChannelId
+        { turnNumRecord := 0, finalizesAt := sC1.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate2.outcome }) targetChannelId = _
+    unfold update
+    rw [if_pos rfl]
+  have hnz : sPostTick.now ≠ 0 := Nat.succ_ne_zero sPost.now
+  have hle : sPostTick.now ≤ sPostTick.now := Nat.le_refl _
+  have hsrc_fin : (sC2.channels (channelId fp1)).mode sC2.now = .finalized := by
+    rw [hsrc_eq]
+    unfold ChannelStatus.mode
+    rw [if_neg hnz, if_pos hle]
+  have htgt_fin : (sC2.channels targetChannelId).mode sC2.now = .finalized := by
+    rw [htgt_eq]
+    unfold ChannelStatus.mode
+    rw [if_neg hnz, if_pos hle]
+  let hsa : (0 : Nat) < outcome.length := by simp [outcome]
+  let hidx : (3 : Nat) < (outcome.get ⟨0, hsa⟩).allocations.length := by simp [outcome]
+  let hta : (0 : Nat) < targetOutcome.length := by simp [targetOutcome]
+  let a0 : Nat := amount
+  let a1 : Nat := 0
+  let outcome' : Outcome := reallocateGuarantee outcome 0 3 left right a0 a1
+  let s1 : AdjudicatorState := { sC2 with
+    channels := update sC2.channels (channelId fp1)
+      { sC2.channels (channelId fp1) with outcomeHash := outcomeHashOf outcome' } }
+  have hstep_r : Step sig (consensusRelation sig) (Actor.nitro 0) sC2
+      (.reclaim (channelId fp1) outcome 0 3 targetOutcome 0 (Term.val 0)) s1 := by
+    refine ⟨hsrc_fin, ?_, hsa, hidx, rfl, ⟨htgt_fin, ?_, ?_, hta, rfl,
+      ⟨allocA, List.mem_cons_self, rfl⟩,
+      ⟨allocB, List.mem_cons_of_mem allocA List.mem_cons_self, rfl⟩,
+      a0, a1, (by simp [targetOutcome, alloc0, alloc1]), rfl, rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl,
+      rfl, rfl, rfl⟩
+    · rw [hsrc_eq]
+    · show (sC2.channels targetChannelId).stateHash = Term.val 0
+      rw [htgt_eq]
+    · show (sC2.channels targetChannelId).outcomeHash = outcomeHashOf targetOutcome
+      rw [htgt_eq]
+  have hreach_s : Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) sC2 := hreach_c2
+  have hheld_sC2 : heldValue sC2 asset (channelId fp1) = amount := by
+    have heq : heldValue sC2 asset (channelId fp1) = heldValue sPost asset (channelId fp1) := rfl
+    rw [heq, ← hCidEq]
+    exact hheldPost
+  have hheld_s1 : heldValue s1 asset (channelId fp1) = amount := hheld_sC2
+  have hs1chan : (s1.channels (channelId fp1)).outcomeHash = outcomeHashOf outcome' := by
+    show ((update sC2.channels (channelId fp1)
+      { sC2.channels (channelId fp1) with outcomeHash := outcomeHashOf outcome' })
+      (channelId fp1)).outcomeHash = outcomeHashOf outcome'
+    unfold update
+    rw [if_pos rfl]
+  have hrange4 : List.range 4 = [0, 1, 2, 3] := by decide
+  have hrange3 : List.range 3 = [0, 1, 2] := by decide
+  have hbefore : (transferEffects (outcome.getD 0 ⟨0, []⟩).allocations amount [2]).2.2 = amount := by
+    simp [outcome, allocA, allocB, allocD, guaranteeAlloc, transferEffects, afford, listSum,
+      hrange4]
+  have hafter : (transferEffects (outcome'.getD 0 ⟨0, []⟩).allocations amount [2]).2.2 = 0 := by
+    simp [outcome', outcome, a0, a1, reallocateGuarantee, creditFirst, allocA, allocB, allocD,
+      guaranteeAlloc, transferEffects, afford, listSum, hrange3]
+  refine ⟨assets, selfInputs, pool0, sC2, s1, channelId fp1, asset, outcome, outcome', targetOutcome,
+    0, 3, 0, 2, Term.val 0, Actor.nitro 0, hReachPool, hreach_s, rfl, hstep_r, hs1chan, ?_⟩
+  rw [hheld_sC2, hheld_s1, hbefore, hafter]
+  omega
 
 /-- A top-up can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     two deposits into the same channel, with the second deposit MERGING
