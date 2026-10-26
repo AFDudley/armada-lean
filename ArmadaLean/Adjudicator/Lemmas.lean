@@ -2983,11 +2983,55 @@ theorem PoolOwnedSpendStep_notedValue_conserved
     (payoutOutputs ownedPreimages : List CommitmentPreimage)
     (hmatch : PoolOwnedSpendStep pool self asset nullified payoutOutputs ownedPreimages pool') :
     ∀ token, pool'.notedValue token = pool.notedValue token := by
-  -- SORRY (tree-rollover rework pending, successor handoff): used
-  -- `withPositionsFrom_map`, the bare-Nat position-tag simp lemma, against
-  -- the real `withTreePositionsFrom`-shaped `heq`. Needs the tree-aware
-  -- analogue.
-  sorry
+  intro token
+  unfold PoolOwnedSpendStep at hmatch
+  unfold PoolState.notedValue
+  rcases nullified with _ | c0
+  · obtain ⟨w, pub, hM, hC, spent', ownedOutputs, hNonZero, hself, htoken, hnewnotes,
+      hroot, hmark, hRandomOut, heq⟩ := hmatch
+    rw [heq]
+    dsimp only
+    simp only [← List.length_append]
+    by_cases ht : token = asset
+    · rw [ht]
+      rw [if_pos rfl]
+      have hbal := transactOwned_value_conserved w pub (by omega) hM hC
+      have hvalin0 : List.ofFn w.valueIn = ([] : List Nat) := by simp
+      rw [hvalin0] at hbal
+      simp only [listSum] at hbal
+      have hvoeq : (ownedNewNotes w).map CommitmentPreimage.value = List.ofFn w.valueOut := by
+        unfold ownedNewNotes
+        rw [List.map_ofFn]
+        rfl
+      have hpos := withTreePositionsFrom_map CommitmentPreimage.value
+        (insertTreeNumber pool.closedTrees pool.leaves
+          (payoutOutputs ++ ownedPreimages).length)
+        (insertStartPos pool.leaves (payoutOutputs ++ ownedPreimages).length)
+        (payoutOutputs ++ ownedPreimages)
+      rw [List.map_append, listSum_append, hpos, ← hnewnotes, hvoeq]
+      omega
+    · rw [if_neg ht]
+  · obtain ⟨w, pub, hM, hC, rest, spent', ownedOutputs, hNonZero, hself, htoken,
+      hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+    rw [heq]
+    dsimp only
+    simp only [← List.length_append]
+    by_cases ht : token = asset
+    · rw [ht]
+      rw [if_pos rfl]
+      have hsum := removeAll_sum (fun p => p.2.value) hremove
+      have hbal : listSum ((ownedSpentPositions c0.1.fst pub w).map (fun p => p.2.value)) =
+          listSum ((ownedNewNotes w).map CommitmentPreimage.value) :=
+        transactOwned_balance c0.1.fst (by omega) hM hC
+      have hpos := withTreePositionsFrom_map CommitmentPreimage.value
+        (insertTreeNumber pool.closedTrees pool.leaves
+          (payoutOutputs ++ ownedPreimages).length)
+        (insertStartPos pool.leaves (payoutOutputs ++ ownedPreimages).length)
+        (payoutOutputs ++ ownedPreimages)
+      rw [List.map_append, listSum_append, hpos, ← hnewnotes]
+      rw [← hbal]
+      exact hsum.symm
+    · rw [if_neg ht]
 
 /-- A `PoolOwnedSpendStep` never touches a USER-keyed note: its own
     nullification (the "some" case) only ever claims a position keyed
