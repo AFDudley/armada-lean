@@ -127,26 +127,35 @@ same derivation `transactOwned`'s owner uses.
     `N`-note, EdDSA-signed spend (`ArmadaLean.Constrained`, the base
     circuit, registered-shape bound `hN`/`hM` — `ArmadaLean.Pool.
     Step.transact`'s own bound), with one of its `M` outputs disclosed as
-    a preimage owned by `self` (the adjudicator), on `token`, worth
-    `amount`, landing at leaf position `position`. Every other output
-    (private change) is also recorded, matching `Step.transact`'s own
-    effect: all `M` outputs join the pool's live set, each at its own
-    sequential position (`ArmadaLean.withPositionsFrom`), not only the
-    adjudicator's own. `records` is a sublist of `ArmadaLean.
-    transactOutputRecords w pub` — `Step.transact`'s own convention — which
-    already gives `hashCommitment` correctness for every disclosed entry
+    a preimage owned by `ownerField`, on `token`, worth `amount`, landing
+    at leaf position `position`. `self = addressOf ownerField` (`Armada
+    Lean.addressOf`), the same owner-authorization convention `Pool
+    Owned`'s owned path uses (`PoolOwned.owned_owner_binding`'s `caller =
+    addressOf ownerField`): the real contract checks the deposited note's
+    own key against `Poseidon(ownerField, random)` for its own deployed
+    address, `uint256(uint160(address(this)))`, at most 160 bits, not
+    `self` directly — a bare `npk (Term.val self) r` would let a held
+    note name an owner no later owned spend (`.transfer`'s own remainder,
+    a merge) could ever match against `OwnedConstrained`'s `self =
+    addressOf pub.ownerField`. Every other output (private change) is
+    also recorded, matching `Step.transact`'s own effect: all `M` outputs
+    join the pool's live set, each at its own sequential position
+    (`ArmadaLean.withPositionsFrom`), not only the adjudicator's own.
+    `records` is a sublist of `ArmadaLean.transactOutputRecords w pub` —
+    `Step.transact`'s own convention — which already gives
+    `hashCommitment` correctness for every disclosed entry
     (`ArmadaLean.transactOutputRecords_valid`), no separate hypothesis
     needed. The adjudicator's OWN output's preimage MUST itself be in
     `records` (`holdings_never_zero_valued`'s own invariant needs this to
     read a value back at all), and this output is ADDITIONALLY disclosed
-    as contract-owned through `ownedRecords`, with the same random `r` the
-    holding's own `npk` names — this is what lets
+    as contract-owned through `ownedRecords`, with the same random `r`
+    and `ownerField` the holding's own `npk` names — this is what lets
     `ArmadaLean.owned_spend_witness_exists` build a later spend witness
     for it from public data alone. -/
 def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
     (w : TransactWitness N M) (pub : TransactPublic N M) (idx : Fin M)
     (position : Nat) (after : PoolState) : Prop :=
-  ∃ r, w.npkOut idx = npk (Term.val self) r ∧
+  ∃ r ownerField, self = addressOf ownerField ∧ w.npkOut idx = npk (Term.val ownerField) r ∧
   pub.commitmentsOut idx = commitment (w.npkOut idx) token amount ∧
   w.token = token ∧
   position = before.leaves.length + idx.val ∧
@@ -169,7 +178,7 @@ def DepositStep {N M : Nat} (before : PoolState) (self token amount : Nat)
         before.roots,
       preimageOf := applyRecords before.preimageOf records,
       ownedRandomOf := applyOwnedRecords before.ownedRandomOf
-        [(pub.commitmentsOut idx, (⟨self, r⟩ : OwnedDisclosure))] }
+        [(pub.commitmentsOut idx, (⟨ownerField, r⟩ : OwnedDisclosure))] }
 
 /-- LIVENESS ASSUMPTION (EdDSA completeness, pool layer) — assumed, not
     proven. `eddsaCompleteness` says: if an execution's own ghost signing

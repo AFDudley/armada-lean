@@ -2574,8 +2574,8 @@ theorem notedValue_conserved
   | deposit cid expectedHeld asset amount =>
     obtain ⟨_hcfg1, _hheld, _hext, _hpos, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
     obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
-    obtain ⟨_r, _hown, _hcommit, _htoken, _hposition, hN, hM, hC, rest, spent', records, _hCapacity,
-      _hRoot, hRemove, _hNullify, _hSublist, _hidxrec, heq⟩ := hdstep
+    obtain ⟨_r, _ownerField, _hself, _hown, _hcommit, _htoken, _hposition, hN, hM, hC, rest,
+      spent', records, _hCapacity, _hRoot, hRemove, _hNullify, _hSublist, _hidxrec, heq⟩ := hdstep
     have hmidConserved : midPool.notedValue token = s.pool.notedValue token := by
       unfold PoolState.notedValue
       rw [heq]
@@ -2739,7 +2739,8 @@ theorem holdings_point_to_live_notes
   have hinv := reachable_preserves
     (P := fun s => ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
       (∃ pre, (qpos, pre) ∈ s.pool.live qasset ∧ hashCommitment pre = qc ∧
-        (pre.npk = Term.val s.self ∨ ∃ r, pre.npk = npk (Term.val s.self) r)) ∧
+        ((∃ ownerField r, s.self = addressOf ownerField ∧ pre.npk = npk (Term.val ownerField) r) ∨
+          ∃ r, pre.npk = npk (Term.val s.self) r)) ∧
       qpos < s.pool.leaves.length ∧
       (∀ qasset' qcid' qpos' qc', s.holdings qasset' qcid' = some (qpos', qc') →
         (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos))
@@ -3080,7 +3081,8 @@ theorem deposit_can_happen_witness
     holdings := update mid.holdings token (update (mid.holdings token) channelId
       (some (1, pub.commitmentsOut (0 : Fin 1)))) }
   have hdstep : DepositStep mid.pool self token amount w pub (0 : Fin 1) 1 s'.pool :=
-    ⟨0, rfl, rfl, rfl, by show 1 = mid.pool.leaves.length + 0; show (1:Nat) = pool0.leaves.length + 0; rfl,
+    ⟨0, self, (by decide), rfl, rfl, rfl,
+      by show 1 = mid.pool.leaves.length + 0; show (1:Nat) = pool0.leaves.length + 0; rfl,
       by decide, by decide, hC, [], List.ofFn pub.nullifiers,
       transactOutputRecords w pub, hCapacity2, hmerkle.2, hRemove, hNullify,
       List.Sublist.refl _, hidxrec, rfl⟩
@@ -3515,7 +3517,7 @@ theorem topup_can_happen
     show (2 : Nat) + 1 ≤ 2 ^ TreeDepth
     decide
   have hdstep1 : DepositStep mid1.pool self token amt1 w_d1 pub_d1 (0 : Fin 1) 2 mid2.pool :=
-    ⟨0, rfl, rfl, rfl, by
+    ⟨0, self, (by decide), rfl, rfl, rfl, by
       show 2 = mid1.pool.leaves.length + 0
       show (2 : Nat) = pool0.leaves.length + 0
       rfl,
@@ -3578,7 +3580,7 @@ theorem topup_can_happen
     show (2 : Nat) + 1 + 1 ≤ 2 ^ TreeDepth
     decide
   have hdstep2 : DepositStep mid2.pool self token amt2 w_d2 pub_d2 (0 : Fin 1) 3 midPool2 :=
-    ⟨1, rfl, rfl, rfl, by
+    ⟨1, self, (by decide), rfl, rfl, rfl, by
       show 3 = mid2.pool.leaves.length + 0
       show (3 : Nat) = mid1.pool.leaves.length + 1 + 0
       show (3 : Nat) = pool0.leaves.length + 1 + 0
@@ -4042,7 +4044,7 @@ theorem payout_can_happen
     show (1 : Nat) + 1 ≤ 2 ^ TreeDepth
     decide
   have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) 1 mid2.pool :=
-    ⟨0, rfl, rfl, rfl, by
+    ⟨0, self, (by decide), rfl, rfl, rfl, by
       show 1 = mid1.pool.leaves.length + 0
       show (1 : Nat) = pool0.leaves.length + 0
       rfl,
@@ -4616,7 +4618,7 @@ theorem bulk_conclude_and_transfer_can_happen
     show (1 : Nat) + 1 ≤ 2 ^ TreeDepth
     decide
   have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) 1 mid2.pool :=
-    ⟨0, rfl, rfl, rfl, by
+    ⟨0, self, (by decide), rfl, rfl, rfl, by
       show 1 = mid1.pool.leaves.length + 0
       show (1 : Nat) = pool0.leaves.length + 0
       rfl,
@@ -4922,7 +4924,7 @@ theorem transfer_after_transfer_can_happen
     show (1 : Nat) + 1 ≤ 2 ^ TreeDepth
     decide
   have hdstep : DepositStep mid1.pool self token amount w_d pub_d (0 : Fin 1) 1 mid2.pool :=
-    ⟨0, rfl, rfl, rfl, by
+    ⟨0, self, (by decide), rfl, rfl, rfl, by
       show 1 = mid1.pool.leaves.length + 0
       show (1 : Nat) = pool0.leaves.length + 0
       rfl,
