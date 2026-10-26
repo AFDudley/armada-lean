@@ -920,7 +920,8 @@ theorem challenge_requires_authorized_challenger
     (candidate : VariablePart) (challenger : Nat)
     (hstep : Step sig appRel actor s (.challenge fp proof candidate challenger) s') :
     challenger ∈ fp.participants ∧ AuthorizedBy sig s challenger (stateHash fp candidate) := by
-  sorry
+  obtain ⟨_, _, hchall, hauth, _, _, _, _, _, _, _, _⟩ := hstep
+  exact ⟨hchall, hauth⟩
 
 /-- A-06 — a deposit to an external destination fails: `.deposit` has no
     successful `Step` when its own `channelId` argument is an external
@@ -935,7 +936,9 @@ theorem deposit_external_destination_fails
     (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (expectedHeld asset amount : Nat)
     (hext : isExternal cid) :
     ¬ Step sig appRel actor s (.deposit cid expectedHeld asset amount) s' := by
-  sorry
+  intro hstep
+  obtain ⟨_, _, hnotext, _, _, _, _, _, _, _, _⟩ := hstep
+  exact hnotext hext
 
 /-- A-07 — a deposit with a wrong `expectedHeld` fails: `.deposit` has
     no successful `Step` when its own `expectedHeld` argument disagrees
@@ -953,7 +956,9 @@ theorem deposit_wrong_expected_held_fails
     (actor : Actor) (s s' : AdjudicatorState) (cid : Term) (expectedHeld asset amount : Nat)
     (hwrong : heldValue s asset cid ≠ expectedHeld) :
     ¬ Step sig appRel actor s (.deposit cid expectedHeld asset amount) s' := by
-  sorry
+  intro hstep
+  obtain ⟨_, hheld, _, _, _, _, _, _, _, _, _⟩ := hstep
+  exact hwrong hheld
 
 /-- A-08 — a deposit adds exactly its amount to one channel, and touches
     nothing else: promotes `deposit_sets_heldValue`/
@@ -986,7 +991,25 @@ theorem deposit_effect
     (∀ asset' cid', (asset', cid') ≠ (asset, cid) →
       heldValue s' asset' cid' = heldValue s asset' cid') ∧
     s'.channels = s.channels := by
-  sorry
+  have hwf := holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach
+  have hinv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc := by
+    intro qasset qcid qpos qc hc
+    obtain ⟨⟨pre, hpre, hcons, hval, _⟩, _⟩ := hwf qasset qcid qpos qc hc
+    exact ⟨pre, hpre, hval, hcons⟩
+  have hchan : s'.channels = s.channels := by
+    obtain ⟨_, _, _, _, _, h, _, _, _, _, _⟩ := hstep
+    exact h
+  refine ⟨?_, fun asset' cid' hne => deposit_frame sig appRel actor s s' cid expectedHeld asset
+    amount hstep hinv asset' cid' hne, hchan⟩
+  rcases hh : s.holdings asset cid with _ | ⟨oldPos, oldHolding⟩
+  · rw [deposit_sets_heldValue sig appRel actor s s' cid expectedHeld asset amount hstep hh]
+    unfold heldValue
+    rw [hh]
+    dsimp only
+    omega
+  · exact deposit_merge_sets_heldValue sig appRel actor s s' cid expectedHeld asset amount hstep
+      hinv oldPos oldHolding hh
 
 /-- A-10 — `transfer` never pays a guarantee allocation: restates
     `.transfer`'s own `Step` precondition (`Operations.lean`, `Ops:314`)
@@ -1006,7 +1029,8 @@ theorem transfer_never_pays_guarantee
     ∀ a ∈ (transferEffects (outcome.get ⟨assetIndex, h⟩).allocations
         (heldValue s (outcome.get ⟨assetIndex, h⟩).asset cid) indices).2.1,
       a.allocationType ≠ .guarantee := by
-  sorry
+  obtain ⟨_, _, _, _, _, hinner, _, _, _, _⟩ := hstep
+  exact hinner.1
 
 /-- A-11 — `reclaim` only reallocates a finalized guarantee, value-
     neutral: both the source and target channel are finalized, the
