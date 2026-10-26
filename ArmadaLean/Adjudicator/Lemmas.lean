@@ -3052,12 +3052,50 @@ theorem PoolOwnedSpendStep_preserves_user_note {pool pool' : PoolState} (selfInp
     (hnpk : pre.npk = npk (masterPublicKey pk nk) r)
     (hmem : (pos, pre) ∈ pool.live t) :
     (pos, pre) ∈ pool'.live t := by
-  -- SORRY (tree-rollover rework pending, successor handoff): the `t = token`
-  -- branches used `withPositionsFrom pool.leaves.length (...)`, the bare-Nat
-  -- position tagging; the real step now lands outputs via
-  -- `withTreePositionsFrom treeNumber position outputs`. Needs a rework that
-  -- matches against the real tree-aware shape.
-  sorry
+  unfold PoolOwnedSpendStep at hstep
+  by_cases ht : t = token
+  · rcases nullified with _ | c0
+    · obtain ⟨w, pub, hM, hC, spent', ownedOutputs, hNonZero, hself, htoken,
+        hnewnotes, hroot, hmark, hRandomOut, heq⟩ := hstep
+      rw [heq]
+      dsimp only
+      show (pos, pre) ∈ (if t = token then _ else pool.live t)
+      rw [if_pos ht]
+      exact List.mem_append_right _ hmem
+    · obtain ⟨w, pub, hM, hC, rest, spent', ownedOutputs, hNonZero, hself, htoken,
+        hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hstep
+      rw [heq]
+      dsimp only
+      show (pos, pre) ∈ (if t = token then _ else pool.live t)
+      rw [if_pos ht]
+      apply List.mem_append_right
+      have hnotwanted : (pos, pre) ∉ ownedSpentPositions c0.1.fst pub w := by
+        intro hbad
+        obtain ⟨i, hi⟩ := List.mem_ofFn.mp hbad
+        have hi0 : i = 0 := by omega
+        rw [hi0] at hi
+        have hpre_eq : pre = (⟨npk pub.ownerField (w.randomIn 0), w.token, w.valueIn 0⟩ :
+            CommitmentPreimage) := (congrArg Prod.snd hi).symm
+        have hnpk2 : pre.npk = npk pub.ownerField (w.randomIn 0) := by rw [hpre_eq]
+        rw [← hself] at hnpk2
+        rw [hnpk] at hnpk2
+        exact user_npk_ne_contract_npk hnpk2
+      rcases List.mem_append.mp ((removeAll_perm hremove).mem_iff.mp (ht ▸ hmem)) with hin | hin
+      · exact absurd hin hnotwanted
+      · exact hin
+  · rcases nullified with _ | ⟨npos, c⟩
+    · obtain ⟨w, pub, hM, hC, spent', _randomOut, _hNonZero, _hself2, _htoken,
+        hnewnotes, _hroot, _hmarkspent, _hRandomOut, heq⟩ := hstep
+      rw [heq]
+      dsimp only
+      show (pos, pre) ∈ (if t = token then _ else pool.live t)
+      rw [if_neg ht]; exact hmem
+    · obtain ⟨w, pub, hM, hC, rest, spent', _randomOut, _hNonZero, _hself2, _htoken,
+        hnewnotes, _hleaf0, _hceq, _hroot, hremove, _hmarkspent, _hRandomOut, heq⟩ := hstep
+      rw [heq]
+      dsimp only
+      show (pos, pre) ∈ (if t = token then _ else pool.live t)
+      rw [if_neg ht]; exact hmem
 
 
 /-- A `PoolOwnedSpendStep` touches `.live` ONLY at its own `token`: ANY
