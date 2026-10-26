@@ -845,7 +845,11 @@ theorem holdings_position_live_reachable
           ∃ r, pre.npk = npk s.self r)) ∧
       qpos.2 < (s.pool.leavesAt' qpos.1).length ∧
       (∀ qasset' qcid' qpos' qc', s.holdings qasset' qcid' = some (qpos', qc') →
-        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos) := sorry
+        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos) := by
+  intro qasset qcid qpos qc hc
+  obtain ⟨⟨pre, _hpre, hconsist, _hval, _htok, hlive, r, hnpk, _hown⟩, hbound, huniq⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach qasset qcid qpos qc hc
+  exact ⟨⟨pre, hlive, hconsist, Or.inl ⟨s.self, r, rfl, hnpk⟩⟩, hbound, huniq⟩
 
 /-- Which harm this rules out: `holdings` can never point to a commitment
     the pool itself does not back with a live note — there is no path by
