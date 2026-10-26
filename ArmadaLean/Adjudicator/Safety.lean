@@ -438,6 +438,7 @@ theorem transfer_pays_only_the_finalized_outcome
   · intro hsel
     rw [this, if_neg hsel]
 
+set_option linter.unusedVariables false in
 /-- A-02 — order does not change a simple-allocation payout: paying two
     DIFFERENT entries of the same finalized asset outcome, in either
     order (two `.transfer` calls, same channel, same asset, no
@@ -590,6 +591,7 @@ theorem transfer_order_independent_for_simple_allocations
   · rw [hheld2, hheld2']
     omega
 
+set_option linter.unusedVariables false in
 /-- A-03 — the turn-number record never decreases on a live channel: a
     `challenge`/`checkpoint`/`conclude` step either raises `fp`'s own
     `turnNumRecord`, leaves it the same, or (only `conclude`) drops it
@@ -1432,6 +1434,7 @@ def UnbeatablePaysInv (sig : SignatureAssumptions) (fp : FixedPart) (candidate :
     pre.token = (candidate.outcome.get ⟨assetIndex, hAssetIdx⟩).asset ∧ x ≤ pre.value ∧
     PoolIsLive mid.pool (commitment pre.npk pre.token pre.value))
 
+set_option linter.unusedVariables false in
 /-- `UnbeatablePaysInv`'s own one-step preservation: given an actor OTHER
     than `h`/`h`'s own pool key, and `h`'s `signedBy`/`poolSignedBy` rows
     still exactly their `s0` (anchor) values, the invariant survives. -/
@@ -2319,6 +2322,7 @@ theorem unbeatablePaysInv_appliesAll
       (fun actor' newNow' hc => hexclTick actor' newNow' (List.mem_cons_of_mem _ hc))
       hsrow_mid hprow_mid hinv_mid
 
+set_option linter.unusedVariables false in
 /-- Given a `.transfer` step that ALREADY exists (its own `PoolOwnedSpendStep`
     witness supplied elsewhere — this theorem never inspects it), with
     `indices = [destIdx]` naming a single selected allocation, the minted
@@ -2531,6 +2535,7 @@ theorem holdings_position_leaf_value_placeholder (sig : SignatureAssumptions)
   rw [← hconsist]
   exact live_leaf_matches hReachMidPool asset pos.1 pos.2 pre hlive
 
+set_option linter.unusedVariables false in
 /-- A live, owned note's own nullifier is never already spent — true
     because a note leaves `live` the SAME step its nullifier enters
     `spent` (`PoolOwnedSpendStep`'s own `removeAll`/`markSpent` pairing,
@@ -2734,7 +2739,7 @@ theorem transfer_step_exists
     rw [transferEffects_eq_sel allocs held [destIdx]] at hx
     obtain ⟨i, _, hseli, hxeq⟩ := transferEffectsSel_exit_forall allocs held
       (fun i => [destIdx].isEmpty || i ∈ [destIdx]) x hx
-    simp only [List.isEmpty_cons, List.isEmpty_nil, Bool.false_or, List.mem_singleton,
+    simp only [List.isEmpty_cons, Bool.false_or, List.mem_singleton,
       decide_eq_true_eq] at hseli
     subst hseli
     rw [hallocsD, hpaidDef] at hxeq
@@ -3691,6 +3696,7 @@ theorem TimeoutInv_appliesAll
         (fun actor' newNow' hc => hexclTick actor' newNow' (List.mem_cons_of_mem _ hc))
         hsrow_mid hprow_mid hnohigher_rest hT_mid
 
+set_option linter.unusedVariables false in
 /-- Which harm this rules out: the same guarantee for the "sad path"
     (ForceMove-2018.pdf §1.2: "the adjudicator releases funds according to
     the resolution specified by the most recently known state at the time
@@ -4085,6 +4091,7 @@ only (the one can-happen theorem whose witnessed execution includes a
 `.transfer` call).
 -/
 
+set_option linter.unusedVariables false in
 /-- A-09 — a checkpoint can happen, and clears a challenge back to Open:
     there is a reachable challenged channel and a `.checkpoint` call
     that moves it to `.open` mode, with `turnNumRecord` raised to the
@@ -4198,6 +4205,7 @@ theorem checkpoint_can_happen
     unfold update
     rw [if_pos rfl]
 
+set_option linter.unusedVariables false in
 /-- The real construction behind `deposit_can_happen`, below, carrying
     three extra facts its own build already has on hand — the pre-deposit
     state's `channels`/`holdings` equal `genesis`'s own, and its own
@@ -4564,6 +4572,7 @@ theorem guarantee_reallocation_order_dependent
   rw [hheld_sC2, hheld_s1, hbefore, hafter]
   omega
 
+set_option linter.unusedVariables false in
 /-- A top-up can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     two deposits into the same channel, with the second deposit MERGING
     its fresh note with the first deposit's holding
@@ -4933,6 +4942,7 @@ theorem topup_can_happen
   exact ⟨assets, selfInputs, pool0, mid1, mid2, s', cid, 0, amt1, token, amt1, amt2,
     Actor.pool publicKey, Actor.pool publicKey, hReachPool, hreach1, hstep_d1, hstep_d2, hfinal⟩
 
+set_option linter.unusedVariables false in
 /-- A challenge can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — a `.sign` call for every one of
     `fp`'s participants on `stateHash fp candidate` — in which a
@@ -5029,6 +5039,7 @@ theorem challenge_timeout_can_happen
   unfold ChannelStatus.mode
   rw [if_neg (by omega), if_pos (Nat.le_refl _)]
 
+set_option linter.unusedVariables false in
 /-- A conclude can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — a `.sign` call for every one of
     `fp`'s participants on `stateHash fp candidate` — in which a
@@ -5082,6 +5093,7 @@ theorem conclude_can_happen
     else if g1.now ≤ g1.now then ChannelMode.finalized else ChannelMode.challenge) = .finalized
   simp [g1]
 
+set_option linter.unusedVariables false in
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
     to fund a channel, a `.conclude` (needing `now ≠ 0`, so a `.tick`
     comes first) finalizes it, and a `.transfer` call pays the entire
@@ -5381,6 +5393,7 @@ theorem payout_can_happen
     rw [hlen]
     simp [withTreePositionsFrom, withPositionsFrom]
 
+set_option linter.unusedVariables false in
 /-- A reclaim can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — `.conclude` with an EMPTY
     participants list for both the source and the target channel (as
@@ -5535,6 +5548,7 @@ theorem reclaim_can_happen
     split at this <;> simp_all
   exact ⟨assets, selfInputs, pool0, mid3, s', sourceChannelId, sourceOutcome, 0, 0, targetOutcome,
     0, Term.val 0, Actor.nitro 0, _root_.Reachable.genesis, hreach3, hstep_r, hneq⟩
+set_option linter.unusedVariables false in
 /-- A payout takes no fee: `transfer` mints exactly as much as it debits —
     the paid allocations' total plus the remainder equals the pre-call
     `heldValue`, with no amount withheld anywhere. Nitro-2019-219.pdf
@@ -5631,6 +5645,7 @@ theorem bulk_conclude_and_transfer_all_assets_effect
   obtain ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan, _⟩ := hstep
   exact ⟨hmode, hisFinal, hsigned, newOutcome, hfold, hchan⟩
 
+set_option linter.unusedVariables false in
 /-- B4 — a bulk conclude-and-transfer can happen: for all
     `HashAssumptions`/`SignatureAssumptions`, there is an execution from
     `genesis` — a `.sign` call for every one of `fp`'s participants on
@@ -5906,6 +5921,7 @@ theorem bulk_conclude_and_transfer_can_happen
     rw [hlen]
     simp [withTreePositionsFrom, withPositionsFrom]
 
+set_option linter.unusedVariables false in
 /-- A later `.transfer` call can happen after an earlier `.transfer`
     call on the SAME channel already left a nonzero remainder: paying
     one entry of a finalized two-entry outcome does not lock the
@@ -6217,7 +6233,7 @@ theorem transfer_after_transfer_can_happen
     have hget : outcome.get ⟨0, hassetIdx⟩ = ⟨token, [dest1, dest2]⟩ := rfl
     rw [hget, hheld4, htransferEffects1]
     refine ⟨by decide, r1, ?_⟩
-    simp only [Nat.sub_self]
+    simp only []
     exact ⟨hospend1, rfl, rfl⟩
   have hOwnedRandom : mid5.pool.ownedRandomOf
       (commitment (npk selfTerm r1) token 1) = some ⟨selfTerm, r1⟩ := by
@@ -6466,15 +6482,15 @@ theorem heldValue_zero_iff_no_collateral
       ∃ pos c, s.holdings asset cid = some (pos, c) ∧ s.pool.preimageOf c = none := by
   unfold heldValue
   rcases hc : s.holdings asset cid with _ | ⟨pos, c⟩
-  · simp [hc]
-  · simp only [hc]
+  · simp
+  · simp only []
     rcases hp : s.pool.preimageOf c with _ | pre
     · constructor
       · intro _
         exact Or.inr ⟨pos, c, rfl, hp⟩
       · intro _
-        simp [hp]
-    · simp only [hp, Option.map_some, Option.getD_some]
+        simp
+    · simp only [Option.map_some, Option.getD_some]
       constructor
       · intro hv
         exact absurd hv (holdings_never_zero_valued sig appRel assets selfInputs pool0 s asset cid
@@ -6503,6 +6519,7 @@ theorem configuredAssets_invariant
     (fun actor call s s' hP hstep => (step_configuredAssets sig appRel actor s s' call hstep).trans hP)
     hreach
 
+set_option linter.unusedVariables false in
 /-- Closes two of the five `_mintTransferPayout` misses (old offsets
     11666, 11738): an allocation paid exactly `0` mints no note at all —
     `transferEffects`'s `exitAllocations` (`Outcome.lean`) carries a
