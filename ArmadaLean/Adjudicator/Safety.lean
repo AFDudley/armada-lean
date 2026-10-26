@@ -823,7 +823,9 @@ theorem live_note_nullifier_unspent_placeholder (sig : SignatureAssumptions)
     `removeAll` obligation on a singleton `ownedSpentPositions`. -/
 theorem removeAll_singleton_of_mem {α : Type} [DecidableEq α] {l : List α} {x : α}
     (h : x ∈ l) : removeAll l [x] = some (l.erase x) := by
-  sorry
+  unfold removeAll
+  rw [if_pos (List.elem_iff.mpr h)]
+  rfl
 
 /-- The full per-step invariant `holdings_position_live_step` (`Lemmas.lean`)
     preserves, lifted to any reachable state: a holding's own position is
@@ -869,7 +871,9 @@ theorem holdings_point_to_live_notes
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s)
     (hholds : s.holdings asset cid = some (pos, c)) :
     PoolIsLive s.pool c := by
-  sorry
+  obtain ⟨⟨pre, _hpre, hconsist, _hval, _htok, hlive, _r, _hnpk, _hown⟩, _, _⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c hholds
+  exact ⟨asset, pos.1, pos.2, pre, hlive, hconsist⟩
 
 /-- Value in the pool exists only as notes, at the adjudicator's own
     interface: `AdjudicatorState` has no raw-balance field anywhere, and
@@ -887,7 +891,15 @@ theorem value_exists_only_as_notes
     (held : Nat) (hheld : heldValue s asset cid = held) (hpos : 0 < held) :
     ∃ pos c, s.holdings asset cid = some (pos, c) ∧ PoolIsLive s.pool c ∧
       (s.pool.preimageOf c).map CommitmentPreimage.value = some held := by
-  sorry
+  rcases hh : s.holdings asset cid with _ | ⟨pos, c⟩
+  · exfalso
+    simp only [heldValue, hh] at hheld
+    omega
+  · obtain ⟨⟨pre, hpre, hconsist, _hval, _htok, hlive, _r, _hnpk, _hown⟩, _, _⟩ :=
+      holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach asset cid pos c hh
+    refine ⟨pos, c, rfl, ⟨asset, pos.1, pos.2, pre, hlive, hconsist⟩, ?_⟩
+    simp only [heldValue, hh, hpre, Option.map_some, Option.getD_some] at hheld
+    simp only [hpre, Option.map_some, hheld]
 
 /-- Given a finalized channel at `mid` naming `curOutcome` at
     `assetIndex`, with `destIdx` still affording `x` (`haffordable`), a
