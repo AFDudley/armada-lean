@@ -1050,6 +1050,66 @@ theorem unbeatable_pays_after_timeout
           PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
   sorry
 
+/-- `DepositStep`'s effect on `PoolState.notedValue`: the fresh notes minted
+    from one deposit's own spent inputs always sum to the inputs' own
+    total value (`transact_balance`'s own conservation, upgraded past
+    `removeAll`), so the pool's own per-token noted total is unchanged —
+    `notedValue_conserved`'s own `.deposit` FIRST-TIME case. -/
+theorem DepositStep_notedValue_conserved {N M : Nat}
+    (pool pool' : PoolState) (self : Term) (token amount : Nat)
+    (w : TransactWitness N M) (pub : TransactPublic N M) (idx : Fin M)
+    (spendTreeNumber treeNumber position : Nat)
+    (hstep : DepositStep pool self token amount w pub idx spendTreeNumber treeNumber position pool') :
+    ∀ t, pool'.notedValue t = pool.notedValue t := by
+  intro t
+  unfold DepositStep at hstep
+  obtain ⟨r, hnpkOut, hcommOut, htoken, htreeNumber, hposition, hN, hM, hC, rest, spent', records,
+    hroot, hremove, hmark, hsub, hmem, heq⟩ := hstep
+  unfold PoolState.notedValue
+  rw [heq]
+  dsimp only
+  by_cases ht : t = w.token
+  · rw [ht, if_pos rfl]
+    have hbal := transact_balance spendTreeNumber hN hM hC
+      (newNotes := transactAllOutputs w) (unshieldTail := []) (by simp)
+    simp only [List.map_nil, listSum] at hbal
+    have hsum := removeAll_sum (fun p => p.2.value) hremove
+    have hpos := withTreePositionsFrom_map CommitmentPreimage.value treeNumber
+      (insertStartPos pool.leaves M) (transactAllOutputs w)
+    rw [List.map_append, listSum_append, hpos]
+    omega
+  · rw [if_neg ht]
+
+/-- `DepositMergeStep`'s effect on `PoolState.notedValue`: a top-up merge
+    nullifies the old holding and the fresh deposit note, and mints their
+    sum as one merged note — `transactOwned_balance`'s own conservation
+    upgraded past `removeAll`, `notedValue_conserved`'s own `.deposit`
+    TOP-UP case. -/
+theorem DepositMergeStep_notedValue_conserved
+    (pool pool' : PoolState) (self : Term) (token : Nat)
+    (oldTreeNumber oldPos : Nat) (oldHolding : Term) (newTreeNumber newPos : Nat)
+    (newNote merged : Term) (spendTreeNumber mergedTreeNumber mergedPos : Nat)
+    (hstep : DepositMergeStep pool self token oldTreeNumber oldPos oldHolding newTreeNumber newPos
+      newNote merged spendTreeNumber mergedTreeNumber mergedPos pool') :
+    ∀ t, pool'.notedValue t = pool.notedValue t := by
+  intro t
+  unfold DepositMergeStep at hstep
+  obtain ⟨hmergedTree, hmergedPos, w, pub, hC, rest, spent', r, randomOut, hNonZero, hself, htoken,
+    hnpkOut0, hmergedEq, hleaf0, hleaf1, hcommitOld, hcommitNew, holdTree, hnewTree, hroot,
+    hremove, hmark, hnpkRandomOut, heq⟩ := hstep
+  unfold PoolState.notedValue
+  rw [heq]
+  dsimp only
+  by_cases ht : t = token
+  · rw [ht, if_pos rfl]
+    have hbal := transactOwned_balance spendTreeNumber (by decide) (by decide) hC
+    have hsum := removeAll_sum (fun p => p.2.value) hremove
+    have hpos := withTreePositionsFrom_map CommitmentPreimage.value mergedTreeNumber mergedPos
+      (ownedNewNotes w)
+    rw [List.map_append, listSum_append, hpos]
+    omega
+  · rw [if_neg ht]
+
 /-- Which harm this rules out: no single call can mint value into the pool
     or burn value out of it — every call only moves WHICH note backs a
     given token's value, never how much. One-step form; `Reachability.lean`
@@ -1061,7 +1121,59 @@ theorem notedValue_conserved
     (actor : Actor) (s s' : AdjudicatorState) (call : Call) (token : Nat)
     (hstep : Step sig appRel actor s call s') :
     s'.pool.notedValue token = s.pool.notedValue token := by
-  sorry
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, hinner, _⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, spendTreeNumber, treeNumber, position, midPool, hdstep,
+      _hpoolsigned, hmatch⟩ := hinner
+    have hmidConserved := DepositStep_notedValue_conserved s.pool midPool s.self asset amount w pub
+      idx spendTreeNumber treeNumber position hdstep token
+    rcases hh : s.holdings asset channelId with _ | ⟨⟨oldTreeNumber, oldPos⟩, oldHoldingVal⟩
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _⟩ := hmatch
+      rw [hpoolEq]
+      exact hmidConserved
+    · rw [hh] at hmatch
+      obtain ⟨merged, mergeSpendTreeNumber, mergedTreeNumber, mergedPos, hmerge, _⟩ := hmatch
+      have hmergeConserved := DepositMergeStep_notedValue_conserved midPool s'.pool s.self asset
+        oldTreeNumber oldPos oldHoldingVal treeNumber position (pub.commitmentsOut idx) merged
+        mergeSpendTreeNumber mergedTreeNumber mergedPos hmerge token
+      rw [hmergeConserved]
+      exact hmidConserved
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨_, _, _, _, _, hinner, _⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+    exact PoolOwnedSpendStep_notedValue_conserved _ _ _ _ _ _ _ hmatch token
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | reclaim a b c d e f g =>
+    obtain ⟨_, _, _, _, _, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨hmode, hsh, hoh, newOutcome, hfold, hchanseq, _⟩ := hstep
+    exact bulkTransferFold_notedValue_conserved s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold token
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨hnotfinal, hfinal, hsigned, newOutcome, hfold, hchanseq, _⟩ := hstep
+    exact bulkTransferFold_notedValue_conserved s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold token
+  | tick newNow =>
+    obtain ⟨_, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | sign p d =>
+    obtain ⟨_, _, hpool, _⟩ := hstep
+    rw [hpool]
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpool, _⟩ := hstep
+    rw [hpool]
 
 /-- The reachable-set form of `notedValue_conserved`, stated over the
     REACHABLE set rather than over one step from a chosen state: every
@@ -1075,7 +1187,11 @@ theorem notedValue_conserved_reachable
     (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
     (s : AdjudicatorState) (token : Nat)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) s) :
-    s.pool.notedValue token = pool0.notedValue token := sorry
+    s.pool.notedValue token = pool0.notedValue token :=
+  reachable_preserves (P := fun s => s.pool.notedValue token = pool0.notedValue token) rfl
+    (fun actor call s s' hP hstep =>
+      (notedValue_conserved sig appRel actor s s' call token hstep).trans hP)
+    hreach
 
 /-- The real ConsensusApp's rule (`ConsensusApp.sol`/`Consensus.sol`,
     quoted above): empty proof, and every participant has authorized the
