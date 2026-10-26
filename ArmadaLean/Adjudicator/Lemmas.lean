@@ -3631,12 +3631,65 @@ theorem deposit_merge_sets_heldValue
       ∃ pre, s.pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc)
     (oldPos : Nat × Nat) (oldHolding : Term) (hsome : s.holdings asset channelId = some (oldPos, oldHolding)) :
     heldValue s' asset channelId = heldValue s asset channelId + amount := by
-  -- SORRY (tree-rollover rework pending, successor handoff): the
-  -- `transactOwned_value_conserved w' pub' (by decide) (by decide) hC'` call
-  -- leaves `N`/`M` metavariable at this elaboration point (the `(by decide)`
-  -- proofs of `N ≤ 8`/`M ≤ 4` need `N`/`M` pinned first). Needs an explicit
-  -- `(N := 2) (M := 1)` or a differently-ordered elaboration.
-  sorry
+  obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+  obtain ⟨N, M, w, pub, idx, spendTreeNumber, treeNumber, position, midPool, hdstep,
+    _hpoolsigned, hmatch⟩ := hinner
+  obtain ⟨oldTreeNumber, oldPosNat⟩ := oldPos
+  obtain ⟨preOld, hpreOld, hvalOld, hconsOld⟩ := hinv asset channelId (oldTreeNumber, oldPosNat)
+    oldHolding hsome
+  rw [hsome] at hmatch
+  obtain ⟨merged, mergeSpendTreeNumber, mergedTreeNumber, mergedPos, hmergestep, hholdseq⟩ := hmatch
+  obtain ⟨r0, hown, hcommit, htoken, _htreeNumber, _hposition, _hN, _hM, hC, _rest, _spent',
+    records, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+  have hvalid : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+    fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+  have hvalFresh : w.valueOut idx = amount := by
+    have hout := hC.outputs idx
+    rw [htoken, hcommit] at hout
+    exact (Term.val.inj (Term.hash3_inj hout).2.2).symm
+  obtain ⟨_hmergedTN, _hmergedPosEq, w', pub', hC', _rest', _spent'', r', randomOut', _hNonZero',
+    hself', _htoken', hnpkOut0', hmergedEq, _hleaf0', _hleaf1', hcommitOld', hcommitNew',
+    _holdTN', _hnewTN', _hroot', _hremove', _hnullify', _hrandomOut', heq'⟩ := hmergestep
+  have hveq0 : preOld.value = w'.valueIn 0 := by
+    have hcons'' : hashCommitment preOld = hashCommitment
+        (⟨npk pub'.ownerField (w'.randomIn 0), w'.token, w'.valueIn 0⟩ : CommitmentPreimage) := by
+      rw [hconsOld]; exact hcommitOld'.symm
+    exact congrArg CommitmentPreimage.value (hashCommitment_inj hcons'')
+  have hconsFresh : hashCommitment (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) =
+      pub.commitmentsOut idx := (hC.outputs idx).symm
+  have hveq1 : w.valueOut idx = w'.valueIn 1 := by
+    have hcons'' : hashCommitment (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) =
+        hashCommitment
+          (⟨npk pub'.ownerField (w'.randomIn 1), w'.token, w'.valueIn 1⟩ : CommitmentPreimage) := by
+      rw [hconsFresh]; exact hcommitNew'.symm
+    exact congrArg CommitmentPreimage.value (hashCommitment_inj hcons'')
+  have hbal := transactOwned_value_conserved w' pub' (by omega) (by omega) hC'
+  simp only [listSum, List.ofFn_succ, List.ofFn_zero] at hbal
+  have hvalid' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
+    ownedOutputRecords_valid hC'
+  have hmemrec' : (pub'.commitmentsOut (0 : Fin 1),
+      (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage)) ∈ ownedOutputRecords w' pub' := by
+    unfold ownedOutputRecords; exact List.mem_ofFn.mpr ⟨0, rfl⟩
+  have hnz0' : ¬ isZeroPreimage (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) :=
+    npk_preimage_not_zero hnpkOut0'.symm
+  have hread0' := applyRecords_reads hvalid' midPool.preimageOf _ _ hmemrec' hnz0'
+  have hpre' : s'.pool.preimageOf (pub'.commitmentsOut (0 : Fin 1)) =
+      some (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) := by
+    rw [heq']; exact hread0'
+  have hOld : heldValue s asset channelId = preOld.value := by
+    unfold heldValue
+    rw [hsome]
+    simp [hpreOld]
+  unfold heldValue
+  rw [hholdseq]
+  unfold update
+  rw [if_pos rfl, if_pos rfl]
+  show ((s'.pool.preimageOf merged).map CommitmentPreimage.value).getD 0 =
+    heldValue s asset channelId + amount
+  rw [hmergedEq, hpre', hOld]
+  simp only [Option.map_some, Option.getD_some]
+  simp only [Fin.succ_zero_eq_one, Nat.add_zero] at hbal
+  omega
 
 
 /-- A successful `.deposit` leaves `heldValue` UNCHANGED at every OTHER
