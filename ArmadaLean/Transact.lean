@@ -15,10 +15,10 @@
   Commitments, nullifiers, note public keys, master public keys and Merkle
   roots are `Term`s (`ArmadaLean.Poseidon`, the symbolic Dolev-Yao hash model);
   note values, token amounts and range checks stay `Nat`. `msgHashOf`, the
-  variable-arity EdDSA message hash, is now defined directly as a `Term.hash`
-  call rather than left as an axiom — the generic `Term.hash : List Term →
-  Term` constructor represents exactly what `Poseidon(2+N+M)` computes, so no
-  separate assumption is needed for this one arity.
+  variable-arity EdDSA message hash, is now defined directly as a `Term.hash` call
+  rather than left as an axiom — the generic `Term.hash : HashFn → List Term → Term`
+  constructor, tagged `.poseidon`, represents exactly what `Poseidon(2+N+M)` computes,
+  so no separate assumption is needed for this one arity.
 -/
 import ArmadaLean.Field
 import ArmadaLean.Poseidon
@@ -42,16 +42,18 @@ axiom EdDSAVerify : (Nat × Nat) → (Nat × Nat × Nat) → Term → Prop
 /-- Master public key = Poseidon(spendingPublicKeyX, spendingPublicKeyY,
     nullifyingKey) (Transact.circom:61-66). `pk`/`nk` are raw values (BabyJubJub
     coordinates and a secret nullifying key) the spender chose, embedded as
-    `Term.val` before hashing; the result is a genuine hash term, never a
-    `Term.val` of anything — this is what
+    `Term.val` before hashing; the result is a genuine Poseidon hash term, never a
+    `Term.val` and never a Keccak term — this is what
     `ArmadaLean.TransactOwned.user_npk_ne_contract_npk` rests on. -/
 def masterPublicKey (pk : Nat × Nat) (nk : Nat) : Term :=
   Term.hash3 (Term.val pk.1) (Term.val pk.2) (Term.val nk)
 
 /-- Note public key = Poseidon(masterPublicKey, random) (Transact.circom:75-78).
     `mpk` is already a `Term` (a master public key, or — on the owned path,
-    `ArmadaLean.TransactOwned` — `Term.val ownerField`); `r` is a raw
-    randomness value, embedded as `Term.val`. -/
+    `ArmadaLean.TransactOwned` — the owning contract's address term,
+    `TransactOwnedPublic.ownerField`, a Keccak hash, `ArmadaLean.PoolOwned`'s module
+    comment on address terms); `r` is a raw randomness value, embedded as
+    `Term.val`. -/
 def npk (mpk : Term) (r : Nat) : Term := Term.hash2 mpk (Term.val r)
 
 /-- `npk` is injective in both arguments: two note public keys built from
@@ -120,7 +122,7 @@ structure TransactPublic (N M : Nat) where
     represents a Poseidon call of any arity, so this is a direct, computable
     transcription of the circuit's own packing — not a separate assumption. -/
 def msgHashOf {N M : Nat} (pub : TransactPublic N M) : Term :=
-  Term.hash (pub.merkleRoot :: Term.val pub.boundParamsHash ::
+  Term.hash .poseidon (pub.merkleRoot :: Term.val pub.boundParamsHash ::
     (List.ofFn pub.nullifiers ++ List.ofFn pub.commitmentsOut))
 
 /--
@@ -141,7 +143,7 @@ structure Constrained {N M : Nat} (w : TransactWitness N M)
         w.token (w.valueIn i))
       (w.pathElements i) = pub.merkleRoot
   /-- 2d: nullifier derivation (:97-101). -/
-  nullifiers : ∀ i, pub.nullifiers i = nullifier w.nullifyingKey (w.leavesIndices i)
+  nullifiers : ∀ i, pub.nullifiers i = nullifier (Term.val w.nullifyingKey) (w.leavesIndices i)
   /-- 3: output commitments (:105-113). -/
   outputs : ∀ j, pub.commitmentsOut j = commitment (w.npkOut j) w.token (w.valueOut j)
   /-- 4 (inputs): every input value passes Num2Bits(120) (:120-124). -/

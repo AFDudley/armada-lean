@@ -164,12 +164,12 @@ spent commitment is the one `trueOwner` genuinely created), the step's `caller` 
 path. -/
 theorem transactOwned_spends_only_owned {N M : Nat} {w : TransactOwnedWitness N M}
     {pub : TransactOwnedPublic N M} (hC : OwnedConstrained w pub) (i : Fin N)
-    {trueOwner trueRandom : Nat}
+    {trueOwner : Term} {trueRandom : Nat}
     (hSameNote :
-      commitment (npk (Term.val pub.ownerField) (w.randomIn i)) w.token (w.valueIn i) =
-      commitment (npk (Term.val trueOwner) trueRandom) w.token (w.valueIn i))
-    {caller : Nat} (hCaller : caller = addressOf pub.ownerField) :
-    caller = addressOf trueOwner :=
+      commitment (npk pub.ownerField (w.randomIn i)) w.token (w.valueIn i) =
+      commitment (npk trueOwner trueRandom) w.token (w.valueIn i))
+    {caller : Term} (hCaller : caller = pub.ownerField) :
+    caller = trueOwner :=
   owned_owner_binding hC i hSameNote hCaller
 
 /-! ### No step can block an otherwise-valid spend -/
@@ -202,7 +202,7 @@ theorem transact_cannot_be_blocked {s : PoolState} (b : Bool)
     (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
     (hRecords : records.Sublist (transactOutputRecords w pub))
     (hOwnedRecords : ∀ cd ∈ ownedRecords, ∃ pre, (cd.1, pre) ∈ records ∧
-      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
+      npk cd.2.ownerField cd.2.random = pre.npk)
     (hCapacity : s.leaves.length + newNotes.length ≤ 2 ^ TreeDepth) :
     ∃ s', Step { s with shieldsPaused := b } s' :=
   ⟨_, Step.transact w pub hN hM hC newNotes unshieldTail rest spent' records ownedRecords
@@ -215,7 +215,7 @@ theorem transact_cannot_be_blocked {s : PoolState} (b : Bool)
 theorem transactOwned_cannot_be_blocked {s : PoolState} (b : Bool)
     {N M : Nat} (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M)
     (hN : N ≤ 8) (hM : M ≤ 4) (hC : OwnedConstrained w pub)
-    (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
+    (caller : Term) (hCaller : caller = pub.ownerField)
     (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
     (ownedOutputs : List (Fin M × OwnedDisclosure))
     (hRoot : pub.merkleRoot ∈ s.roots)
@@ -223,7 +223,7 @@ theorem transactOwned_cannot_be_blocked {s : PoolState} (b : Bool)
     (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
     (hNonZero : ∀ j, ¬ isZeroPreimage
       (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-    (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk (Term.val x.2.ownerField) x.2.random = w.npkOut x.1)
+    (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk x.2.ownerField x.2.random = w.npkOut x.1)
     (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
     ∃ s', Step { s with shieldsPaused := b } s' :=
   ⟨_, Step.transactOwned w pub hN hM hC caller hCaller rest spent' ownedOutputs
@@ -299,8 +299,8 @@ theorem pool_no_double_spend {s0 s : PoolState}
 /-! ### Two different live positions never share a nullifier -/
 
 /--
-**Two different live positions never share a nullifier.** `nullifier`'s two raw
-arguments embed separately before one `Term.hash2` call
+**Two different live positions never share a nullifier.** `nullifier`'s two
+arguments combine in one `Term.hash2` call
 (`ArmadaLean.Nullifier.nullifier_pos_inj`), so for any one spender's key (plain
 `nullifyingKey` or owned `ownerField` alike — `nullifier` does not distinguish the
 two), distinct leaf positions always derive distinct nullifiers. This is the fact that
@@ -308,7 +308,7 @@ makes identifying a live note by its position sound in the first place: `PoolSta
 .live`'s `(position, preimage)` pairs (module comment, Pool.lean) can never be
 confused by the nullifier a spend proof publishes for one of them, because no other
 live position could ever produce that same nullifier under the same key. -/
-theorem live_positions_distinct_nullifiers {nk p₁ p₂ : Nat} (hpos : p₁ ≠ p₂) :
+theorem live_positions_distinct_nullifiers {nk : Term} {p₁ p₂ : Nat} (hpos : p₁ ≠ p₂) :
     nullifier nk p₁ ≠ nullifier nk p₂ :=
   fun h => hpos (nullifier_pos_inj h)
 
@@ -611,7 +611,7 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
     (spent : NullifierSet)
-    (hFresh : ∀ i, nullifier nullifyingKey (leavesIndices i) ∉ spent) :
+    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ spent) :
     ∃ (w : TransactWitness N M) (pub : TransactPublic N M),
       Constrained w pub ∧
       VerifyAccepts pub ∧
@@ -619,7 +619,7 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
       ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
   let pub : TransactPublic N M :=
     { merkleRoot := root, boundParamsHash := boundParamsHash,
-      nullifiers := fun i => nullifier nullifyingKey (leavesIndices i),
+      nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
       commitmentsOut := fun j => commitment (npkOut j) token (valueOut j) }
   let w : TransactWitness N M :=
     { token := token, publicKey := publicKey,
@@ -634,10 +634,10 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
       sig := hSig.signSound publicKey (msgHashOf pub) }
   refine ⟨w, pub, hConstrained, hComplete.complete hConstrained, fun _ => rfl, ?_⟩
   apply markSpent_succeeds
-  · have hmap := distinct_leaves_distinct_nullifiers nullifyingKey (List.ofFn leavesIndices)
+  · have hmap := distinct_leaves_distinct_nullifiers (Term.val nullifyingKey) (List.ofFn leavesIndices)
       hDistinctLeaves
-    have heq : (List.ofFn leavesIndices).map (nullifier nullifyingKey)
-        = List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)) := List.map_ofFn
+    have heq : (List.ofFn leavesIndices).map (nullifier (Term.val nullifyingKey))
+        = List.ofFn (fun i => nullifier (Term.val nullifyingKey) (leavesIndices i)) := List.map_ofFn
     rwa [heq] at hmap
   · intro n hn
     obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
@@ -683,7 +683,7 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier nullifyingKey (leavesIndices i) ∉ s.spent)
+    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ s.spent)
     {rest : List (Nat × CommitmentPreimage)}
     (hLive : removeAll (s.live token)
         (List.ofFn fun i =>
@@ -695,7 +695,7 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     ∃ s', Step s s' := by
   let pub : TransactPublic N M :=
     { merkleRoot := root, boundParamsHash := boundParamsHash,
-      nullifiers := fun i => nullifier nullifyingKey (leavesIndices i),
+      nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
       commitmentsOut := fun j => commitment (npkOut j) token (valueOut j) }
   let w : TransactWitness N M :=
     { token := token, publicKey := publicKey,
@@ -711,12 +711,12 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
   have hV : VerifyAccepts pub := hComplete.complete hC
   obtain ⟨spent', hMark⟩ := markSpent_succeeds
     (by
-      have hmap := distinct_leaves_distinct_nullifiers nullifyingKey (List.ofFn leavesIndices)
+      have hmap := distinct_leaves_distinct_nullifiers (Term.val nullifyingKey) (List.ofFn leavesIndices)
         hDistinctLeaves
-      have heq : (List.ofFn leavesIndices).map (nullifier nullifyingKey)
-          = List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)) := List.map_ofFn
+      have heq : (List.ofFn leavesIndices).map (nullifier (Term.val nullifyingKey))
+          = List.ofFn (fun i => nullifier (Term.val nullifyingKey) (leavesIndices i)) := List.map_ofFn
       rwa [heq] at hmap)
-    (show ∀ n ∈ List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)), n ∉ s.spent by
+    (show ∀ n ∈ List.ofFn (fun i => nullifier (Term.val nullifyingKey) (leavesIndices i)), n ∉ s.spent by
       intro n hn
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
@@ -750,7 +750,7 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i)) (hRangeOut : RangeChecked120 valueOut)
     (hBalance : listSum (List.ofFn valueIn) = valueOut)
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier nullifyingKey (leavesIndices i) ∉ s.spent)
+    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ s.spent)
     {rest : List (Nat × CommitmentPreimage)}
     (hLive : removeAll (s.live token)
         (List.ofFn fun i =>
@@ -762,7 +762,7 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     ∃ s', Step s s' := by
   let pub : TransactPublic N 1 :=
     { merkleRoot := root, boundParamsHash := boundParamsHash,
-      nullifiers := fun i => nullifier nullifyingKey (leavesIndices i),
+      nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
       commitmentsOut := fun _ => commitment npkOut token valueOut }
   let w : TransactWitness N 1 :=
     { token := token, publicKey := publicKey,
@@ -781,12 +781,12 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
   have _ := hValuePos
   obtain ⟨spent', hMark⟩ := markSpent_succeeds
     (by
-      have hmap := distinct_leaves_distinct_nullifiers nullifyingKey (List.ofFn leavesIndices)
+      have hmap := distinct_leaves_distinct_nullifiers (Term.val nullifyingKey) (List.ofFn leavesIndices)
         hDistinctLeaves
-      have heq : (List.ofFn leavesIndices).map (nullifier nullifyingKey)
-          = List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)) := List.map_ofFn
+      have heq : (List.ofFn leavesIndices).map (nullifier (Term.val nullifyingKey))
+          = List.ofFn (fun i => nullifier (Term.val nullifyingKey) (leavesIndices i)) := List.map_ofFn
       rwa [heq] at hmap)
-    (show ∀ n ∈ List.ofFn (fun i => nullifier nullifyingKey (leavesIndices i)), n ∉ s.spent by
+    (show ∀ n ∈ List.ofFn (fun i => nullifier (Term.val nullifyingKey) (leavesIndices i)), n ∉ s.spent by
       intro n hn
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
@@ -813,14 +813,14 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     (`ArmadaLean.PoolOwned`'s module comment on `OwnedDisclosure`), not a precondition
     for the spend itself to succeed. -/
 theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofCompleteness)
-    {N M : Nat} (ownerField token boundParamsHash : Nat) (root : Term)
+    {N M : Nat} (ownerField : Term) (token boundParamsHash : Nat) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
     (hRoot : root ∈ s.roots)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot (commitment (npk (Term.val ownerField) (randomIn i)) token (valueIn i))
+      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i))
         (pathElements i) = root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
@@ -828,12 +828,12 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
     (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ s.spent)
     (hOutputsNonZero : ∀ j, npkOut j ≠ Term.val 0)
-    (caller : Nat) (hCaller : caller = addressOf ownerField)
+    (caller : Term) (hCaller : caller = ownerField)
     {rest : List (Nat × CommitmentPreimage)}
     (hLive : removeAll (s.live token)
         (List.ofFn fun i =>
           (leavesIndices i,
-            (⟨npk (Term.val ownerField) (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
+            (⟨npk ownerField (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
         = some rest)
     (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
     ∃ s', Step s s' := by
@@ -972,13 +972,13 @@ module comment on `OwnedDisclosure`, citing `PoolTypes.sol:79-83` and
 internally, by `choose`, from the registry lookup `ownedRandomOf (hashCommitment
 (preimages i))`, never supplied externally. -/
 theorem owned_spend_witness_exists {N M : Nat}
-    (ownerField token boundParamsHash : Nat)
+    (ownerField : Term) (token boundParamsHash : Nat)
     (preimages : Fin N → CommitmentPreimage)
     (leavesIndices : Fin N → Nat) (leaves : List Term)
     (ownedRandomOf : OwnedRandomRegistry)
     (hToken : ∀ i, (preimages i).token = token)
     (hOwned : ∀ i, ∃ r, ownedRandomOf (hashCommitment (preimages i)) = some ⟨ownerField, r⟩ ∧
-      npk (Term.val ownerField) r = (preimages i).npk)
+      npk ownerField r = (preimages i).npk)
     (hLeafIndex : ∀ i, leavesIndices i < 2 ^ TreeDepth)
     (hLeafValue : ∀ i, leaves.getD (leavesIndices i) (Term.val 0) = hashCommitment (preimages i))
     (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
@@ -996,7 +996,7 @@ theorem owned_spend_witness_exists {N M : Nat}
   let randomIn : Fin N → Nat := fun i => (hOwned i).choose
   have hRandomReg : ∀ i, ownedRandomOf (hashCommitment (preimages i)) =
       some ⟨ownerField, randomIn i⟩ := fun i => (hOwned i).choose_spec.1
-  have hRandomNpk : ∀ i, npk (Term.val ownerField) (randomIn i) = (preimages i).npk :=
+  have hRandomNpk : ∀ i, npk ownerField (randomIn i) = (preimages i).npk :=
     fun i => (hOwned i).choose_spec.2
   let w : TransactOwnedWitness N M :=
     { token := token, randomIn := randomIn, valueIn := fun i => (preimages i).value,
@@ -1008,13 +1008,13 @@ theorem owned_spend_witness_exists {N M : Nat}
       commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
       ownerField := ownerField }
   have hcommit : ∀ i : Fin N, hashCommitment (preimages i) =
-      commitment (npk (Term.val ownerField) (randomIn i)) token ((preimages i).value) := by
+      commitment (npk ownerField (randomIn i)) token ((preimages i).value) := by
     intro i
     unfold hashCommitment
     rw [← hRandomNpk i, hToken i]
   have hmerkle : ∀ i : Fin N,
       merkleRoot
-        (commitment (npk (Term.val ownerField) (randomIn i)) token ((preimages i).value))
+        (commitment (npk ownerField (randomIn i)) token ((preimages i).value))
         (treePath TreeDepth leaves (leavesIndices i)) = treeRoot TreeDepth leaves := by
     intro i
     rw [← hcommit i, ← hLeafValue i]

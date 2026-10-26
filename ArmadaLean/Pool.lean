@@ -429,7 +429,7 @@ theorem applyOwnedRecords_preserves_consistency {reg : PreimageRegistry} {rreg :
     (hconsistent : OwnedRandomConsistent reg rreg)
     {records : List (Term × OwnedDisclosure)}
     (hvalid : ∀ cd ∈ records, ∃ pre, reg cd.1 = some pre ∧
-      npk (Term.val cd.2.ownerField) cd.2.random = pre.npk) :
+      npk cd.2.ownerField cd.2.random = pre.npk) :
     OwnedRandomConsistent reg (applyOwnedRecords rreg records) := by
   induction records generalizing rreg with
   | nil => exact hconsistent
@@ -580,14 +580,14 @@ def transactAllOutputs {N M : Nat} (w : TransactWitness N M) : List CommitmentPr
 /-- The leaf positions and preimages of an owned `TransactOwnedWitness`'s `N` inputs:
     input `i` names leaf position `w.leavesIndices i` (the same position `nullifier
     ownerField (leavesIndices i)` is derived from, TransactOwned.circom:89-97) and
-    opens it as the commitment of `npk (Term.val pub.ownerField) (w.randomIn i)`
+    opens it as the commitment of `npk pub.ownerField (w.randomIn i)`
     (TransactOwned.circom:66-76). -/
 def ownedSpentPositions {N M : Nat} (pub : TransactOwnedPublic N M)
     (w : TransactOwnedWitness N M) :
     List (Nat × CommitmentPreimage) :=
   List.ofFn fun i =>
     (w.leavesIndices i,
-      (⟨npk (Term.val pub.ownerField) (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage))
+      (⟨npk pub.ownerField (w.randomIn i), w.token, w.valueIn i⟩ : CommitmentPreimage))
 
 /-- The commitment preimages of an owned `TransactOwnedWitness`'s `M` outputs. All of
     them stay live: `transactOwned` never unshields
@@ -733,7 +733,7 @@ inductive Step : PoolState → PoolState → Prop where
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hRecords : records.Sublist (transactOutputRecords w pub))
       (hOwnedRecords : ∀ cd ∈ ownedRecords, ∃ pre, (cd.1, pre) ∈ records ∧
-        npk (Term.val cd.2.ownerField) cd.2.random = pre.npk)
+        npk cd.2.ownerField cd.2.random = pre.npk)
       (hCapacity : s.leaves.length + newNotes.length ≤ 2 ^ TreeDepth) :
       Step s
         (let leaves' := s.leaves ++ newNotes.map hashCommitment
@@ -800,7 +800,7 @@ inductive Step : PoolState → PoolState → Prop where
       no step any caller can take, the owner included, changes whether they hold. -/
   | transactOwned {s : PoolState} {N M : Nat} (w : TransactOwnedWitness N M)
       (pub : TransactOwnedPublic N M) (hN : N ≤ 8) (hM : M ≤ 4)
-      (hC : OwnedConstrained w pub) (caller : Nat) (hCaller : caller = addressOf pub.ownerField)
+      (hC : OwnedConstrained w pub) (caller : Term) (hCaller : caller = pub.ownerField)
       (rest : List (Nat × CommitmentPreimage)) (spent' : NullifierSet)
       (ownedOutputs : List (Fin M × OwnedDisclosure))
       (hRoot : pub.merkleRoot ∈ s.roots)
@@ -808,7 +808,7 @@ inductive Step : PoolState → PoolState → Prop where
       (hNullify : markSpent s.spent (List.ofFn pub.nullifiers) = some spent')
       (hNonZero : ∀ j, ¬ isZeroPreimage
         (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
-      (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk (Term.val x.2.ownerField) x.2.random = w.npkOut x.1)
+      (hOwnedOutputs : ∀ x ∈ ownedOutputs, npk x.2.ownerField x.2.random = w.npkOut x.1)
       (hCapacity : s.leaves.length + M ≤ 2 ^ TreeDepth) :
       Step s
         (let leaves' := s.leaves ++ (ownedNewNotes w).map hashCommitment
