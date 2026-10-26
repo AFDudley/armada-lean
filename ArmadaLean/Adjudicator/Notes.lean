@@ -252,13 +252,19 @@ own accuracy.
     `transactOwned`'s `_validatePublicOutputs (requireAll = true)`
     (`Pool.lean`'s own `Step.transactOwned` comment) makes this MANDATORY
     for every output, payout or owned alike, matching `ArmadaLean.
-    ownedOutputRecords w pub` directly. `ownedOutputs`/`hOwnedOutputs` is
-    the matching mandatory `ownedRandomOf` disclosure (`Step.transactOwned`
-    's own hypotheses), but ONLY for the `ownedPreimages` SUFFIX (indices
-    `payoutPreimages.length` and up, via `Fin.natAdd`): a payout note's
-    own key is the recipient's, never one the adjudicator derives `npk
-    pub.ownerField r` for, so no such disclosure could ever exist for it —
-    only a note that STAYS contract-owned carries one. `hNonZero` carries
+    ownedOutputRecords w pub` directly. `ownedRandom`/the disclosure
+    conjunct is the matching MANDATORY `ownedRandomOf` disclosure
+    (`Step.transactOwned`'s own hypotheses), covering EVERY index of
+    `ownedPreimages` exactly once (no caller can omit one by naming an
+    incomplete list, the gap the rollover migration had left open — an
+    operator ruling restores it): `ownedRandom j` is the random behind
+    index `j`'s own key (`w.npkOut (Fin.natAdd payoutPreimages.length
+    j) = npk self (ownedRandom j)`), applied through `ownedRandomOf`
+    at that SAME index (`Fin.natAdd payoutPreimages.length j`), for the
+    `ownedPreimages` SUFFIX only: a payout note's own key is the
+    recipient's, never one the adjudicator derives `npk pub.ownerField
+    r` for, so no such disclosure could ever exist for it — only a note
+    that STAYS contract-owned carries one. `hNonZero` carries
     the same check's rejection of a zero preimage; `ArmadaLean.
     transactOwned_records_all` is what lets `holdings_never_zero_valued`
     read each output's own preimage back. `nullified`, when
@@ -283,15 +289,15 @@ def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
     ∃ (w : TransactOwnedWitness 0 M)
       (pub : TransactOwnedPublic 0 M)
       (hM : M ≤ 4) (hC : OwnedConstrained w pub)
-      (spent' : NullifierSet) (ownedOutputs : List (Fin ownedPreimages.length × OwnedDisclosure))
+      (spent' : NullifierSet) (ownedRandom : Fin ownedPreimages.length → Nat)
       (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
       self = pub.ownerField ∧
       w.token = token ∧
       ownedNewNotes w = outputs ∧
       pub.merkleRoot ∈ before.rootsAt' treeNumber ∧
       markSpent (before.spent treeNumber) (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ x ∈ ownedOutputs, npk x.2.ownerField x.2.random =
-        w.npkOut (Fin.natAdd payoutPreimages.length x.1)) ∧
+      (∀ j : Fin ownedPreimages.length, w.npkOut (Fin.natAdd payoutPreimages.length j) =
+        npk self (ownedRandom j)) ∧
       after = { before with
         live := fun t => if t = token
           then withTreePositionsFrom treeNumber position outputs ++ before.live t
@@ -300,14 +306,15 @@ def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
         closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
         preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
         ownedRandomOf := applyOwnedRecords before.ownedRandomOf
-          (ownedOutputs.map fun x =>
-            (pub.commitmentsOut (Fin.natAdd payoutPreimages.length x.1), x.2)) }
+          ((List.finRange ownedPreimages.length).map fun j =>
+            (pub.commitmentsOut (Fin.natAdd payoutPreimages.length j),
+              (⟨self, ownedRandom j⟩ : OwnedDisclosure))) }
   | some ((spendTreeNumber, pos), c) =>
     ∃ (w : TransactOwnedWitness 1 M)
       (pub : TransactOwnedPublic 1 M)
       (hM : M ≤ 4) (hC : OwnedConstrained w pub)
       (rest : List ((Nat × Nat) × CommitmentPreimage)) (spent' : NullifierSet)
-      (ownedOutputs : List (Fin ownedPreimages.length × OwnedDisclosure))
+      (ownedRandom : Fin ownedPreimages.length → Nat)
       (hNonZero : ∀ j, ¬ isZeroPreimage (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage)),
       self = pub.ownerField ∧
       w.token = token ∧
@@ -317,8 +324,8 @@ def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
       pub.merkleRoot ∈ before.rootsAt' spendTreeNumber ∧
       removeAll (before.live token) (ownedSpentPositions spendTreeNumber pub w) = some rest ∧
       markSpent (before.spent spendTreeNumber) (List.ofFn pub.nullifiers) = some spent' ∧
-      (∀ x ∈ ownedOutputs, npk x.2.ownerField x.2.random =
-        w.npkOut (Fin.natAdd payoutPreimages.length x.1)) ∧
+      (∀ j : Fin ownedPreimages.length, w.npkOut (Fin.natAdd payoutPreimages.length j) =
+        npk self (ownedRandom j)) ∧
       after = { before with
         live := fun t => if t = token
           then withTreePositionsFrom treeNumber position outputs ++ rest
@@ -327,8 +334,9 @@ def PoolOwnedSpendStep (before : PoolState) (self : Term) (token : Nat)
         closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
         preimageOf := applyRecords before.preimageOf (ownedOutputRecords w pub),
         ownedRandomOf := applyOwnedRecords before.ownedRandomOf
-          (ownedOutputs.map fun x =>
-            (pub.commitmentsOut (Fin.natAdd payoutPreimages.length x.1), x.2)) }
+          ((List.finRange ownedPreimages.length).map fun j =>
+            (pub.commitmentsOut (Fin.natAdd payoutPreimages.length j),
+              (⟨self, ownedRandom j⟩ : OwnedDisclosure))) }
 
 /-!
 ## Deposit top-up: merge the old holding with a fresh deposit note
