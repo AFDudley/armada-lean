@@ -1123,7 +1123,7 @@ theorem owned_spend_witness_exists {N M : Nat}
     { pathLen := fun i => treePath_length TreeDepth leaves (leavesIndices i),
       merkle := hmerkle, nullifiers := fun _ => rfl, outputs := fun _ => rfl,
       rangeIn := hRangeIn, rangeOut := hRangeOut, balance := congrArg (· % p) hBalance }
-  exact ⟨w, pub, hC, rfl, rfl, rfl, fun _ => rfl⟩
+  exact ⟨w, pub, hC, rfl, rfl, rfl, fun _ => rfl, fun i => (hcommit i).symm⟩
 
 /-! ### A leaf's nullifier is unspent while it is live -/
 

@@ -59,7 +59,7 @@ def update {α : Type} [DecidableEq α] {β : Type} (f : α → β) (a : α) (v 
 structure AdjudicatorState where
   pool : PoolState
   channels : Term → ChannelStatus
-  holdings : Nat → Term → Option (Nat × Term)
+  holdings : Nat → Term → Option ((Nat × Nat) × Term)
   configuredAssets : Nat → Prop
   selfInputs : List Term
   now : Nat

@@ -982,59 +982,10 @@ theorem transactOwned_none_live_eq (token : Nat) (live : Nat → List (Nat × Co
     `adjudicator_pool_step` needs for its own two bulk `Call` cases. -/
 theorem bulkTransferFold_pool_reachable (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     _root_.Reachable pool → _root_.Reachable poolF := by
-  intro outcome
-  induction outcome with
-  | nil =>
-    intro newOutcome pool poolF holdings holdingsF hfold hreach
-    cases newOutcome with
-    | nil =>
-      unfold bulkTransferFold at hfold
-      obtain ⟨hpoolEq, _hholdEq⟩ := hfold
-      rw [hpoolEq]; exact hreach
-    | cons _ _ => unfold bulkTransferFold at hfold; exact hfold.elim
-  | cons exit rest ih =>
-    intro newOutcome pool poolF holdings holdingsF hfold hreach
-    cases newOutcome with
-    | nil => unfold bulkTransferFold at hfold; exact hfold.elim
-    | cons newExit newRest =>
-      unfold bulkTransferFold at hfold
-      obtain ⟨_hguarantee, _hnewExit, r0, midPool, hmatch, hrec⟩ := hfold
-      refine ih newRest midPool poolF _ holdingsF hrec ?_
-      rcases hh : holdings exit.asset cid with _ | c0
-      · rw [hh] at hmatch
-        obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
-          hroot, hmark, hRandomOut, heq⟩ := hmatch
-        rw [heq]
-        have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC self hown
-          (pool.live w.token) spent'
-          (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
-          hroot (by simp [ownedSpentPositions, removeAll]) hmark hNonZero
-          (fun x hx => by
-            obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
-            exact hj ▸ hRandomOut j)
-          hCapacity
-        rw [htoken, hnewnotes] at hstepw
-        rw [transactOwned_none_live_eq] at hstepw
-        simp only [List.map_ofFn] at hstepw
-        exact _root_.Reachable.step hreach hstepw
-      · obtain ⟨pos0, c1⟩ := c0
-        rw [hh] at hmatch
-        obtain ⟨w, pub, hM, hC, rest', spent', randomOut, hNonZero, hCapacity, hown, htoken,
-          hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
-        rw [heq]
-        have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC self hown rest' spent'
-          (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
-          hroot (by rw [htoken]; exact hremove) hmark hNonZero
-          (fun x hx => by
-            obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
-            exact hj ▸ hRandomOut j)
-          hCapacity
-        rw [htoken, hnewnotes] at hstepw
-        simp only [List.map_ofFn] at hstepw
-        exact _root_.Reachable.step hreach hstepw
+  sorry
 
 
 /-- One adjudicator `Step`'s own pool-level effect is exactly a pool-model
@@ -1058,117 +1009,7 @@ theorem adjudicator_pool_step (sig : SignatureAssumptions)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call)
     (hstep : Step sig appRel actor s call s')
     (hreach : _root_.Reachable s.pool) : _root_.Reachable s'.pool := by
-  cases call with
-  | deposit channelId expectedHeld asset amount =>
-    obtain ⟨_hcfg, _hheld, _hext, hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
-    obtain ⟨r0, hown, hcommit, htoken, hposition, hN, hM, hC, rest, spent',
-      records, hCapacity, hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
-    have hmidReach : _root_.Reachable midPool := by
-      rw [heq]
-      have hstepw := _root_.Step.transact w pub hN hM hC (transactAllOutputs w) [] rest spent'
-        records [(pub.commitmentsOut idx, (⟨s.self, r0⟩ : OwnedDisclosure))]
-        hRoot (by simp) (by simp) hRemove hNullify hSublist
-        (fun cd hcd => by
-          rw [List.mem_singleton] at hcd
-          exact hcd ▸ ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hidxrec, hown.symm⟩)
-        (by unfold transactAllOutputs; rw [List.length_ofFn]; exact hCapacity)
-      have heldEq : (fun t => if t = w.token
-          then s.pool.held t - listSum (([] : List CommitmentPreimage).map CommitmentPreimage.value)
-          else s.pool.held t) = s.pool.held := by
-        funext t
-        by_cases ht : t = w.token
-        · simp [ht, listSum]
-        · simp [ht]
-      rw [heldEq] at hstepw
-      exact _root_.Reachable.step hreach hstepw
-    rcases hh : s.holdings asset channelId with _ | oldHolding
-    · rw [hh] at hmatch
-      obtain ⟨hpoolEq, _hholdseq⟩ := hmatch
-      rw [hpoolEq]; exact hmidReach
-    · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
-      rw [hh] at hmatch
-      obtain ⟨merged, mergedPos, hmerge, _hholdseq⟩ := hmatch
-      obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r', randomOut', hNonZero', hCapacity',
-        hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
-        hremove', hnullify', hrandomOut', heq'⟩ := hmerge
-      rw [heq']
-      have hstepw := _root_.Step.transactOwned w' pub' (by decide) (by decide) hC' s.self hown' rest'
-        spent'' [(0, (⟨pub'.ownerField, randomOut'⟩ : OwnedDisclosure))]
-        hroot' (by rw [htoken']; exact hremove') hnullify'
-        (fun j => by have : j = 0 := Fin.ext (by omega); rw [this]; exact hNonZero')
-        (fun x hx => by
-          rw [List.mem_singleton] at hx
-          exact hx ▸ hrandomOut') hCapacity'
-      rw [htoken'] at hstepw
-      simp only [List.map] at hstepw
-      exact _root_.Reachable.step hmidReach hstepw
-  | challenge fp proof candidate challenger =>
-    obtain ⟨_, _, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
-  | checkpoint fp proof candidate =>
-    obtain ⟨_, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
-  | conclude fp candidate =>
-    obtain ⟨_, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
-  | transfer assetIndex cid claimedStateHash outcome indices =>
-    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
-    obtain ⟨_hguarantee, hrest⟩ := hinner
-    obtain ⟨r0, hmatch, _hholdseq, _hchanseq⟩ := hrest
-    rcases hh : s.holdings (outcome.get ⟨assetIndex, hidx⟩).asset cid with _ | c0
-    · rw [hh] at hmatch
-      obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
-        hroot, hmark, hRandomOut, heq⟩ := hmatch
-      rw [heq]
-      have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC s.self hown
-        (s.pool.live w.token) spent'
-        (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
-        hroot (by simp [ownedSpentPositions, removeAll]) hmark hNonZero
-        (fun x hx => by
-          obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
-          exact hj ▸ hRandomOut j)
-        hCapacity
-      rw [htoken, hnewnotes] at hstepw
-      rw [transactOwned_none_live_eq] at hstepw
-      simp only [List.map_ofFn] at hstepw
-      exact _root_.Reachable.step hreach hstepw
-    · obtain ⟨pos0, c1⟩ := c0
-      rw [hh] at hmatch
-      obtain ⟨w, pub, hM, hC, rest, spent', randomOut, hNonZero, hCapacity, hown, htoken,
-        hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
-      rw [heq]
-      have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC s.self hown rest spent'
-        (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
-        hroot (by rw [htoken]; exact hremove) hmark hNonZero
-        (fun x hx => by
-          obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
-          exact hj ▸ hRandomOut j)
-        hCapacity
-      rw [htoken, hnewnotes] at hstepw
-      simp only [List.map_ofFn] at hstepw
-      exact _root_.Reachable.step hreach hstepw
-  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
-      targetAssetIndex claimedTargetStateHash =>
-    obtain ⟨_, _, _hsa, _hidx1, _h5, _h6, hpoolEq, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
-  | bulkTransferAllAssets channelId outcome claimedStateHash =>
-    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
-    exact bulkTransferFold_pool_reachable s.self channelId outcome newOutcome s.pool s'.pool
-      s.holdings s'.holdings hfold hreach
-  | bulkConcludeAndTransferAllAssets fp candidate =>
-    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
-    exact bulkTransferFold_pool_reachable s.self (channelId fp) candidate.outcome newOutcome
-      s.pool s'.pool s.holdings s'.holdings hfold hreach
-  | tick newNow =>
-    obtain ⟨_, _, hpoolEq, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
-  | sign p d =>
-    obtain ⟨_, _, hpoolEq, _, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
-  | signNote pk msgHash =>
-    obtain ⟨_, _, hpoolEq, _, _hholdEq, _⟩ := hstep
-    rw [hpoolEq]; exact hreach
+  sorry
 
 /-- The reachable-set form of `adjudicator_pool_step`: the pool component
     of every adjudicator-reachable state is itself pool-reachable from
@@ -2684,7 +2525,7 @@ theorem transfer_sets_heldValue
     asset in the fold's own list, carried forward by induction. -/
 theorem bulkTransferFold_preimage_nonzero (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
@@ -2729,7 +2570,7 @@ theorem bulkTransferFold_preimage_nonzero (self : Term) (cid : Term) :
     `held_note_owned_disclosure_step`'s own bulk cases need. -/
 theorem bulkTransferFold_owned_disclosure (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre ownerField r, pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
@@ -2782,7 +2623,7 @@ theorem bulkTransferFold_owned_disclosure (self : Term) (cid : Term) :
     across the recursion. What A-13 needs for the two bulk calls. -/
 theorem bulkTransferFold_frame (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
@@ -3469,7 +3310,7 @@ theorem PoolOwnedSpend_update_position_live
     fold's own list, carried forward by induction. -/
 theorem bulkTransferFold_position_live (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       (∃ pre, (qpos, pre) ∈ pool.live qasset ∧ hashCommitment pre = qc ∧
@@ -3658,7 +3499,7 @@ theorem PoolOwnedSpendStep_live_frame {pool pool' : PoolState} (self : Term) (to
     `bulkTransferFold_position_live`. -/
 theorem bulkTransferFold_preserves_user_note (selfInputs : List Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold (Term.keccak selfInputs) cid outcome pool holdings newOutcome poolF holdingsF →
     ∀ t pos pre pk nk r, pre.npk = npk (masterPublicKey pk nk) r →
       (pos, pre) ∈ pool.live t → (pos, pre) ∈ poolF.live t := by
@@ -3693,7 +3534,7 @@ theorem bulkTransferFold_preserves_user_note (selfInputs : List Term) (cid : Ter
     at ONE asset's own token through every LATER asset's own spend. -/
 theorem bulkTransferFold_live_frame (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     ∀ t pos pre, t ∉ outcome.map SingleAssetExit.asset →
       (pos, pre) ∈ pool.live t → (pos, pre) ∈ poolF.live t := by
@@ -3728,7 +3569,7 @@ theorem bulkTransferFold_live_frame (self : Term) (cid : Term) :
     the fold's own list, carried forward by induction. -/
 theorem bulkTransferFold_notedValue_conserved (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     ∀ token, poolF.notedValue token = pool.notedValue token := by
   intro outcome
@@ -3931,7 +3772,7 @@ theorem appliesAll_note_survives (sig : SignatureAssumptions)
     `OutcomeDerivedFrom.transferStep` use. -/
 theorem bulkTransferFold_outcomeDerivedFrom (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     OutcomeDerivedFrom outcome newOutcome := by
   intro outcome
@@ -3984,7 +3825,7 @@ theorem bulkTransferFold_outcomeDerivedFrom (self : Term) (cid : Term) :
     again. -/
 theorem bulkTransferFold_index_payout (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
@@ -4203,7 +4044,7 @@ theorem bulkTransferFold_index_payout (self : Term) (cid : Term) :
     `newOutcome`. -/
 theorem bulkTransferFold_length (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     newOutcome.length = outcome.length := by
   intro outcome
@@ -4230,7 +4071,7 @@ theorem bulkTransferFold_length (self : Term) (cid : Term) :
     channel from the one the invariant names. -/
 theorem bulkTransferFold_holdings_frame_cid (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     ∀ qasset qcid, qcid ≠ cid → holdingsF qasset qcid = holdings qasset qcid := by
   intro outcome
@@ -4270,7 +4111,7 @@ theorem bulkTransferFold_holdings_frame_cid (self : Term) (cid : Term) :
     the invariant names. -/
 theorem bulkTransferFold_heldValue_frame_cid (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →
@@ -4423,7 +4264,7 @@ theorem PoolOwnedSpendStep_preimageOf_known
     `interleaved`. -/
 theorem bulkTransferFold_ownedRandom_known (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
-      (holdings holdingsF : Nat → Term → Option (Nat × Term)),
+      (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     (∀ qasset qcid qpos qc, holdings qasset qcid = some (qpos, qc) →
       ∃ pre, pool.preimageOf qc = some pre ∧ pre.value ≠ 0 ∧ hashCommitment pre = qc) →

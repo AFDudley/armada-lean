@@ -94,8 +94,8 @@ inductive Call where
     final `(poolF, holdingsF)` is the pool/holdings state after every
     asset's own spend. -/
 def bulkTransferFold (self : Term) (cid : Term) :
-    Outcome → PoolState → (Nat → Term → Option (Nat × Term)) →
-    Outcome → PoolState → (Nat → Term → Option (Nat × Term)) → Prop
+    Outcome → PoolState → (Nat → Term → Option ((Nat × Nat) × Term)) →
+    Outcome → PoolState → (Nat → Term → Option ((Nat × Nat) × Term)) → Prop
   | [], pool, holdings, [], poolF, holdingsF => poolF = pool ∧ holdingsF = holdings
   | exit :: rest, pool, holdings, newExit :: newRest, poolF, holdingsF =>
     (let held := match holdings exit.asset cid with
@@ -114,11 +114,13 @@ def bulkTransferFold (self : Term) (cid : Term) :
       ∃ midPool,
         PoolOwnedSpendStep pool self exit.asset (holdings exit.asset cid) payoutOutputs remainderOutputs
           midPool ∧
-        (let midHoldings := update holdings exit.asset
+        (let outputs := payoutOutputs ++ remainderOutputs
+         let treeNumber := insertTreeNumber pool.closedTrees pool.leaves outputs.length
+         let pos := insertStartPos pool.leaves outputs.length + outputs.length - 1
+         let midHoldings := update holdings exit.asset
           (update (holdings exit.asset) cid
             (if remainder = 0 then none
-             else some (pool.leaves.length + (payoutOutputs ++ remainderOutputs).length - 1,
-               commitment (npk self r) exit.asset remainder)))
+             else some ((treeNumber, pos), commitment (npk self r) exit.asset remainder)))
          bulkTransferFold self cid rest midPool midHoldings newRest poolF holdingsF)))
   | _, _, _, _, _, _ => False
 
@@ -197,20 +199,23 @@ def Step (sig : SignatureAssumptions)
       ¬ isExternal channelId ∧
       0 < amount ∧
       (∃ N M : Nat, ∃ (w : TransactWitness N M) (pub : TransactPublic N M)
-          (idx : Fin M) (position : Nat) (midPool : PoolState),
-        DepositStep s.pool s.self asset amount w pub idx position midPool ∧
+          (idx : Fin M) (spendTreeNumber treeNumber position : Nat) (midPool : PoolState),
+        DepositStep s.pool s.self asset amount w pub idx spendTreeNumber treeNumber position midPool ∧
         s.poolSignedBy w.publicKey (msgHashOf pub) ∧
         (match s.holdings asset channelId with
          | none =>
            s'.pool = midPool ∧
            s'.holdings = update s.holdings asset
-             (update (s.holdings asset) channelId (some (position, pub.commitmentsOut idx)))
-         | some (oldPos, oldHolding) =>
-           ∃ (merged : Term) (mergedPos : Nat),
-             DepositMergeStep midPool s.self asset oldPos oldHolding position
-               (pub.commitmentsOut idx) merged mergedPos s'.pool ∧
+             (update (s.holdings asset) channelId
+               (some ((treeNumber, position), pub.commitmentsOut idx)))
+         | some ((oldTreeNumber, oldPos), oldHolding) =>
+           ∃ (merged : Term) (mergeSpendTreeNumber mergedTreeNumber mergedPos : Nat),
+             DepositMergeStep midPool s.self asset oldTreeNumber oldPos oldHolding treeNumber
+               position (pub.commitmentsOut idx) merged mergeSpendTreeNumber mergedTreeNumber
+               mergedPos s'.pool ∧
              s'.holdings = update s.holdings asset
-               (update (s.holdings asset) channelId (some (mergedPos, merged))))) ∧
+               (update (s.holdings asset) channelId
+                 (some ((mergedTreeNumber, mergedPos), merged))))) ∧
       s'.channels = s.channels ∧
       s'.configuredAssets = s.configuredAssets ∧
       s'.selfInputs = s.selfInputs ∧
@@ -377,13 +382,14 @@ def Step (sig : SignatureAssumptions)
           if remainder = 0 then [] else [(⟨npk s.self r, assetOutcome.asset, remainder⟩ :
             CommitmentPreimage)]
         let outputs := payoutOutputs ++ remainderOutputs
+        let treeNumber := insertTreeNumber s.pool.closedTrees s.pool.leaves outputs.length
+        let pos := insertStartPos s.pool.leaves outputs.length + outputs.length - 1
         PoolOwnedSpendStep s.pool s.self assetOutcome.asset
           (s.holdings assetOutcome.asset cid) payoutOutputs remainderOutputs s'.pool ∧
         s'.holdings = update s.holdings assetOutcome.asset
           (update (s.holdings assetOutcome.asset) cid
             (if remainder = 0 then none
-             else some (s.pool.leaves.length + outputs.length - 1,
-               commitment (npk s.self r) assetOutcome.asset remainder))) ∧
+             else some ((treeNumber, pos), commitment (npk s.self r) assetOutcome.asset remainder))) ∧
         s'.channels = update s.channels cid
           { s.channels cid with
             outcomeHash := outcomeHashOf (outcome.mapIdx fun i exit =>
