@@ -1797,7 +1797,58 @@ theorem zero_payout_mints_nothing
     ¬ ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧ pre.value = 0 ∧
         (∃ pos, (pos, pre) ∈ s'.pool.live pre.token) ∧
         (∀ pos, (pos, pre) ∉ s.pool.live pre.token) := by
-  sorry
+  obtain ⟨hassetIdx, hmode, hsh, hoh, hstrict, hinner, _⟩ := hstep
+  obtain ⟨hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, hholdseq, hchanseq⟩ := hrest
+  rintro ⟨pre, _hnpk, hval, ⟨pos, hin⟩, hnin⟩
+  unfold PoolOwnedSpendStep at hmatch
+  by_cases htok : pre.token = (outcome.get ⟨assetIndex, hassetIdx⟩).asset
+  · rw [htok] at hin
+    have hnz := payout_outputs_nonzero
+      (transferEffects (outcome.get ⟨assetIndex, hassetIdx⟩).allocations
+        (heldValue s (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid) indices).2.1
+      (heldValue s (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid -
+        (transferEffects (outcome.get ⟨assetIndex, hassetIdx⟩).allocations
+          (heldValue s (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid) indices).2.2)
+      (outcome.get ⟨assetIndex, hassetIdx⟩).asset s.self r
+    rcases hc : s.holdings (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid with _ | c0
+    · rw [hc] at hmatch
+      obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot, hmark,
+        hRandomOut, heq⟩ := hmatch
+      rw [heq] at hin
+      dsimp only at hin
+      rw [if_pos rfl] at hin
+      rcases List.mem_append.mp hin with hc1 | hc2
+      · exact hnz pre (withTreePositionsFrom_snd_mem _ _ _ (pos, pre) hc1) hval
+      · exact hnin pos (htok ▸ hc2)
+    · rw [hc] at hmatch
+      obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+        hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+      rw [heq] at hin
+      dsimp only at hin
+      rw [if_pos rfl] at hin
+      rcases List.mem_append.mp hin with hc1 | hc2
+      · exact hnz pre (withTreePositionsFrom_snd_mem _ _ _ (pos, pre) hc1) hval
+      · have hperm := removeAll_perm hremove
+        have hmem : (pos, pre) ∈ s.pool.live (outcome.get ⟨assetIndex, hassetIdx⟩).asset :=
+          (List.Perm.mem_iff hperm).mpr (List.mem_append.mpr (Or.inr hc2))
+        exact hnin pos (htok ▸ hmem)
+  · have heqlive : s'.pool.live pre.token = s.pool.live pre.token := by
+      rcases hc : s.holdings (outcome.get ⟨assetIndex, hassetIdx⟩).asset cid with _ | c0
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot,
+          hmark, hRandomOut, heq⟩ := hmatch
+        rw [heq]
+        dsimp only
+        rw [if_neg htok]
+      · rw [hc] at hmatch
+        obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+          hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+        rw [heq]
+        dsimp only
+        rw [if_neg htok]
+    rw [heqlive] at hin
+    exact hnin pos hin
 
 /-- Closes two more `_mintTransferPayout` misses (old offsets 11843,
     12171): a remainder note is minted only when the remainder is
