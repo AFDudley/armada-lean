@@ -775,7 +775,131 @@ theorem finalization_permanent
     (s'.channels cid).stateHash = (s.channels cid).stateHash ∧
     (s'.channels cid).finalizesAt = (s.channels cid).finalizesAt ∧
     ∃ o', OutcomeDerivedFrom o o' ∧ (s'.channels cid).outcomeHash = outcomeHashOf o' := by
-  sorry
+  have hinv := appliesAll_preserves
+    (P := fun s'' => (s''.channels cid).mode s''.now = .finalized ∧
+      (s''.channels cid).stateHash = (s.channels cid).stateHash ∧
+      (s''.channels cid).finalizesAt = (s.channels cid).finalizesAt ∧
+      ∃ o', OutcomeDerivedFrom o o' ∧ (s''.channels cid).outcomeHash = outcomeHashOf o')
+    (by
+      intro actor call s1 s2 hP hstep
+      obtain ⟨hmode1, hsh1, hfa1, o1, hod1, hoh1⟩ := hP
+      have htrivial : s2.channels cid = s1.channels cid → s2.now = s1.now →
+          (s2.channels cid).mode s2.now = .finalized ∧
+          (s2.channels cid).stateHash = (s.channels cid).stateHash ∧
+          (s2.channels cid).finalizesAt = (s.channels cid).finalizesAt ∧
+          ∃ o', OutcomeDerivedFrom o o' ∧ (s2.channels cid).outcomeHash = outcomeHashOf o' := by
+        intro hc hn
+        rw [hc, hn]
+        exact ⟨hmode1, hsh1, hfa1, o1, hod1, hoh1⟩
+      cases call with
+      | deposit channelId0 expectedHeld asset amount =>
+        obtain ⟨_, _, _, _, _, hchan, _, _, hnow, _, _⟩ := hstep
+        exact htrivial (congrFun hchan cid) hnow
+      | challenge fp proof candidate challenger =>
+        obtain ⟨hprecond, _, _, _, hchan, _, _, _, _, hnow, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid
+        · subst hcc
+          rw [hmode1] at hprecond
+          exact absurd hprecond (by simp)
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | checkpoint fp proof candidate =>
+        obtain ⟨hprecond, _, _, hchan, _, _, _, _, hnow, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid
+        · subst hcc; rw [hmode1] at hprecond; exact absurd rfl hprecond
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | conclude fp candidate =>
+        obtain ⟨hprecond, _, _, hchan, _, _, _, _, hnow, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid
+        · subst hcc; rw [hmode1] at hprecond; exact absurd rfl hprecond
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | transfer assetIndex cid0 claimedStateHash outcome indices =>
+        obtain ⟨hidx, hmodeT, hshT, hohT, _hstrict, hinner, _hcfg, _hself, hnow, _hsigned⟩ := hstep
+        obtain ⟨_hguarantee, hrest⟩ := hinner
+        obtain ⟨_r, _hmatch, _hholdseq, hchan⟩ := hrest
+        by_cases hcc : cid0 = cid
+        · subst hcc
+          rw [hchan]; unfold update; rw [if_pos rfl, hnow]
+          refine ⟨?_, ?_, ?_, ?_⟩
+          · show (s1.channels cid0).mode s1.now = .finalized
+            rw [← hmode1]
+          · show (s1.channels cid0).stateHash = (s.channels cid0).stateHash
+            exact hsh1
+          · show (s1.channels cid0).finalizesAt = (s.channels cid0).finalizesAt
+            have : (s2.channels cid0).finalizesAt = (s1.channels cid0).finalizesAt := by
+              rw [hchan]; unfold update; rw [if_pos rfl]
+            rw [← this] at hfa1 ⊢
+            exact hfa1
+          · have hoeq : o1 = outcome := outcomeHashOf_inj (hoh1.symm.trans hohT)
+            rw [hoeq] at hod1
+            exact ⟨_, OutcomeDerivedFrom.transferStep assetIndex hidx
+              (heldValue s1 (outcome.get ⟨assetIndex, hidx⟩).asset cid0) indices hod1, rfl⟩
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+          targetAssetIndex claimedTargetStateHash =>
+        obtain ⟨hmodeSrc, hohSrc, hsa, hidx1, hguarantee, hrest, _, _, _, _, hnow, _, _⟩ := hstep
+        obtain ⟨_htgtMode, _htgtSh, _htgtOh, hta, _hassetEq, hfoundLeft, hfoundRight, a0, a1,
+          _hlen2, _ha0, _ha1, hsum, hchan⟩ := hrest
+        by_cases hcc : sourceChannelId = cid
+        · subst hcc
+          have hshEq : (s2.channels sourceChannelId).stateHash = (s1.channels sourceChannelId).stateHash := by
+            rw [hchan]; unfold update; rw [if_pos rfl]
+          have hfaEq : (s2.channels sourceChannelId).finalizesAt = (s1.channels sourceChannelId).finalizesAt := by
+            rw [hchan]; unfold update; rw [if_pos rfl]
+          refine ⟨?_, ?_, ?_, ?_⟩
+          · show (s2.channels sourceChannelId).mode s2.now = .finalized
+            unfold ChannelStatus.mode
+            rw [hfaEq, hnow]
+            unfold ChannelStatus.mode at hmode1
+            exact hmode1
+          · rw [hshEq]; exact hsh1
+          · rw [hfaEq]; exact hfa1
+          · have hoeq : o1 = sourceOutcome := outcomeHashOf_inj (hoh1.symm.trans hohSrc)
+            rw [hoeq] at hod1
+            exact ⟨_, OutcomeDerivedFrom.reclaimStep sourceAssetIndex indexOfTargetInSource hsa hidx1
+              hguarantee a0 a1 hsum hfoundLeft hfoundRight hod1, by rw [hchan]; unfold update; rw [if_pos rfl]⟩
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | bulkTransferAllAssets channelId0 outcome claimedStateHash =>
+        obtain ⟨hmodeB, _hsh, hohB, newOutcome, hfold, hchan, _, _, hnow, _, _⟩ := hstep
+        by_cases hcc : channelId0 = cid
+        · subst hcc
+          have hderived := bulkTransferFold_outcomeDerivedFrom s1.self channelId0 outcome newOutcome
+            s1.pool s2.pool s1.holdings s2.holdings hfold
+          have hoeq : o1 = outcome := outcomeHashOf_inj (hoh1.symm.trans hohB)
+          rw [hoeq] at hod1
+          refine ⟨?_, ?_, ?_, ⟨newOutcome, hod1.trans hderived, by
+            rw [hchan]; unfold update; rw [if_pos rfl]⟩⟩
+          · rw [hchan]; unfold update; rw [if_pos rfl, hnow]; exact hmode1
+          · rw [hchan]; unfold update; rw [if_pos rfl]; exact hsh1
+          · rw [hchan]; unfold update; rw [if_pos rfl]; exact hfa1
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | bulkConcludeAndTransferAllAssets fp candidate =>
+        obtain ⟨hprecond, _, _, _, _, hchan, _, _, hnow, _, _⟩ := hstep
+        by_cases hcc : channelId fp = cid
+        · subst hcc; rw [hmode1] at hprecond; exact absurd rfl hprecond
+        · exact htrivial (by rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]) hnow
+      | tick newNow =>
+        obtain ⟨hge, hnow, _, _, hchan, _, _, _, _⟩ := hstep
+        refine ⟨?_, by rw [hchan]; exact hsh1, by rw [hchan]; exact hfa1, o1, hod1,
+          by rw [hchan]; exact hoh1⟩
+        rw [hchan, hnow]
+        have hfz : (s1.channels cid).finalizesAt ≠ 0 := by
+          intro hz; unfold ChannelStatus.mode at hmode1; simp [hz] at hmode1
+        have hfle : (s1.channels cid).finalizesAt ≤ s1.now := by
+          unfold ChannelStatus.mode at hmode1
+          rw [if_neg hfz] at hmode1
+          split at hmode1
+          · assumption
+          · exact absurd hmode1 (by simp)
+        unfold ChannelStatus.mode
+        rw [if_neg hfz, if_pos (by omega)]
+      | sign p d =>
+        obtain ⟨_, _, _, hchan, _, _, _, hnow, _⟩ := hstep
+        exact htrivial (congrFun hchan cid) hnow
+      | signNote pk msgHash =>
+        obtain ⟨_, _, _, hchan, _, _, _, hnow, _⟩ := hstep
+        exact htrivial (congrFun hchan cid) hnow)
+    ⟨hfin, rfl, rfl, o, OutcomeDerivedFrom.refl o, hoh⟩ happ
+  exact hinv
 
 /-- A-05 — only an authorized challenger can register a challenge: a
     successful `.challenge` call's `challenger` is always one of `fp`'s
