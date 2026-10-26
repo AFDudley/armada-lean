@@ -37,11 +37,13 @@ Lean and proved the properties that the internal security review
    Lean. This is why the model is deliberately small and auditable (~a page
    per component), and why this complements rather than replaces Ecne/Picus
    and an external circuit audit.
-3. **Explicit cryptographic assumptions.** Poseidon is modeled symbolically
-   (Dolev-Yao style): a hash output is a term built by an inductive type
-   (`ArmadaLean.Poseidon.Term`), never a raw number, so collision resistance
-   and domain separation hold *by construction* — no Poseidon axiom exists in
-   this project. EdDSA signature unforgeability is still assumed
+3. **Explicit cryptographic assumptions.** Poseidon and Keccak are both modeled
+   symbolically (Dolev-Yao style): a hash output is a term built by an inductive
+   type (`ArmadaLean.Poseidon.Term`), tagged with which hash function produced
+   it, never a raw number, so collision resistance, domain separation and
+   cross-function separation (a Keccak output — a contract address — can never
+   equal a Poseidon output) hold *by construction* — no Poseidon or Keccak axiom
+   exists in this project. EdDSA signature unforgeability is still assumed
    (`EdDSAVerify` axiom). These are standard assumptions — every security
    argument about the system makes them, we just make them *visible*. Run
    `#print axioms <theorem>` to see exactly which assumptions any theorem

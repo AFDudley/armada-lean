@@ -94,14 +94,17 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 
 ## Trust base & scope
 
-Poseidon is modeled symbolically (Dolev-Yao style, `ArmadaLean.Poseidon.Term`):
-a hash output is an inductive term, never a raw number, so collision
-resistance and domain separation hold by construction (the type's own
-constructors), not as an axiom on a concrete numeric function — no
-`poseidon2`/`poseidon3`/injectivity axiom exists in this project. EdDSA stays
-an abstract unforgeable signature scheme — an **explicit axiom**
-(`EdDSAVerify`), visible per-theorem via `#print axioms` (see
-`docs/axioms-*.txt`).
+Poseidon and Keccak are both modeled symbolically (Dolev-Yao style,
+`ArmadaLean.Poseidon.Term`): a hash output is an inductive term, never a raw
+number, tagged with the hash function that produced it
+(`ArmadaLean.Poseidon.HashFn`), so collision resistance, domain separation and
+cross-function separation (a Keccak output — a contract address — can never
+equal a Poseidon output — a note key, a commitment, a nullifier) hold by
+construction (the type's own constructors), not as an axiom on a concrete
+numeric function — no `poseidon2`/`poseidon3`/`keccak`/injectivity axiom
+exists in this project. EdDSA stays an abstract unforgeable signature scheme —
+an **explicit axiom** (`EdDSAVerify`), visible per-theorem via `#print axioms`
+(see `docs/axioms-*.txt`).
 What is and isn't covered, in plain English: **[docs/what-the-proofs-mean.md](docs/what-the-proofs-mean.md)**.
 
 Out of scope: Groth16, the circom compiler, Poseidon's concrete parameters,
@@ -114,7 +117,7 @@ modeled formulas. This project complements (does not replace) static analysis
 ```
 ArmadaLean/
   Field.lean              BN254 scalar-field modulus + mod lemmas
-  Poseidon.lean           symbolic (Dolev-Yao) Term model of Poseidon
+  Poseidon.lean           symbolic (Dolev-Yao) Term model of Poseidon + Keccak
   RangeCheck.lean         Num2Bits(120) semantics
   ValueConservation.lean  no-wraparound minting theorem
   Nullifier.lean          double-spend impossibility
