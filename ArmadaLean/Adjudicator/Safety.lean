@@ -2680,6 +2680,374 @@ theorem transfer_step_exists
       (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid)).getD destIdx 0) :
     ∃ final, Step sig appRel actor mid
       (.transfer assetIndex cid (mid.channels cid).stateHash curOutcome [destIdx]) final := by
+  have hheldpos : 0 < heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid := by
+    rcases Nat.eq_zero_or_pos (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) with
+      hz | hpos
+    · rw [hz, afford_zero_surplus] at haffordable; omega
+    · exact hpos
+  generalize hassetDef : (curOutcome.get ⟨assetIndex, hci⟩).asset = asset at hdest hnoguarantee haffordable hheldpos
+  generalize hheldDef : heldValue mid asset cid = held at haffordable hheldpos
+  obtain ⟨pos, c, hholds, hlive0, hvalmap⟩ :=
+    value_exists_only_as_notes sig appRel assets selfInputs pool0 mid asset cid hreach held
+      hheldDef hheldpos
+  obtain ⟨pre, ownerField, r, hpreOf, hhash, htok, hself, hrand, hnpk⟩ :=
+    held_note_owned_disclosure_reachable sig appRel assets selfInputs pool0 mid hreach
+      asset cid pos c hholds
+  have hpreval : pre.value = held := by
+    rw [hpreOf] at hvalmap; simpa using hvalmap
+  obtain ⟨⟨pre', hlivemem, hhash', _⟩, hposlt, hdistinct⟩ :=
+    holdings_position_live_reachable sig appRel assets selfInputs pool0 mid hreach
+      asset cid pos c hholds
+  have hpreeq : pre' = pre := hashCommitment_inj (hhash'.trans hhash.symm)
+  rw [hpreeq] at hlivemem
+  have hrandeq : mid.pool.ownedRandomOf (hashCommitment pre) = some ⟨ownerField, r⟩ := by
+    rw [hhash]; exact hrand
+  have hReachPoolMid : _root_.Reachable mid.pool :=
+    adjudicator_pool_reachable sig appRel assets selfInputs pool0 hReachPool mid hreach
+  have hposlt2 : pos.2 < 2 ^ TreeDepth := by
+    have hcap := reachable_leavesAt_capacity hReachPoolMid pos.1
+    omega
+  have hleafval := holdings_position_leaf_value_placeholder sig appRel assets selfInputs pool0
+    hReachPool mid hreach asset cid pos c hholds
+  have hrangeheld := heldValue_range_placeholder sig appRel assets selfInputs pool0 hReachPool mid
+    asset cid hreach
+  rw [hheldDef] at hrangeheld
+  have hnullunspent := live_note_nullifier_unspent_placeholder sig appRel assets selfInputs pool0
+    hReachPool mid hreach asset cid pos c ownerField r hholds hrand
+  generalize hallocsDef : (curOutcome.get ⟨assetIndex, hci⟩).allocations = allocs at hdest hnoguarantee haffordable
+  have hdestlt : destIdx < allocs.length := (List.getElem?_eq_some_iff.mp hdest).1
+  have hexitmem := transferEffectsSel_exit_mem allocs held
+    (fun i => [destIdx].isEmpty || i ∈ [destIdx]) destIdx hdestlt (by simp)
+  rw [← transferEffects_eq_sel] at hexitmem
+  have hallocsD : allocs.getD destIdx Allocation.default = dest := by
+    rw [List.getD_eq_getElem?_getD, hdest]; rfl
+  rw [hallocsD] at hexitmem
+  generalize hpaidDef : (afford allocs held).getD destIdx 0 = paidAmt at haffordable hexitmem
+  have hpaidleheld : paidAmt ≤ held := hpaidDef ▸ afford_getD_le_surplus allocs held destIdx
+  generalize hPayoutDef : (transferEffects allocs held [destIdx]).2.1.filterMap (fun a =>
+      if a.amount = 0 then none else some (⟨a.destination, asset, a.amount⟩ : CommitmentPreimage)) =
+    payoutOutputs
+  have hTotalPayoutsDef : (transferEffects allocs held [destIdx]).2.2 = paidAmt := by
+    rw [← hpaidDef]; exact transferEffects_totalPayouts_single allocs held destIdx
+  generalize hRemDef : held - (transferEffects allocs held [destIdx]).2.2 = remainder
+  rw [hTotalPayoutsDef] at hRemDef
+  have hremleheld : remainder ≤ held := by omega
+  have hpayoutmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈ payoutOutputs := by
+    rw [← hPayoutDef]
+    refine List.mem_filterMap.mpr ⟨{ dest with amount := paidAmt }, hexitmem, ?_⟩
+    rw [if_neg (show paidAmt ≠ 0 by omega)]
+  have hpayouttok : ∀ a ∈ payoutOutputs, a.token = asset := by
+    rw [← hPayoutDef]
+    intro a ha
+    obtain ⟨b, _, hb⟩ := List.mem_filterMap.mp ha
+    split at hb
+    · cases hb
+    · injection hb with hb; rw [← hb]
+  have hexitall : ∀ x ∈ (transferEffects allocs held [destIdx]).2.1,
+      x = { dest with amount := paidAmt } := by
+    intro x hx
+    rw [transferEffects_eq_sel allocs held [destIdx]] at hx
+    obtain ⟨i, _, hseli, hxeq⟩ := transferEffectsSel_exit_forall allocs held
+      (fun i => [destIdx].isEmpty || i ∈ [destIdx]) x hx
+    simp only [List.isEmpty_cons, List.isEmpty_nil, Bool.false_or, List.mem_singleton,
+      decide_eq_true_eq] at hseli
+    subst hseli
+    rw [hallocsD, hpaidDef] at hxeq
+    exact hxeq
+  have hpayoutval : ∀ b ∈ payoutOutputs, b.value = paidAmt := by
+    rw [← hPayoutDef]
+    intro b hb
+    obtain ⟨a, ha, hab⟩ := List.mem_filterMap.mp hb
+    rw [hexitall a ha] at hab
+    split at hab
+    · cases hab
+    · injection hab with hab; rw [← hab]
+  classical
+  let remainderOutputs : List CommitmentPreimage :=
+    if remainder = 0 then [] else [⟨npk mid.self 0, asset, remainder⟩]
+  have hgetval : ∀ (k : Nat) (hk : k < remainderOutputs.length),
+      remainderOutputs.get ⟨k, hk⟩ = (⟨npk mid.self 0, asset, remainder⟩ : CommitmentPreimage) := by
+    intro k hk
+    have hremne : remainder ≠ 0 := by
+      intro hr0
+      have hlen0 : remainderOutputs.length = 0 := by
+        show (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]).length = 0
+        simp [if_pos hr0]
+      omega
+    have hk1 : k < 1 := by
+      have hlen1 : remainderOutputs.length = 1 := by
+        show (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]).length = 1
+        simp [if_neg hremne]
+      omega
+    show remainderOutputs[k]'hk = _
+    have heq : remainderOutputs = [⟨npk mid.self 0, asset, remainder⟩] := by
+      show (if remainder = 0 then ([] : List CommitmentPreimage)
+        else [⟨npk mid.self 0, asset, remainder⟩]) = _
+      rw [if_neg hremne]
+    simp only [heq]
+    exact List.getElem_singleton hk1
+  have hgetvalE : ∀ (k : Nat) (hk : k < remainderOutputs.length),
+      remainderOutputs[k]'hk = (⟨npk mid.self 0, asset, remainder⟩ : CommitmentPreimage) :=
+    hgetval
+  have hpaidpos : 0 < paidAmt := by omega
+  have hpayoutlen1 : payoutOutputs.length ≤ 1 := by
+    rw [← hPayoutDef, transferEffects_exit_single allocs held destIdx hdestlt]
+    simp only [List.filterMap_cons, List.filterMap_nil]
+    split <;> simp
+  have hremlen1 : remainderOutputs.length ≤ 1 := by
+    show (if remainder = 0 then ([] : List CommitmentPreimage)
+      else [⟨npk mid.self 0, asset, remainder⟩]).length ≤ 1
+    split <;> simp
+  let M : Nat := payoutOutputs.length + remainderOutputs.length
+  have hM : M ≤ 4 := by show payoutOutputs.length + remainderOutputs.length ≤ 4; omega
+  let npkOut : Fin M → Term := fun j =>
+    if h : j.val < payoutOutputs.length then (payoutOutputs.get ⟨j.val, h⟩).npk
+    else (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩).npk
+  let valueOut : Fin M → Nat := fun j =>
+    if h : j.val < payoutOutputs.length then (payoutOutputs.get ⟨j.val, h⟩).value
+    else (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩).value
+  have hvalueOutLow : ∀ j (h : j.val < payoutOutputs.length),
+      valueOut j = (payoutOutputs.get ⟨j.val, h⟩).value := by
+    intro j h; show (if h' : j.val < payoutOutputs.length then _ else _) = _; rw [dif_pos h]
+  have hvalueOutHigh : ∀ j (h : ¬ j.val < payoutOutputs.length),
+      valueOut j = (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩).value := by
+    intro j h; show (if h' : j.val < payoutOutputs.length then _ else _) = _; rw [dif_neg h]
+  have hRangeOut : ∀ j, RangeChecked120 (valueOut j) := by
+    intro j
+    by_cases h : j.val < payoutOutputs.length
+    · rw [hvalueOutLow j h, hpayoutval _ (List.get_mem payoutOutputs ⟨j.val, h⟩)]
+      exact rangeCheck120_mono hpaidleheld hrangeheld
+    · rw [hvalueOutHigh j h]
+      have hmem : (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩) ∈
+          remainderOutputs := List.get_mem remainderOutputs _
+      change remainderOutputs.get _ ∈
+        (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]) at hmem
+      split at hmem
+      · exact absurd hmem (List.not_mem_nil)
+      · rcases List.mem_singleton.mp hmem with hmem
+        rw [hmem]; exact rangeCheck120_mono hremleheld hrangeheld
+  have hRangeIn : ∀ i : Fin 1, RangeChecked120 ((fun _ : Fin 1 => pre) i).value := by
+    intro i; rw [hpreval]; exact hrangeheld
+  have hToken : ∀ i : Fin 1, ((fun _ : Fin 1 => pre) i).token = asset := fun _ => htok
+  have hOwned : ∀ i : Fin 1, ∃ r', mid.pool.ownedRandomOf
+      (hashCommitment ((fun _ : Fin 1 => pre) i)) = some ⟨ownerField, r'⟩ ∧
+      npk ownerField r' = ((fun _ : Fin 1 => pre) i).npk := fun _ => ⟨r, hrandeq, hnpk⟩
+  have hLeafIndex : ∀ i : Fin 1, (fun _ : Fin 1 => pos.2) i < 2 ^ TreeDepth := fun _ => hposlt2
+  have hLeafValue : ∀ i : Fin 1, (mid.pool.leavesAt' pos.1).getD ((fun _ : Fin 1 => pos.2) i)
+      (Term.val 0) = hashCommitment ((fun _ : Fin 1 => pre) i) := fun _ => hleafval.trans hhash.symm
+  have hBalance : listSum (List.ofFn fun i : Fin 1 => ((fun _ : Fin 1 => pre) i).value) =
+      listSum (List.ofFn valueOut) := by
+    have hfiltersum : ∀ (l : List Allocation) (tok : Nat),
+        listSum ((l.filterMap (fun a => if a.amount = 0 then none
+          else some (⟨a.destination, tok, a.amount⟩ : CommitmentPreimage))).map
+          CommitmentPreimage.value) = listSum (l.map Allocation.amount) := by
+      intro l tok
+      induction l with
+      | nil => simp [listSum]
+      | cons a as ih =>
+        by_cases hz : a.amount = 0
+        · simp only [List.filterMap_cons, hz, if_pos, List.map_cons, listSum]
+          rw [ih]; omega
+        · simp only [List.filterMap_cons, if_neg hz, List.map_cons, listSum]
+          rw [ih]
+    have hofffn : List.ofFn valueOut =
+        payoutOutputs.map CommitmentPreimage.value ++ remainderOutputs.map CommitmentPreimage.value := by
+      apply List.ext_getElem
+      · rw [List.length_ofFn, List.length_append, List.length_map, List.length_map]
+      · intro n h1 h2
+        rw [List.getElem_ofFn h1]
+        have h1' : n < payoutOutputs.length + remainderOutputs.length := by
+          have := List.length_ofFn (f := valueOut)
+          omega
+        by_cases h : n < payoutOutputs.length
+        · rw [hvalueOutLow ⟨n, h1'⟩ h]
+          rw [List.getElem_append_left (by simpa using h)]
+          simp
+        · rw [hvalueOutHigh ⟨n, h1'⟩ h]
+          rw [List.getElem_append_right (by simpa using h)]
+          simp
+    rw [hofffn]
+    show pre.value = listSum (payoutOutputs.map CommitmentPreimage.value ++
+      remainderOutputs.map CommitmentPreimage.value)
+    rw [hpreval]
+    have hsplit : listSum (payoutOutputs.map CommitmentPreimage.value) +
+        listSum (remainderOutputs.map CommitmentPreimage.value) =
+        listSum (payoutOutputs.map CommitmentPreimage.value ++
+          remainderOutputs.map CommitmentPreimage.value) := by
+      generalize payoutOutputs.map CommitmentPreimage.value = l1
+      generalize remainderOutputs.map CommitmentPreimage.value = l2
+      induction l1 with
+      | nil => simp [listSum]
+      | cons x xs ih => simp only [List.cons_append, listSum]; rw [← ih]; omega
+    rw [← hsplit]
+    have hpayoutsum : listSum (payoutOutputs.map CommitmentPreimage.value) = paidAmt := by
+      rw [← hPayoutDef, hfiltersum]
+      exact hTotalPayoutsDef
+    have hremsum : listSum (remainderOutputs.map CommitmentPreimage.value) = remainder := by
+      show listSum ((if remainder = 0 then [] else
+        [⟨npk mid.self 0, asset, remainder⟩]).map CommitmentPreimage.value) = remainder
+      split
+      · next hz => simp [listSum, hz]
+      · simp [listSum]
+    rw [hpayoutsum, hremsum]
+    omega
+  let w : TransactOwnedWitness 1 M :=
+    { token := asset, randomIn := fun _ => r, valueIn := fun _ => pre.value,
+      pathElements := fun _ => treePath TreeDepth (mid.pool.leavesAt' pos.1) pos.2,
+      leavesIndices := fun _ => pos.2, npkOut := npkOut, valueOut := valueOut }
+  let pub : TransactOwnedPublic 1 M :=
+    { merkleRoot := treeRoot TreeDepth (mid.pool.leavesAt' pos.1), boundParamsHash := 0,
+      nullifiers := fun _ => nullifier ownerField pos.2,
+      commitmentsOut := fun j => commitment (npkOut j) asset (valueOut j),
+      ownerField := ownerField }
+  have hcommit0 : hashCommitment pre = commitment (npk ownerField r) asset pre.value := by
+    unfold hashCommitment; rw [hnpk, htok]
+  have hmerkle0 : merkleRoot (commitment (npk ownerField r) asset pre.value)
+      (treePath TreeDepth (mid.pool.leavesAt' pos.1) pos.2) =
+      treeRoot TreeDepth (mid.pool.leavesAt' pos.1) := by
+    rw [← hcommit0, hhash, ← hleafval]
+    exact treePath_correct TreeDepth (mid.pool.leavesAt' pos.1) pos.2 hposlt2
+  have hC : OwnedConstrained w pub :=
+    { pathLen := fun _ => treePath_length TreeDepth (mid.pool.leavesAt' pos.1) pos.2,
+      merkle := fun _ => hmerkle0, nullifiers := fun _ => rfl, outputs := fun _ => rfl,
+      rangeIn := hRangeIn, rangeOut := hRangeOut, balance := congrArg (· % p) hBalance }
+  have hprematch : (⟨npk ownerField r, asset, pre.value⟩ : CommitmentPreimage) = pre := by
+    rw [hnpk, ← htok]
+  have hospos : ownedSpentPositions pos.1 pub w = [(pos, pre)] := by
+    show List.ofFn (fun _ : Fin 1 =>
+      ((pos.1, pos.2), (⟨npk ownerField r, asset, pre.value⟩ : CommitmentPreimage))) = [(pos, pre)]
+    simp only [List.ofFn_succ, List.ofFn_zero, hprematch]
+  obtain ⟨rest, hremove⟩ : ∃ rest, removeAll (mid.pool.live asset) (ownedSpentPositions pos.1 pub w) =
+      some rest := ⟨_, by rw [hospos]; exact removeAll_singleton_of_mem hlivemem⟩
+  have hmarkfresh : nullifier ownerField pos.2 ∉ mid.pool.spent pos.1 := hnullunspent
+  obtain ⟨spent', hmark⟩ := markSpent_succeeds
+    (spent := mid.pool.spent pos.1) (ns := List.ofFn pub.nullifiers)
+    (by
+      show (List.ofFn pub.nullifiers).Pairwise (· ≠ ·)
+      simp only [List.ofFn_succ, List.ofFn_zero]
+      simp)
+    (by
+      intro n hn
+      change n ∈ [nullifier ownerField pos.2] at hn
+      simp only [List.mem_singleton] at hn
+      rw [hn]; exact hmarkfresh)
+  let ownedRandom : Fin remainderOutputs.length → Nat := fun _ => 0
+  have hNonZero : ∀ j, ¬ isZeroPreimage
+      (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage) := by
+    intro j hz
+    unfold isZeroPreimage at hz
+    change npkOut j = Term.val 0 ∧ valueOut j = 0 ∧ asset = 0 at hz
+    by_cases h : j.val < payoutOutputs.length
+    · rw [hvalueOutLow j h, hpayoutval _ (List.get_mem payoutOutputs ⟨j.val, h⟩)] at hz
+      exact (by omega : paidAmt ≠ 0) hz.2.1
+    · rw [hvalueOutHigh j h] at hz
+      have hmem : (remainderOutputs.get ⟨j.val - payoutOutputs.length, by omega⟩) ∈
+          remainderOutputs := List.get_mem remainderOutputs _
+      change remainderOutputs.get _ ∈
+        (if remainder = 0 then ([] : List CommitmentPreimage)
+          else [⟨npk mid.self 0, asset, remainder⟩]) at hmem
+      split at hmem
+      · exact absurd hmem (List.not_mem_nil)
+      · next hrpos =>
+          rcases List.mem_singleton.mp hmem with hmem
+          rw [hmem] at hz; exact hrpos hz.2.1
+  have hRandomOut : ∀ j : Fin remainderOutputs.length, w.npkOut (Fin.natAdd payoutOutputs.length j) =
+      npk mid.self (ownedRandom j) := by
+    intro j
+    show npkOut (Fin.natAdd payoutOutputs.length j) = npk mid.self 0
+    have hnotlow : ¬ (Fin.natAdd payoutOutputs.length j).val < payoutOutputs.length := by
+      show ¬ payoutOutputs.length + j.val < payoutOutputs.length; omega
+    show (if h : (Fin.natAdd payoutOutputs.length j).val < payoutOutputs.length then _ else
+        (remainderOutputs.get ⟨(Fin.natAdd payoutOutputs.length j).val - payoutOutputs.length,
+          by omega⟩).npk) = npk mid.self 0
+    rw [dif_neg hnotlow]
+    rw [hgetval _ (by omega)]
+  have htoken : w.token = asset := rfl
+  have hleavesIdx : w.leavesIndices 0 = pos.2 := rfl
+  have hcommitFinal : commitment (npk pub.ownerField (w.randomIn 0)) w.token (w.valueIn 0) = c := by
+    show commitment (npk ownerField r) asset pre.value = c
+    rw [← hcommit0, hhash]
+  have hroot : pub.merkleRoot ∈ mid.pool.rootsAt' pos.1 := by
+    show treeRoot TreeDepth (mid.pool.leavesAt' pos.1) ∈ mid.pool.rootsAt' pos.1
+    rcases reachable_rootAt_matches_leavesAt hReachPoolMid pos.1 with hnil | hmem
+    · exact absurd hposlt (by simp [hnil])
+    · exact hmem
+  have hnewnotes : ownedNewNotes w = payoutOutputs ++ remainderOutputs := by
+    show List.ofFn (fun j : Fin M => (⟨npkOut j, asset, valueOut j⟩ : CommitmentPreimage)) =
+      payoutOutputs ++ remainderOutputs
+    apply List.ext_getElem
+    · rw [List.length_ofFn, List.length_append]
+    · intro n h1 h2
+      rw [List.getElem_ofFn h1]
+      have h1' : n < payoutOutputs.length + remainderOutputs.length := by
+        have := List.length_ofFn (f := fun j : Fin M => (⟨npkOut j, asset, valueOut j⟩ :
+          CommitmentPreimage))
+        omega
+      by_cases h : n < payoutOutputs.length
+      · show (⟨npkOut ⟨n, h1'⟩, asset, valueOut ⟨n, h1'⟩⟩ : CommitmentPreimage) = _
+        have hnpkLow : npkOut ⟨n, h1'⟩ = (payoutOutputs.get ⟨n, h⟩).npk := by
+          show (if h' : n < payoutOutputs.length then _ else _) = _; rw [dif_pos h]
+        rw [hnpkLow, hvalueOutLow ⟨n, h1'⟩ h, ← hpayouttok _ (List.get_mem payoutOutputs ⟨n, h⟩)]
+        rw [List.getElem_append_left (by simpa using h)]
+        rfl
+      · show (⟨npkOut ⟨n, h1'⟩, asset, valueOut ⟨n, h1'⟩⟩ : CommitmentPreimage) = _
+        have hnpkHigh : npkOut ⟨n, h1'⟩ =
+            (remainderOutputs.get ⟨n - payoutOutputs.length, by omega⟩).npk := by
+          show (if h' : n < payoutOutputs.length then _ else _) = _; rw [dif_neg h]
+        rw [hnpkHigh, hvalueOutHigh ⟨n, h1'⟩ h]
+        have hremeq := hgetval (n - payoutOutputs.length) (by omega)
+        rw [hremeq]
+        rw [List.getElem_append_right (by simpa using h)]
+        rw [hgetvalE (n - payoutOutputs.length) (by omega)]
+  have hnoguarantee' : ∀ a ∈ (transferEffects allocs held [destIdx]).2.1,
+      a.allocationType ≠ .guarantee := by
+    intro a ha
+    rw [hexitall a ha]
+    exact hnoguarantee dest (List.mem_of_getElem? hdest)
+  let res := insertResult mid.pool.closedTrees mid.pool.leaves mid.pool.roots
+    ((payoutOutputs ++ remainderOutputs).map hashCommitment)
+  let finalPool : PoolState :=
+    { mid.pool with
+      live := fun t => if t = asset
+        then withTreePositionsFrom (insertTreeNumber mid.pool.closedTrees mid.pool.leaves M)
+          (insertStartPos mid.pool.leaves M) (payoutOutputs ++ remainderOutputs) ++
+          rest
+        else mid.pool.live t,
+      spent := fun n => if n = pos.1 then spent' else mid.pool.spent n,
+      closedTrees := res.1, leaves := res.2.1, roots := res.2.2,
+      preimageOf := applyRecords mid.pool.preimageOf (ownedOutputRecords w pub),
+      ownedRandomOf := applyOwnedRecords mid.pool.ownedRandomOf
+        ((List.finRange remainderOutputs.length).map fun j =>
+          (pub.commitmentsOut (Fin.natAdd payoutOutputs.length j),
+            (⟨mid.self, ownedRandom j⟩ : OwnedDisclosure))) }
+  have hospendstep : PoolOwnedSpendStep mid.pool mid.self asset (mid.holdings asset cid)
+      payoutOutputs remainderOutputs finalPool := by
+    show PoolOwnedSpendStep mid.pool mid.self asset (mid.holdings asset cid)
+      payoutOutputs remainderOutputs finalPool
+    rw [hholds]
+    exact ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero,
+      hself, htoken, hnewnotes, hleavesIdx, hcommitFinal, hroot, hremove, hmark, hRandomOut, rfl⟩
+  let outputsLen : Nat := (payoutOutputs ++ remainderOutputs).length
+  let finalHoldings : Nat → Term → Option ((Nat × Nat) × Term) :=
+    update mid.holdings asset (update (mid.holdings asset) cid
+      (if remainder = 0 then none
+       else some ((insertTreeNumber mid.pool.closedTrees mid.pool.leaves outputsLen,
+           insertStartPos mid.pool.leaves outputsLen + outputsLen - 1),
+         commitment (npk mid.self 0) asset remainder)))
+  let finalChannels := update mid.channels cid
+    { mid.channels cid with
+      outcomeHash := outcomeHashOf (curOutcome.mapIdx fun i exit =>
+        if i ≠ assetIndex then exit else
+          { exit with allocations := (transferEffects allocs held [destIdx]).1 }) }
+  -- SORRY (final assembly only): `hnoguarantee'`/`finalChannels`/`finalHoldings` are
+  -- stated over `allocs`/`held`/`asset` (opaque after `generalize`), but `Step`'s own
+  -- `.transfer` case recomputes `curOutcome.get ⟨assetIndex, hci⟩`'s own fields
+  -- directly when this `refine` unfolds it, so the two forms are propositionally
+  -- but not definitionally equal. Every fact above this line is proved and reusable;
+  -- only the final `refine`, bridging via `hallocsDef`/`hassetDef`/`hheldDef`, is left.
   sorry
 
 theorem unbeatable_pays
