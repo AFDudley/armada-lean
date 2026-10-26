@@ -3028,13 +3028,12 @@ theorem transfer_step_exists
       outcomeHash := outcomeHashOf (curOutcome.mapIdx fun i exit =>
         if i ≠ assetIndex then exit else
           { exit with allocations := (transferEffects allocs held [destIdx]).1 }) }
-  -- SORRY (final assembly only): `hnoguarantee'`/`finalChannels`/`finalHoldings` are
-  -- stated over `allocs`/`held`/`asset` (opaque after `generalize`), but `Step`'s own
-  -- `.transfer` case recomputes `curOutcome.get ⟨assetIndex, hci⟩`'s own fields
-  -- directly when this `refine` unfolds it, so the two forms are propositionally
-  -- but not definitionally equal. Every fact above this line is proved and reusable;
-  -- only the final `refine`, bridging via `hallocsDef`/`hassetDef`/`hheldDef`, is left.
-  sorry
+  let final : AdjudicatorState :=
+    { mid with pool := finalPool, holdings := finalHoldings, channels := finalChannels }
+  refine ⟨final, hci, hmode, rfl, hoh, True.intro, ?_, rfl, rfl, rfl, rfl, rfl⟩
+  dsimp only
+  rw [hassetDef, hallocsDef, hheldDef, hTotalPayoutsDef, hRemDef, hPayoutDef]
+  exact ⟨hnoguarantee', 0, hospendstep, rfl, rfl⟩
 
 theorem unbeatable_pays
     (sig : SignatureAssumptions)
