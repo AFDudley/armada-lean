@@ -2485,80 +2485,87 @@ theorem conclude_step_finalizes
       outcomeHashOf candidate.outcome
     unfold update; rw [if_pos rfl]
 
-/-- **Placeholder, pending the pool-model rollover change**: the pool's
-    own tree always has room for two more leaves, at ANY reachable
-    state. On the real chain this holds because the contract rolls the
-    tree over to a fresh one once full (`MerkleModule.sol:62-70`); the
-    current pool model has one tree with no rollover, so this is not
-    yet provable from `Reachable` alone. Replace with the
-    `adjudicator_pool_reachable`-lifted fact once the pool model's own
-    rollover change lands. -/
-theorem pool_leaves_capacity_placeholder (sig : SignatureAssumptions)
-    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
-    (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid) :
-    mid.pool.leaves.length + 2 ≤ 2 ^ TreeDepth := by
-  sorry
-
-/-- **Placeholder, pending the pool-model `live_values_lt_2pow120` change**:
-    a channel's own `heldValue`, at ANY reachable state, is below
-    `2 ^ 120` — true because every note ever minted passed the owning
+/-- A channel's own `heldValue`, at ANY reachable state, is below `2 ^
+    120` — true because every note ever minted passed the owning
     circuit's own `Num2Bits(120)` range check (`Constrained`/
     `OwnedConstrained`'s own `rangeIn`/`rangeOut` fields) at mint time,
-    so every LIVE note's own value is in range, and `heldValue` only
-    ever reads a live note's own value (`State.lean`). Replace with the
-    `adjudicator_pool_reachable`-lifted `live_values_lt_2pow120` once
-    the pool model proves it. -/
+    so every LIVE note's own value is in range (`live_values_lt_2pow120`,
+    `PoolSafety.lean`, lifted through `adjudicator_pool_reachable`), and
+    `heldValue` only ever reads a live note's own value (`State.lean`,
+    via `holdingWellFormed_reachable`). -/
 theorem heldValue_range_placeholder (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (hReachPool : _root_.Reachable pool0) (mid : AdjudicatorState)
     (asset : Nat) (cid : Term)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid) :
     RangeChecked120 (heldValue mid asset cid) := by
+  rcases hh : mid.holdings asset cid with _ | ⟨pos, c⟩
+  · unfold heldValue; rw [hh]; exact rangeCheck120_complete 0 (Nat.two_pow_pos 120)
+  · obtain ⟨⟨pre, hpre, _hconsist, _hval, _htok, hlive, _⟩, _⟩ :=
+      holdingWellFormed_reachable sig appRel assets selfInputs pool0 mid hreach asset cid pos c hh
+    have hReachMidPool : _root_.Reachable mid.pool :=
+      adjudicator_pool_reachable sig appRel assets selfInputs pool0 hReachPool mid hreach
+    have hlt : pre.value < 2 ^ 120 := live_values_lt_2pow120 hReachMidPool asset (pos, pre) hlive
+    unfold heldValue
+    rw [hh]
+    simp only [hpre, Option.map_some, Option.getD_some]
+    exact rangeCheck120_complete pre.value hlt
+
+/-- **Needed pool fact, not yet proved on this branch**: a live entry's
+    own position names the EXACT leaf holding its own commitment — the
+    leaf `insertResult` writes at mint time (`Pool.lean`'s
+    `insertResult_leavesAt`, applied through `withTreePositionsFrom`'s
+    own position tagging), carried forward unchanged by `leaf_stable`
+    once written (a leaf, once inserted, never changes). This is a
+    pool-model fact (`ArmadaLean.PoolSafety`), not an adjudicator one —
+    reported to the pool-model coordinator; replace this placeholder
+    with the pool model's own proved version. -/
+theorem live_leaf_matches_placeholder {s : PoolState} (h : _root_.Reachable s)
+    (t tn pos : Nat) (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.live t) :
+    (s.leavesAt' tn).getD pos (Term.val 0) = hashCommitment pre := by
   sorry
 
-/-- **Placeholder, pending the pool-model tree-rollover change**: a
-    channel's own recorded holding position names the EXACT pool leaf
-    its own commitment lives at, at ANY reachable state — `leaves` only
-    grows by append (never overwrites an existing index), and
-    `position := before.leaves.length + idx.val`
-    (`DepositStep`/`PoolOwnedSpendStep`, `Notes.lean`) already places
-    the note's own `hashCommitment` at exactly that index the moment it
-    is written, so this should hold for today's single-tree pool
-    model — but the pool model's own rollover change in progress
-    reshapes a leaf position to `(tree number, index)`, so a proof
-    against today's `leaves : List Term` shape would need redoing once
-    that change lands. Replace once the pool model's own "a leaf
-    written at a position never changes" fact (in the new shape) is
-    available to connect this to. -/
+/-- A channel's own recorded holding position names the EXACT pool leaf
+    its own commitment lives at, at ANY reachable state:
+    `holdingWellFormed_reachable` gives the holding's own live membership,
+    `live_leaf_matches_placeholder` reads that membership's own leaf
+    content back. -/
 theorem holdings_position_leaf_value_placeholder (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (hReachPool : _root_.Reachable pool0) (mid : AdjudicatorState)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid) :
     ∀ asset cid (pos : Nat × Nat) c, mid.holdings asset cid = some (pos, c) →
       (mid.pool.leavesAt' pos.1).getD pos.2 (Term.val 0) = c := by
-  sorry
+  intro asset cid pos c hc
+  obtain ⟨⟨pre, _hpre, hconsist, _hval, _htok, hlive, _⟩, _⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 mid hreach asset cid pos c hc
+  have hReachMidPool : _root_.Reachable mid.pool :=
+    adjudicator_pool_reachable sig appRel assets selfInputs pool0 hReachPool mid hreach
+  rw [← hconsist]
+  exact live_leaf_matches_placeholder hReachMidPool asset pos.1 pos.2 pre hlive
 
-/-- **Placeholder, pending the pool-model rollover change**: a live,
-    owned note's own nullifier is never already spent — true because a
-    note leaves `live` the SAME step its nullifier enters `spent`
-    (`PoolOwnedSpendStep`'s own `removeAll`/`markSpent` pairing,
-    `Notes.lean`), so a note that stays live was never spent. A
-    nullifier is derived from the leaf position
-    (`ArmadaLean.Nullifier.nullifier`), and the pool model's own
-    rollover change in progress reshapes what a position is, so a
-    proof against today's shape would need redoing once that change
-    lands. Replace with the pool model's own version of this fact (in
-    the new shape) once that change lands. -/
+/-- A live, owned note's own nullifier is never already spent — true
+    because a note leaves `live` the SAME step its nullifier enters
+    `spent` (`PoolOwnedSpendStep`'s own `removeAll`/`markSpent` pairing,
+    `Notes.lean`), so a note that stays live was never spent
+    (`live_note_unspent`, `PoolSafety.lean`, lifted through
+    `adjudicator_pool_reachable`). -/
 theorem live_note_nullifier_unspent_placeholder (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState) (mid : AdjudicatorState)
+    (assets : Nat → Prop) (selfInputs : List Term) (pool0 : PoolState)
+    (hReachPool : _root_.Reachable pool0) (mid : AdjudicatorState)
     (hreach : Reachable sig appRel (genesis assets selfInputs pool0) mid)
     (asset : Nat) (cid : Term) (pos : Nat × Nat) (c ownerField : Term) (r : Nat)
     (hholds : mid.holdings asset cid = some (pos, c))
     (hown : mid.pool.ownedRandomOf c = some ⟨ownerField, r⟩) :
     nullifier ownerField pos.2 ∉ mid.pool.spent pos.1 := by
-  sorry
+  obtain ⟨⟨pre, _hpre, _hconsist, _hval, _htok, hlive, _⟩, _⟩ :=
+    holdingWellFormed_reachable sig appRel assets selfInputs pool0 mid hreach asset cid pos c hholds
+  have hReachMidPool : _root_.Reachable mid.pool :=
+    adjudicator_pool_reachable sig appRel assets selfInputs pool0 hReachPool mid hreach
+  exact live_note_unspent hReachMidPool asset pos.1 pos.2 pre hlive ownerField
 
 /-- Removing a single already-live element from a pool always succeeds,
     leaving it erased. Generic over `removeAll`'s own `[DecidableEq α]`
