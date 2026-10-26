@@ -265,31 +265,6 @@ theorem transferEffects_conservation (allocs : List Allocation) (surplus : Nat)
 
 
 
-/-- Every allocation `transferEffects` actually pays out now shares its
-    destination with, and is paid no more than, some allocation already
-    recorded in the original list (clause 24, `MultiAssetHolder.sol:135-191`:
-    a payout can only move an already-recorded allocation's own funds). -/
-theorem transferEffects_exit_provenance (allocs : List Allocation) (surplus : Nat)
-    (indices : List Nat) :
-    ∀ paid ∈ (transferEffects allocs surplus indices).2.1,
-      ∃ original ∈ allocs, paid.destination = original.destination ∧ paid.amount ≤ original.amount := by
-  show ∀ paid ∈ (((List.range allocs.length).zip (allocs.zip (afford allocs surplus))).filterMap
-      (fun p : Nat × Allocation × Nat =>
-        if indices.isEmpty || p.1 ∈ indices then some ({ p.2.1 with amount := p.2.2 } : Allocation)
-        else none)),
-      ∃ original ∈ allocs, paid.destination = original.destination ∧ paid.amount ≤ original.amount
-  intro paid hpaid
-  obtain ⟨a, ha, hfa⟩ := List.mem_filterMap.mp hpaid
-  by_cases hsel : indices.isEmpty || a.1 ∈ indices
-  · rw [if_pos hsel] at hfa
-    have hpaid_eq : ({ a.2.1 with amount := a.2.2 } : Allocation) = paid := Option.some.inj hfa
-    have ha2 : a.2 ∈ allocs.zip (afford allocs surplus) := (List.of_mem_zip ha).2
-    refine ⟨a.2.1, (List.of_mem_zip ha2).1, ?_, ?_⟩
-    · rw [← hpaid_eq]
-    · rw [← hpaid_eq]
-      exact afford_le allocs surplus a.2 ha2
-  · rw [if_neg hsel] at hfa
-    exact absurd hfa (by simp)
 
 /-- `transferEffects`'s `newAllocations` (`.1`) at a SELECTED index is the
     old amount minus `afford`'s own payout there; at an UNSELECTED index
@@ -964,17 +939,6 @@ theorem reachable_preserves {sig : SignatureAssumptions}
   obtain ⟨calls, happ⟩ := hreach
   exact appliesAll_preserves hstep hbase happ
 
-/-- Bridges `_root_.Step.transactOwned`'s own `rest` (a constant list, baked
-    into its `if t = token then ... ++ rest else ...` shape) against
-    `PoolOwnedSpendStep`'s own "none"-nullified `live` field, which instead
-    writes `before.live t` inside the same `then` branch — syntactically
-    different even though `t = token` there makes them equal. -/
-theorem transactOwned_none_live_eq (token : Nat) (live : Nat → List (Nat × CommitmentPreimage))
-    (X : List CommitmentPreimage) (n : Nat) :
-    (fun t => if t = token then withPositionsFrom n X ++ live token else live t) =
-    (fun t => if t = token then withPositionsFrom n X ++ live t else live t) := by
-  funext t
-  by_cases ht : t = token <;> simp [ht]
 
 /-- One `PoolOwnedSpendStep` call is exactly one `_root_.Step.transactOwned`
     instance (the "none"-nullified branch mints with no spend, the
