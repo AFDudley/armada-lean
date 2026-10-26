@@ -4335,6 +4335,224 @@ theorem ownedRandom_known_step (sig : SignatureAssumptions)
     rw [hpoolEq]; exact hinvOwned qc pre r hpre hconsist hnpk
 
 
+/-- **Every held note's own preimage has a known owned disclosure, for
+    some `ownerField` with `self = addressOf ownerField`.** One `Step` at
+    a time. What `unbeatable_pays`'s own strategy needs to build
+    `owned_spend_witness_exists`'s own `hOwned` hypothesis for the
+    channel's held note, at an ARBITRARY reachable state. -/
+theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
+    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
+    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
+    (hinv : ∀ qasset qcid qpos qc, s.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre ownerField r, s.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        s.self = addressOf ownerField ∧ s.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
+        npk (Term.val ownerField) r = pre.npk)
+    (hstep : Step sig appRel actor s call s') :
+    ∀ qasset qcid qpos qc, s'.holdings qasset qcid = some (qpos, qc) →
+      ∃ pre ownerField r, s'.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
+        s.self = addressOf ownerField ∧ s'.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
+        npk (Term.val ownerField) r = pre.npk := by
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_hcfg, _hheld, _hext, _hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, position, midPool, hdstep, _hpoolsigned, hmatch⟩ := hinner
+    obtain ⟨r0, ownerField, hself, hown, hcommit, htoken, _hposition, _hN, _hM, hC, _rest,
+      _spent', records, _hCapacity, _hRoot, _hRemove, _hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    have hvalid_outputs : ∀ cp ∈ records, hashCommitment cp.2 = cp.1 :=
+      fun cp hcp => transactOutputRecords_valid hC cp (hSublist.subset hcp)
+    have hnz0 : ¬ isZeroPreimage (⟨w.npkOut idx, w.token, w.valueOut idx⟩ : CommitmentPreimage) := by
+      rw [htoken]; exact npk_preimage_not_zero hown.symm
+    have hread0 := applyRecords_reads hvalid_outputs s.pool.preimageOf _ _ hidxrec hnz0
+    rcases hh : s.holdings asset channelId with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, hholdseq⟩ := hmatch
+      intro qasset qcid qpos qc hc
+      rw [hholdseq] at hc; unfold update at hc
+      by_cases ha : qasset = asset
+      · subst ha
+        by_cases hcid : qcid = channelId
+        · subst hcid
+          rw [if_pos rfl, if_pos rfl] at hc
+          obtain ⟨hpeq, hceq⟩ := Prod.mk.injEq .. ▸ Option.some.inj hc
+          refine ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, ownerField, r0, ?_, ?_, hself, ?_, ?_⟩
+          · rw [hpoolEq, heq, ← hceq]; dsimp only; exact hread0
+          · exact (hC.outputs idx).symm.trans hceq
+          · rw [hpoolEq, heq, ← hceq]; dsimp only
+            exact applyOwnedRecords_reads (reg := applyRecords s.pool.preimageOf records)
+              (fun cd hcd => by
+                rw [List.mem_singleton] at hcd
+                rw [hcd]
+                exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, hown.symm⟩)
+              s.pool.ownedRandomOf (pub.commitmentsOut idx) (⟨ownerField, r0⟩ : OwnedDisclosure)
+              (List.mem_singleton_self _)
+          · exact hown.symm
+        · rw [if_pos rfl, if_neg hcid] at hc
+          obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+          refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+          · rw [hpoolEq, heq]; dsimp only
+            exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2
+          · rw [hpoolEq, heq]; dsimp only
+            exact applyOwnedRecords_preserves_known (reg := applyRecords s.pool.preimageOf records)
+              (fun cd hcd => by
+                rw [List.mem_singleton] at hcd
+                rw [hcd]
+                exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
+                  rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
+              (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
+      · rw [if_neg ha] at hc
+        obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+        refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+        · rw [hpoolEq, heq]; dsimp only
+          exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2
+        · rw [hpoolEq, heq]; dsimp only
+          exact applyOwnedRecords_preserves_known (reg := applyRecords s.pool.preimageOf records)
+            (fun cd hcd => by
+              rw [List.mem_singleton] at hcd
+              rw [hcd]
+              exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
+                rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
+            (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
+    · obtain ⟨oldPos, oldHoldingVal⟩ := oldHolding
+      rw [hh] at hmatch
+      obtain ⟨merged, mergedPos, hmerge, hholdseq⟩ := hmatch
+      obtain ⟨_hmergedPos, w', pub', hC', rest', spent'', r', randomOut', hNonZero', hCapacity',
+        hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
+        hremove', hnullify', hrandomOut', heq'⟩ := hmerge
+      intro qasset qcid qpos qc hc
+      rw [hholdseq] at hc; unfold update at hc
+      by_cases ha : qasset = asset
+      · subst ha
+        by_cases hcid : qcid = channelId
+        · subst hcid
+          rw [if_pos rfl, if_pos rfl] at hc
+          obtain ⟨hpeq, hceq⟩ := Prod.mk.injEq .. ▸ Option.some.inj hc
+          have hvalid_outputs' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
+            ownedOutputRecords_valid hC'
+          have hmemrec : (pub'.commitmentsOut (0 : Fin 1),
+              (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage)) ∈
+              ownedOutputRecords w' pub' := by
+            unfold ownedOutputRecords; exact List.mem_ofFn.mpr ⟨0, rfl⟩
+          have hnz0' : ¬ isZeroPreimage (⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩ : CommitmentPreimage) :=
+            npk_preimage_not_zero hnpkOut'.symm
+          have hread' := applyRecords_reads hvalid_outputs' midPool.preimageOf _ _ hmemrec hnz0'
+          refine ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩, pub'.ownerField, randomOut', ?_, ?_,
+            hown', ?_, ?_⟩
+          · rw [heq', hceq.symm.trans hmergedEq]; dsimp only; exact hread'
+          · exact (hC'.outputs 0).symm.trans (hmergedEq.symm.trans hceq)
+          · rw [heq', hceq.symm.trans hmergedEq]; dsimp only
+            exact applyOwnedRecords_reads
+              (reg := applyRecords midPool.preimageOf (ownedOutputRecords w' pub')) (fun cd hcd => by
+                rw [List.mem_singleton] at hcd
+                rw [hcd]
+                exact ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩, hread', hrandomOut'⟩)
+              midPool.ownedRandomOf (pub'.commitmentsOut (0 : Fin 1))
+              (⟨pub'.ownerField, randomOut'⟩ : OwnedDisclosure) (List.mem_singleton_self _)
+          · exact hrandomOut'
+        · rw [if_pos rfl, if_neg hcid] at hc
+          obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+          have hvalid_outputs' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
+            ownedOutputRecords_valid hC'
+          have h1mid : midPool.preimageOf qc = some pre := by
+            rw [heq]; dsimp only
+            exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2
+          have h4mid : midPool.ownedRandomOf qc = some ⟨ownerField', r⟩ := by
+            rw [heq]; dsimp only
+            exact applyOwnedRecords_preserves_known (reg := applyRecords s.pool.preimageOf records)
+              (fun cd hcd => by
+                rw [List.mem_singleton] at hcd
+                rw [hcd]
+                exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
+                  rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
+              (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
+          refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+          · rw [heq']; dsimp only
+            exact applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2
+          · rw [heq']; dsimp only
+            exact applyOwnedRecords_preserves_known
+              (reg := applyRecords midPool.preimageOf (ownedOutputRecords w' pub')) (fun cd hcd => by
+              rw [List.mem_singleton] at hcd
+              exact hcd ▸ ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩,
+                applyRecords_reads hvalid_outputs' midPool.preimageOf _ _
+                  (by unfold ownedOutputRecords; exact List.mem_ofFn.mpr ⟨0, rfl⟩)
+                  (npk_preimage_not_zero hnpkOut'.symm), hrandomOut'⟩)
+              midPool.ownedRandomOf qc ownerField' r pre h4mid
+              (applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2) h5.symm
+      · rw [if_neg ha] at hc
+        obtain ⟨pre, ownerField', r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+        have hvalid_outputs' : ∀ cp ∈ ownedOutputRecords w' pub', hashCommitment cp.2 = cp.1 :=
+          ownedOutputRecords_valid hC'
+        have h1mid : midPool.preimageOf qc = some pre := by
+          rw [heq]; dsimp only
+          exact applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2
+        have h4mid : midPool.ownedRandomOf qc = some ⟨ownerField', r⟩ := by
+          rw [heq]; dsimp only
+          exact applyOwnedRecords_preserves_known (reg := applyRecords s.pool.preimageOf records)
+            (fun cd hcd => by
+              rw [List.mem_singleton] at hcd
+              rw [hcd]
+              exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hread0, by
+                rw [htoken]; exact hown.symm⟩) s.pool.ownedRandomOf qc ownerField' r pre h4
+            (applyRecords_preserves_known hvalid_outputs s.pool.preimageOf qc pre h1 h2) h5.symm
+        refine ⟨pre, ownerField', r, ?_, h2, h3, ?_, h5⟩
+        · rw [heq']; dsimp only
+          exact applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2
+        · rw [heq']; dsimp only
+          exact applyOwnedRecords_preserves_known
+            (reg := applyRecords midPool.preimageOf (ownedOutputRecords w' pub')) (fun cd hcd => by
+            rw [List.mem_singleton] at hcd
+            exact hcd ▸ ⟨⟨w'.npkOut 0, w'.token, w'.valueOut 0⟩,
+              applyRecords_reads hvalid_outputs' midPool.preimageOf _ _
+                (by unfold ownedOutputRecords; exact List.mem_ofFn.mpr ⟨0, rfl⟩)
+                (npk_preimage_not_zero hnpkOut'.symm), hrandomOut'⟩)
+            midPool.ownedRandomOf qc ownerField' r pre h4mid
+            (applyRecords_preserves_known hvalid_outputs' midPool.preimageOf qc pre h1mid h2) h5.symm
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+  | transfer assetIndex cid claimedStateHash outcome indices => sorry
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+  | bulkTransferAllAssets channelId outcome claimedStateHash => sorry
+  | bulkConcludeAndTransferAllAssets fp candidate => sorry
+  | tick newNow =>
+    obtain ⟨_, _, hpoolEq, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+  | sign p d =>
+    obtain ⟨_, _, hpoolEq, _, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpoolEq, _, hholdEq, _⟩ := hstep
+    intro qasset qcid qpos qc hc
+    rw [hholdEq] at hc
+    obtain ⟨pre, ownerField, r, h1, h2, h3, h4, h5⟩ := hinv qasset qcid qpos qc hc
+    exact ⟨pre, ownerField, r, hpoolEq ▸ h1, h2, h3, hpoolEq ▸ h4, h5⟩
+
 /-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
     (`Safety.lean`) need, one `Step` at a time: a holding names exactly one leaf
     position, that position is live with the holding's own commitment, it is within
@@ -4349,6 +4567,7 @@ theorem ownedRandom_known_step (sig : SignatureAssumptions)
     (two deposits, or two `.transfer` remainders, that reuse the same caller-chosen
     random `r` — nothing in the model forces two different calls' own `r` apart), but
     they can never share a leaf position — `Pool.lean`'s module comment. -/
+
 
 theorem holdings_position_live_step (sig : SignatureAssumptions)
     (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
