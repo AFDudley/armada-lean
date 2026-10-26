@@ -3069,13 +3069,110 @@ theorem note_survives_step (sig : SignatureAssumptions)
     (t : Nat) (pos : Nat × Nat) (pre : CommitmentPreimage) (hnpk : pre.npk = npk (masterPublicKey pk nk) r)
     (hmem : (pos, pre) ∈ s.pool.live t) :
     (pos, pre) ∈ s'.pool.live t := by
-  -- SORRY (tree-rollover rework pending, successor handoff): the `.deposit`
-  -- case used `withPositionsFrom s.pool.leaves.length (...)`, the bare-Nat
-  -- position tagging; needs the tree-aware `withTreePositionsFrom` rework.
-  -- The `.transfer`/bulk cases already call the (now-sorry-stubbed)
-  -- `PoolOwnedSpendStep_preserves_user_note`/`bulkTransferFold_preserves_user_note`,
-  -- so this theorem stays blocked on those too.
-  sorry
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_hcfg, _hheld, _hext, _hpos', hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, spendTreeNumber, treeNumber, position, midPool, hdstep, hpoolsigned,
+      hmatch⟩ := hinner
+    obtain ⟨r0, hown, hcommit, htoken, htreeNumber, hposition, hN, hM, hC, rest, spent', records,
+      hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    have hnotspent : (pos, pre) ∉ transactSpentPositions spendTreeNumber w := by
+      intro hsp
+      obtain ⟨j, hj⟩ := List.mem_ofFn.mp hsp
+      have hpreeq : pre = (⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j),
+          w.token, w.valueIn j⟩ : CommitmentPreimage) := (congrArg Prod.snd hj).symm
+      have hnpkeq2 : npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn j) =
+          npk (masterPublicKey pk nk) r :=
+        (congrArg CommitmentPreimage.npk hpreeq).symm.trans hnpk
+      have hmpkeq : masterPublicKey w.publicKey w.nullifyingKey = masterPublicKey pk nk :=
+        (Term.hash2_inj hnpkeq2).1
+      obtain ⟨h1, h2, _h3⟩ := Term.hash3_inj hmpkeq
+      have hwpk : w.publicKey = pk := Prod.ext (Term.val.inj h1) (Term.val.inj h2)
+      have hsigned : s0.poolSignedBy pk (msgHashOf pub) := by
+        rw [← hsrow0, ← hwpk]; exact hpoolsigned
+      exact hhonestPool (msgHashOf pub) hsigned w pub rfl hC hwpk j hnpkeq2
+    rcases hh : s.holdings asset channelId with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _hholdseq⟩ := hmatch
+      rw [hpoolEq, heq]
+      dsimp only
+      by_cases ht : t = w.token
+      · subst ht
+        rw [if_pos rfl]
+        have hmemperm : (pos, pre) ∈ transactSpentPositions spendTreeNumber w ++ rest :=
+          (removeAll_perm hRemove).mem_iff.mp hmem
+        have hmemrest : (pos, pre) ∈ rest := (List.mem_append.mp hmemperm).resolve_left hnotspent
+        exact List.mem_append_right _ hmemrest
+      · rw [if_neg ht]; exact hmem
+    · obtain ⟨⟨_oldTreeNum, _oldPosNat⟩, oldHoldingVal⟩ := oldHolding
+      rw [hh] at hmatch
+      obtain ⟨merged, mergeSpendTreeNumber, mergedTreeNumber, mergedPos, hmergestep, _hholdseq⟩ := hmatch
+      obtain ⟨_hmergedTN, _hmergedPosEq, w', pub', hC', rest', _spent'', _r', randomOut', _hNonZero',
+        hself', _htoken', _hnpkOut0', _hmergedEq, _hleaf0', _hleaf1', _hcommitOld', _hcommitNew',
+        _holdTN', _hnewTN', _hroot', hremove', _hnullify', _hrandomOut', heq'⟩ := hmergestep
+      have hmidlive : (pos, pre) ∈ midPool.live t := by
+        rw [heq]
+        dsimp only
+        by_cases ht : t = w.token
+        · subst ht
+          rw [if_pos rfl]
+          have hmemperm : (pos, pre) ∈ transactSpentPositions spendTreeNumber w ++ rest :=
+            (removeAll_perm hRemove).mem_iff.mp hmem
+          exact List.mem_append_right _ ((List.mem_append.mp hmemperm).resolve_left hnotspent)
+        · rw [if_neg ht]; exact hmem
+      have hnotspent' : (pos, pre) ∉ ownedSpentPositions mergeSpendTreeNumber pub' w' := by
+        intro hbad
+        obtain ⟨j, hj⟩ := List.mem_ofFn.mp hbad
+        have hpreeq' : pre = (⟨npk pub'.ownerField (w'.randomIn j), w'.token, w'.valueIn j⟩ :
+            CommitmentPreimage) := (congrArg Prod.snd hj).symm
+        have hnpk2 : pre.npk = npk pub'.ownerField (w'.randomIn j) := by rw [hpreeq']
+        rw [← hself'] at hnpk2
+        exact user_npk_ne_contract_npk (addrInputs := s.selfInputs) (hnpk.symm.trans hnpk2)
+      rw [heq']
+      dsimp only
+      by_cases ht : t = asset
+      · subst ht
+        rw [if_pos rfl]
+        have hmemperm' : (pos, pre) ∈ ownedSpentPositions mergeSpendTreeNumber pub' w' ++ rest' :=
+          (removeAll_perm hremove').mem_iff.mp hmidlive
+        exact List.mem_append_right _ ((List.mem_append.mp hmemperm').resolve_left hnotspent')
+      · rw [if_neg ht]; exact hmidlive
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r0, hmatch, _hholdseq, _hchanseq⟩ := hrest
+    exact PoolOwnedSpendStep_preserves_user_note s.selfInputs (outcome.get ⟨assetIndex, hidx⟩).asset _ _ _
+      hmatch t pos pre pk nk r hnpk hmem
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_preserves_user_note s.selfInputs channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold t pos pre pk nk r hnpk hmem
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_preserves_user_note s.selfInputs (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold t pos pre pk nk r hnpk hmem
+  | tick newNow =>
+    obtain ⟨_, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
+  | sign p d =>
+    obtain ⟨_, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
+  | signNote pk' msgHash =>
+    obtain ⟨_, _, hpoolEq, _, _⟩ := hstep
+    rw [hpoolEq]; exact hmem
 
 /-- `note_survives_step` across a whole `interleaved` sequence: if no
     step in it ever acts as `.pool pk`, `h`'s own payout note — once
