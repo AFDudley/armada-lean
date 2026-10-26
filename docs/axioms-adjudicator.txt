@@ -41,7 +41,7 @@
 'bulk_transfer_all_assets_effect' depends on axioms: [EdDSAVerify, propext, Quot.sound, decodeGuarantee]
 'bulk_conclude_and_transfer_all_assets_effect' depends on axioms: [EdDSAVerify, propext, Quot.sound, decodeGuarantee]
 'bulk_conclude_and_transfer_can_happen' depends on axioms: [EdDSAVerify, propext, Classical.choice, Quot.sound, decodeGuarantee]
-'transfer_after_transfer_can_happen' depends on axioms: [EdDSAVerify, propext, Classical.choice, Quot.sound, decodeGuarantee]
+'finalized_affordable_pays' depends on axioms: [EdDSAVerify, propext, Classical.choice, Quot.sound, decodeGuarantee]
 'holdings_never_zero_valued' depends on axioms: [EdDSAVerify, propext, Classical.choice, Quot.sound, decodeGuarantee]
 'heldValue_zero_iff_no_collateral' depends on axioms: [EdDSAVerify, propext, Classical.choice, Quot.sound, decodeGuarantee]
 'configuredAssets_invariant' depends on axioms: [EdDSAVerify, propext, Quot.sound, decodeGuarantee]

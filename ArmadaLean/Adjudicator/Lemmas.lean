@@ -3458,9 +3458,9 @@ theorem bulkTransferFold_index_payout (self : Term) (cid : Term) :
 /-- `bulkTransferFold` pairs `outcome` and `newOutcome` one entry per
     recursive step (its own `cons exit rest, cons newExit newRest` match
     arm; any length mismatch hits its own `False` arm instead) — so the
-    two always share a length. What lets `unbeatablePaysInv_step`'s own
-    bulk `Call` cases carry `assetIndex`'s own bound from `outcome` to
-    `newOutcome`. -/
+    two always share a length. What lets the bulk `Call` cases of
+    `unbeatablePaysInv_step` and `finalizedPaysInv_step` (`Safety.lean`)
+    carry `assetIndex`'s own bound from `outcome` to `newOutcome`. -/
 theorem bulkTransferFold_length (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
       (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
@@ -3525,9 +3525,9 @@ theorem bulkTransferFold_holdings_frame_cid (self : Term) (cid : Term) :
     (`PoolOwnedSpendStep_frame`, lifted by induction). Needs the
     preimage-nonzero invariant threaded through, the same way
     `bulkTransferFold_index_payout`'s own induction does. What
-    `unbeatablePaysInv_step`'s own bulk `Call` cases need to carry B's
-    `heldValue` fact across a bulk call on a channel OTHER than the one
-    the invariant names. -/
+    bulk `Call` cases of `unbeatablePaysInv_step` and `finalizedPaysInv_step`
+    need to carry the `heldValue` fact of their invariant across a bulk call
+    on a channel OTHER than the one the invariant names. -/
 theorem bulkTransferFold_heldValue_frame_cid (self : Term) (cid : Term) :
     ∀ (outcome newOutcome : Outcome) (pool poolF : PoolState)
       (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),

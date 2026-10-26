@@ -101,7 +101,9 @@ Origin and approval: `v1` is the statement set the operator approved on
 ("A01-A14 should be added"; "if the analysis says they're statements in the
 docs they should be statements in our system"). `B4` replaced `v1`'s
 `bulk_paths_never_succeed`, by the operator's ruling of 2026-10-25 to follow
-the docs. `none` has no recorded approval.
+the docs. `2026-10-26`: `finalized_affordable_pays` replaced
+`transfer_after_transfer_can_happen`, which had no recorded approval, by the
+operator's approval of 2026-10-26.
 
 | Lean theorem | Property | Source | Origin |
 |---|---|---|---|
@@ -138,7 +140,7 @@ the docs. `none` has no recorded approval.
 | `bulk_transfer_all_assets_effect` | `bulkTransferAllAssets` transfers every asset of the outcome in full | S4 0080 | B4 |
 | `bulk_conclude_and_transfer_all_assets_effect` | `bulkConcludeAndTransferAllAssets` concludes, then transfers every asset in full | S4 0080 | B4 |
 | `bulk_conclude_and_transfer_can_happen` | a bulk conclude-and-transfer can happen | S4 0080 | B4 |
-| `transfer_after_transfer_can_happen` | after one `transfer` leaves a remainder, a later `transfer` on the same channel can still pay | S2 §5.1, §5.2 | none |
+| `finalized_affordable_pays` | once a channel is finalized, no sequence of other callers' steps stops one `transfer` from paying an entry what the channel can afford for it | S2 §5.1, §5.2 | `2026-10-26` |
 | `holdings_never_zero_valued` | the adjudicator never records a zero-value note as a holding | Armada rule (`TransactOwned.circom:117-120`) | `v1` |
 | `heldValue_zero_iff_no_collateral` | a held value is zero exactly when the channel has no holding | armada-nitro code (R1 mutant) | `v1` |
 | `configuredAssets_invariant` | the configured asset set never changes after deployment | armada-nitro code (R1 mutant) | `v1` |
