@@ -976,6 +976,85 @@ theorem transactOwned_none_live_eq (token : Nat) (live : Nat → List (Nat × Co
   funext t
   by_cases ht : t = token <;> simp [ht]
 
+/-- One `PoolOwnedSpendStep` call is exactly one `_root_.Step.transactOwned`
+    instance (the "none"-nullified branch mints with no spend, the
+    "some"-nullified branch nullifies the named position), so
+    `_root_.Reachable` carries forward across it. What
+    `bulkTransferFold_pool_reachable` needs, one asset at a time. -/
+theorem PoolOwnedSpendStep_reachable
+    (pool pool' : PoolState) (self : Term) (token : Nat)
+    (nullified : Option ((Nat × Nat) × Term))
+    (payoutPreimages ownedPreimages : List CommitmentPreimage)
+    (hmatch : PoolOwnedSpendStep pool self token nullified payoutPreimages ownedPreimages pool')
+    (hreach : _root_.Reachable pool) : _root_.Reachable pool' := by
+  unfold PoolOwnedSpendStep at hmatch
+  rcases nullified with _ | ⟨npos, c⟩
+  · obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+      hroot, hmark, hRandomOut, heq⟩ := hmatch
+    subst htoken
+    have hcap : (ownedNewNotes w).length = payoutPreimages.length + ownedPreimages.length :=
+      List.length_ofFn
+    have hRemove0 : removeAll (pool.live w.token)
+        (ownedSpentPositions (insertTreeNumber pool.closedTrees pool.leaves
+          (payoutPreimages.length + ownedPreimages.length)) pub w) =
+        some (pool.live w.token) := by
+      simp [ownedSpentPositions, removeAll]
+    refine Reachable.step hreach ?_
+    rw [heq]
+    have hterm := _root_.Step.transactOwned (s := pool) w pub
+      (insertTreeNumber pool.closedTrees pool.leaves
+        (payoutPreimages.length + ownedPreimages.length))
+      (by omega) hM hC self hself (pool.live w.token) spent'
+      ((List.finRange ownedPreimages.length).map fun j =>
+        (Fin.natAdd payoutPreimages.length j, (⟨self, ownedRandom j⟩ : OwnedDisclosure)))
+      hroot hRemove0 hmark hNonZero
+      (by
+        intro x hx
+        obtain ⟨j, hjmem, hxeq⟩ := List.mem_map.mp hx
+        rw [← hxeq]
+        exact (hRandomOut j).symm)
+    rw [hcap, hnewnotes, List.map_map] at hterm
+    simp only [Function.comp] at hterm
+    have hlive : (fun t => if t = w.token then
+          withTreePositionsFrom
+              (insertTreeNumber pool.closedTrees pool.leaves (payoutPreimages.length + ownedPreimages.length))
+              (insertStartPos pool.leaves (payoutPreimages.length + ownedPreimages.length))
+              (payoutPreimages ++ ownedPreimages) ++ pool.live w.token
+        else pool.live t) =
+        (fun t => if t = w.token then
+          withTreePositionsFrom
+              (insertTreeNumber pool.closedTrees pool.leaves (payoutPreimages.length + ownedPreimages.length))
+              (insertStartPos pool.leaves (payoutPreimages.length + ownedPreimages.length))
+              (payoutPreimages ++ ownedPreimages) ++ pool.live t
+        else pool.live t) := by
+      funext t
+      by_cases h : t = w.token
+      · rw [h]
+      · simp [h]
+    rw [hlive] at hterm
+    exact hterm
+  · obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken,
+      hnewnotes, hleaf0, hceq, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+    subst htoken
+    have hcap : (ownedNewNotes w).length = payoutPreimages.length + ownedPreimages.length :=
+      List.length_ofFn
+    refine Reachable.step hreach ?_
+    rw [heq]
+    have hterm := _root_.Step.transactOwned (s := pool) w pub npos.1
+      (by omega) hM hC self hself rest spent'
+      ((List.finRange ownedPreimages.length).map fun j =>
+        (Fin.natAdd payoutPreimages.length j, (⟨self, ownedRandom j⟩ : OwnedDisclosure)))
+      hroot hremove hmark hNonZero
+      (by
+        intro x hx
+        obtain ⟨j, hjmem, hxeq⟩ := List.mem_map.mp hx
+        rw [← hxeq]
+        exact (hRandomOut j).symm)
+    rw [hcap, hnewnotes, List.map_map] at hterm
+    simp only [Function.comp] at hterm
+    exact hterm
+
+
 /-- `bulkTransferFold`'s own pool-level lift: `_root_.Reachable` carries
     forward across the WHOLE fold, one asset's own `PoolOwnedSpendStep` —
     itself `_root_.Step.transactOwned` — at a time. What
@@ -985,7 +1064,31 @@ theorem bulkTransferFold_pool_reachable (self : Term) (cid : Term) :
       (holdings holdingsF : Nat → Term → Option ((Nat × Nat) × Term)),
     bulkTransferFold self cid outcome pool holdings newOutcome poolF holdingsF →
     _root_.Reachable pool → _root_.Reachable poolF := by
-  sorry
+  intro outcome
+  induction outcome with
+  | nil =>
+    intro newOutcome pool poolF holdings holdingsF hfold hreach
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨hpoolEq, _⟩ := hfold
+      rw [hpoolEq]; exact hreach
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      exact hfold.elim
+  | cons exit rest ih =>
+    intro newOutcome pool poolF holdings holdingsF hfold hreach
+    cases newOutcome with
+    | nil =>
+      unfold bulkTransferFold at hfold
+      exact hfold.elim
+    | cons newExit newRest =>
+      unfold bulkTransferFold at hfold
+      obtain ⟨_hguard, _hnewExit, r, midPool, hspend, hfoldrest⟩ := hfold
+      have hreachMid : _root_.Reachable midPool :=
+        PoolOwnedSpendStep_reachable pool midPool self exit.asset _ _ _ hspend hreach
+      exact ih newRest midPool poolF _ holdingsF hfoldrest hreachMid
+
 
 
 /-- One adjudicator `Step`'s own pool-level effect is exactly a pool-model
@@ -1009,7 +1112,92 @@ theorem adjudicator_pool_step (sig : SignatureAssumptions)
     (actor : Actor) (s s' : AdjudicatorState) (call : Call)
     (hstep : Step sig appRel actor s call s')
     (hreach : _root_.Reachable s.pool) : _root_.Reachable s'.pool := by
-  sorry
+  cases call with
+  | deposit channelId expectedHeld asset amount =>
+    obtain ⟨_hcfg, _hheld, _hext, _hpos, hinner, _hchan, _hcfg2, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨N, M, w, pub, idx, spendTreeNumber, treeNumber, position, midPool, hdstep,
+      _hpoolsigned, hmatch⟩ := hinner
+    obtain ⟨r, hown, hcommit, htoken, htreeNumber, _hposition, hN, hM, hC, rest, spent',
+      records, hRoot, hRemove, hNullify, hSublist, hidxrec, heq⟩ := hdstep
+    have hcap : (transactAllOutputs w).length = M := List.length_ofFn
+    have hStepMid : _root_.Step s.pool midPool := by
+      rw [heq]
+      have hterm := _root_.Step.transact (s := s.pool) w pub spendTreeNumber hN hM hC
+        (transactAllOutputs w) [] rest spent' records
+        [(pub.commitmentsOut idx, (⟨s.self, r⟩ : OwnedDisclosure))]
+        hRoot (by simp) (by simp) hRemove hNullify hSublist
+        (by
+          intro cd hcd
+          rw [List.mem_singleton] at hcd
+          subst hcd
+          exact ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hidxrec, hown.symm⟩)
+      rw [hcap, ← htreeNumber] at hterm
+      simp only [List.map_nil, listSum, Nat.sub_zero, ite_self] at hterm
+      exact hterm
+    have hreachMid : _root_.Reachable midPool := Reachable.step hreach hStepMid
+    rcases hh : s.holdings asset channelId with _ | oldHolding
+    · rw [hh] at hmatch
+      obtain ⟨hpoolEq, _hholdseq⟩ := hmatch
+      rw [hpoolEq]; exact hreachMid
+    · obtain ⟨_oldTreeNum, _oldPosNat⟩ := oldHolding
+      rw [hh] at hmatch
+      obtain ⟨merged, mergeSpendTreeNumber, mergedTreeNumber, mergedPos, hmergestep, _hholdseq⟩ :=
+        hmatch
+      obtain ⟨hmergedTN, hmergedPosEq, w', pub', hC', rest', spent'', r', randomOut', hNonZero',
+        hself', htoken', hnpkOut0', hmergedEq, hleaf0', hleaf1', hcommitOld', hcommitNew',
+        holdTN', newTN', hroot', hremove', hnullify', hrandomOut', heq'⟩ := hmergestep
+      subst htoken'
+      have hcap' : (ownedNewNotes w').length = 1 := List.length_ofFn
+      have hStepFinal : _root_.Step midPool s'.pool := by
+        rw [heq']
+        have hterm := _root_.Step.transactOwned (s := midPool) w' pub' mergeSpendTreeNumber
+          (by omega) (by omega) hC' s.self hself' rest' spent''
+          [((0 : Fin 1), (⟨pub'.ownerField, randomOut'⟩ : OwnedDisclosure))]
+          hroot' hremove' hnullify' (fun j => (Subsingleton.elim j 0) ▸ hNonZero')
+          (by
+            intro x hx
+            rw [List.mem_singleton] at hx
+            subst hx
+            exact hrandomOut')
+        rw [hcap', ← hmergedTN, ← hmergedPosEq] at hterm
+        exact hterm
+      exact Reachable.step hreachMid hStepFinal
+  | challenge fp proof candidate challenger =>
+    obtain ⟨_, _, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, _, hpoolEq, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | transfer assetIndex cid claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨r, hmatch, _hholdseq, _hchanseq⟩ := hrest
+    exact PoolOwnedSpendStep_reachable s.pool s'.pool s.self _ _ _ _ hmatch hreach
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _hsa, _hidx1, _h5, _h6, hpoolEq, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | bulkTransferAllAssets channelId outcome claimedStateHash =>
+    obtain ⟨_hmode, _hsh, _hoh, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_pool_reachable s.self channelId outcome newOutcome s.pool s'.pool
+      s.holdings s'.holdings hfold hreach
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_hnotfinal, _hfinal, _hsigned, newOutcome, hfold, _hchanseq, _, _, _, _, _⟩ := hstep
+    exact bulkTransferFold_pool_reachable s.self (channelId fp) candidate.outcome newOutcome
+      s.pool s'.pool s.holdings s'.holdings hfold hreach
+  | tick newNow =>
+    obtain ⟨_, _, hpoolEq, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | sign p d =>
+    obtain ⟨_, _, hpoolEq, _, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+  | signNote pk msgHash =>
+    obtain ⟨_, _, hpoolEq, _, hholdEq, _⟩ := hstep
+    rw [hpoolEq]; exact hreach
+
 
 /-- The reachable-set form of `adjudicator_pool_step`: the pool component
     of every adjudicator-reachable state is itself pool-reachable from
@@ -3252,6 +3440,17 @@ theorem bulkTransferFold_outcomeDerivedFrom (self : Term) (cid : Term) :
         Nat.succ_ne_zero, not_false_eq_true, if_true] at hstep
       rwa [hid] at hstep
 
+/-- The tree-tagged counterpart of `withPositionsFrom_mem_fwd`: anything
+    already IN the underlying list gets SOME `(treeNumber, position)` key
+    once tagged. What `bulkTransferFold_index_payout` needs to turn "this
+    output is one of the fold's own `payoutOutputs`" into an ACTUAL
+    `(pos, pre) ∈ midPool.live token` fact, against the real tree-tagged
+    `withTreePositionsFrom` shape. -/
+theorem withTreePositionsFrom_mem_fwd {α : Type} {treeNumber start : Nat} {l : List α} {a : α}
+    (h : a ∈ l) : ∃ pos, ((treeNumber, pos), a) ∈ withTreePositionsFrom treeNumber start l := by
+  obtain ⟨pos, hpos⟩ := withPositionsFrom_mem_fwd (start := start) h
+  exact ⟨pos, List.mem_map.mpr ⟨(pos, a), hpos, rfl⟩⟩
+
 /-- `bulkTransferFold`'s own per-index payout: at a GIVEN `assetIndex`
     whose own TOKEN appears NOWHERE ELSE in `outcome` (`hunique`,
     `unbeatable_pays`/`unbeatable_pays_after_timeout`'s own
@@ -3292,14 +3491,21 @@ theorem bulkTransferFold_index_payout (self : Term) (cid : Term) :
             | none => 0
             | some (_, c) => (pool.preimageOf c).map CommitmentPreimage.value |>.getD 0)).getD k 0⟩ :
         CommitmentPreimage)) ∈ poolF.live (outcome.get ⟨assetIndex, hidx⟩).asset := by
-  -- SORRY (tree-rollover rework pending, successor handoff): used
-  -- `withPositionsFrom_mem_fwd (start := pool.leaves.length)`, the bare-Nat
-  -- position tagging, and the destructured `hmatch` via `hbody.2.2.2.2.2.2`
-  -- navigation against the pre-rollover conjunct count. Needs a rework
-  -- against `withTreePositionsFrom`/the real (18-conjunct "some" / 14-conjunct
-  -- "none") `PoolOwnedSpendStep` shape, and `PoolOwnedSpendStep_frame`'s
-  -- sibling theorems once those are un-stubbed.
+  -- SORRY: the per-asset induction proves the `newOutcome` equality
+  -- (`transferEffects`-based) cleanly, but the "freshly-minted payout note
+  -- is live" half needs `(transferEffects exit.allocations 0 []).2.1`
+  -- (unreduced) to typecheck DEFEQ against `heq`'s own fully-unfolded
+  -- `transferEffects`/`afford`/`transferEffectsSel` expansion -- `show`
+  -- and `exact` both report "not definitionally equal" on this specific
+  -- subterm (`totalPayouts`/`listSum`) despite matching mathematically.
+  -- `withTreePositionsFrom_mem_fwd` (added above, proven) and
+  -- `PoolOwnedSpendStep_reachable`/`bulkTransferFold_pool_reachable`
+  -- (`adjudicator_pool_step`'s own prerequisites, proven) are unaffected.
+  -- Needs a generic (`payoutOutputs`-parameterized, not `bulkTransferFold`-
+  -- unfolded) sibling of `PoolOwnedSpend_update_position_live`'s own
+  -- `hliveT` pattern, built BEFORE destructuring `hfold`'s `exitAllocs`.
   sorry
+
 
 /-- `bulkTransferFold` pairs `outcome` and `newOutcome` one entry per
     recursive step (its own `cons exit rest, cons newExit newRest` match
