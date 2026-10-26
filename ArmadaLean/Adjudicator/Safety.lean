@@ -637,7 +637,115 @@ theorem turn_number_record_monotone
     (∀ fp proof candidate challenger, call = .challenge fp proof candidate challenger →
       channelId fp = cid → (s.channels cid).mode s.now = .challenge →
       (s'.channels cid).turnNumRecord > (s.channels cid).turnNumRecord) := by
-  sorry
+  cases call with
+  | deposit channelId0 expectedHeld asset amount =>
+    obtain ⟨_, _, _, _, _, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | challenge fp proof candidate challenger =>
+    obtain ⟨hprecond, _, _, _, hchan, _, _, _, _, hnow, _, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc
+        rw [hchan]; unfold update; rw [if_pos rfl]
+        rcases hmode : (s.channels (channelId fp)).mode s.now with _ | _ | _
+        · rw [hmode] at hprecond; dsimp only; omega
+        · rw [hmode] at hprecond; dsimp only; omega
+        · rw [hmode] at hprecond; exact absurd hprecond id
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq; exact absurd heq (by simp)
+    · intro fp' proof' candidate' challenger' heq hcc hmode
+      injection heq with hfp hproof hcand hchallenger
+      subst hfp; subst hcand
+      rw [hcc] at hprecond
+      rw [hmode] at hprecond
+      rw [hchan]; unfold update; rw [if_pos hcc.symm]
+      omega
+  | checkpoint fp proof candidate =>
+    obtain ⟨_, hprecond, _, hchan, _, _, _, _, _, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc; rw [hchan]; unfold update; rw [if_pos rfl]; left; omega
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq hcc
+      injection heq with hfp hproof hcand
+      subst hfp; subst hcand
+      rw [hcc] at hprecond
+      rw [hchan]; unfold update; rw [if_pos hcc.symm]
+      omega
+    · intro fp' proof' candidate' challenger' heq; exact absurd heq (by simp)
+  | conclude fp candidate =>
+    obtain ⟨_, _, _, hchan, _, _, _, _, hnow, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc
+        right; right
+        rw [hchan]; unfold update; rw [if_pos rfl]
+        refine ⟨rfl, ?_⟩
+        unfold ChannelStatus.mode
+        rw [hnow]
+        dsimp only
+        rw [if_neg (by omega), if_pos (by omega)]
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq; exact absurd heq (by simp)
+    · intro fp' proof' candidate' challenger' heq; exact absurd heq (by simp)
+  | transfer assetIndex cid0 claimedStateHash outcome indices =>
+    obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hself, _hnow, _hsigned⟩ := hstep
+    obtain ⟨_hguarantee, hrest⟩ := hinner
+    obtain ⟨_r, _hmatch, _hholdseq, hchan⟩ := hrest
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]; unfold update; by_cases hcc : cid = cid0 <;> simp [hcc]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
+      targetAssetIndex claimedTargetStateHash =>
+    obtain ⟨_, _, _, _, _, hrest, _, _, _, _, _, _, _⟩ := hstep
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hchan⟩ := hrest
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]; unfold update; by_cases hcc : cid = sourceChannelId <;> simp [hcc]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | bulkTransferAllAssets channelId0 outcome claimedStateHash =>
+    obtain ⟨_, _, _, newOutcome, hfold, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]; unfold update; by_cases hcc : cid = channelId0 <;> simp [hcc]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | bulkConcludeAndTransferAllAssets fp candidate =>
+    obtain ⟨_, _, _, newOutcome, hfold, hchan, _, _, hnow, _, _⟩ := hstep
+    refine ⟨?_, ?_, ?_⟩
+    · by_cases hcc : channelId fp = cid
+      · subst hcc
+        right; right
+        rw [hchan]; unfold update; rw [if_pos rfl]
+        refine ⟨rfl, ?_⟩
+        unfold ChannelStatus.mode
+        rw [hnow]
+        dsimp only
+        rw [if_neg (by omega), if_pos (by omega)]
+      · rw [hchan]; unfold update; rw [if_neg (fun h => hcc h.symm)]; right; left; rfl
+    · intro fp' proof' candidate' heq; exact absurd heq (by simp)
+    · intro fp' proof' candidate' challenger' heq; exact absurd heq (by simp)
+  | tick newNow =>
+    obtain ⟨_, _, _, _, hchan, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [hchan]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | sign p d =>
+    obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [congrFun hchan cid]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
+  | signNote pk msgHash =>
+    obtain ⟨_, _, _, hchan, _, _, _, _, _⟩ := hstep
+    refine ⟨Or.inr (Or.inl ?_), ?_, ?_⟩
+    · rw [congrFun hchan cid]
+    · intro fp proof candidate heq; exact absurd heq (by simp)
+    · intro fp proof candidate challenger heq; exact absurd heq (by simp)
 
 /-- A-04 — finalization is permanent and fixes the state: once `cid` is
     finalized at `s`, it stays finalized at every state `AppliesAll`
