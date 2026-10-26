@@ -1567,8 +1567,129 @@ theorem reclaim_can_happen
         sourceAssetIndex indexOfTargetInSource targetOutcome targetAssetIndex
         claimedTargetStateHash) s' ∧
       s'.channels sourceChannelId ≠ s.channels sourceChannelId := by
-  sorry
-
+  let assets : Nat → Prop := fun _ => False
+  let selfInputs : List Term := []
+  let pool0 : PoolState := _root_.genesis
+  let fp1 : FixedPart := ⟨[], 0, 0, 0⟩
+  let fp2 : FixedPart := ⟨[], 1, 0, 0⟩
+  let sourceChannelId : Term := channelId fp1
+  let targetChannelId : Term := channelId fp2
+  have hidsNe : sourceChannelId ≠ targetChannelId := by
+    intro heq
+    have := (channelIdOf_inj heq).2.1
+    simp [fp1, fp2] at this
+  let asset : Nat := 0
+  let guaranteeMetadata : Nat := 0
+  let left : Term := (decodeGuarantee guaranteeMetadata).1
+  let right : Term := (decodeGuarantee guaranteeMetadata).2
+  let guaranteeAlloc : Allocation := ⟨targetChannelId, 2, .guarantee, guaranteeMetadata⟩
+  let allocLeft : Allocation := ⟨left, 0, .simple, 0⟩
+  let allocRight : Allocation := ⟨right, 0, .simple, 0⟩
+  let sourceOutcome : Outcome := [⟨asset, [guaranteeAlloc, allocLeft, allocRight]⟩]
+  let alloc0 : Allocation := ⟨left, 1, .simple, 0⟩
+  let alloc1 : Allocation := ⟨right, 1, .simple, 0⟩
+  let targetOutcome : Outcome := [⟨asset, [alloc0, alloc1]⟩]
+  let g := genesis assets selfInputs pool0
+  let mid1 : AdjudicatorState := { g with now := 1 }
+  have htick : Step sig (consensusRelation sig) (Actor.nitro 0) g (.tick 1) mid1 :=
+    ⟨Nat.zero_le 1, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1 : Reachable sig (consensusRelation sig) g mid1 :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) htick
+  let candidate1 : VariablePart := ⟨sourceOutcome, 0, 0, true⟩
+  let mid2 : AdjudicatorState := { mid1 with
+    channels := update mid1.channels sourceChannelId
+      { turnNumRecord := 0, finalizesAt := mid1.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate1.outcome } }
+  have hstep_c1 : Step sig (consensusRelation sig) (Actor.nitro 0) mid1
+      (.conclude fp1 candidate1) mid2 := by
+    refine ⟨?_, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [mid1, g, genesis, ChannelStatus.mode, emptyStatus]
+    · intro p hp
+      cases hp
+  have hreach2 : Reachable sig (consensusRelation sig) g mid2 :=
+    reachable_step hreach1 hstep_c1
+  let candidate2 : VariablePart := ⟨targetOutcome, 0, 0, true⟩
+  let mid3 : AdjudicatorState := { mid2 with
+    channels := update mid2.channels targetChannelId
+      { turnNumRecord := 0, finalizesAt := mid2.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate2.outcome } }
+  have hmode2 : (mid2.channels targetChannelId).mode mid2.now ≠ .finalized := by
+    show (update mid1.channels sourceChannelId
+      { turnNumRecord := 0, finalizesAt := mid1.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate1.outcome } targetChannelId).mode mid1.now ≠ .finalized
+    unfold update
+    rw [if_neg (fun h => hidsNe h.symm)]
+    simp [mid1, g, genesis, ChannelStatus.mode, emptyStatus]
+  have hstep_c2 : Step sig (consensusRelation sig) (Actor.nitro 0) mid2
+      (.conclude fp2 candidate2) mid3 := by
+    refine ⟨hmode2, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    intro p hp
+    cases hp
+  have hreach3 : Reachable sig (consensusRelation sig) g mid3 :=
+    reachable_step hreach2 hstep_c2
+  have hsrc_eq : mid3.channels sourceChannelId =
+      { turnNumRecord := 0, finalizesAt := mid1.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf sourceOutcome } := by
+    show (update mid2.channels targetChannelId
+        { turnNumRecord := 0, finalizesAt := mid2.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate2.outcome } sourceChannelId) = _
+    unfold update
+    rw [if_neg hidsNe]
+    show (update mid1.channels sourceChannelId
+        { turnNumRecord := 0, finalizesAt := mid1.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate1.outcome } sourceChannelId) = _
+    unfold update
+    rw [if_pos rfl]
+  have htgt_eq : mid3.channels targetChannelId =
+      { turnNumRecord := 0, finalizesAt := mid2.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf targetOutcome } := by
+    show (update mid2.channels targetChannelId
+        { turnNumRecord := 0, finalizesAt := mid2.now, stateHash := Term.val 0,
+          outcomeHash := outcomeHashOf candidate2.outcome } targetChannelId) = _
+    unfold update
+    rw [if_pos rfl]
+  have hsrc_fin : (mid3.channels sourceChannelId).mode mid3.now = .finalized := by
+    rw [hsrc_eq]
+    unfold ChannelStatus.mode
+    simp [mid1, mid2]
+  have htgt_fin : (mid3.channels targetChannelId).mode mid3.now = .finalized := by
+    rw [htgt_eq]
+    simp [ChannelStatus.mode, mid1, mid2]
+  let hsa : (0 : Nat) < sourceOutcome.length := by decide
+  let hidx : (0 : Nat) < (sourceOutcome.get ⟨0, hsa⟩).allocations.length := by decide
+  let hta : (0 : Nat) < targetOutcome.length := by decide
+  let a0 : Nat := alloc0.amount
+  let a1 : Nat := alloc1.amount
+  let s' : AdjudicatorState := { mid3 with
+    channels := update mid3.channels sourceChannelId
+      { mid3.channels sourceChannelId with
+        outcomeHash := outcomeHashOf
+          (reallocateGuarantee sourceOutcome 0 0 left right a0 a1) } }
+  have hstep_r : Step sig (consensusRelation sig) (Actor.nitro 0) mid3
+      (.reclaim sourceChannelId sourceOutcome 0 0 targetOutcome 0 (Term.val 0)) s' := by
+    refine ⟨hsrc_fin, ?_, hsa, hidx, rfl, ⟨htgt_fin, ?_, ?_, hta, rfl,
+      ⟨allocLeft, List.mem_cons_self, rfl⟩,
+      ⟨allocRight, List.mem_cons_of_mem allocLeft List.mem_cons_self, rfl⟩,
+      a0, a1, (by decide), rfl, rfl, (by decide), rfl⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · rw [hsrc_eq]
+    · show (mid3.channels targetChannelId).stateHash = Term.val 0
+      rw [htgt_eq]
+    · show (mid3.channels targetChannelId).outcomeHash = outcomeHashOf targetOutcome
+      rw [htgt_eq]
+  have hneq : s'.channels sourceChannelId ≠ mid3.channels sourceChannelId := by
+    show (update mid3.channels sourceChannelId
+      { mid3.channels sourceChannelId with
+        outcomeHash := outcomeHashOf (reallocateGuarantee sourceOutcome 0 0 left right a0 a1) })
+      sourceChannelId ≠ mid3.channels sourceChannelId
+    unfold update
+    rw [if_pos rfl, hsrc_eq]
+    intro heq
+    have houtcome := outcomeHashOf_inj (congrArg ChannelStatus.outcomeHash heq)
+    have : reallocateGuarantee sourceOutcome 0 0 left right a0 a1 = sourceOutcome := houtcome
+    simp [reallocateGuarantee, sourceOutcome, guaranteeAlloc, creditFirst, allocLeft, allocRight] at this
+    split at this <;> simp_all
+  exact ⟨assets, selfInputs, pool0, mid3, s', sourceChannelId, sourceOutcome, 0, 0, targetOutcome,
+    0, Term.val 0, Actor.nitro 0, _root_.Reachable.genesis, hreach3, hstep_r, hneq⟩
 /-- A payout takes no fee: `transfer` mints exactly as much as it debits —
     the paid allocations' total plus the remainder equals the pre-call
     `heldValue`, with no amount withheld anywhere. Nitro-2019-219.pdf
