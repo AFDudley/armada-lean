@@ -5143,21 +5143,12 @@ theorem payout_can_happen
   let cid : Term := channelId fp
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note1.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note1.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   let root1 : Term := treeRoot TreeDepth pool0.leaves
@@ -5680,21 +5671,12 @@ theorem bulk_conclude_and_transfer_can_happen
   let cid : Term := channelId fp
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note1.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note1.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   let root1 : Term := treeRoot TreeDepth pool0.leaves
@@ -5967,21 +5949,12 @@ theorem transfer_after_transfer_can_happen
   let cid : Term := channelId fp
   let note1 : CommitmentPreimage :=
     ⟨npk (masterPublicKey publicKey nullifyingKey) 0, token, shieldBase 0 amount⟩
-  let pool0 : PoolState :=
-    { (_root_.genesis : PoolState) with
-        live := fun t => if t = token then ((0, 0), note1) :: (_root_.genesis : PoolState).live t
-          else (_root_.genesis : PoolState).live t,
-        held := fun t => if t = token then (_root_.genesis : PoolState).held t + note1.value
-          else (_root_.genesis : PoolState).held t,
-        leaves := [hashCommitment note1],
-        roots := treeRoot TreeDepth [hashCommitment note1] :: (_root_.genesis : PoolState).roots,
-        preimageOf := recordStep (_root_.genesis : PoolState).preimageOf (hashCommitment note1) note1 }
+  let pool0 : PoolState := shieldPool _root_.genesis token amount note1.npk
   have hNotPaused0 : (_root_.genesis : PoolState).shieldsPaused = false := rfl
   have hValue0 : 0 < amount := by decide
-  have hFeeBP0 : (0 : Nat) ≤ BASIS := by decide
   have hRange0 : RangeChecked120 (shieldBase 0 amount) := rangeCheck120_complete _ (by decide)
   have hshield : _root_.Step (_root_.genesis : PoolState) pool0 :=
-    _root_.Step.shield token amount 0 note1.npk hNotPaused0 hValue0 hFeeBP0 hRange0
+    shieldPool_step _root_.genesis token amount note1.npk hNotPaused0 hValue0 hRange0
   have hReachPool : _root_.Reachable pool0 :=
     _root_.Reachable.step _root_.Reachable.genesis hshield
   let root1 : Term := treeRoot TreeDepth pool0.leaves
