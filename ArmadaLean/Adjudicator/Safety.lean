@@ -1370,7 +1370,44 @@ theorem challenge_can_happen
       Step sig (consensusRelation sig) actor s
         (.challenge fp [] candidate challenger) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .challenge := by
-  sorry
+  let assets : Nat → Prop := fun _ => False
+  let selfInputs : List Term := []
+  let pool0 : PoolState := _root_.genesis
+  let fp : FixedPart := ⟨[0], 0, 0, 1⟩
+  let candidate : VariablePart := ⟨[], 0, 0, false⟩
+  let g := genesis assets selfInputs pool0
+  let mid : AdjudicatorState := { g with
+    signedBy := fun p' d' => (p' = 0 ∧ d' = stateHash fp candidate) ∨ g.signedBy p' d' }
+  have hsignstep : Step sig (consensusRelation sig) (Actor.nitro 0) g
+      (.sign 0 (stateHash fp candidate)) mid :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hreach1 : Reachable sig (consensusRelation sig) g mid :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) hsignstep
+  have hauth : AuthorizedBy sig mid 0 (stateHash fp candidate) := Or.inl (Or.inl ⟨rfl, rfl⟩)
+  let s' : AdjudicatorState := { mid with
+    channels := update mid.channels (channelId fp)
+      { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
+        stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome } }
+  have hcstep : Step sig (consensusRelation sig) (Actor.nitro 0) mid
+      (.challenge fp [] candidate 0) s' := by
+    refine ⟨?_, ⟨rfl, ?_⟩, ?_, hauth, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · show candidate.turnNum ≥ (mid.channels (channelId fp)).turnNumRecord
+      simp [mid, g, genesis, emptyStatus]
+    · intro p hp
+      rw [List.mem_singleton] at hp
+      subst hp
+      exact hauth
+    · exact List.mem_singleton.mpr rfl
+  have hreach2 : Reachable sig (consensusRelation sig) g s' :=
+    reachable_step hreach1 hcstep
+  refine ⟨assets, selfInputs, pool0, mid, s', fp, candidate, 0, Actor.nitro 0,
+    _root_.Reachable.genesis, hreach1, hcstep, ?_⟩
+  show ((update mid.channels (channelId fp)
+    { turnNumRecord := candidate.turnNum, finalizesAt := mid.now + fp.challengeDuration,
+      stateHash := stateHash fp candidate, outcomeHash := outcomeHashOf candidate.outcome })
+    (channelId fp)).mode mid.now = .challenge
+  unfold update
+  simp [ChannelStatus.mode, fp]
 
 /-- A challenge can time out: starting from `challenge_can_happen`'s own
     construction, a reachable state with a registered, unanswered
@@ -1386,7 +1423,30 @@ theorem challenge_timeout_can_happen
       (s.channels cid).finalizesAt > 0 ∧
       Step sig (consensusRelation sig) actor s (.tick (s.channels cid).finalizesAt) s' ∧
       (s'.channels cid).mode s'.now = .finalized := by
-  sorry
+  obtain ⟨assets, selfInputs, pool0, mid, s, fp, candidate, challenger, actor0,
+    hReachPool, hReach, hstep, hmode⟩ := challenge_can_happen hashA sig
+  have hgt : (s.channels (channelId fp)).finalizesAt > s.now := by
+    unfold ChannelStatus.mode at hmode
+    by_cases h0 : (s.channels (channelId fp)).finalizesAt = 0
+    · rw [if_pos h0] at hmode
+      exact absurd hmode (by decide)
+    · by_cases hle : (s.channels (channelId fp)).finalizesAt ≤ s.now
+      · rw [if_neg h0, if_pos hle] at hmode
+        exact absurd hmode (by decide)
+      · omega
+  have hfin : (s.channels (channelId fp)).finalizesAt > 0 := by omega
+  have hReach' : Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) s :=
+    reachable_step hReach hstep
+  let s' : AdjudicatorState := { s with now := (s.channels (channelId fp)).finalizesAt }
+  have htickstep : Step sig (consensusRelation sig) (Actor.nitro 0) s
+      (.tick (s.channels (channelId fp)).finalizesAt) s' := by
+    refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    omega
+  refine ⟨assets, selfInputs, pool0, s, s', channelId fp, Actor.nitro 0,
+    hReachPool, hReach', hfin, htickstep, ?_⟩
+  show (s.channels (channelId fp)).mode (s.channels (channelId fp)).finalizesAt = .finalized
+  unfold ChannelStatus.mode
+  rw [if_neg (by omega), if_pos (Nat.le_refl _)]
 
 /-- A conclude can happen: for all `HashAssumptions`/`SignatureAssumptions`,
     there is an execution from `genesis` — a `.sign` call for every one of
@@ -1405,7 +1465,41 @@ theorem conclude_can_happen
       Reachable sig (consensusRelation sig) (genesis assets selfInputs pool0) s ∧
       Step sig (consensusRelation sig) actor s (.conclude fp candidate) s' ∧
       (s'.channels (channelId fp)).mode s'.now = .finalized := by
-  sorry
+  let assets : Nat → Prop := fun _ => False
+  let selfInputs : List Term := []
+  let pool0 : PoolState := _root_.genesis
+  let fp : FixedPart := ⟨[], 0, 0, 0⟩
+  let candidate : VariablePart := ⟨[], 0, 0, true⟩
+  let g := genesis assets selfInputs pool0
+  let g1 : AdjudicatorState := { g with now := 1 }
+  have htickstep : Step sig (consensusRelation sig) (Actor.nitro 0) g (.tick 1) g1 := by
+    refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    decide
+  have hreachg1 : Reachable sig (consensusRelation sig) g g1 :=
+    reachable_step (reachable_refl sig (consensusRelation sig) g) htickstep
+  have hmodeNeFin : (g1.channels (channelId fp)).mode g1.now ≠ .finalized := by
+    show (g.channels (channelId fp)).mode 1 ≠ .finalized
+    simp [g, genesis, emptyStatus, ChannelStatus.mode]
+  let s' : AdjudicatorState := { g1 with
+    channels := update g1.channels (channelId fp)
+      { turnNumRecord := 0, finalizesAt := g1.now, stateHash := Term.val 0,
+        outcomeHash := outcomeHashOf candidate.outcome } }
+  have hcstep : Step sig (consensusRelation sig) (Actor.nitro 0) g1
+      (.conclude fp candidate) s' := by
+    refine ⟨hmodeNeFin, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    intro p hp
+    cases hp
+  refine ⟨assets, selfInputs, pool0, g1, s', fp, candidate, Actor.nitro 0,
+    _root_.Reachable.genesis, hreachg1, hcstep, ?_⟩
+  show ((update g1.channels (channelId fp)
+    { turnNumRecord := 0, finalizesAt := g1.now, stateHash := Term.val 0,
+      outcomeHash := outcomeHashOf candidate.outcome }) (channelId fp)).mode g1.now = .finalized
+  unfold update
+  rw [if_pos rfl]
+  unfold ChannelStatus.mode
+  show (if (g1.now : Nat) = 0 then ChannelMode.open
+    else if g1.now ≤ g1.now then ChannelMode.finalized else ChannelMode.challenge) = .finalized
+  simp [g1]
 
 /-- A payout can happen: starting from `deposit_can_happen`'s construction
     to fund a channel, a `.conclude` (needing `now ≠ 0`, so a `.tick`
