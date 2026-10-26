@@ -1102,8 +1102,8 @@ theorem bulkTransferFold_pool_reachable (self : Term) (cid : Term) :
     `_root_.Step.transactOwned`, chained after the first; `.transfer`
     and both bulk calls are `PoolOwnedSpendStep`, itself
     `_root_.Step.transactOwned` (same `live`/`spent`/`leaves`/`roots`/
-    `preimageOf`/`ownedRandomOf` shape, `caller := addressOf pub
-    .ownerField` matching `self = addressOf pub.ownerField`). What lets
+    `preimageOf`/`ownedRandomOf` shape, `caller := pub.ownerField`
+    matching `self = pub.ownerField`). What lets
     `unbeatable_pays`'s own strategy invoke `leaf_has_merkle_witness`/
     `owned_spend_witness_exists` at an ARBITRARY reachable `mid`, not
     only at the deployment pool. -/
@@ -2852,8 +2852,8 @@ theorem PoolOwnedSpendStep_notedValue_conserved
 
 /-- A `PoolOwnedSpendStep` never touches a USER-keyed note: its own
     nullification (the "some" case) only ever claims a position keyed
-    `npk (Term.val pub.ownerField) _` (`ownedSpentPositions`'s own
-    definition, `Pool.lean`), and `self = addressOf pub.ownerField`
+    `npk pub.ownerField _` (`ownedSpentPositions`'s own
+    definition, `Pool.lean`), and `self = pub.ownerField`
     ties that to the CONTRACT's own identity — `user_npk_ne_contract_
     npk` (`TransactOwned.lean`) then rules out a user-keyed preimage
     ever matching. The "none" case nullifies nothing at all. What
@@ -4961,32 +4961,10 @@ theorem holdingWellFormed_reachable (sig : SignatureAssumptions)
     hreach
 
 /-- **Every held note's own preimage has a known owned disclosure, for
-    some `ownerField` with `self = addressOf ownerField`.** One `Step` at
-    a time. What `unbeatable_pays`'s own strategy needs to build
-    `owned_spend_witness_exists`'s own `hOwned` hypothesis for the
-    channel's held note, at an ARBITRARY reachable state. -/
-theorem held_note_owned_disclosure_step (sig : SignatureAssumptions)
-    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
-    (hinv : HoldingWellFormed s)
-    (hstep : Step sig appRel actor s call s') :
-    ∀ qasset qcid qpos qc, s'.holdings qasset qcid = some (qpos, qc) →
-      ∃ pre ownerField r, s'.pool.preimageOf qc = some pre ∧ hashCommitment pre = qc ∧
-        pre.token = qasset ∧
-        s.self = ownerField ∧ s'.pool.ownedRandomOf qc = some ⟨ownerField, r⟩ ∧
-        npk ownerField r = pre.npk := by
-  intro qasset qcid qpos qc hc
-  obtain ⟨⟨pre, hpre, hconsist, _hval, htok, _hlive, r, hnpk, hown⟩, _, _⟩ :=
-    holdingWellFormed_step sig appRel actor s s' call hinv hstep qasset qcid qpos qc hc
-  have hselfEq : s'.self = s.self := step_self sig appRel actor s s' call hstep
-  rw [hselfEq] at hnpk hown
-  exact ⟨pre, s.self, r, hpre, hconsist, htok, rfl, hown, hnpk.symm⟩
-
-/-- `held_note_owned_disclosure_step`'s own reachable-set lift: every held
-    note's own preimage has a known owned disclosure, at ANY reachable
-    state, not just one `Step` away from an already-established anchor —
-    a direct projection of `HoldingWellFormed`'s own disclosure conjunct.
-    What `unbeatable_pays`'s own strategy needs to build
+    some `ownerField` with `self = ownerField`,** at ANY
+    reachable state — a direct projection of `HoldingWellFormed`'s own
+    disclosure conjunct (`holdingWellFormed_reachable`). What
+    `unbeatable_pays`'s own strategy needs to build
     `owned_spend_witness_exists`'s own `hOwned` hypothesis for the
     channel's held note, at an ARBITRARY reachable `mid`. -/
 theorem held_note_owned_disclosure_reachable (sig : SignatureAssumptions)
@@ -5002,40 +4980,5 @@ theorem held_note_owned_disclosure_reachable (sig : SignatureAssumptions)
   obtain ⟨⟨pre, hpre, hconsist, _hval, htok, _hlive, r, hnpk, hown⟩, _, _⟩ :=
     holdingWellFormed_reachable sig appRel assets selfInputs pool0 s hreach qasset qcid qpos qc hc
   exact ⟨pre, s.self, r, hpre, hconsist, htok, rfl, hown, hnpk.symm⟩
-
-/-- The combined invariant `holdings_point_to_live_notes`/`value_exists_only_as_notes`
-    (`Safety.lean`) need, one `Step` at a time: a holding names exactly one leaf
-    position, that position is live with the holding's own commitment, it is within
-    the pool's own leaf range, and no two DIFFERENT holdings ever name the same
-    position (`.deposit`/`.transfer`/merge always write a FRESH position — at least
-    `before.leaves.length`, strictly above every existing holding's own position by
-    the bound clause — so the freshly-written position can never collide with an
-    unrelated holding's; `removeAll` then only ever removes the exact `(position,
-    preimage)` pairs this step's own witness names, so an unrelated holding's own pair
-    survives by the same freshness argument applied at the PRIOR state). Positions,
-    not commitments: two different channels' notes CAN carry the identical commitment
-    (two deposits, or two `.transfer` remainders, that reuse the same caller-chosen
-    random `r` — nothing in the model forces two different calls' own `r` apart), but
-    they can never share a leaf position — `Pool.lean`'s module comment. -/
-
-
-theorem holdings_position_live_step (sig : SignatureAssumptions)
-    (appRel : AdjudicatorState → FixedPart → List VariablePart → VariablePart → Prop)
-    (actor : Actor) (s s' : AdjudicatorState) (call : Call)
-    (hinv : HoldingWellFormed s)
-    (hstep : Step sig appRel actor s call s') :
-    ∀ qasset qcid qpos qc, s'.holdings qasset qcid = some (qpos, qc) →
-      (∃ pre, (qpos, pre) ∈ s'.pool.live qasset ∧ hashCommitment pre = qc ∧
-        ((∃ ownerField r, s.self = ownerField ∧ pre.npk = npk ownerField r) ∨
-          ∃ r, pre.npk = npk s.self r)) ∧
-      qpos.2 < (s'.pool.leavesAt' qpos.1).length ∧
-      (∀ qasset' qcid' qpos' qc', s'.holdings qasset' qcid' = some (qpos', qc') →
-        (qasset', qcid') ≠ (qasset, qcid) → qpos' ≠ qpos) := by
-  intro qasset qcid qpos qc hc
-  obtain ⟨⟨pre, _hpre, hconsist, _hval, _htok, hlive, r, hnpk, _hown⟩, hbound, huniq⟩ :=
-    holdingWellFormed_step sig appRel actor s s' call hinv hstep qasset qcid qpos qc hc
-  have hselfEq : s'.self = s.self := step_self sig appRel actor s s' call hstep
-  rw [hselfEq] at hnpk
-  exact ⟨⟨pre, hlive, hconsist, Or.inl ⟨s.self, r, rfl, hnpk⟩⟩, hbound, huniq⟩
 
 end ArmadaLean.Adjudicator
