@@ -1506,6 +1506,17 @@ theorem unbeatablePaysInv_appliesAll
         s'.signedBy h = s0.signedBy h ∧ s'.poolSignedBy pk = s0.poolSignedBy pk := by
   sorry
 
+/-- Converse of `withPositionsFrom_mem_snd`, tagged with a fixed tree
+    number: anything already in the underlying list gets SOME position
+    once tagged — what `transfer_step_pays_selected` needs to turn "this
+    output is one of `.transfer`'s own `payoutOutputs`" into an ACTUAL
+    `((treeNumber, pos), pre) ∈ final.pool.live asset` fact. -/
+theorem withTreePositionsFrom_mem_fwd {α : Type} {treeNumber start : Nat} {l : List α} {a : α}
+    (h : a ∈ l) : ∃ pos, ((treeNumber, pos), a) ∈ withTreePositionsFrom treeNumber start l := by
+  unfold withTreePositionsFrom
+  obtain ⟨pos, hpos⟩ := withPositionsFrom_mem_fwd (start := start) h
+  exact ⟨pos, List.mem_map.mpr ⟨(pos, a), hpos, rfl⟩⟩
+
 /-- Given a `.transfer` step that ALREADY exists (its own `PoolOwnedSpendStep`
     witness supplied elsewhere — this theorem never inspects it), with
     `indices = [destIdx]` naming a single selected allocation, the minted
@@ -1538,7 +1549,95 @@ theorem transfer_step_pays_selected
     ∃ pre : CommitmentPreimage, pre.npk = dest.destination ∧
       pre.token = (curOutcome.get ⟨assetIndex, hci⟩).asset ∧ x ≤ pre.value ∧
       PoolIsLive final.pool (commitment pre.npk pre.token pre.value) := by
-  sorry
+  obtain ⟨hidx, _hmode, _hsh, _hoh, _hstrict, hinner, _hcfg, _hselfInputs, _hnow, _hsigned,
+    _hpoolSigned⟩ := hstep
+  obtain ⟨_hguarantee, hrest⟩ := hinner
+  obtain ⟨r, hmatch, _hholdseq, _hchanseq⟩ := hrest
+  have hAO : curOutcome.get ⟨assetIndex, hidx⟩ = curOutcome.get ⟨assetIndex, hci⟩ := rfl
+  change PoolOwnedSpendStep mid.pool mid.self (curOutcome.get ⟨assetIndex, hci⟩).asset
+    (mid.holdings (curOutcome.get ⟨assetIndex, hci⟩).asset cid)
+    ((transferEffects (curOutcome.get ⟨assetIndex, hci⟩).allocations
+        (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) [destIdx]).2.1.filterMap (fun a =>
+      if a.amount = 0 then none
+      else some (⟨a.destination, (curOutcome.get ⟨assetIndex, hci⟩).asset, a.amount⟩ : CommitmentPreimage)))
+    (if heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid -
+        (transferEffects (curOutcome.get ⟨assetIndex, hci⟩).allocations
+          (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) [destIdx]).2.2 = 0
+     then []
+     else [(⟨npk mid.self r, (curOutcome.get ⟨assetIndex, hci⟩).asset,
+       heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid -
+         (transferEffects (curOutcome.get ⟨assetIndex, hci⟩).allocations
+           (heldValue mid (curOutcome.get ⟨assetIndex, hci⟩).asset cid) [destIdx]).2.2⟩ : CommitmentPreimage)])
+    final.pool at hmatch
+  generalize hallocsDef : (curOutcome.get ⟨assetIndex, hci⟩).allocations = allocs
+    at hdest hnoguarantee haffordable hmatch
+  generalize hassetDef : (curOutcome.get ⟨assetIndex, hci⟩).asset = asset at haffordable hmatch
+  generalize hsurplusDef : heldValue mid asset cid = surplus at haffordable hmatch
+  have hdestlt : destIdx < allocs.length := (List.getElem?_eq_some_iff.mp hdest).1
+  have hexitmem := transferEffectsSel_exit_mem allocs surplus
+    (fun i => [destIdx].isEmpty || i ∈ [destIdx]) destIdx hdestlt (by simp)
+  rw [← transferEffects_eq_sel] at hexitmem
+  have hallocsD : allocs.getD destIdx Allocation.default = dest := by
+    rw [List.getD_eq_getElem?_getD, hdest]; rfl
+  rw [hallocsD] at hexitmem
+  generalize hpaidDef : (afford allocs surplus).getD destIdx 0 = paidAmt at haffordable hexitmem
+  generalize hPayoutDef : (transferEffects allocs surplus [destIdx]).2.1.filterMap (fun a =>
+      if a.amount = 0 then none else some (⟨a.destination, asset, a.amount⟩ : CommitmentPreimage)) =
+    payoutOutputs at hmatch
+  generalize hRemDef : surplus -
+    (transferEffects allocs surplus [destIdx]).2.2 = remainder at hmatch
+  have hpayoutmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈ payoutOutputs := by
+    rw [← hPayoutDef]
+    refine List.mem_filterMap.mpr ⟨{ dest with amount := paidAmt }, hexitmem, ?_⟩
+    rw [if_neg (show paidAmt ≠ 0 by omega)]
+  unfold PoolOwnedSpendStep at hmatch
+  rcases hc0 : mid.holdings asset cid with _ | c0
+  · rw [hc0] at hmatch
+    obtain ⟨w, pub, hM, hC, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes, hroot, hmark,
+      hRandomOut, heq⟩ := hmatch
+    refine ⟨⟨dest.destination, asset, paidAmt⟩, rfl, rfl, haffordable, ?_⟩
+    have houtmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈
+        payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]) :=
+      List.mem_append_left _ hpayoutmem
+    obtain ⟨pos, hposmem⟩ := withTreePositionsFrom_mem_fwd
+      (treeNumber := insertTreeNumber mid.pool.closedTrees mid.pool.leaves
+        (payoutOutputs.length + (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]).length))
+      (start := insertStartPos mid.pool.leaves
+        (payoutOutputs.length + (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]).length))
+      houtmem
+    refine ⟨asset, insertTreeNumber mid.pool.closedTrees mid.pool.leaves
+        (payoutOutputs.length + (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]).length),
+      pos, ⟨dest.destination, asset, paidAmt⟩, ?_, rfl⟩
+    rw [heq]; dsimp only
+    rw [if_pos rfl]
+    exact List.mem_append.mpr (Or.inl hposmem)
+  · rw [hc0] at hmatch
+    obtain ⟨w, pub, hM, hC, rest, spent', ownedRandom, hNonZero, hself, htoken, hnewnotes,
+      hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
+    refine ⟨⟨dest.destination, asset, paidAmt⟩, rfl, rfl, haffordable, ?_⟩
+    have houtmem : (⟨dest.destination, asset, paidAmt⟩ : CommitmentPreimage) ∈
+        payoutOutputs ++ (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]) :=
+      List.mem_append_left _ hpayoutmem
+    obtain ⟨pos, hposmem⟩ := withTreePositionsFrom_mem_fwd
+      (treeNumber := insertTreeNumber mid.pool.closedTrees mid.pool.leaves
+        (payoutOutputs.length + (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]).length))
+      (start := insertStartPos mid.pool.leaves
+        (payoutOutputs.length + (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]).length))
+      houtmem
+    refine ⟨asset, insertTreeNumber mid.pool.closedTrees mid.pool.leaves
+        (payoutOutputs.length + (if remainder = 0 then [] else
+          [(⟨npk mid.self r, asset, remainder⟩ : CommitmentPreimage)]).length),
+      pos, ⟨dest.destination, asset, paidAmt⟩, ?_, rfl⟩
+    rw [heq]; dsimp only
+    rw [if_pos rfl]
+    exact List.mem_append.mpr (Or.inl hposmem)
 
 /-- Not-yet-finalized plus `SignedByAll` always lets `h` (or anyone)
     reach a finalized state naming `candidate`: one `.conclude`
@@ -1569,7 +1668,19 @@ theorem conclude_step_finalizes
       (mid1.channels (channelId fp)).outcomeHash = outcomeHashOf candidate.outcome ∧
       mid1.pool = mid.pool ∧ mid1.holdings = mid.holdings ∧ mid1.self = mid.self ∧
       mid1.signedBy = mid.signedBy ∧ mid1.poolSignedBy = mid.poolSignedBy := by
-  sorry
+  let newStatus : ChannelStatus :=
+    ⟨0, mid.now, Term.val 0, outcomeHashOf candidate.outcome⟩
+  have hconcludestep : Step sig appRel actor mid (.conclude fp candidate)
+      { mid with channels := update mid.channels (channelId fp) newStatus } :=
+    ⟨hnotfinal, hfinal, hsigned, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨[(actor, .conclude fp candidate)], _, ⟨_, hconcludestep, rfl⟩, ?_, ?_, rfl, rfl, rfl, rfl, rfl⟩
+  · show (update mid.channels (channelId fp) newStatus (channelId fp)).mode mid.now = .finalized
+    unfold update; rw [if_pos rfl]; unfold ChannelStatus.mode
+    rw [if_neg (show mid.now ≠ 0 by omega)]
+    rw [if_pos (Nat.le_refl _)]
+  · show (update mid.channels (channelId fp) newStatus (channelId fp)).outcomeHash =
+      outcomeHashOf candidate.outcome
+    unfold update; rw [if_pos rfl]
 
 /-- **Placeholder, pending the pool-model rollover change**: the pool's
     own tree always has room for two more leaves, at ANY reachable
