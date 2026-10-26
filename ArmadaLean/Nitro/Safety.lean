@@ -234,7 +234,7 @@ theorem challenge_requires (apps : Apps) (s : Adjudicator) (challenger : Partici
 
 /-- S1-A10, S1-C02, S1-F03, S2-12, S3-14, S4-0070-08. S1:1353
     `setChallenge(c, now() + defaultExpirationTime)`; S3:308-310
-    `finalizesAt: now + consts.challengeDuration`. The exact result. -/
+    `now + consts.challengeDuration`. The exact result. -/
 theorem challenge_can_happen (apps : Apps) (s : Adjudicator) (challenger : Participant)
     (c : FixedPart) (proof : SupportProof) (candidate : State)
     (hp : challenger ∈ c.participants) (hm : s.mode c = .open)

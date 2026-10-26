@@ -23,7 +23,7 @@ namespace ArmadaLean.Nitro
 abbrev Coins := Nat
 
 /-- Chain time. S1:1294-1296 compares `endTime` with `now()`; S3:297 compares
-    `finalizesAt` with `now`. -/
+    the finalization time with `now`. -/
 abbrev Time := Nat
 
 /-- A participant. S2:154-155: "A participant address is a regular blockchain

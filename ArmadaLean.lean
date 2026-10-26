@@ -11,3 +11,14 @@ import ArmadaLean.Merkle
 import ArmadaLean.Transact
 import ArmadaLean.Vault
 import ArmadaLean.Fee
+-- Nitro protocol specification (S1 ForceMove, S2 Nitro, S3 SATP); see docs/nitro-theorems.md
+import ArmadaLean.Nitro.Address
+import ArmadaLean.Nitro.Outcome
+import ArmadaLean.Nitro.Channel
+import ArmadaLean.Nitro.Adjudicator
+import ArmadaLean.Nitro.Strategy
+import ArmadaLean.Nitro.Value
+import ArmadaLean.Nitro.Constructions
+import ArmadaLean.Nitro.SATP
+import ArmadaLean.Nitro.Safety
+import ArmadaLean.Nitro.Liveness
