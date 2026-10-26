@@ -841,6 +841,18 @@ theorem reachable_preserves {sig : SignatureAssumptions}
   obtain ⟨calls, happ⟩ := hreach
   exact appliesAll_preserves hstep hbase happ
 
+/-- Bridges `_root_.Step.transactOwned`'s own `rest` (a constant list, baked
+    into its `if t = token then ... ++ rest else ...` shape) against
+    `PoolOwnedSpendStep`'s own "none"-nullified `live` field, which instead
+    writes `before.live t` inside the same `then` branch — syntactically
+    different even though `t = token` there makes them equal. -/
+theorem transactOwned_none_live_eq (token : Nat) (live : Nat → List (Nat × CommitmentPreimage))
+    (X : List CommitmentPreimage) (n : Nat) :
+    (fun t => if t = token then withPositionsFrom n X ++ live token else live t) =
+    (fun t => if t = token then withPositionsFrom n X ++ live t else live t) := by
+  funext t
+  by_cases ht : t = token <;> simp [ht]
+
 /-- `bulkTransferFold`'s own pool-level lift: `_root_.Reachable` carries
     forward across the WHOLE fold, one asset's own `PoolOwnedSpendStep` —
     itself `_root_.Step.transactOwned` — at a time. What
@@ -873,18 +885,33 @@ theorem bulkTransferFold_pool_reachable (self : Nat) (cid : Term) :
         obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
           hroot, hmark, hRandomOut, heq⟩ := hmatch
         rw [heq]
-        -- BLOCKED on pool-model fix (Main, 2026-10-26): Step.transactOwned's own
-        -- hRandomOut demands disclosure for every output, but PoolOwnedSpendStep's own
-        -- payoutPreimages are user-keyed, not owner-disclosable. Awaiting the new
-        -- pool-model sha mapping ownedPreimages/randomOut onto a trimmed owned-records
-        -- list (Step.transact's own shape).
-        sorry
+        have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC self hown
+          (pool.live w.token) spent'
+          (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
+          hroot (by simp [ownedSpentPositions, removeAll]) hmark hNonZero
+          (fun x hx => by
+            obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
+            exact hj ▸ hRandomOut j)
+          hCapacity
+        rw [htoken, hnewnotes] at hstepw
+        rw [transactOwned_none_live_eq] at hstepw
+        simp only [List.map_ofFn] at hstepw
+        exact _root_.Reachable.step hreach hstepw
       · obtain ⟨pos0, c1⟩ := c0
         rw [hh] at hmatch
         obtain ⟨w, pub, hM, hC, rest', spent', randomOut, hNonZero, hCapacity, hown, htoken,
           hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
         rw [heq]
-        sorry
+        have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC self hown rest' spent'
+          (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
+          hroot (by rw [htoken]; exact hremove) hmark hNonZero
+          (fun x hx => by
+            obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
+            exact hj ▸ hRandomOut j)
+          hCapacity
+        rw [htoken, hnewnotes] at hstepw
+        simp only [List.map_ofFn] at hstepw
+        exact _root_.Reachable.step hreach hstepw
 
 
 /-- One adjudicator `Step`'s own pool-level effect is exactly a pool-model
@@ -923,10 +950,15 @@ theorem adjudicator_pool_step (sig : SignatureAssumptions)
           rw [List.mem_singleton] at hcd
           exact hcd ▸ ⟨⟨w.npkOut idx, w.token, w.valueOut idx⟩, hidxrec, hown.symm⟩)
         (by unfold transactAllOutputs; rw [List.length_ofFn]; exact hCapacity)
-      apply _root_.Reachable.step hreach
-      convert hstepw using 2
-      funext t
-      simp
+      have heldEq : (fun t => if t = w.token
+          then s.pool.held t - listSum (([] : List CommitmentPreimage).map CommitmentPreimage.value)
+          else s.pool.held t) = s.pool.held := by
+        funext t
+        by_cases ht : t = w.token
+        · simp [ht, listSum]
+        · simp [ht]
+      rw [heldEq] at hstepw
+      exact _root_.Reachable.step hreach hstepw
     rcases hh : s.holdings asset channelId with _ | oldHolding
     · rw [hh] at hmatch
       obtain ⟨hpoolEq, _hholdseq⟩ := hmatch
@@ -938,11 +970,16 @@ theorem adjudicator_pool_step (sig : SignatureAssumptions)
         hown', htoken', hnpkOut', hmergedEq, _hleaf0, _hleaf1, hcommitOld, hcommitNew, hroot',
         hremove', hnullify', hrandomOut', heq'⟩ := hmerge
       rw [heq']
-      exact _root_.Reachable.step hmidReach
-        (_root_.Step.transactOwned w' pub' (by decide) (by decide) hC' s.self hown' rest'
-          spent'' (fun _ => randomOut') hroot' (by rw [htoken']; exact hremove') hnullify'
-          (fun j => by have : j = 0 := Fin.ext (by omega); rw [this]; exact hNonZero')
-          (fun j => by have : j = 0 := Fin.ext (by omega); rw [this]; exact hrandomOut') hCapacity')
+      have hstepw := _root_.Step.transactOwned w' pub' (by decide) (by decide) hC' s.self hown' rest'
+        spent'' [(0, (⟨pub'.ownerField, randomOut'⟩ : OwnedDisclosure))]
+        hroot' (by rw [htoken']; exact hremove') hnullify'
+        (fun j => by have : j = 0 := Fin.ext (by omega); rw [this]; exact hNonZero')
+        (fun x hx => by
+          rw [List.mem_singleton] at hx
+          exact hx ▸ hrandomOut') hCapacity'
+      rw [htoken'] at hstepw
+      simp only [List.map] at hstepw
+      exact _root_.Reachable.step hmidReach hstepw
   | challenge fp proof candidate challenger =>
     obtain ⟨_, _, _, _, _, hpoolEq, _hholdEq, _⟩ := hstep
     rw [hpoolEq]; exact hreach
@@ -961,14 +998,33 @@ theorem adjudicator_pool_step (sig : SignatureAssumptions)
       obtain ⟨w, pub, hM, hC, spent', randomOut, hNonZero, hCapacity, hown, htoken, hnewnotes,
         hroot, hmark, hRandomOut, heq⟩ := hmatch
       rw [heq]
-      -- BLOCKED on pool-model fix (Main, 2026-10-26), see bulkTransferFold_pool_reachable.
-      sorry
+      have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC s.self hown
+        (s.pool.live w.token) spent'
+        (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
+        hroot (by simp [ownedSpentPositions, removeAll]) hmark hNonZero
+        (fun x hx => by
+          obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
+          exact hj ▸ hRandomOut j)
+        hCapacity
+      rw [htoken, hnewnotes] at hstepw
+      rw [transactOwned_none_live_eq] at hstepw
+      simp only [List.map_ofFn] at hstepw
+      exact _root_.Reachable.step hreach hstepw
     · obtain ⟨pos0, c1⟩ := c0
       rw [hh] at hmatch
       obtain ⟨w, pub, hM, hC, rest, spent', randomOut, hNonZero, hCapacity, hown, htoken,
         hnewnotes, hleavesIdx, hcommit, hroot, hremove, hmark, hRandomOut, heq⟩ := hmatch
       rw [heq]
-      sorry
+      have hstepw := _root_.Step.transactOwned w pub (by decide) hM hC s.self hown rest spent'
+        (List.ofFn fun j => (Fin.natAdd _ j, (⟨pub.ownerField, randomOut j⟩ : OwnedDisclosure)))
+        hroot (by rw [htoken]; exact hremove) hmark hNonZero
+        (fun x hx => by
+          obtain ⟨j, hj⟩ := List.mem_ofFn.mp hx
+          exact hj ▸ hRandomOut j)
+        hCapacity
+      rw [htoken, hnewnotes] at hstepw
+      simp only [List.map_ofFn] at hstepw
+      exact _root_.Reachable.step hreach hstepw
   | reclaim sourceChannelId sourceOutcome sourceAssetIndex indexOfTargetInSource targetOutcome
       targetAssetIndex claimedTargetStateHash =>
     obtain ⟨_, _, _hsa, _hidx1, _h5, _h6, hpoolEq, _hholdEq, _⟩ := hstep
