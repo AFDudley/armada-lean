@@ -46,14 +46,16 @@ theorem balances_total_split (b : Balances) :
     b.total = b.channelTotal + b.paidOutTotal := by
   sorry
 
-/-- Nitro-04, Nitro-05, ForceMove-C01, docs-0060-03, docs-0060-04,
-    docs-0060-05. go-nitro MultiAssetHolder.sol:57-60: `held += amount`;
-    Nitro:165-168: the deposit raises the balance by `x` and brings `x` coins
-    into the adjudicator. It touches nothing else. A second deposit adds to
-    the first. -/
-theorem deposit_effects (s : Adjudicator) (c : FixedPart) (x : Coins) (s' : Adjudicator)
-    (h : s.deposit c.address x = some s') :
-    s'.balances.get c.address = s.balances.get c.address + x ∧
+/-- Nitro-04, Nitro-05, ForceMove-C01, docs-0060-02, docs-0060-03,
+    docs-0060-04, docs-0060-05. go-nitro MultiAssetHolder.sol:51, 57-60:
+    `held == expectedHeld`, then `held += amount`; Nitro:165-168: the
+    deposit raises the balance by `x` and brings `x` coins into the
+    adjudicator. It touches nothing else. A second deposit adds to the
+    first. -/
+theorem deposit_effects (s : Adjudicator) (c : FixedPart) (e x : Coins) (s' : Adjudicator)
+    (h : s.deposit c.address e x = some s') :
+    s.balances.get c.address = e ∧
+    s'.balances.get c.address = e + x ∧
     s'.held = s.held + x ∧
     (∀ b, b ≠ c.address → s'.balances.get b = s.balances.get b) ∧
     s'.status = s.status ∧ s'.now = s.now := by
@@ -66,14 +68,67 @@ theorem deposit_effects (s : Adjudicator) (c : FixedPart) (x : Coins) (s' : Adju
     and every channel. -/
 theorem deposit_can_happen (apps : Apps) (caller : Participant) (s : Adjudicator) (c : FixedPart)
     (x : Coins) :
-    s.apply apps caller (.deposit c.address x) =
+    s.apply apps caller (.deposit c.address (s.balances.get c.address) x) =
       some { s with balances := s.balances.add c.address x, held := s.held + x } := by
+  sorry
+
+/-- docs-0060-02. go-nitro MultiAssetHolder.sol:51 `require(held ==
+    expectedHeld, 'held != expectedHeld')`: a deposit whose observation is
+    stale fails. A history in which an earlier deposit was dropped or
+    reordered is one such history. -/
+theorem deposit_requires_expectedHeld (s : Adjudicator) (c : FixedPart) (e x : Coins)
+    (h : s.balances.get c.address ≠ e) : s.deposit c.address e x = none := by
+  sorry
+
+/-- The sum of the allocations ahead of entry `k`: the holding a funder in
+    position `k` must see before it deposits (ForceMove:1197-1208,
+    ForceMove:1797-1808; docs 0060: "participants should not deposit until
+    those with higher priority have had their deposits confirmed"). -/
+def Allocation.aheadOf (o : Allocation) (k : Nat) : Coins :=
+  Allocation.total (o.take k)
+
+/-- docs-0060-02, ForceMove-B07, docs-0060-06. The funding-order theorem,
+    over every history. If the funder of entry `k` of the pre-funding
+    outcome `o` deposits with `expectedHeld = o.aheadOf k` and the deposit
+    succeeds, then the channel held exactly the allocations ahead of `k`
+    before, and holds them plus `x` after; so the priority payout
+    (Nitro:747-749) pays every entry ahead of `k` in full from the coins
+    already there, pays the funder's own entry from the funder's coins, and
+    the deposit is paid to no entry ahead of it. A reorganization that
+    dropped an earlier deposit makes the guard fail
+    (`deposit_requires_expectedHeld`); it is not a separate case. -/
+theorem deposit_respects_funding_order (apps : Apps) (s s' : Adjudicator) (hr : Reachable apps s)
+    (caller : Participant) (c : FixedPart) (o : Allocation) (hdedup : o.dedup = o) (k : Nat)
+    (e : Entry) (he : o[k]? = some e)
+    (h : s.apply apps caller (.deposit c.address (o.aheadOf k) e.amount) = some s') :
+    s.balances.get c.address = o.aheadOf k ∧
+    s'.balances.get c.address = o.aheadOf k + e.amount ∧
+    (∀ j f, j < k → o[j]? = some f →
+      o.paidTo (s.balances.get c.address) f.dest = f.amount ∧
+      o.paidTo (s'.balances.get c.address) f.dest = f.amount) ∧
+    o.paidTo (s'.balances.get c.address) e.dest = e.amount ∧
+    (∀ j f, k < j → o[j]? = some f → o.paidTo (s'.balances.get c.address) f.dest = 0) := by
+  sorry
+
+/-- ForceMove-C01, docs-0060-02. Deposits made in the order of the
+    pre-funding outcome, each with `expectedHeld` equal to the allocations
+    ahead of it, all succeed from a channel that holds nothing, and leave
+    the channel fully funded (ForceMove:1797-1808). -/
+theorem deposits_in_order_succeed (apps : Apps) (s : Adjudicator) (c : FixedPart) (o : Allocation)
+    (callers : List Participant) (h0 : s.balances.get c.address = 0) :
+    let op := fun k => ((callers[k]?).getD ⟨0⟩, Op.deposit c.address (o.aheadOf k) (o.amountAt k))
+    let ops := (List.range o.length).map op
+    (∀ k, k < o.length →
+      (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k ∧
+      (Adjudicator.applyAll apps (ops.take k) s).apply apps (op k).1 (op k).2 =
+        some (Adjudicator.applyAll apps (ops.take (k + 1)) s)) ∧
+    (Adjudicator.applyAll apps ops s).balances.get c.address = o.total := by
   sorry
 
 /-- docs-0060-01, Nitro-04. go-nitro MultiAssetHolder.sol:43 "Deposit to
     external destination": a deposit to a participant address fails. -/
-theorem deposit_to_participant_fails (s : Adjudicator) (p : Participant) (x : Coins) :
-    s.deposit (.participant p) x = none := by
+theorem deposit_to_participant_fails (s : Adjudicator) (p : Participant) (e x : Coins) :
+    s.deposit (.participant p) e x = none := by
   sorry
 
 /-- Nitro-06, Nitro-07, SATP-16. go-nitro MultiAssetHolder.sol:396-408: coins
@@ -446,7 +501,7 @@ theorem failed_op_no_effect (apps : Apps) (caller : Participant) (op : Op) (s : 
     operations read no balance: their success and their status result do
     not depend on the balances. -/
 theorem funding_decoupled_from_rules (apps : Apps) (caller : Participant) (s : Adjudicator)
-    (b : Balances) (op : Op) (hop : op.isRedistribution = false ∧ ∀ a x, op ≠ .deposit a x) :
+    (b : Balances) (op : Op) (hop : op.isRedistribution = false ∧ ∀ a e x, op ≠ .deposit a e x) :
     ((s.apply apps caller op).map Adjudicator.status) =
       (({ s with balances := b }.apply apps caller op).map Adjudicator.status) := by
   sorry
@@ -573,7 +628,7 @@ theorem mode_of_absent (s : Adjudicator) (c : FixedPart) (h : ∀ e ∈ s.status
 theorem held_changes_only_by_deposit_payout (apps : Apps) (s s' : Adjudicator)
     (caller : Participant) (op : Op) (h : s.apply apps caller op = some s')
     (hne : s'.held ≠ s.held) :
-    (∃ a x, op = .deposit a x) ∨ op.isRedistribution = true := by
+    (∃ a e x, op = .deposit a e x) ∨ op.isRedistribution = true := by
   sorry
 
 end ArmadaLean.Nitro

@@ -67,17 +67,31 @@ def Adjudicator.DirectlyFundedWith (s : Adjudicator) (c : FixedPart) (x : Coins)
 def Adjudicator.genesis : Adjudicator :=
   { balances := [], held := 0, status := [], now := 0 }
 
-/-- go-nitro MultiAssetHolder.sol:36-62 `deposit`: raise the holding of a
-    channel by `amount`; "Deposit to external destination" reverts
-    (line 43). Nitro:165-168 `D_A(x)`: "There are no restrictions on who can
-    deposit coins for an address, but the transaction must always include a
-    transfer of x coins into the adjudicator"; Nitro:227-228 allows either
-    address kind. The code is followed: only a channel address. SATP:764-768
-    defers deposits. The `expectedHeld` check (line 51) is reorg protection
-    and is not modelled. -/
-def Adjudicator.deposit (s : Adjudicator) (a : Address) (x : Coins) : Option Adjudicator :=
+/-- go-nitro MultiAssetHolder.sol:38-63 `deposit(asset, channelId,
+    expectedHeld, amount)`: "Deposit to external destination" reverts
+    (line 43); `require(held == expectedHeld)` (line 51); then
+    `held += amount`. The check is a compare-and-swap guard on the holding.
+    Lines 45-49 give its reason: "1. Participant A deposits 2. Participant B
+    sees A's deposit, which means it is now safe for them to deposit 3.
+    Participant B submits their deposit 4. The chain re-orgs, leaving B's
+    deposit in the chain but not A's." ForceMove:1197-1208 (§6.2 funding
+    protocol): "It is only safe to [fund] in order". Nitro:165-168 `D_A(x)`;
+    Nitro:227-228 allows either address kind, the code is followed: only a
+    channel address. SATP:764-768 defers deposits.
+
+    Reorganizations are not an operation (operator ruling 2026-10-27). A
+    history that drops or reorders earlier deposits is just another
+    `Reachable` history; `expectedHeld` is what the depositor saw, and the
+    guard fails when the chain no longer holds it. The model has no forks
+    and no finality. -/
+def Adjudicator.deposit (s : Adjudicator) (a : Address) (expectedHeld x : Coins) :
+    Option Adjudicator :=
   match a with
-  | .channel _ => some { s with balances := s.balances.add a x, held := s.held + x }
+  | .channel _ =>
+    if s.balances.get a = expectedHeld then
+      some { s with balances := s.balances.add a x, held := s.held + x }
+    else
+      none
   | .participant _ => none
 
 /-- Pay `x` coins to a destination. go-nitro `_executeSingleAssetExit`
@@ -197,7 +211,7 @@ def Adjudicator.tick (s : Adjudicator) (dt : Time) : Adjudicator :=
     helpers `transferAllAssets` and `concludeAndTransferAllAssets` are
     sequences of these). -/
 inductive Op
-  | deposit (a : Address) (x : Coins)
+  | deposit (a : Address) (expectedHeld x : Coins)
   | transfer (a : FixedPart) (b : Address)
   | reclaim (l v : FixedPart)
   | challenge (c : FixedPart) (proof : SupportProof) (candidate : State)
@@ -223,7 +237,7 @@ def Op.isRedistribution : Op → Bool
 def Adjudicator.apply (apps : Apps) (caller : Participant) (op : Op) (s : Adjudicator) :
     Option Adjudicator :=
   match op with
-  | .deposit a x => s.deposit a x
+  | .deposit a e x => s.deposit a e x
   | .transfer a b => s.transfer a b
   | .reclaim l v => s.reclaim l v
   | .challenge c proof candidate => s.challenge apps caller c proof candidate

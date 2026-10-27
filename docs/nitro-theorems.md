@@ -16,7 +16,7 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 | `ArmadaLean/Nitro/Value.lean` | outcome network, DAG, Turbo Value Algorithm | Nitro §5.2 |
 | `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels | Nitro §5.3-5.4; the virtual channel is in SATP.lean |
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
-| `ArmadaLean/Nitro/Safety.lean` | 55 theorems: on-chain safety, conservation, data operations | go-nitro and SATP first |
+| `ArmadaLean/Nitro/Safety.lean` | 58 theorems: on-chain safety, conservation, data operations | go-nitro and SATP first |
 | `ArmadaLean/Nitro/Liveness.lean` | 35 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-5 |
 
 ## Paper vs code: where go-nitro is followed over the latest paper
@@ -31,6 +31,10 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 - **Challenger must be a participant.** SATP Listing 1 has no caller check. go-nitro `_requireChallengerIsParticipant` (ForceMove.sol:178-190) requires it; ForceMove:1545-1548 proposed it. The model follows the code.
 - **Channel id includes challengeDuration.** SATP:213 hashes `(peers, appDef, nonce)`; go-nitro NitroUtils.sol:122-133 hashes the four fixed fields. The model id is the whole fixed part, as in the code.
 
+## Histories, reorganizations and expectedHeld (operator ruling 2026-10-27)
+
+The model has no forks and no finality: the papers make no confirmation claims. A reorganization is not an operation; a history that drops or reorders earlier deposits is just another `Reachable` history, and every theorem over all histories covers it. go-nitro `deposit` (MultiAssetHolder.sol:38-63) takes `expectedHeld`, the holding the depositor saw, and fails unless the chain still holds it (lines 45-49 give the reorg scenario). `Adjudicator.deposit` is that compare-and-swap guard. The funding-order theorem `deposit_respects_funding_order` and the can-happen theorem `deposits_in_order_succeed` state ForceMove §6.2 (ForceMove:1197-1208, 1797-1808) over every history. The earlier note that `expectedHeld` was unmodelled is withdrawn; the forbidden-encoding check now allows the word.
+
 ## Mathlib (operator ruling 2026-10-27)
 
 Mathlib `v4.33.1` is a dependency. Hand-written definitions replaced by Mathlib ones, with the meaning unchanged: `Reachable` is `Relation.ReflTransGen (Step apps) genesis`; `Redistributed` is `Relation.ReflTransGen RedistributeStep` (the one-step inductive stays); `Acyclic edge` is `Std.Irrefl (Relation.TransGen edge)`, whose `irrefl` field is the ruling's `∀ c, ¬ TransGen edge c c`. Sums stay core `List.sum`; `List.lookup`, `List.Nodup`, `List.all` are core.
@@ -44,7 +48,6 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 - go-nitro stores a hash of the state and outcome and packs `turnNumRecord`, the finalization time and a fingerprint into one slot (StatusManager.sol); the model stores values (`ChannelStatus`).
 - go-nitro marks "no challenge" by a zero finalization time (StatusManager.sol:8); the model has explicit constructors `open`, `challenged`, `finalized`.
 - go-nitro resets the stored turn to 0 on conclude (ForceMove.sol:157); no operation reads the turn of a finalized channel, so the model keeps the candidate turn and `turnNumRecord_monotone` holds for every step.
-- go-nitro `deposit` takes `expectedHeld` (MultiAssetHolder.sol:51) as reorg protection; not modelled.
 - go-nitro `transfer` takes an `indices` batch and `transferAllAssets`/`concludeAndTransferAllAssets` batch several calls; the model has single-destination operations.
 - go-nitro represents signers as a bitmask (INitroTypes.sol:34); the model uses a signer list.
 - go-nitro is multi-asset (`holdings[asset][channelId]`); the model is one single-asset instance.
@@ -117,8 +120,8 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | ForceMove-B04 | theorem checkpoint_can_happen |
 | ForceMove-B05 | theorem late_observer_can_checkpoint |
 | ForceMove-B06 | theorem funding_point_universally_finalizable |
-| ForceMove-B07 | theorem payout_earlier_paid_in_full |
-| ForceMove-C01 | theorem deposit_can_happen |
+| ForceMove-B07 | theorem payout_earlier_paid_in_full, deposit_respects_funding_order |
+| ForceMove-C01 | theorem deposit_can_happen, deposits_in_order_succeed |
 | ForceMove-C02 | theorem challenge_can_happen |
 | ForceMove-C03 | theorem transfer_can_happen |
 | ForceMove-E01 | out of scope: app-specific game logic (ForceMove:536-551 Specification 1 is a payment-game library rule, not an adjudicator rule) |
@@ -223,7 +226,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | docs-0020-01 | definition consensusRules |
 | docs-0010-05 | theorem conclude_can_happen |
 | docs-0060-01 | theorem deposit_to_participant_fails (go-nitro MultiAssetHolder.sol:43 is followed over Nitro:227-228) |
-| docs-0060-02 | out of scope: expectedHeld check (go-nitro MultiAssetHolder.sol:51) is reorg protection; the papers state the deposit-order rule as the payout priority, theorem payout_earlier_paid_in_full |
+| docs-0060-02 | theorem deposit_requires_expectedHeld, deposit_respects_funding_order, deposits_in_order_succeed, deposit_effects (definition Adjudicator.deposit, Allocation.aheadOf; operator ruling 2026-10-27) |
 | docs-0060-03 | theorem deposit_effects |
 | docs-0070-01 | theorem conclude_needs_all |
 | docs-0070-02 | theorem challenge_requires |
@@ -257,7 +260,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | docs-0040-08 | superseded-by Nitro-17 (definition FundedFor) |
 | docs-0040-09 | out of scope: docs-only client behaviour (when to fund and defund) |
 | docs-0040-10 | superseded-by Nitro-23 (theorem funding_point_universally_finalizable) |
-| docs-0060-06 | theorem payout_earlier_paid_in_full (ForceMove-B07 supports it) |
+| docs-0060-06 | theorem payout_earlier_paid_in_full, deposit_respects_funding_order (ForceMove-B07 supports it) |
 | docs-0060-07 | theorem ledger_offload_funds_subchannel, subchannel_open_value_preserving |
 | docs-0060-08 | theorem satp_theorem_3_2, satp_reclaim_credits_intermediary (SATP Protocol 3.1) |
 | docs-0060-09 | out of scope: docs-only ETH/ERC20 chain mechanics (go-nitro MultiAssetHolder.sol:53-57) |
@@ -271,12 +274,12 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 
 - assumption: 5
 - definition: 46
-- out of scope: 25
+- out of scope: 24
 - superseded-by: 20
-- theorem: 93
+- theorem: 94
 - total: 189
 
-## Theorems (90)
+## Theorems (93)
 
 | Theorem | Module | Meaning | Property ids | Source |
 |---|---|---|---|---|
@@ -285,8 +288,11 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `balances_absent_zero` | `Safety.lean` | An absent address has balance zero. | Nitro-01 | Nitro:162-163 |
 | `held_eq_channel_balances` | `Safety.lean` | Coins held equal the sum of channel balances on every reachable state. | ForceMove-F04, Nitro-05, Nitro-08, docs-C-01 | Nitro:230-231 |
 | `balances_total_split` | `Safety.lean` | All balances = channel balances + coins paid out. | Nitro-08 | docs |
-| `deposit_effects` | `Safety.lean` | A deposit adds exactly x to one balance and to the coins held. | ForceMove-C01, Nitro-04, Nitro-05, docs-0060-03, docs-0060-04, docs-0060-05 | go-nitro MultiAssetHolder.sol:57-60 |
-| `deposit_can_happen` | `Safety.lean` | Any caller can deposit to any channel; exact result. | Nitro-04, docs-0060-01 | Nitro:166-167 |
+| `deposit_effects` | `Safety.lean` | A successful deposit saw expectedHeld and adds exactly x to that holding and to the coins held. | ForceMove-C01, Nitro-04, Nitro-05, docs-0060-02, docs-0060-03, docs-0060-04, docs-0060-05 | go-nitro MultiAssetHolder.sol:51 |
+| `deposit_can_happen` | `Safety.lean` | A deposit with expectedHeld equal to the current holding succeeds for any caller; exact result. | Nitro-04, docs-0060-01 | Nitro:166-167 |
+| `deposit_requires_expectedHeld` | `Safety.lean` | A deposit whose expectedHeld differs from the holding fails (compare-and-swap guard). | docs-0060-02 | go-nitro MultiAssetHolder.sol:51 |
+| `deposit_respects_funding_order` | `Safety.lean` | A funder depositing with expectedHeld = allocations ahead of it succeeds only when they are held; its coins pay no entry ahead of it. | ForceMove-B07, docs-0060-02, docs-0060-06 | ForceMove:1197-1208 |
+| `deposits_in_order_succeed` | `Safety.lean` | Deposits in pre-funding order with the correct expectedHeld all succeed and fully fund the channel. | ForceMove-C01, docs-0060-02 | ForceMove:1797-1808 |
 | `deposit_to_participant_fails` | `Safety.lean` | A deposit to a participant address fails (go-nitro). | Nitro-04, docs-0060-01 | go-nitro MultiAssetHolder.sol:43 |
 | `held_falls_only_by_payout` | `Safety.lean` | Coins leave the contract only by a redistribution paying one participant. | Nitro-06, Nitro-07, SATP-16 | go-nitro MultiAssetHolder.sol:396-408 |
 | `channel_balance_falls_only_by_redistribution` | `Safety.lean` | A channel balance falls only by a redistribution. | Nitro-07 | Nitro:227-229 |
@@ -361,7 +367,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `subchannel_open_value_preserving` | `Liveness.lean` | Opening a sub-channel preserves value. | Nitro-49, docs-0060-07 | Nitro:891-922 |
 | `subchannel_close_value_preserving` | `Liveness.lean` | Closing a sub-channel preserves value. | Nitro-49, docs-0080-07 | Nitro:939-957 |
 | `ledger_topup_reorder_safe` | `Liveness.lean` | Moving A to the end of an underfunded ledger pays A the same. | Nitro-49, docs-0060-05 | Nitro:959-995 |
-| `ledger_topup_deposit_funds` | `Liveness.lean` | After the top-up deposit every entry is affordable in full. | Nitro-04, Nitro-49 | Nitro:989-995 |
+| `ledger_topup_deposit_funds` | `Liveness.lean` | After the top-up deposit every entry is affordable in full. | Nitro-04, Nitro-49, docs-0060-05 | Nitro:989-995 |
 | `ledger_partial_withdrawal` | `Liveness.lean` | A partial withdrawal pays A with no wait and funds the new ledger. | Nitro-49 | Nitro:997-1047 |
 | `satp_outcome_change_keeps_total` | `Liveness.lean` | validateOutcomeChange keeps the funded total of the start state. | SATP-18, SATP-19 | SATP:707-709 |
 | `satp_lemma_3_1` | `Liveness.lean` | Lemma 3.1: V finalizes at version 0 with the original outcome or with the same total. | SATP-19, SATP-21 | SATP:511-513 |

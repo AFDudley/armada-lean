@@ -228,7 +228,7 @@ theorem turbo_redistribution_unbeatable (apps : Apps) {p : Participant} (T : Thr
     value of the deposit." -/
 theorem deposit_bounds_value (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (net : NetworkState p) (c : FixedPart) (y x x' : Coins)
-    (s' : Adjudicator) (hd : net.chain.deposit c.address y = some s')
+    (s' : Adjudicator) (e : Coins) (hd : net.chain.deposit c.address e y = some s')
     (hv : Value apps T net x) (hv' : Value apps T { net with chain := s' } x') :
     x ≤ x' ∧ x' ≤ x + y := by
   sorry
@@ -361,13 +361,17 @@ theorem ledger_topup_reorder_safe (A B χ : Address) (a b c a' : Coins) (hAB : A
     Allocation.paidTo (a + b + c) [alloc B b, alloc χ c, alloc A (a + a')] χ = c := by
   sorry
 
-/-- Nitro-49 (Nitro:989-995, §5.4.3 steps 3-4), Nitro-04. After the deposit
-    `D_L(a')` the reordered outcome is fully funded: every entry, including
-    `A`'s raised one, is affordable in full. -/
-theorem ledger_topup_deposit_funds (A B χ : Address) (a b c a' : Coins) (hAB : A ≠ B)
-    (hAχ : A ≠ χ) (hBχ : B ≠ χ) :
-    Allocation.paidTo (a + b + c + a') [alloc B b, alloc χ c, alloc A (a + a')] A = a + a' ∧
-    Allocation.paidTo (a + b + c + a') [alloc A (a + a'), alloc B b, alloc χ c] A = a + a' := by
+/-- Nitro-49 (Nitro:989-995, §5.4.3 steps 3-4), Nitro-04, docs-0060-05.
+    After the deposit `D_L(a')`, made with `expectedHeld = a + b + c` (the
+    ledger's holding `A` saw), the reordered outcome is fully funded: every
+    entry, including `A`'s raised one, is affordable in full. -/
+theorem ledger_topup_deposit_funds (s s' : Adjudicator) (L : FixedPart) (A B χ : Address)
+    (a b c a' : Coins) (hAB : A ≠ B) (hAχ : A ≠ χ) (hBχ : B ≠ χ)
+    (hheld : s.balances.get L.address = a + b + c)
+    (hd : s.deposit L.address (a + b + c) a' = some s') :
+    s'.balances.get L.address = a + b + c + a' ∧
+    Allocation.paidTo (s'.balances.get L.address) [alloc B b, alloc χ c, alloc A (a + a')] A = a + a' ∧
+    Allocation.paidTo (s'.balances.get L.address) [alloc A (a + a'), alloc B b, alloc χ c] A = a + a' := by
   sorry
 
 /-- Nitro-49 (Nitro:997-1047, §5.4.4 Partial Withdrawal from a Ledger Channel).
