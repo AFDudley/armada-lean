@@ -203,6 +203,50 @@ theorem finalized_channel_stays_finalized {call : Call} {s s' : ArmadaState}
     (s'.chanOf t c).status.mode s'.now = .finalized := by
   sorry
 
+/-! ### Payout rule B and the minimum credit (operator rulings 2026-10-27,
+    armada-laconic `labbook/2026-10-27-payout-griefing.md`) -/
+
+/-- **Payout rule B.** A transfer pays exactly the affordable amount (go-nitro
+    MultiAssetHolder.sol:66, 162-191), and a positive credit into a finalized
+    channel is at least `cfg.minCredit`. Option A, any `x ≤` the affordable
+    amount (Nitro:765-772), was rejected: under A an attacker pays the payee
+    one unit at a time and makes each pending payout stale, with no bound. -/
+theorem transfer_pays_affordable {s s' : ArmadaState} {t : Token} {c : FixedPart}
+    {b : Address} {ins : List Note} {x : Coins}
+    (h : ArmadaStep cfg apps (.transfer t c b ins x) s s') :
+    ∃ o, (s.chanOf t c).status.finalOutcome s.now = some (.allocation o) ∧
+      s.payout t c o b = x ∧ (0 < x → CreditAllowed cfg s t b x) := by
+  sorry
+
+/-- **Check order.** A transfer whose amount differs from the channel's
+    affordable amount fails on the adjudicator's record alone: it fails for
+    every pool state, every list of spent notes, and so for every pool witness
+    and proof. The refinement to the contract must place this check before
+    the pool call. A stale payout then costs its submitter one cheap failed
+    call, not a full pool spend; the attacker who made it stale paid two pool
+    spends, one conclude and the credited amount (cost asymmetry,
+    `labbook/2026-10-27-payout-griefing.md`, "Cost asymmetry, and the
+    check-order rule"). -/
+theorem transfer_wrong_amount_fails (s : ArmadaState) (t : Token) (c : FixedPart) (b : Address)
+    (x : Coins) (o : Allocation)
+    (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
+    (hx : s.payout t c o b ≠ x) :
+    ∀ (ps : PoolState) (ins : List Note),
+      ¬ CallEnabled cfg apps { s with pool := ps } (.transfer t c b ins x) := by
+  sorry
+
+/-- **Minimum credit.** A positive credit smaller than `cfg.minCredit` into a
+    channel `d` that is already finalized fails, for every pool state and every
+    list of spent notes. Like `transfer_wrong_amount_fails`, the check reads
+    only the adjudicator's record and the clock, and the refinement must place
+    it before the pool call. -/
+theorem credit_below_minimum_fails (s : ArmadaState) (t : Token) (c d : FixedPart) (x : Coins)
+    (hfin : (s.chanOf t d).status.mode s.now = .finalized) (hpos : 0 < x)
+    (hx : x < cfg.minCredit) :
+    ∀ (ps : PoolState) (ins : List Note),
+      ¬ CallEnabled cfg apps { s with pool := ps } (.transfer t c d.address ins x) := by
+  sorry
+
 /-! ### Non-interference (utxo labbook issue I3) -/
 
 /-- **Only permitted payouts spend a finalized channel's notes.** Once channel
@@ -236,19 +280,21 @@ theorem channel_spend_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cfg
     SpendEnabled s'.pool tn root t entries (entries.map fun e => nullifier nk e.1.2) := by
   sorry
 
-/-- **Non-interference for a pending payout.** Let channel `c` be finalized
-    with allocation `o`, and let the transfer of `c`'s entry for `b` from the
-    notes `ins`, of amount `x`, be executable at `s`. After any step by any
-    caller, the same transfer is still executable, or the step is one of:
-    * a transfer on `c` (it pays one of `c`'s outcome entries);
-    * a reclaim with ledger `c` (it redistributes one of `c`'s outcome
-      entries, a guarantee);
-    * a transfer on another channel that credits `c`, while `c` does not
-      afford `b`'s entry in full. The credit raises the affordable amount
-      above `x`, and the pending payout's pool proof fixes `x`.
-    The third case is the counterexample to the strong reading "only by paying
-    one of `c`'s outcome entries" (`docs/armada-nitro-theorems.md`, finding
-    F1). The pool part of the proof is `spend_not_blocked`
+/-- **Non-interference for a pending payout, as a bound.** Let channel `c` be
+    finalized with allocation `o`, and let the transfer of `c`'s entry for `b`
+    from the notes `ins`, of amount `x`, be executable at `s`. After any step
+    by any caller, the same transfer is still executable, or the step is one
+    of:
+    * a positive payout on `c`. By payout rule B it pays one of `c`'s entries
+      its whole affordable amount;
+    * a reclaim with ledger `c` (it removes one of `c`'s guarantee entries);
+    * a positive credit into `c` from another channel's payout, of at least
+      `cfg.minCredit`, while `c` does not afford `b`'s entry in full;
+    * a step that finalizes the destination channel `d` of the pending payout,
+      when `0 < x < cfg.minCredit`. The pending credit then falls below the
+      minimum (finding F6).
+    `finalized_staling_calls_bounded` counts the first two kinds and bounds the
+    payouts by the credits. The pool part of the proof is `spend_not_blocked`
     (PoolSafety.lean:1797), through `channel_spend_not_blocked`. -/
 theorem pending_payout_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cfg apps s)
     {t : Token} {c : FixedPart} {b : Address} {ins : List Note} {x : Coins} {o : Allocation}
@@ -256,10 +302,53 @@ theorem pending_payout_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cf
     (hEn : CallEnabled cfg apps s (.transfer t c b ins x))
     {call : Call} (h : ArmadaStep cfg apps call s s') :
     CallEnabled cfg apps s' (.transfer t c b ins x) ∨
-    (∃ b' ins' x', call = .transfer t c b' ins' x') ∨
+    (∃ b' ins' x', call = .transfer t c b' ins' x' ∧ 0 < x' ∧ x' = s.payout t c o b') ∨
     (∃ v, call = .reclaim t c v) ∨
-    (∃ d ins' x', call = .transfer t d c.address ins' x' ∧
-      ¬ o.Affords (s.balance t c) b (o.owed b)) := by
+    (∃ d ins' x', call = .transfer t d c.address ins' x' ∧ 0 < x' ∧ cfg.minCredit ≤ x' ∧
+      ¬ o.Affords (s.balance t c) b (o.owed b)) ∨
+    (∃ d, b = d.address ∧ 0 < x ∧ x < cfg.minCredit ∧
+      (s.chanOf t d).status.mode s.now ≠ .finalized ∧
+      (s'.chanOf t d).status.mode s'.now = .finalized) := by
+  sorry
+
+/-- **Counting the calls that can make a payout on a finalized channel stale.**
+    Let channel `c` be finalized with allocation `o` at `s`, and take any
+    sequence of steps from `s`. Then:
+    * the reclaims with ledger `c` are at most the guarantee items of `o`
+      (each one removes a guarantee entry, and no step adds one);
+    * every positive credit into `c` is at least `cfg.minCredit`;
+    * the positive payouts on `c` are at most `o.length` times one plus the
+      number of positive credits into `c` and reclaims with ledger `c`.
+    Reason for the third bound: a positive payout on `c` pays one entry its
+    affordable amount. After it, that entry affords nothing, and no other
+    entry's affordable amount changes. Only a credit or a reclaim raises an
+    affordable amount again. So without credits and reclaims the payouts are
+    at most `o.length`. With them, they are not: `c` with outcome `[p : 10]`
+    and balance 4 pays `p` 4, receives a credit of 3, and pays `p` 3, which
+    is two payouts of one entry (finding F7). [INFERENCE: the bound argument
+    is by hand, not checked in Lean.] -/
+theorem finalized_staling_calls_bounded {s s' : ArmadaState} (hs : ArmadaReachable cfg apps s)
+    {t : Token} {c : FixedPart} {o : Allocation}
+    (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
+    {calls : List Call} (h : Steps cfg apps s calls s') :
+    (calls.filter (Call.isReclaimAgainst t c)).length ≤ guaranteeCount o ∧
+    (∀ d ins x, Call.transfer t d c.address ins x ∈ calls → 0 < x → cfg.minCredit ≤ x) ∧
+    (calls.filter (Call.isPayoutOn t c)).length ≤
+      o.length * (1 + (calls.filter (Call.isCreditTo t c)).length +
+        (calls.filter (Call.isReclaimAgainst t c)).length) := by
+  sorry
+
+/-- The count "payouts at most the entries", where it holds: along a sequence of
+    steps from a finalized `c` with no positive credit into `c` and no reclaim
+    with ledger `c`, the positive payouts on `c` are at most the entries of
+    `c`'s outcome. -/
+theorem finalized_payouts_le_entries {s s' : ArmadaState} (hs : ArmadaReachable cfg apps s)
+    {t : Token} {c : FixedPart} {o : Allocation}
+    (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
+    {calls : List Call} (h : Steps cfg apps s calls s')
+    (hnoCredit : calls.filter (Call.isCreditTo t c) = [])
+    (hnoReclaim : calls.filter (Call.isReclaimAgainst t c) = []) :
+    (calls.filter (Call.isPayoutOn t c)).length ≤ o.length := by
   sorry
 
 end ArmadaLean.ArmadaNitro

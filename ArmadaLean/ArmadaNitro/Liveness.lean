@@ -38,20 +38,24 @@ variable {cfg : Config} {apps : Apps}
     channel note keyed to the adjudicator with value `x`. -/
 def PaidNote (cfg : Config) (s : ArmadaState) (t : Token) (b : Address) (x : Coins) : Prop :=
   match b with
-  | .participant p => ∃ e ∈ (s.book t).paymentsTo p, e ∈ s.pool.live t ∧ e.2 = ⟨cfg.payeeKey p, t, x⟩
-  | .channel d => ∃ e ∈ (s.chanOf t d).notes, e ∈ s.pool.live t ∧ e.2.value = x ∧ OwnedBy cfg.self e.2
+  | .participant p =>
+    ∃ e ∈ (s.book t).paymentsTo p, e ∈ s.pool.live t ∧ e.2 = ⟨cfg.payeeKey p, t, x⟩
+  | .channel d =>
+    ∃ e ∈ (s.chanOf t d).notes, e ∈ s.pool.live t ∧ e.2.value = x ∧ OwnedBy cfg.self e.2
 
 /-! ### Chain level -/
 
 /-- **Payout guarantee at note level** (Nitro `transfer_can_happen`,
     `directly_funded_pays`). On a finalized channel, an allocation entry that
     the channel affords a positive amount can be paid from the channel's
-    notes. The payee gets a note of exactly the affordable amount. -/
+    notes, if a payout to a channel meets the minimum credit (`hcredit`). The
+    payee gets a note of exactly the affordable amount. -/
 theorem finalized_affordable_pays (hPool : PoolExecutes cfg) {s : ArmadaState}
     (hs : ArmadaReachable cfg apps s) {t : Token} {c : FixedPart} {b : Address}
     {o : Allocation} {amt : Coins}
     (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
-    (hb : o.find b = some ⟨b, .alloc amt⟩) (hpos : 0 < s.payout t c o b) :
+    (hb : o.find b = some ⟨b, .alloc amt⟩) (hpos : 0 < s.payout t c o b)
+    (hcredit : CreditAllowed cfg s t b (s.payout t c o b)) :
     ∃ s', ArmadaStep cfg apps (.transfer t c b (s.chanOf t c).notes (s.payout t c o b)) s s' ∧
       PaidNote cfg s' t b (s.payout t c o b) := by
   sorry
@@ -112,10 +116,12 @@ theorem directly_funded_pays_notes {p : Participant} (T : Threat p)
 /-- **Ledger offload at note level** (Nitro `ledger_offload_funds_subchannel`,
     Nitro:859-865). A ledger channel funds its sub-channel `χ` for both
     participants: each can obtain a state in which `χ`'s notes total at least
-    `c`. -/
+    `c`. `hmin`: the credit `c` meets the minimum credit, because `χ` can
+    finalize before `L` pays it. -/
 theorem ledger_offload_funds_subchannel_notes (Ts : Threats cfg apps) (hPool : PoolExecutes cfg)
     (v : Views) (hv : v.Consistent) (hs : ∀ p, ArmadaReachable cfg apps (v p).chain)
-    (t : Token) (w : Nitro.LedgerWithSub) (hw : HoldsLedgerWithSub cfg apps Ts v t w) :
+    (t : Token) (w : Nitro.LedgerWithSub) (hw : HoldsLedgerWithSub cfg apps Ts v t w)
+    (hmin : cfg.minCredit ≤ w.c) :
     FundedFor cfg apps (Ts.T w.A) t w.χ w.c (v w.A) ∧
     FundedFor cfg apps (Ts.T w.B) t w.χ w.c (v w.B) := by
   sorry
@@ -125,14 +131,16 @@ theorem ledger_offload_funds_subchannel_notes (Ts : Threats cfg apps) (hPool : P
     `[L ↦ (L' : a + b + c, A : a')]` and `L`'s notes totalling
     `a + b + c + a'`, `A` obtains payment notes worth `a'` with no wait and
     leaves `L`'s entry for `A` fully paid (finding F2), and `L'`'s notes can
-    be raised to `a + b + c` for `A` and for `B`. -/
+    be raised to `a + b + c` for `A` and for `B`. `hmin`: the credit into `L'`
+    meets the minimum credit. -/
 theorem ledger_partial_withdrawal_notes (Ts : Threats cfg apps) (hPool : PoolExecutes cfg)
     (v : Views) (hv : v.Consistent) (hs : ∀ p, ArmadaReachable cfg apps (v p).chain)
     (t : Token) (A B : Participant) (L L' χ : FixedPart) (a b c a' : Coins)
     (hL : IsLedgerChannel apps L) (hL' : IsLedgerChannel apps L') (hLp : L.participants = [A, B])
-    (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L')
+    (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L') (hmin : cfg.minCredit ≤ a + b + c)
     (hbal : ∀ p, (v p).chain.balance t L = a + b + c + a')
-    (hconc : Concluded (v.nitro t) L (.allocation [alloc L'.address (a + b + c), alloc A.address a']))
+    (hconc : Concluded (v.nitro t) L
+      (.allocation [alloc L'.address (a + b + c), alloc A.address a']))
     (hsent : ∀ p, ∀ s ∈ (v p).sent, s.state.channel = L → s.state.isFinal = true →
       s.state.outcome = .allocation [alloc L'.address (a + b + c), alloc A.address a'])
     (hopen : ∀ p, ((v p).view t).chain.finalOutcome L.address = none)

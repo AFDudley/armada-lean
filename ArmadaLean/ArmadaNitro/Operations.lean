@@ -108,6 +108,15 @@ def ArmadaState.payout (s : ArmadaState) (t : Token) (c : FixedPart) (o : Alloca
     (b : Address) : Coins :=
   o.paidTo (s.balance t c) b
 
+/-- The minimum-credit rule (operator ruling 2026-10-27, armada-laconic
+    `labbook/2026-10-27-payout-griefing.md`): a credit of `x` into a channel
+    `d` that is already finalized needs `cfg.minCredit ≤ x`. A payment to a
+    participant has no minimum. The rule reads only the adjudicator's record
+    and the clock, not the pool. -/
+def CreditAllowed (cfg : Config) (s : ArmadaState) (t : Token) : Address → Coins → Prop
+  | .participant _, _ => True
+  | .channel d, x => (s.chanOf t d).status.mode s.now = .finalized → cfg.minCredit ≤ x
+
 /-- One successful step of the Armada system, labelled by its call. -/
 inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → ArmadaState → Prop
   /-- Another pool user acts in the pool. The adjudicator's record does not
@@ -138,8 +147,9 @@ inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → Arm
       ArmadaStep cfg apps (.deposit t c expectedHeld x fund merged) s
         ({ s with pool := ps2 }.setChan t c { s.chanOf t c with notes := keep ++ [new] })
   /-- Transfer of an entry that the channel affords nothing (Nitro
-      `transfer_zero_moves_nothing`). The call spends no note, so it cannot
-      make another caller's pending payout stale. -/
+      `transfer_zero_moves_nothing`). The call spends no note and creates no
+      note, so it credits nothing and cannot make another caller's pending
+      payout stale. -/
   | transferZero {s : ArmadaState} (t : Token) (c : FixedPart) (b : Address) (o : Allocation)
       (hFin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
       (hEntry : ∃ amt, o.find b = some ⟨b, .alloc amt⟩)
@@ -149,16 +159,19 @@ inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → Arm
           status := (s.chanOf t c).status.withOutcome (.allocation (o.reduceOwed b 0)) })
   /-- Transfer (go-nitro MultiAssetHolder.sol:72-100; Nitro:765-772). The
       channel is finalized with an allocation that has an allocation entry for
-      `b` (ruling 3). The submitted amount `x` is the affordable amount, and
-      `x > 0`. The call spends only the channel notes `ins`. It creates the
-      payout note `pay` of value `x` with the note key of `b` (ruling 4) and
-      the change note `change`, the one note that goes back to the channel
-      (ruling 3). -/
+      `b` (ruling 3). Payout rule B (operator ruling 2026-10-27): the submitted
+      amount `x` is exactly the affordable amount, and `x > 0`. A credit into
+      a finalized channel is at least `cfg.minCredit` (`hCredit`). The two
+      checks read only the adjudicator's record (`transfer_wrong_amount_fails`,
+      `credit_below_minimum_fails`). The call spends only the channel notes
+      `ins`. It creates the payout note `pay` of value `x` with the note key
+      of `b` (ruling 4) and the change note `change`, the one note that goes
+      back to the channel (ruling 3). -/
   | transfer {s : ArmadaState} (t : Token) (c : FixedPart) (b : Address) (o : Allocation)
       (ins keep : List Note) (x : Coins) (ps' : PoolState) (pay change : Note)
       (hFin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
       (hEntry : ∃ amt, o.find b = some ⟨b, .alloc amt⟩)
-      (hX : s.payout t c o b = x) (hPos : 0 < x)
+      (hX : s.payout t c o b = x) (hPos : 0 < x) (hCredit : CreditAllowed cfg s t b x)
       (hIns : (s.chanOf t c).notes.Perm (ins ++ keep))
       (hCall : PoolCall s.pool ps' t ins [pay, change])
       (hPay : pay.2.value = x ∧ PayKey cfg b pay.2)
@@ -202,5 +215,34 @@ def ArmadaReachable (cfg : Config) (apps : Apps) (s : ArmadaState) : Prop :=
 /-- The call `call` can execute at `s`. -/
 def CallEnabled (cfg : Config) (apps : Apps) (s : ArmadaState) (call : Call) : Prop :=
   ∃ s', ArmadaStep cfg apps call s s'
+
+/-- A sequence of steps with its list of calls, from `s` to `s'`. Mathlib's
+    `Relation.ReflTransGen` does not record the labels; the counting theorem
+    needs them. -/
+inductive Steps (cfg : Config) (apps : Apps) : ArmadaState → List Call → ArmadaState → Prop
+  | nil {s : ArmadaState} : Steps cfg apps s [] s
+  | cons {s s1 s' : ArmadaState} {call : Call} {calls : List Call} :
+      ArmadaStep cfg apps call s s1 → Steps cfg apps s1 calls s' →
+        Steps cfg apps s (call :: calls) s'
+
+/-- The call is a payout of a positive amount on channel `c` in token `t`. -/
+def Call.isPayoutOn (t : Token) (c : FixedPart) : Call → Bool
+  | .transfer t' c' _ _ x => decide (t' = t) && decide (c' = c) && decide (0 < x)
+  | _ => false
+
+/-- The call is a reclaim with ledger channel `c` in token `t`. -/
+def Call.isReclaimAgainst (t : Token) (c : FixedPart) : Call → Bool
+  | .reclaim t' l _ => decide (t' = t) && decide (l = c)
+  | _ => false
+
+/-- The call credits a positive amount into channel `c` in token `t`: a payout
+    of any channel, `c` included, whose destination is `c`. -/
+def Call.isCreditTo (t : Token) (c : FixedPart) : Call → Bool
+  | .transfer t' _ b _ x => decide (t' = t) && decide (b = c.address) && decide (0 < x)
+  | _ => false
+
+/-- The number of guarantee items in an allocation (SATP:322-323). -/
+def guaranteeCount (o : Allocation) : Nat :=
+  (o.filter (fun e => e.item.isGuarantee)).length
 
 end ArmadaLean.ArmadaNitro
