@@ -454,7 +454,10 @@ theorem applyAdv_now_le (apps : Apps E) {p : Participant} (m : AdvMove E) (n : N
 
 theorem applyAdv_sent (apps : Apps E) {p : Participant} (m : AdvMove E) (n : NetworkState E p) :
     (n.applyAdv apps m).sent = n.sent := by
-  cases m <;> rfl
+  cases m with
+  | chain caller op => simp only [NetworkState.applyAdv]; cases n.chain.apply apps caller op <;> rfl
+  | deliver ss => rfl
+  | tick dt => rfl
 
 theorem FeasibleSeq.now_le {apps : Apps E} {p : Participant} {T : Threat E p}
     {n n' : NetworkState E p} {advs : List (AdvMove E)} (h : T.FeasibleSeq apps n advs n') :
@@ -495,7 +498,8 @@ theorem FeasibleSeq.inv0 {apps : Apps E} {p : Participant} {T : Threat E p}
 /-- Applying a chain operation, as `applyAdv` and `applyHonest` do. -/
 theorem chain_applyAdv (apps : Apps E) {p : Participant} (caller : Participant) (op : Op E)
     (n : NetworkState E p) :
-    (n.applyAdv apps (.chain caller op)).chain = (n.chain.apply apps caller op).getD n.chain := rfl
+    (n.applyAdv apps (.chain caller op)).chain = (n.chain.apply apps caller op).getD n.chain := by
+  simp only [NetworkState.applyAdv]; cases n.chain.apply apps caller op <;> rfl
 
 /-- The chain part of the invariant of `conclude_strategy`. -/
 def ConcludeInv (c : FixedPart) (Ω : Outcome E) (t1 : Time) (s : Adjudicator E) : Prop :=
@@ -613,7 +617,7 @@ theorem conclude_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
       exact concludeInv_apply happ n.sent hp (by simp [Op.proofStates]) (hs0 ▸ hsent) hdur ht0
         hlt hk
     | chain caller op =>
-      show ConcludeInv c Ω _ ((n.chain.apply apps caller op).getD n.chain)
+      rw [chain_applyAdv]
       cases happ : n.chain.apply apps caller op with
       | none => exact hk
       | some s' =>
@@ -722,7 +726,7 @@ theorem wait_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
       have happ : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
       exact waitInv_apply happ n.sent hc hp (by simp [Op.proofStates]) (hs0 ▸ hsent) hk
     | chain caller op =>
-      show WaitInv c T0 ch ((n.chain.apply apps caller op).getD n.chain)
+      rw [chain_applyAdv]
       cases happ : n.chain.apply apps caller op with
       | none => exact hk
       | some s' =>
@@ -793,7 +797,7 @@ theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
     (n.applyAdv apps m).chain.finalizedWith c.address = some f := by
   cases m with
   | chain caller op =>
-    show ((n.chain.apply apps caller op).getD n.chain).finalizedWith c.address = some f
+    rw [chain_applyAdv]
     cases happ : n.chain.apply apps caller op with
     | none => exact hf
     | some s' => exact finalizedWith_apply happ hf
@@ -1059,11 +1063,6 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
       by_contra hne
       exact hen (prevents_other_outcome _ _ _ _ _ _ rfl hne)⟩
 
-/-- `finalizable_is_enabled`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
-    Assumptions apps0 p0 (canon p0) ∧ Finalizable apps0 (canon p0) c Ω net :=
-  ⟨⟨sCon, [], []⟩, c1, _, canon_ok _ _, .done rfl⟩
-
 /-- `funding_point_universally_finalizable`: `c1` (one participant) under the
     ForceMove rules; `p0` signed the turn-0 state. -/
 def apps1 : Apps Nat := fun _ => forceMoveRules vtAll
@@ -1225,9 +1224,11 @@ def wLS : LedgerWithSub Nat := ⟨p0, q0, 0, 1, cLW, cχ, 0, 0, 0⟩
 def sLW : Adjudicator Nat := g0.setStatus cLW (.finalized 0 wLS.outcome wLS.outcome)
 
 /-- `ledger_offload_funds_subchannel`. -/
-example : ∃ (v : Views Nat) (w : LedgerWithSub Nat), v.Consistent ∧ w.Holds apps0 (Ts apps0) v :=
-  ⟨views0 sLW, wLS, views0_consistent _, rfl, rfl, fun _ => rfl,
-    fun _ _ => .done rfl⟩
+example : ∃ (v : Views Nat) (w : LedgerWithSub Nat), v.Consistent ∧ w.Holds apps0 (Ts apps0) v ∧
+    (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
+    (∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) :=
+  ⟨views0 sLW, wLS, views0_consistent _, ⟨rfl, rfl, fun _ => rfl, fun _ _ => .done rfl⟩,
+    fun _ => rfl, fun _ _ h => absurd h List.not_mem_nil⟩
 
 /-- A final state of `cLW` with outcome `Ω`, the views where both
     participants signed it, and the strategy "conclude" for each of them. -/

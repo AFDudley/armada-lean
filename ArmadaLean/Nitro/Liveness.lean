@@ -181,13 +181,6 @@ theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Thr
     Finalizable apps T c Ω net := by
   sorry
 
-/-- Nitro-24, Nitro-21. A finalizable outcome is enabled: `p` cannot prevent what
-    `p` can force. -/
-theorem finalizable_is_enabled (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p) (c : FixedPart) (Ω : Outcome E)
-    (h : Finalizable apps T c Ω net) : Enabled apps T c Ω net := by
-  sorry
-
 /-- Nitro-23, ForceMove-B06, ForceMove-A06, ForceMove-A07. Nitro:635-636, Nitro:639-640: at the funding
     point, "After the first n states have been broadcast", the outcome is
     universally finalizable. ForceMove:862-871: the prefund states are "exactly what
@@ -344,9 +337,14 @@ theorem turbo_value_exists_unique (s : Adjudicator E) (hdag : s.IsDAG) (n : Addr
     L for both A and B ... Once it is on-chain, the transfer operation
     T(L, χ, 6) is all that is required to make χ directly funded. From the
     Turbo redistribution result, we know that this redistribution strategy is
-    unbeatable." -/
+    unbeatable." G16 (`docs/nitro-repair-2026-10-27.md`, defect 23): the
+    adversary can transfer `L → χ` and then `χ → q` within one prefix, so
+    `χ` must not finalize during the strategy, as `ledger_partial_withdrawal`
+    already requires of its receiving ledger. -/
 theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (w : LedgerWithSub E) (hw : w.Holds apps Ts v) :
+    (hv : v.Consistent) (w : LedgerWithSub E) (hw : w.Holds apps Ts v)
+    (hχopen : ∀ p, (v p).chain.finalOutcome w.χ.address = none)
+    (hχsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) :
     FundedFor apps (Ts.T w.A) w.χ w.c (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.c (v w.B) := by
   sorry
 

@@ -85,11 +85,22 @@ def NetworkState.applyHonest (apps : Apps E) {p : Participant}
   | .send st => { net with sent := ⟨st, [p]⟩ :: net.sent }
   | .wait dt => { net with chain := net.chain.tick dt }
 
-/-- Apply an adversary move. -/
+/-- Apply an adversary move. D9 repair (`docs/nitro-repair-2026-10-27.md`):
+    go-nitro emits the signed states of a challenge (`ChallengeRegistered`)
+    and a checkpoint is calldata, so every on-chain call makes its proof
+    states public. A successful chain operation adds `op.proofStates` to
+    `received`: the honest participant can then answer a challenge or
+    checkpoint it did not see delivered, closing the gap that let the
+    adversary register an undeliverable state (theorems
+    `funding_point_universally_finalizable`, `satp_peers_can_finalize`,
+    `satp_theorem_3_2` in the re-audit). -/
 def NetworkState.applyAdv (apps : Apps E) {p : Participant}
     (m : AdvMove E) (net : NetworkState E p) : NetworkState E p :=
   match m with
-  | .chain caller op => { net with chain := (net.chain.apply apps caller op).getD net.chain }
+  | .chain caller op =>
+    match net.chain.apply apps caller op with
+    | some s' => { net with chain := s', received := op.proofStates ++ net.received }
+    | none => net
   | .deliver ss => { net with received := ss :: net.received }
   | .tick dt => { net with chain := net.chain.tick dt }
 

@@ -181,10 +181,10 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-18 | definition Value; theorem turbo_value_is_value |
 | Nitro-19 | game rule Threat.ε, Threat.Round (Nitro:537-539) |
 | Nitro-20 | definition Unbeatable (front-running is the adversary prefix in Unbeatable.move) |
-| Nitro-21 | definition Finalizable; theorem finalizable_funded_pays |
+| Nitro-21 | definition Finalizable; theorem finalizable_funded_pays, finalizable_or_two_enabled, single_enabled_is_finalizable |
 | Nitro-22 | theorem finalizable_unique, channel_finalizability_cases |
 | Nitro-23 | theorem funding_point_universally_finalizable, concluded_universally_finalizable |
-| Nitro-24 | definition Enabled; theorem finalizable_or_two_enabled, single_enabled_is_finalizable, finalizable_is_enabled |
+| Nitro-24 | definition Enabled; theorem finalizable_or_two_enabled, single_enabled_is_finalizable |
 | Nitro-25 | definition Allocation.dedup; theorem paidTo_first_entry_only |
 | Nitro-26 | theorem payout_priority_formula, payout_bounded |
 | Nitro-27 | definition Allocation.Affords; theorem affords_when_fully_funded |
@@ -375,9 +375,8 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `late_observer_can_checkpoint` | `Liveness.lean` | A participant with a higher supported state can reopen a challenged channel. | ForceMove-B05 | ForceMove:1511-1529 |
 | `finalizable_unique` | `Liveness.lean` | Two participants cannot each force different outcomes of one channel. | Nitro-22 | Nitro:612-614 |
 | `channel_finalizability_cases` | `Liveness.lean` | A channel is in one of the four finalizability cases. | Nitro-22 | Nitro:597-611 |
-| `finalizable_or_two_enabled` | `Liveness.lean` | A participant has a finalizable outcome or two enabled outcomes. | Nitro-24 | Nitro:653-656 |
-| `single_enabled_is_finalizable` | `Liveness.lean` | A single enabled outcome is finalizable. | Nitro-24 | Nitro:657-658 |
-| `finalizable_is_enabled` | `Liveness.lean` | A finalizable outcome is enabled. | Nitro-21, Nitro-24 | docs |
+| `finalizable_or_two_enabled` | `Liveness.lean` | A participant has a finalizable outcome or two enabled outcomes. | Nitro-21, Nitro-24 | Nitro:653-656 |
+| `single_enabled_is_finalizable` | `Liveness.lean` | A single enabled outcome is finalizable. | Nitro-21, Nitro-24 | Nitro:657-658 |
 | `funding_point_universally_finalizable` | `Liveness.lean` | At the funding point the outcome is universally finalizable. | ForceMove-A06, ForceMove-A07, ForceMove-B06, Nitro-23 | Nitro:635-636 |
 | `concluded_universally_finalizable` | `Liveness.lean` | A concluded outcome is universally finalizable. | ForceMove-A14, Nitro-23 | Nitro:637-640 |
 | `consensus_enabled_outcomes` | `Liveness.lean` | During a consensus transition only the old and new outcomes are enabled. | Nitro-49, SATP-08, docs-0020-01 | Nitro:660-688 |
