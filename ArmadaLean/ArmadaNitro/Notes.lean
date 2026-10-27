@@ -48,18 +48,12 @@ def notesValue (es : List Note) : Coins := (es.map Note.value).sum
     * `payeeKey p`: the note key at which participant `p` is paid (operator
       ruling 2026-10-27, 4).
     * `payeeKey_user`: that key is a user note key, so `p` spends the note with
-      its own spending key (Transact.circom:74-84).
-    * `minCredit`: the minimum credit into a channel that is already finalized
-      (operator ruling 2026-10-27, armada-laconic
-      `labbook/2026-10-27-payout-griefing.md`). It is a deploy-time parameter,
-      like the pool's `FeeRatio`. Every step takes the same `Config`, so no
-      step changes it. Its value is open. -/
+      its own spending key (Transact.circom:74-84). -/
 structure Config where
   self : Term
   self_isContract : ∃ inputs, self = Term.keccak inputs
   payeeKey : Participant → Term
   payeeKey_user : ∀ p, ∃ pk nk r, payeeKey p = npk (masterPublicKey pk nk) r
-  minCredit : Coins
 
 /-- A preimage is keyed to `owner`: its note key is `npk owner r` for some
     randomness `r` (TransactOwned.circom:66-70). Only `owner` can spend such a

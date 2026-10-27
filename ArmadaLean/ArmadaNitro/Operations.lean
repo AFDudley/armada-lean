@@ -82,46 +82,6 @@ def Call.challenger : Call → Option Participant
   | .challenge _ p _ _ _ => some p
   | _ => none
 
-/-- The outcome of the candidate state that a challenge, checkpoint or
-    conclude submits. Other calls submit no state. -/
-def Call.candidateOutcome : Call → Option Outcome
-  | .challenge _ _ _ _ candidate => some candidate.outcome
-  | .checkpoint _ _ _ candidate => some candidate.outcome
-  | .conclude _ _ ss => some ss.state.outcome
-  | _ => none
-
-/-- One entry obeys the outcome rule (operator ruling 2026-10-27 on finding F6,
-    option A): an allocation item to a channel destination is 0 or at least
-    `cfg.minCredit`. A participant destination has no minimum. A guarantee
-    item is not paid by a transfer (Nitro `transfer_fails_otherwise`), so the
-    rule does not apply to it; the amounts that a reclaim moves out of a
-    guarantee are `ReclaimCreditsRespectMin`. -/
-def EntryRespectsMin (cfg : Config) (e : Entry) : Prop :=
-  e.dest.isParticipant = false → e.item.isGuarantee = false →
-    e.amount = 0 ∨ cfg.minCredit ≤ e.amount
-
-instance (cfg : Config) (e : Entry) : Decidable (EntryRespectsMin cfg e) :=
-  inferInstanceAs (Decidable (e.dest.isParticipant = false → e.item.isGuarantee = false →
-    e.amount = 0 ∨ cfg.minCredit ≤ e.amount))
-
-/-- The outcome rule: every entry obeys `EntryRespectsMin`. The adjudicator
-    decides it (`Decidable` instance below). -/
-def OutcomeRespectsMin (cfg : Config) (o : Allocation) : Prop :=
-  ∀ e ∈ o, EntryRespectsMin cfg e
-
-instance (cfg : Config) (o : Allocation) : Decidable (OutcomeRespectsMin cfg o) :=
-  inferInstanceAs (Decidable (∀ e ∈ o, EntryRespectsMin cfg e))
-
-/-- The amounts that a reclaim of a guarantee `G(x, [left, right])` against the
-    target outcome `oV` adds to the ledger's entries for `left` and `right`
-    (Nitro `Adjudicator.reclaim`: `oV.amountAt 0` and `oV.amountAt 1`) obey
-    the minimum when the destination is a channel. A reclaim does not check
-    this (design choice D14); it is the hypothesis under which a reclaim keeps
-    the outcome rule. -/
-def ReclaimCreditsRespectMin (cfg : Config) (oV : Allocation) (left right : Address) : Prop :=
-  (left.isParticipant = false → oV.amountAt 0 = 0 ∨ cfg.minCredit ≤ oV.amountAt 0) ∧
-  (right.isParticipant = false → oV.amountAt 1 = 0 ∨ cfg.minCredit ≤ oV.amountAt 1)
-
 /-- The note key rule for a payout to `b` (ruling 4): a participant is paid at
     its payee key; a channel is credited with a note keyed to the
     adjudicator. -/
@@ -147,15 +107,6 @@ def ArmadaState.withNitroStatus (s : ArmadaState) (t : Token) (c : FixedPart) (n
 def ArmadaState.payout (s : ArmadaState) (t : Token) (c : FixedPart) (o : Allocation)
     (b : Address) : Coins :=
   o.paidTo (s.balance t c) b
-
-/-- The minimum-credit rule (operator ruling 2026-10-27, armada-laconic
-    `labbook/2026-10-27-payout-griefing.md`): a credit of `x` into a channel
-    `d` that is already finalized needs `cfg.minCredit ≤ x`. A payment to a
-    participant has no minimum. The rule reads only the adjudicator's record
-    and the clock, not the pool. -/
-def CreditAllowed (cfg : Config) (s : ArmadaState) (t : Token) : Address → Coins → Prop
-  | .participant _, _ => True
-  | .channel d, x => (s.chanOf t d).status.mode s.now = .finalized → cfg.minCredit ≤ x
 
 /-- One successful step of the Armada system, labelled by its call. -/
 inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → ArmadaState → Prop
@@ -188,8 +139,8 @@ inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → Arm
         ({ s with pool := ps2 }.setChan t c { s.chanOf t c with notes := keep ++ [new] })
   /-- Transfer of an entry that the channel affords nothing (Nitro
       `transfer_zero_moves_nothing`). The call spends no note and creates no
-      note, so it credits nothing and cannot make another caller's pending
-      payout stale. -/
+      note, so it cannot make another caller's pending payout stale (finding
+      F3). -/
   | transferZero {s : ArmadaState} (t : Token) (c : FixedPart) (b : Address) (o : Allocation)
       (hFin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
       (hEntry : ∃ amt, o.find b = some ⟨b, .alloc amt⟩)
@@ -200,18 +151,16 @@ inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → Arm
   /-- Transfer (go-nitro MultiAssetHolder.sol:72-100; Nitro:765-772). The
       channel is finalized with an allocation that has an allocation entry for
       `b` (ruling 3). Payout rule B (operator ruling 2026-10-27): the submitted
-      amount `x` is exactly the affordable amount, and `x > 0`. A credit into
-      a finalized channel is at least `cfg.minCredit` (`hCredit`). The two
-      checks read only the adjudicator's record (`transfer_wrong_amount_fails`,
-      `credit_below_minimum_fails`). The call spends only the channel notes
-      `ins`. It creates the payout note `pay` of value `x` with the note key
-      of `b` (ruling 4) and the change note `change`, the one note that goes
-      back to the channel (ruling 3). -/
+      amount `x` is exactly the affordable amount, and `x > 0`. The check reads
+      only the adjudicator's record (`transfer_wrong_amount_fails`). The call
+      spends only the channel notes `ins`. It creates the payout note `pay` of
+      value `x` with the note key of `b` (ruling 4) and the change note
+      `change`, the one note that goes back to the channel (ruling 3). -/
   | transfer {s : ArmadaState} (t : Token) (c : FixedPart) (b : Address) (o : Allocation)
       (ins keep : List Note) (x : Coins) (ps' : PoolState) (pay change : Note)
       (hFin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
       (hEntry : ∃ amt, o.find b = some ⟨b, .alloc amt⟩)
-      (hX : s.payout t c o b = x) (hPos : 0 < x) (hCredit : CreditAllowed cfg s t b x)
+      (hX : s.payout t c o b = x) (hPos : 0 < x)
       (hIns : (s.chanOf t c).notes.Perm (ins ++ keep))
       (hCall : PoolCall s.pool ps' t ins [pay, change])
       (hPay : pay.2.value = x ∧ PayKey cfg b pay.2)
@@ -220,32 +169,23 @@ inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → Arm
         (({ s with pool := ps' }.setChan t c
             { status := (s.chanOf t c).status.withOutcome (.allocation (o.reduceOwed b x)),
               notes := keep ++ [change] }).credit t b pay)
-  /-- Nitro `Adjudicator.reclaim` (SATP Listing 2; go-nitro `reclaim`). No
-      outcome-rule check (design choice D14). -/
+  /-- Nitro `Adjudicator.reclaim` (SATP Listing 2; go-nitro `reclaim`). -/
   | reclaim {s : ArmadaState} (t : Token) (l v : FixedPart) (n : Adjudicator)
       (h : (toNitro s t).reclaim l v = some n) :
       ArmadaStep cfg apps (.reclaim t l v) s (s.withNitroStatus t l n)
-  /-- Nitro `Adjudicator.challenge` (go-nitro ForceMove.sol:38-76), plus the
-      Armada outcome rule on the candidate (`hMin`; operator ruling
-      2026-10-27 on F6). The adjudicator rejects a candidate that breaks the
-      rule as it rejects an unsupported candidate. -/
+  /-- Nitro `Adjudicator.challenge` (go-nitro ForceMove.sol:38-76). -/
   | challenge {s : ArmadaState} (t : Token) (challenger : Participant) (c : FixedPart)
       (proof : SupportProof) (candidate : Nitro.State) (n : Adjudicator)
-      (h : Nitro.Adjudicator.challenge apps (toNitro s t) challenger c proof candidate = some n)
-      (hMin : OutcomeRespectsMin cfg candidate.outcome.entries) :
+      (h : Nitro.Adjudicator.challenge apps (toNitro s t) challenger c proof candidate = some n) :
       ArmadaStep cfg apps (.challenge t challenger c proof candidate) s (s.withNitroStatus t c n)
-  /-- Nitro `Adjudicator.checkpoint` (go-nitro ForceMove.sol:85-114), plus the
-      Armada outcome rule on the candidate (`hMin`). -/
+  /-- Nitro `Adjudicator.checkpoint` (go-nitro ForceMove.sol:85-114). -/
   | checkpoint {s : ArmadaState} (t : Token) (c : FixedPart) (proof : SupportProof)
       (candidate : Nitro.State) (n : Adjudicator)
-      (h : Nitro.Adjudicator.checkpoint apps (toNitro s t) c proof candidate = some n)
-      (hMin : OutcomeRespectsMin cfg candidate.outcome.entries) :
+      (h : Nitro.Adjudicator.checkpoint apps (toNitro s t) c proof candidate = some n) :
       ArmadaStep cfg apps (.checkpoint t c proof candidate) s (s.withNitroStatus t c n)
-  /-- Nitro `Adjudicator.conclude` (go-nitro ForceMove.sol:136-164), plus the
-      Armada outcome rule on the concluded state (`hMin`). -/
+  /-- Nitro `Adjudicator.conclude` (go-nitro ForceMove.sol:136-164). -/
   | conclude {s : ArmadaState} (t : Token) (c : FixedPart) (ss : SignedState) (n : Adjudicator)
-      (h : (toNitro s t).conclude c ss = some n)
-      (hMin : OutcomeRespectsMin cfg ss.state.outcome.entries) :
+      (h : (toNitro s t).conclude c ss = some n) :
       ArmadaStep cfg apps (.conclude t c ss) s (s.withNitroStatus t c n)
   /-- Nitro `Adjudicator.tick`: the clock moves. -/
   | tick {s : ArmadaState} (dt : Time) :

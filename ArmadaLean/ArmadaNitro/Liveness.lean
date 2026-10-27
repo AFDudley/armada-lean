@@ -48,14 +48,12 @@ def PaidNote (cfg : Config) (s : ArmadaState) (t : Token) (b : Address) (x : Coi
 /-- **Payout guarantee at note level** (Nitro `transfer_can_happen`,
     `directly_funded_pays`). On a finalized channel, an allocation entry that
     the channel affords a positive amount can be paid from the channel's
-    notes, if a payout to a channel meets the minimum credit (`hcredit`). The
-    payee gets a note of exactly the affordable amount. -/
+    notes. The payee gets a note of exactly the affordable amount. -/
 theorem finalized_affordable_pays (hPool : PoolExecutes cfg) {s : ArmadaState}
     (hs : ArmadaReachable cfg apps s) {t : Token} {c : FixedPart} {b : Address}
     {o : Allocation} {amt : Coins}
     (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
-    (hb : o.find b = some ⟨b, .alloc amt⟩) (hpos : 0 < s.payout t c o b)
-    (hcredit : CreditAllowed cfg s t b (s.payout t c o b)) :
+    (hb : o.find b = some ⟨b, .alloc amt⟩) (hpos : 0 < s.payout t c o b) :
     ∃ s', ArmadaStep cfg apps (.transfer t c b (s.chanOf t c).notes (s.payout t c o b)) s s' ∧
       PaidNote cfg s' t b (s.payout t c o b) := by
   sorry
@@ -116,12 +114,10 @@ theorem directly_funded_pays_notes {p : Participant} (T : Threat p)
 /-- **Ledger offload at note level** (Nitro `ledger_offload_funds_subchannel`,
     Nitro:859-865). A ledger channel funds its sub-channel `χ` for both
     participants: each can obtain a state in which `χ`'s notes total at least
-    `c`. `hmin`: the credit `c` meets the minimum credit, because `χ` can
-    finalize before `L` pays it. -/
+    `c`. -/
 theorem ledger_offload_funds_subchannel_notes (Ts : Threats cfg apps) (hPool : PoolExecutes cfg)
     (v : Views) (hv : v.Consistent) (hs : ∀ p, ArmadaReachable cfg apps (v p).chain)
-    (t : Token) (w : Nitro.LedgerWithSub) (hw : HoldsLedgerWithSub cfg apps Ts v t w)
-    (hmin : cfg.minCredit ≤ w.c) :
+    (t : Token) (w : Nitro.LedgerWithSub) (hw : HoldsLedgerWithSub cfg apps Ts v t w) :
     FundedFor cfg apps (Ts.T w.A) t w.χ w.c (v w.A) ∧
     FundedFor cfg apps (Ts.T w.B) t w.χ w.c (v w.B) := by
   sorry
@@ -131,13 +127,12 @@ theorem ledger_offload_funds_subchannel_notes (Ts : Threats cfg apps) (hPool : P
     `[L ↦ (L' : a + b + c, A : a')]` and `L`'s notes totalling
     `a + b + c + a'`, `A` obtains payment notes worth `a'` with no wait and
     leaves `L`'s entry for `A` fully paid (finding F2), and `L'`'s notes can
-    be raised to `a + b + c` for `A` and for `B`. `hmin`: the credit into `L'`
-    meets the minimum credit. -/
+    be raised to `a + b + c` for `A` and for `B`. -/
 theorem ledger_partial_withdrawal_notes (Ts : Threats cfg apps) (hPool : PoolExecutes cfg)
     (v : Views) (hv : v.Consistent) (hs : ∀ p, ArmadaReachable cfg apps (v p).chain)
     (t : Token) (A B : Participant) (L L' χ : FixedPart) (a b c a' : Coins)
     (hL : IsLedgerChannel apps L) (hL' : IsLedgerChannel apps L') (hLp : L.participants = [A, B])
-    (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L') (hmin : cfg.minCredit ≤ a + b + c)
+    (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L')
     (hbal : ∀ p, (v p).chain.balance t L = a + b + c + a')
     (hconc : Concluded (v.nitro t) L
       (.allocation [alloc L'.address (a + b + c), alloc A.address a']))
@@ -160,9 +155,8 @@ theorem ledger_partial_withdrawal_notes (Ts : Threats cfg apps) (hPool : PoolExe
     ledger balances `balm + balp`, with both ledgers finalized, no entry for
     `V` left, and `P`'s entries fully paid. The hypotheses are those of the
     Nitro theorem, read on the Nitro view of token `t`, plus the funding
-    hypotheses `hfundm`, `hfundp`, the hypothesis `hnofinal` that `P` sent
-    no final state of either ledger (finding F4), and `hminm`, `hminp`: the
-    ledger outcomes obey the outcome rule, so `P` can challenge with them. -/
+    hypotheses `hfundm`, `hfundp` and the hypothesis `hnofinal` that `P` sent
+    no final state of either ledger (finding F4). -/
 theorem satp_theorem_3_2_notes {P : Participant} (T : Threat P) (A : Assumptions cfg apps P T)
     (hPool : PoolExecutes cfg) (r : Route) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules)
@@ -185,8 +179,7 @@ theorem satp_theorem_3_2_notes {P : Participant} (T : Threat P) (A : Assumptions
       (net.view t).chain.finalOutcome r.V.address = none)
     (hfundm : om.total ≤ net.chain.balance t Lm) (hfundp : op.total ≤ net.chain.balance t Lp)
     (hnofinal : ∀ s ∈ net.sent, s.state.channel = Lm ∨ s.state.channel = Lp →
-      s.state.isFinal = false)
-    (hminm : OutcomeRespectsMin cfg om) (hminp : OutcomeRespectsMin cfg op) :
+      s.state.isFinal = false) :
     Unbeatable cfg apps T
       (fun net' => (net.chain.book t).paid P + balm + balp ≤ (net'.chain.book t).paid P ∧
         ∃ om' op', (net'.view t).Finalized Lm (.allocation om') ∧
@@ -199,8 +192,8 @@ theorem satp_theorem_3_2_notes {P : Participant} (T : Threat P) (A : Assumptions
     SATP:500-501). If `V` finalizes with `{A : a, B : b}`, Alice has a
     strategy to obtain payment notes worth her pre-protocol balance in `L₀`
     minus `a0` plus `a`, with `L₀` finalized, no entry for `V` left, and her
-    entry fully paid, when `L₀`'s notes cover its outcome, she sent no final
-    state of `L₀` (finding F4), and `L₀`'s outcome obeys the outcome rule. -/
+    entry fully paid, when `L₀`'s notes cover its outcome and she sent no
+    final state of `L₀` (finding F4). -/
 theorem satp_end_user_recovers_notes {P : Participant} (T : Threat P)
     (A : Assumptions cfg apps P T) (hPool : PoolExecutes cfg) (r : Route) (alice bob : Participant)
     (hr : r.WellFormed apps) (hV : apps r.V.appDef = satpVirtualRules)
@@ -216,8 +209,7 @@ theorem satp_end_user_recovers_notes {P : Participant} (T : Threat P)
     (hfin : (net.view t).Finalized r.V (.allocation [alloc alice.address a, alloc bob.address b]))
     (hchain : (net.view t).chain.finalOutcome L0.address = none)
     (hfund : o.total ≤ net.chain.balance t L0)
-    (hnofinal : ∀ s ∈ net.sent, s.state.channel = L0 → s.state.isFinal = false)
-    (hmin : OutcomeRespectsMin cfg o) :
+    (hnofinal : ∀ s ∈ net.sent, s.state.channel = L0 → s.state.isFinal = false) :
     Unbeatable cfg apps T
       (fun net' => (net.chain.book t).paid P + bal + a ≤ (net'.chain.book t).paid P + r.a0 ∧
         ∃ o', (net'.view t).Finalized L0 (.allocation o') ∧ o'.find r.V.address = none ∧
