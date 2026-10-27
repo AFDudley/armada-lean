@@ -220,4 +220,32 @@ def EndUserRecovered {P : Participant} (r : Route E) (L : FixedPart) (bal : Coin
     bal + share + base ≤
       o.owed (.external (r.dest P)) + r.a0 + net.chain.balances.get (.external (r.dest P))
 
+/-- A valid challenge pays the start state's first two destinations and keeps
+    its funded total (SATP:705-717). -/
+theorem validChallenge_outcome {c : FixedPart} {alice bob : Participant} {s ch : SignedState E}
+    (h : validChallenge c alice bob s ch = true) :
+    ∃ da db a b, s.state.outcome.pairDests = some (da, db) ∧
+      ch.state.outcome = .allocation [⟨da, .alloc a⟩, ⟨db, .alloc b⟩] ∧
+      a + b = s.state.outcome.fundedTotal := by
+  unfold validChallenge at h
+  split at h
+  · rename_i d da db _ hp
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    exact ⟨da, db, d.voucher.alice, d.voucher.bob, hp, h.2, h.1.2⟩
+  · cases h
+
+/-- A valid response pays the start state's first two destinations and keeps
+    its funded total (SATP:734-738). -/
+theorem validResponse_outcome {c : FixedPart} {alice bob : Participant} {s ch re : SignedState E}
+    (h : validResponse c alice bob s ch re = true) :
+    ∃ da db a b, s.state.outcome.pairDests = some (da, db) ∧
+      re.state.outcome = .allocation [⟨da, .alloc a⟩, ⟨db, .alloc b⟩] ∧
+      a + b = s.state.outcome.fundedTotal := by
+  unfold validResponse at h
+  split at h
+  · rename_i dc dr da db _ _ hp
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    exact ⟨da, db, dr.voucher.alice, dr.voucher.bob, hp, h.2, h.1.2⟩
+  · cases h
+
 end ArmadaLean.Nitro

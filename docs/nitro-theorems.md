@@ -8,25 +8,26 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 
 | Module | Content | Primary source |
 |---|---|---|
-| `ArmadaLean/Nitro/Address.lean` | coins, time, participants, fixed part, addresses, balances | SATP §2.1; Nitro §3.1 for balances; go-nitro INitroTypes.sol, MultiAssetHolder.sol |
+| `ArmadaLean/Nitro/Address.lean` | coins, time, participants, fixed part, destinations (`Address E`: a channel or an external destination of the parameter type `E`), balances | SATP §2.1, §2.4; Nitro §3.1 for balances; go-nitro INitroTypes.sol, MultiAssetHolder.sol |
 | `ArmadaLean/Nitro/Outcome.lean` | items, allocations, priority payout, afford, outcomes | SATP §2.4; go-nitro MultiAssetHolder.sol; Nitro §5.1 for afford |
 | `ArmadaLean/Nitro/Channel.lean` | states, signed states, application rules, ForceMove and consensus rules, channel status and modes | SATP §2.1-2.3; go-nitro ForceMove.sol, StatusManager.sol, Consensus.sol |
 | `ArmadaLean/Nitro/Adjudicator.lean` | the adjudicator state and the operations deposit, transfer, reclaim, challenge, checkpoint, conclude, tick; `Step`, `Reachable` | go-nitro ForceMove.sol, MultiAssetHolder.sol; SATP Listings 1-2; Nitro §3.1, §5.1 |
-| `ArmadaLean/Nitro/Strategy.lean` | network states, moves, threat model, `Assumptions`, `Unbeatable`, `Prevents`, finalizable, enabled, funded, value | Nitro §4 (SATP and go-nitro have no off-chain model); SATP:164-168 for the assumptions |
+| `ArmadaLean/Nitro/Strategy.lean` | network states, moves, threat model (`Threat.ε`, `Threat.Round`), `Bounds`, `Capable`, `Assumptions`, `UnbeatableIn`, `Unbeatable`, `Run`, `Prevents`, finalizable, enabled, funded, value | Nitro §4 (SATP and go-nitro have no off-chain model); SATP:164-168 and Nitro:537-542 for the assumptions |
 | `ArmadaLean/Nitro/Value.lean` | outcome network, DAG, Turbo Value Algorithm | Nitro §5.2 |
 | `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels | Nitro §5.3-5.4; the virtual channel is in SATP.lean |
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
 | `ArmadaLean/Nitro/Lemmas.lean` | the `@[simp]` reading lemmas of balances, allocations, payouts, channel statuses and the operations; the coins-held invariant `Adjudicator.HeldInv` | no source: proof helpers for `Safety.lean` |
 | `ArmadaLean/Nitro/Safety.lean` | 58 theorems, all proved: on-chain safety, conservation, data operations | go-nitro and SATP first |
 | `ArmadaLean/Nitro/Liveness.lean` | 35 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-5 |
+| `ArmadaLean/Nitro/NonVacuity.lean` | one proved witness per theorem with hypotheses (verification.md §5a): 53 for `Safety.lean`, 35 for `Liveness.lean`; the strategies "conclude now" and "wait until the deadline" | no source: acceptance check |
 
 ## Paper vs code: where go-nitro is followed over the latest paper
 
 - **Challenge rule.** SATP Listing 1 (SATP:303-305) accepts a challenge whenever `isOpen` and `version >= recorded`, so a re-challenge at an equal version during a running challenge resets the deadline. go-nitro ForceMove.sol:46-54 requires a non-decreased turn in Open mode, a strictly higher turn in Challenge mode, and reverts in Finalized mode. The model follows the code (`Adjudicator.challenge`; theorems `challenge_requires`, `rechallenge_equal_turn_fails`, `challenge_fails_when_finalized`). ForceMove:1341-1342 forbade any challenge during a challenge; the code allows one at a higher turn.
 - **Checkpoint replaces respond.** go-nitro has `checkpoint` (ForceMove.sol:85-114): not finalized, strictly higher turn, supported; it sets Open and clears a challenge. It has no `respond` operation. SATP has neither. ForceMove `refute`/`respondWithMove`/`alternativeRespondWithMove` are superseded. The earlier `respond` is removed; `Adjudicator.checkpoint` is the operation.
 - **Conclude needs unanimous signatures and does not call the app.** SATP:286-289 says a final state is "supported" and submitted; go-nitro `_conclude` (ForceMove.sol:136-164) requires `isFinal` and `getClaimedSignersNum(signedBy) == participants.length` and never calls `stateIsSupported`. The model follows the code: `Adjudicator.conclude` takes one signed state and requires `ConclusionProof` (theorem `conclude_needs_all`).
-- **No withdrawal operation.** Nitro:169-199 defines `W_A(x)`; SATP:764-768 defers withdrawals. go-nitro has no withdraw: `_executeSingleAssetExit` (MultiAssetHolder.sol:396-408) pays an external destination straight out of the contract during `transfer`. The model follows the code: `Adjudicator.payTo` lowers `held` when the destination is a participant; a participant balance is the coins paid out to it (theorems `held_falls_only_by_payout`, `paid_out_monotone`, `held_eq_channel_balances`).
-- **Deposit only to a channel.** Nitro:227-228: "Anyone can deposit into an address of either type". go-nitro MultiAssetHolder.sol:43 reverts on an external destination. The model follows the code (`Adjudicator.deposit` returns `none` for a participant; theorem `deposit_to_participant_fails`).
+- **No withdrawal operation.** Nitro:169-199 defines `W_A(x)`; SATP:764-768 defers withdrawals. go-nitro has no withdraw: `_executeSingleAssetExit` (MultiAssetHolder.sol:402-415) pays an external destination straight out of the contract during `transfer`. The model follows the code: `Adjudicator.payTo` lowers `held` when the destination is external; an external balance is the coins paid out to it (theorems `held_falls_only_by_payout`, `paid_out_monotone`, `held_eq_channel_balances`).
+- **Deposit only to a channel.** Nitro:227-228: "Anyone can deposit into an address of either type". go-nitro MultiAssetHolder.sol:43 reverts on an external destination. The model follows the code (`Adjudicator.deposit` returns `none` for an external destination; theorem `deposit_to_external_fails`).
 - **Transfer pays the whole affordable amount.** Nitro:765-772 `T(A, B, x)` takes an amount `x` up to the affordable amount. go-nitro `transfer` (MultiAssetHolder.sol:66, 162-191) pays "as many funds ... as can be afforded" for the selected entry, and reverts on a guarantee entry (line 172). The model follows the code: `Adjudicator.transfer a b` has no amount parameter (theorems `transfer_effects`, `transfer_fails_otherwise`).
 - **Reclaim checks.** SATP Listing 2 (SATP:358-361) does `o_ledger[left] += o_target[0]`, `o_ledger[right] += o_target[1]`, `delete`. go-nitro `compute_reclaim_effects` (MultiAssetHolder.sol:363-365) also requires that `left` and `right` have entries in the ledger and that `o_target[0] + o_target[1]` equals the guarantee amount. The model follows the code (`Adjudicator.reclaim`; theorems `reclaim_requires`, `reclaim_fails_without_entries`). This removes the earlier "append on a missing key" choice.
 - **Challenger must be a participant.** SATP Listing 1 has no caller check. go-nitro `_requireChallengerIsParticipant` (ForceMove.sol:178-190) requires it; ForceMove:1545-1548 proposed it. The model follows the code.
@@ -61,10 +62,10 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 - Single asset: one instance; a multi-asset adjudicator is a family of independent instances, because no operation in SATP, Nitro or go-nitro moves value between assets. Approved by the operator, 2026-10-27.
 - Symbolic hash and signatures: a channel address is the constructor `Address.channel` applied to the fixed part, so injectivity holds by construction; a signed state carries its signer list; forgery is the game rule `Assumptions.unforgeable`, a named hypothesis. Approved by the operator, 2026-10-27.
 - Applications: `Apps := AppId → Rules`; `Rules.supports` is a computable `Bool` function, as go-nitro `stateIsSupported` returns `bool`. Operator ruling 2026-10-27 (this replaced a `Prop` with classical decisions; `challenge`, `checkpoint` and `conclude` are computable and `#eval` runs them). The ForceMove game library `vt` and the SATP `validateOutcomeChange` are `Bool` functions too.
-- The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is a finite feasible adversary prefix, then one honest move; this is front-running (Nitro:540-542). `Assumptions.unimpeded` (SATP:166-167, Nitro:537-539) forbids the adversary to move the clock to a pending deadline of the honest participant; only the honest `wait` reaches a deadline. `Unbeatable` is an inductive strategy tree; `Prevents` is a safety property over `Run`s, used for enabled outcomes. Approved by the operator, 2026-10-27.
+- The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is: the honest participant chooses one move, the adversary plays a finite feasible prefix, then the move is applied; this is front-running (Nitro:540-542). The clock follows Nitro:537-539: "given that the current time is t and ε > 0, then it is possible for any party to apply any operation, O, on-chain before time t + ε". The adversary may move the clock, but each honest move lands before `ε` has passed since it was chosen (`Threat.Round`); the liveness theorems assume challenge durations of at least `2 * ε` (a challenge registered just after `p` chose a move is answered by the next move). The honest participant does not deposit (Nitro:779-781; `p` has no wallet). `Unbeatable` is `UnbeatableIn` with every move allowed, an inductive strategy tree; `Prevents` asks for a total, feasible strategy whose every play of rounds avoids the goal. `Finalized` reads the outcome of finalization, which a payout does not change. Repair of 2026-10-27: `docs/nitro-repair-2026-10-27.md`; it replaces the rule "only the honest `wait` reaches a deadline" approved on 2026-10-27.
 - DAG: operator ruling 2026-10-27. "The network of outcomes is a DAG" means no channel reaches itself by following edges: `Acyclic edge := ∀ c, ¬ Relation.TransGen edge c c` with `edge A B` = "A's outcome allocates to channel B" (`Adjudicator.Edge`, `Adjudicator.IsDAG`). No theorem type carries a topological ordering; the Turbo Value Algorithm's result is the relation `Adjudicator.TurboValue n x` (some topological ordering gives `x`), and `turbo_value_exists_unique` states that on a DAG it exists and is unique. A proof that needs an ordering derives it as a lemma (Nitro:798-799).
 - SATP app data: operator ruling 2026-10-27 (choice 5, changed). The state carries the parsed value: `State.appData : AppData` with constructors `satpVirtual (d : VirtualAppData)` and `opaque label`. The earlier `Decode : Nat → VirtualAppData` parameter and every `decode` argument are removed. ABI encoding, decoding and the round-trip theorem `decode (encode v) = some v` belong to the refinement layer, not to this branch.
-- The theorems of `Liveness.lean` have proof `sorry`, including the ones a one-line proof would close, so that the sorry count equals the theorem count. The theorems of `Safety.lean` are proved (branch `nitro-proofs`).
+- The theorems of `Liveness.lean` have proof `sorry`, except the four that read no game definition (`ledger_topup_reorder_safe`, `ledger_topup_deposit_funds`, `satp_outcome_change_keeps_total`, `satp_reclaim_credits_intermediary`). The theorems of `Safety.lean` are proved (branch `nitro-proofs`).
 
 ## Corrections after approval (operator ruling 2026-10-27)
 
@@ -107,7 +108,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Id | Disposition |
 |---|---|
 | ForceMove-D01 | definition FixedPart, FixedPart.address |
-| ForceMove-D02 | theorem channel_address_inj, channel_address_ne_participant |
+| ForceMove-D02 | theorem channel_address_inj, channel_address_ne_external |
 | ForceMove-D03 | definition Outcome, Allocation |
 | ForceMove-D04 | definition SignedState |
 | ForceMove-D05 | definition State, State.mover |
@@ -163,9 +164,9 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-01 | theorem balances_absent_zero (definition Balances.get) |
 | Nitro-02 | definition FixedPart.address; theorem channel_address_inj |
 | Nitro-03 | assumption field Assumptions.unforgeable (the channel-address half holds by construction of Address) |
-| Nitro-04 | theorem deposit_can_happen, deposit_to_participant_fails (go-nitro: only a channel address; Nitro:227-228 allowed either) |
+| Nitro-04 | theorem deposit_can_happen, deposit_to_external_fails (go-nitro: only a channel address; Nitro:227-228 allowed either) |
 | Nitro-05 | theorem deposit_effects, held_eq_channel_balances |
-| Nitro-06 | theorem held_falls_only_by_payout, paid_out_monotone (go-nitro has no withdraw; a transfer pays the participant address directly) |
+| Nitro-06 | theorem held_falls_only_by_payout, paid_out_monotone (go-nitro has no withdraw; a transfer pays the external destination directly) |
 | Nitro-07 | theorem channel_balance_falls_only_by_redistribution |
 | Nitro-08 | theorem held_eq_channel_balances, balances_total_split, redistribution_conserves_total, held_changes_only_by_deposit_payout |
 | Nitro-09 | definition Allocation, Entry |
@@ -178,7 +179,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-16 | theorem directly_funded_pays |
 | Nitro-17 | definition FundedFor, Adjudicator.DirectlyFunded |
 | Nitro-18 | definition Value; theorem turbo_value_is_value |
-| Nitro-19 | assumption field Assumptions.unimpeded |
+| Nitro-19 | game rule Threat.ε, Threat.Round (Nitro:537-539) |
 | Nitro-20 | definition Unbeatable (front-running is the adversary prefix in Unbeatable.move) |
 | Nitro-21 | definition Finalizable; theorem finalizable_funded_pays |
 | Nitro-22 | theorem finalizable_unique, channel_finalizability_cases |
@@ -190,7 +191,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-28 | theorem transfer_effects, reduceOwed_owed, transfer_can_happen (go-nitro pays the whole affordable amount; x is not a parameter) |
 | Nitro-29 | theorem transfer_fails_otherwise, transfer_zero_moves_nothing |
 | Nitro-30 | theorem turbo_redistribution_unbeatable |
-| Nitro-31 | theorem deposit_bounds_value, payout_to_other_affects_only_owner (definition Threat.TransfersOnly) |
+| Nitro-31 | theorem deposit_bounds_value, payout_to_other_affects_only_owner (definitions Threat.TransfersOnly, Threat.CapableTransfers, HonestMove.IsTransfer) |
 | Nitro-32 | definition Acyclic, Adjudicator.IsDAG; theorem participant_can_prevent_cycles, turbo_value_exists_unique |
 | Nitro-33 | definition Adjudicator.TurboValue, Adjudicator.turboValueAlong |
 | Nitro-34 | theorem turbo_value_upper_bound |
@@ -232,7 +233,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | SATP-21 | theorem satp_lemma_3_1, satp_peers_can_finalize |
 | SATP-22 | out of scope: gas cost and wall-clock bound (SATP:491-493 Theorem 3.1); the model has no cost or duration measure |
 | SATP-23 | out of scope: conjecture (SATP:451-452 Conjecture 3.1 is stated, not claimed proved) |
-| SATP-24 | assumption field Assumptions.unimpeded |
+| SATP-24 | game rule Threat.ε, Threat.Round (Nitro:537-539) |
 | SATP-25 | assumption field Assumptions.unforgeable |
 | SATP-26 | superseded-by Nitro-04 (SATP:764-768 defers deposits and withdrawals; the model takes deposit from go-nitro and Nitro §3.1, and go-nitro has no withdrawal) |
 | docs-0010-01 | definition FixedPart, State |
@@ -251,7 +252,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | docs-0040-05 | theorem timeout_finalizes, tick_moves_only_time |
 | docs-0020-01 | definition consensusRules |
 | docs-0010-05 | theorem conclude_can_happen |
-| docs-0060-01 | theorem deposit_to_participant_fails (go-nitro MultiAssetHolder.sol:43 is followed over Nitro:227-228) |
+| docs-0060-01 | theorem deposit_to_external_fails (go-nitro MultiAssetHolder.sol:43 is followed over Nitro:227-228) |
 | docs-0060-02 | theorem deposit_requires_expectedHeld, deposit_respects_funding_order, deposits_in_order_succeed, deposit_effects (definition Adjudicator.deposit, Allocation.aheadOf; operator ruling 2026-10-27) |
 | docs-0060-03 | theorem deposit_effects |
 | docs-0070-01 | theorem conclude_needs_all |
@@ -310,7 +311,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Theorem | Module | Meaning | Property ids | Source |
 |---|---|---|---|---|
 | `channel_address_inj` | `Safety.lean` | One address names one channel. | ForceMove-D02, ForceMove-F01, Nitro-02, Nitro-03, SATP-05, docs-0010-02 | SATP:213-215 |
-| `channel_address_ne_participant` | `Safety.lean` | A channel address is never a participant address. | ForceMove-D02, Nitro-02 | docs |
+| `channel_address_ne_external` | `Safety.lean` | A channel address is never an external destination. | ForceMove-D02, Nitro-02 | docs |
 | `balances_absent_zero` | `Safety.lean` | An absent address has balance zero. | Nitro-01 | Nitro:162-163 |
 | `held_eq_channel_balances` | `Safety.lean` | Coins held equal the sum of channel balances on every reachable state. | ForceMove-F04, Nitro-05, Nitro-08, docs-C-01 | Nitro:230-231 |
 | `balances_total_split` | `Safety.lean` | All balances = channel balances + coins paid out. | Nitro-08 | docs |
@@ -319,8 +320,8 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `deposit_requires_expectedHeld` | `Safety.lean` | A deposit whose expectedHeld differs from the holding fails (compare-and-swap guard). | docs-0060-02 | go-nitro MultiAssetHolder.sol:51 |
 | `deposit_respects_funding_order` | `Safety.lean` | A funder depositing with expectedHeld = allocations ahead of it succeeds only when they are held; its coins pay no entry ahead of it. | ForceMove-B07, docs-0060-02, docs-0060-06 | ForceMove:1197-1208 |
 | `deposits_in_order_succeed` | `Safety.lean` | Deposits in pre-funding order with the correct expectedHeld all succeed and fully fund the channel. | ForceMove-C01, docs-0060-02 | ForceMove:1797-1808 |
-| `deposit_to_participant_fails` | `Safety.lean` | A deposit to a participant address fails (go-nitro). | Nitro-04, docs-0060-01 | go-nitro MultiAssetHolder.sol:43 |
-| `held_falls_only_by_payout` | `Safety.lean` | On a reachable state, coins leave the contract only by a redistribution paying one participant. | Nitro-06, Nitro-07, SATP-16 | go-nitro MultiAssetHolder.sol:396-408 |
+| `deposit_to_external_fails` | `Safety.lean` | A deposit to an external destination fails (go-nitro). | Nitro-04, docs-0060-01 | go-nitro MultiAssetHolder.sol:43 |
+| `held_falls_only_by_payout` | `Safety.lean` | On a reachable state, coins leave the contract only by a redistribution paying one external destination. | Nitro-06, Nitro-07, SATP-16 | go-nitro MultiAssetHolder.sol:402-415 |
 | `channel_balance_falls_only_by_redistribution` | `Safety.lean` | A channel balance falls only by a redistribution. | Nitro-07 | Nitro:227-229 |
 | `paid_out_monotone` | `Safety.lean` | Coins paid out to a participant are never taken back. | Nitro-06 | docs |
 | `payout_priority_formula` | `Safety.lean` | Entry k is paid min(owed, held - total owed before k). | ForceMove-A16, ForceMove-B07, Nitro-26, SATP-12, docs-0080-03 | ForceMove:1837-1853 |

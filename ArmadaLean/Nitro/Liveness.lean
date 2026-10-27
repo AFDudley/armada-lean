@@ -402,7 +402,16 @@ theorem ledger_topup_reorder_safe (A B χ : Address E) (a b c a' : Coins) (hAB :
     Allocation.paidTo (a + b + c) [alloc B b, alloc χ c, alloc A (a + a')] A = a ∧
     Allocation.paidTo (a + b + c) [alloc B b, alloc χ c, alloc A (a + a')] B = b ∧
     Allocation.paidTo (a + b + c) [alloc B b, alloc χ c, alloc A (a + a')] χ = c := by
-  sorry
+  have hd : Allocation.dedup [alloc B b, alloc χ c, alloc A (a + a')] =
+      [alloc B b, alloc χ c, alloc A (a + a')] := by
+    simp [Allocation.dedup, Allocation.dedupFrom, alloc, hAB, hAχ, Ne.symm hBχ]
+  refine ⟨?_, ?_, ?_⟩
+  · have := Allocation.paidTo_of_getElem? (held := a + b + c) hd (j := 2) (f := alloc A (a + a')) rfl
+    refine this.trans ?_; simp [alloc, Allocation.total, Entry.amount]; grind
+  · have := Allocation.paidTo_of_getElem? (held := a + b + c) hd (j := 0) (f := alloc B b) rfl
+    refine this.trans ?_; simp [alloc, Allocation.total, Entry.amount]; grind
+  · have := Allocation.paidTo_of_getElem? (held := a + b + c) hd (j := 1) (f := alloc χ c) rfl
+    refine this.trans ?_; simp [alloc, Allocation.total, Entry.amount]; grind
 
 /-- Nitro-49 (Nitro:989-995, §5.4.3 steps 3-4), Nitro-04, docs-0060-05.
     After the deposit `D_L(a')`, made with `expectedHeld = a + b + c` (the
@@ -417,7 +426,21 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
       a + a' ∧
     Allocation.paidTo (s'.balances.get L.address) [alloc A (a + a'), alloc B b, alloc χ c] A =
       a + a' := by
-  sorry
+  obtain ⟨-, -, hb, -⟩ := Adjudicator.deposit_some hd
+  have hL : s'.balances.get L.address = a + b + c + a' := by rw [hb, Balances.get_add, if_pos rfl, hheld]
+  refine ⟨hL, ?_, ?_⟩
+  · have hd1 : Allocation.dedup [alloc B b, alloc χ c, alloc A (a + a')] =
+        [alloc B b, alloc χ c, alloc A (a + a')] := by
+      simp [Allocation.dedup, Allocation.dedupFrom, alloc, hAB, hAχ, Ne.symm hBχ]
+    rw [hL]
+    refine (Allocation.paidTo_of_getElem? hd1 (j := 2) (f := alloc A (a + a')) rfl).trans ?_
+    simp [alloc, Allocation.total, Entry.amount]; grind
+  · have hd2 : Allocation.dedup [alloc A (a + a'), alloc B b, alloc χ c] =
+        [alloc A (a + a'), alloc B b, alloc χ c] := by
+      simp [Allocation.dedup, Allocation.dedupFrom, alloc, Ne.symm hAB, Ne.symm hAχ, Ne.symm hBχ]
+    rw [hL]
+    refine (Allocation.paidTo_of_getElem? hd2 (j := 0) (f := alloc A (a + a')) rfl).trans ?_
+    simp [alloc, Allocation.total, Entry.amount]; grind
 
 /-- Nitro-49 (Nitro:997-1047, §5.4.4 Partial Withdrawal from a Ledger Channel).
     Nitro:1046-1047: "A was able to withdraw their funds instantly, without
@@ -463,7 +486,26 @@ theorem satp_outcome_change_keeps_total (c : FixedPart) (alice bob : Participant
     (candidate ≠ s0.state → ∃ da db a b, s0.state.outcome.pairDests = some (da, db) ∧
       candidate.outcome = .allocation [⟨da, .alloc a⟩, ⟨db, .alloc b⟩] ∧
       a + b = s0.state.outcome.fundedTotal) := by
-  sorry
+  have key : ∀ (st : State E) da db a b, st.outcome = .allocation [⟨da, .alloc a⟩, ⟨db, .alloc b⟩] →
+      st.outcome.fundedTotal = a + b := by
+    intro st da db a b hc; rw [hc]; rfl
+  match proof, h, h0 with
+  | [s], h, h0 =>
+    simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [List.head?_cons, Option.some.injEq] at h0; subst h0
+    rw [← h.2]; exact ⟨rfl, fun hne => absurd rfl hne⟩
+  | [s, ch], h, h0 =>
+    simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [List.head?_cons, Option.some.injEq] at h0; subst h0
+    obtain ⟨da, db, a, b, hp, ho, hab⟩ := validChallenge_outcome h.1
+    rw [← h.2]
+    exact ⟨(key _ da db a b ho).trans hab, fun _ => ⟨da, db, a, b, hp, ho, hab⟩⟩
+  | [s, ch, re], h, h0 =>
+    simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [List.head?_cons, Option.some.injEq] at h0; subst h0
+    obtain ⟨da, db, a, b, hp, ho, hab⟩ := validResponse_outcome h.1
+    rw [← h.2]
+    exact ⟨(key _ da db a b ho).trans hab, fun _ => ⟨da, db, a, b, hp, ho, hab⟩⟩
 
 /-- SATP-21, SATP-19 (Lemma 3.1, SATP:511-513; Lemma A.1, SATP:746-753). "Suppose V
     finalizes on-chain. Either V is finalized with version = 0 and its
@@ -615,6 +657,46 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
       om'.owed (.external (r.dest P)) = om.owed (.external (r.dest P)) + b ∧
       op'.owed (.external (r.dest P)) = op.owed (.external (r.dest P)) + a ∧
       om'.find r.V.address = none ∧ op'.find r.V.address = none := by
-  sorry
+  obtain ⟨h1, h2, h3⟩ := hdist
+  set dP : Address E := .external (r.dest P)
+  set dPp : Address E := .external (r.dest Pprev)
+  set dPn : Address E := .external (r.dest Pnext)
+  set oV : Allocation E := [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]
+  have hVa : oV.amountAt 0 = a := rfl
+  have hVb : oV.amountAt 1 = b := rfl
+  have hx : oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 := hab
+  have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by simp
+  -- `Lm ≠ V` and `Lp ≠ V`: `V`'s outcome has no entry for `V`.
+  have hmV : Lm ≠ r.V := by
+    rintro rfl; rw [hV] at hLm
+    simp only [Option.some.injEq, Outcome.allocation.injEq] at hLm; subst hLm
+    simp [oV, Allocation.find, alloc] at hgm
+  have hpV : Lp ≠ r.V := by
+    rintro rfl; rw [hV] at hLp
+    simp only [Option.some.injEq, Outcome.allocation.injEq] at hLp; subst hLp
+    simp [oV, Allocation.find, alloc] at hgp
+  let om' := ((om.addTo dPp (oV.amountAt 0)).addTo dP (oV.amountAt 1)).remove r.V.address
+  let op' := ((op.addTo dP (oV.amountAt 0)).addTo dPn (oV.amountAt 1)).remove r.V.address
+  have hr1 := reclaim_can_happen s Lm r.V om oV (r.a0 + r.b0) dPp dP hLm hV hgm
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.1)
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.2) hx
+  set s1 := s.setStatus Lm ((s.statusOf Lm).withOutcome (.allocation om'))
+  have hV1 : s1.finalOutcome r.V.address = some (.allocation oV) := by
+    simpa [s1, Ne.symm hmV] using hV
+  have hLp1 : s1.finalOutcome Lp.address = some (.allocation op) := by
+    simpa [s1, Ne.symm hne] using hLp
+  have hr2 := reclaim_can_happen s1 Lp r.V op oV (r.a0 + r.b0) dP dPn hLp1 hV1 hgp
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.1)
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.2) hx
+  refine ⟨s1, _, om', op', hr1, hr2, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [s1, hne]
+  · simp; rfl
+  · rw [Allocation.owed_remove_of_ne _ (hext _), Allocation.owed_addTo_self _ ?_,
+      Allocation.owed_addTo_of_ne _ _ (by simpa [dP, dPp] using h1), hVb]
+    rw [Allocation.find_addTo_of_ne _ _ (by simpa [dP, dPp] using h1)]; exact hem.2
+  · rw [Allocation.owed_remove_of_ne _ (hext _), Allocation.owed_addTo_of_ne _ _
+      (by simpa [dP, dPn] using h2), Allocation.owed_addTo_self _ hep.1, hVa]
+  · rw [Allocation.find_remove, if_pos rfl]
+  · rw [Allocation.find_remove, if_pos rfl]
 
 end ArmadaLean.Nitro
