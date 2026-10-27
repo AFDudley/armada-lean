@@ -137,8 +137,12 @@ theorem deposit_to_participant_fails (s : Adjudicator) (p : Participant) (e x : 
     :227-229: "funds can only be withdrawn from participant addresses - and
     only by a party who knows the private key"; go-nitro has no withdrawal
     operation: the payout goes to the participant's address itself. A fall
-    of the coins held comes from a redistribution of a finalized channel. -/
-theorem held_falls_only_by_payout (apps : Apps) (s s' : Adjudicator) (caller : Participant)
+    of the coins held comes from a redistribution of a finalized channel.
+    The hypothesis `hr` is from the operator ruling 2026-10-27 (counterexample
+    in Counter.lean): on an unreachable state the coins held can be fewer
+    than the payout. -/
+theorem held_falls_only_by_payout (apps : Apps) (s s' : Adjudicator) (hr : Reachable apps s)
+    (caller : Participant)
     (op : Op) (h : s.apply apps caller op = some s') (hlt : s'.held < s.held) :
     op.isRedistribution = true ∧
     ∃ p, s'.balances.get (.participant p) = s.balances.get (.participant p) + (s.held - s'.held) ∧
@@ -210,8 +214,11 @@ theorem affords_when_fully_funded (held : Coins) (o : Allocation) (d : Address)
     the channel's holding by `x`, and lowers the entry by `x`. Nitro:765-770:
     the three effects of `T(A, B, x)`. A channel destination's balance
     rises by `x`; a participant destination receives `x` out of the
-    contract. -/
-theorem transfer_effects (s : Adjudicator) (a : FixedPart) (b : Address) (s' : Adjudicator)
+    contract. The hypothesis `hr` is from the operator ruling 2026-10-27
+    (counterexample in Counter.lean): on an unreachable state the coins held
+    can be fewer than the payout. -/
+theorem transfer_effects (apps : Apps) (s : Adjudicator) (hr : Reachable apps s) (a : FixedPart)
+    (b : Address) (s' : Adjudicator)
     (h : s.transfer a b = some s') :
     ∃ o x, s.finalOutcome a.address = some (.allocation o) ∧
       x = o.paidTo (s.balances.get a.address) b ∧
@@ -251,12 +258,15 @@ theorem transfer_fails_otherwise (s : Adjudicator) (a : FixedPart) (b : Address)
     s.transfer a b = none := by
   sorry
 
-/-- Nitro-29. When `a` affords nothing for `b`, the transfer moves no coins. -/
+/-- Nitro-29. When `a` affords nothing for `b`, the transfer moves no coins.
+    Every balance reads the same; the list itself can change (`add b 0`
+    writes an entry). Operator ruling 2026-10-27 (counterexample in
+    Counter.lean). -/
 theorem transfer_zero_moves_nothing (s : Adjudicator) (a : FixedPart) (b : Address)
     (s' : Adjudicator) (h : s.transfer a b = some s')
     (h0 : ∀ o, s.finalOutcome a.address = some (.allocation o) →
       o.paidTo (s.balances.get a.address) b = 0) :
-    s'.balances = s.balances ∧ s'.held = s.held := by
+    (∀ d, s'.balances.get d = s.balances.get d) ∧ s'.held = s.held := by
   sorry
 
 /-- Nitro-10, ForceMove-A15, SATP-16, docs-0080-01. go-nitro
@@ -276,8 +286,12 @@ theorem redistribution_ignores_caller (apps : Apps) (s : Adjudicator) (op : Op)
   sorry
 
 /-- Nitro-08. A redistribution moves coins between balances. The sum of all
-    balances (held plus paid out) is unchanged. -/
-theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (caller : Participant)
+    balances (held plus paid out) is unchanged. The hypothesis `hr` is from
+    the operator ruling 2026-10-27 (counterexample in Counter.lean): on an
+    unreachable state an address can have two entries, or the coins held
+    can be fewer than the payout. -/
+theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (hr : Reachable apps s)
+    (caller : Participant)
     (op : Op) (hop : op.isRedistribution = true) (h : s.apply apps caller op = some s') :
     s'.balances.total = s.balances.total ∧
     s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal := by
@@ -415,10 +429,14 @@ theorem checkpoint_can_happen (apps : Apps) (s : Adjudicator) (c : FixedPart)
     `_requireNonDecreasedTurnNumber` and `_requireIncreasedTurnNumber`
     (ForceMove.sol); ForceMove:1543-1545: "Only allow new force-moves if
     their response will increase this stored turnNum." No step lowers the
-    stored turn number of a channel. (go-nitro's reset to 0 on conclude is
-    not modelled; see `Adjudicator.conclude`.) -/
+    stored turn number of a channel, except a conclude of that channel,
+    which finalizes it in the same step: `Adjudicator.conclude` has no turn
+    check and stores the candidate's turn (go-nitro stores 0). Operator
+    ruling 2026-10-27 (counterexample in Counter.lean). -/
 theorem turnNumRecord_monotone (apps : Apps) (s s' : Adjudicator) (c : FixedPart)
-    (h : Step apps s s') : (s.statusOf c).turnNumRecord ≤ (s'.statusOf c).turnNumRecord := by
+    (h : Step apps s s') :
+    (s.statusOf c).turnNumRecord ≤ (s'.statusOf c).turnNumRecord ∨
+    ∃ caller ss, s.apply apps caller (.conclude c ss) = some s' ∧ s'.mode c = .finalized := by
   sorry
 
 /-- ForceMove-A14, Nitro-13, SATP-16, docs-0070-01, docs-0010-05. go-nitro
@@ -566,13 +584,18 @@ theorem reclaim_requires (s : Adjudicator) (l v : FixedPart) (s' : Adjudicator)
     `compute_reclaim_effects`: `o_ledger[left] += o_target[0]`,
     `o_ledger[right] += o_target[1]`, the guarantee entry is deleted. The
     balances do not move. The total of the ledger outcome is unchanged
-    (go-nitro line 365: `totalReclaimed == guarantee.amount`). -/
+    (go-nitro line 365: `totalReclaimed == guarantee.amount`). The
+    hypotheses `hne` and `hdedup` are from the operator ruling 2026-10-27
+    (counterexample in Counter.lean): a ledger that guarantees itself, or a
+    ledger with a second entry for `v` (Nitro-25: each address appears
+    once), breaks the statement. -/
 theorem reclaim_effects (s : Adjudicator) (l v : FixedPart) (s' : Adjudicator)
     (oL oV : Allocation) (x : Coins) (left right : Address)
     (hL : s.finalOutcome l.address = some (.allocation oL))
     (hV : s.finalOutcome v.address = some (.allocation oV))
     (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩)
     (hlr : left ≠ right) (hlv : left ≠ v.address) (hrv : right ≠ v.address)
+    (hne : l ≠ v) (hdedup : oL.dedup = oL)
     (h : s.reclaim l v = some s') :
     ∃ oL', s'.finalOutcome l.address = some (.allocation oL') ∧
       oL'.owed left = oL.owed left + oV.amountAt 0 ∧
