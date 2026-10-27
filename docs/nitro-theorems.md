@@ -1,6 +1,6 @@
 # Nitro theorems: property map
 
-This file maps the 189 prose properties of `armada-laconic/notes/statement-audit-2026-10-25/` to the Lean declarations under `ArmadaLean/Nitro/`. Every theorem has proof `sorry`. The statements are the deliverable.
+This file maps the 189 prose properties of `armada-laconic/notes/statement-audit-2026-10-25/` to the Lean declarations under `ArmadaLean/Nitro/`. The 58 theorems of `Safety.lean` are proved; the 35 theorems of `Liveness.lean` have proof `sorry`. The statements are the deliverable.
 
 Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the primary source of every declaration is the latest paper that covers it, SATP (2022), then Nitro (2019), then ForceMove (2018). Each definition was then checked against go-nitro at `64c4ee9a1` (`packages/nitro-protocol/contracts/`, last contract change `9d3a669e5`), fetched by a shallow clone under `.scratch/go-nitro`. Where the code corrects a paper, the code is followed and both are cited. Where the code differs only by encoding, the paper form is kept and the difference is noted.
 
@@ -16,7 +16,8 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 | `ArmadaLean/Nitro/Value.lean` | outcome network, DAG, Turbo Value Algorithm | Nitro §5.2 |
 | `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels | Nitro §5.3-5.4; the virtual channel is in SATP.lean |
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
-| `ArmadaLean/Nitro/Safety.lean` | 58 theorems: on-chain safety, conservation, data operations | go-nitro and SATP first |
+| `ArmadaLean/Nitro/Lemmas.lean` | the `@[simp]` reading lemmas of balances, allocations, payouts, channel statuses and the operations; the coins-held invariant `Adjudicator.HeldInv` | no source: proof helpers for `Safety.lean` |
+| `ArmadaLean/Nitro/Safety.lean` | 58 theorems, all proved: on-chain safety, conservation, data operations | go-nitro and SATP first |
 | `ArmadaLean/Nitro/Liveness.lean` | 35 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-5 |
 
 ## Paper vs code: where go-nitro is followed over the latest paper
@@ -47,7 +48,7 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 
 - go-nitro stores a hash of the state and outcome and packs `turnNumRecord`, the finalization time and a fingerprint into one slot (StatusManager.sol); the model stores values (`ChannelStatus`).
 - go-nitro marks "no challenge" by a zero finalization time (StatusManager.sol:8); the model has explicit constructors `open`, `challenged`, `finalized`.
-- go-nitro resets the stored turn to 0 on conclude (ForceMove.sol:157); no operation reads the turn of a finalized channel, so the model keeps the candidate turn and `turnNumRecord_monotone` holds for every step.
+- go-nitro resets the stored turn to 0 on conclude (ForceMove.sol:157); no operation reads the turn of a finalized channel, so the model keeps the candidate turn. A conclude can lower the stored turn (see "Corrections after approval"); `turnNumRecord_monotone` states that exception.
 - go-nitro `transfer` takes an `indices` batch and `transferAllAssets`/`concludeAndTransferAllAssets` batch several calls; the model has single-destination operations.
 - go-nitro represents signers as a bitmask (INitroTypes.sol:34); the model uses a signer list.
 - go-nitro is multi-asset (`holdings[asset][channelId]`); the model is one single-asset instance.
@@ -63,7 +64,32 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 - The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is a finite feasible adversary prefix, then one honest move; this is front-running (Nitro:540-542). `Assumptions.unimpeded` (SATP:166-167, Nitro:537-539) forbids the adversary to move the clock to a pending deadline of the honest participant; only the honest `wait` reaches a deadline. `Unbeatable` is an inductive strategy tree; `Prevents` is a safety property over `Run`s, used for enabled outcomes. Approved by the operator, 2026-10-27.
 - DAG: operator ruling 2026-10-27. "The network of outcomes is a DAG" means no channel reaches itself by following edges: `Acyclic edge := ∀ c, ¬ Relation.TransGen edge c c` with `edge A B` = "A's outcome allocates to channel B" (`Adjudicator.Edge`, `Adjudicator.IsDAG`). No theorem type carries a topological ordering; the Turbo Value Algorithm's result is the relation `Adjudicator.TurboValue n x` (some topological ordering gives `x`), and `turbo_value_exists_unique` states that on a DAG it exists and is unique. A proof that needs an ordering derives it as a lemma (Nitro:798-799).
 - SATP app data: operator ruling 2026-10-27 (choice 5, changed). The state carries the parsed value: `State.appData : AppData` with constructors `satpVirtual (d : VirtualAppData)` and `opaque label`. The earlier `Decode : Nat → VirtualAppData` parameter and every `decode` argument are removed. ABI encoding, decoding and the round-trip theorem `decode (encode v) = some v` belong to the refinement layer, not to this branch.
-- Every `theorem` has proof `sorry`, including the ones a one-line proof would close, so that the sorry count equals the theorem count.
+- The theorems of `Liveness.lean` have proof `sorry`, including the ones a one-line proof would close, so that the sorry count equals the theorem count. The theorems of `Safety.lean` are proved (branch `nitro-proofs`).
+
+## Corrections after approval (operator ruling 2026-10-27)
+
+Six approved `Safety.lean` statements were false. A Lean proof of each negation type-checked against the approved statements at `nitro-theorems-approved-2026-10-27` (`69b9ea2`), with axioms `[propext]` only. The file was a scratch file outside the build. The operator approved the corrections below on 2026-10-27. No other statement changed.
+
+Counterexample A. The state is unreachable. The channel `c` holds 10 and the contract holds 5 (`held = 5`). The outcome of `c` is finalized as `[participant p : 10]`. `transfer c p` pays `x = 10`, and `held` becomes `5 - 10 = 0` in `Nat`.
+
+- `held_falls_only_by_payout`. The coins held fall by 5, but `p` receives 10. Correction: add `(hr : Reachable apps s)`.
+- `transfer_effects`. The last conjunct reads `0 + 10 = 5`. Correction: add `(apps : Apps)` and `(hr : Reachable apps s)`.
+- `redistribution_conserves_total`. `s'.held + paidOut' = 0 + 10`, but `s.held + paidOut = 5 + 0`. Correction: add `(hr : Reachable apps s)`. On an unreachable state an address can also have two balance entries; `Balances.set` drops both.
+
+With `Reachable`, the invariant `Adjudicator.HeldInv` (one balance entry per address, and `held = channelTotal`) gives `x ≤ held`.
+
+Counterexample B. The state is reachable: a conclude of `c` with outcome `[participant p : 5]` and no deposit. `transfer c p` pays 0. The balance list changes from `[]` to `[(c, 0), (p, 0)]`, because `Balances.add b 0` writes an entry.
+
+- `transfer_zero_moves_nothing`. The list equality `s'.balances = s.balances` is false. Correction: `∀ d, s'.balances.get d = s.balances.get d`.
+
+Counterexample C. The state is reachable: a checkpoint of `c` at turn 5, then a conclude of `c` with a final state at turn 0. `Adjudicator.conclude` has no turn check and stores the candidate's turn, so the stored turn falls from 5 to 0.
+
+- `turnNumRecord_monotone`. Correction: the stored turn does not fall, or the step is a conclude of `c` and `c` is finalized after it.
+
+Counterexample D, two cases. Both states are reachable by conclude steps.
+
+- `reclaim_effects`, case `l = v`. The ledger `c` has outcome `[p : 1, q : 1, c : G(2, [p, q])]` and reclaims itself. After the reclaim, `s'.finalOutcome v` is the new ledger outcome `[p : 2, q : 2]`, so the last conjunct is false. Correction: add `(hne : l ≠ v)`. The name `hlv` was already in use for `left ≠ v.address`.
+- `reclaim_effects`, a second entry for `v`. The ledger outcome is `[v : G(2, [p, q]), v : 3, p : 0, q : 0]` and the target outcome is `[p : 1, q : 1]`. `Allocation.remove` deletes both entries for `v`, so the total falls from 5 to 2. Correction: add `(hdedup : oL.dedup = oL)` (Nitro-25: each address appears once in an allocation).
 
 ## Property map (189 ids)
 
@@ -294,7 +320,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `deposit_respects_funding_order` | `Safety.lean` | A funder depositing with expectedHeld = allocations ahead of it succeeds only when they are held; its coins pay no entry ahead of it. | ForceMove-B07, docs-0060-02, docs-0060-06 | ForceMove:1197-1208 |
 | `deposits_in_order_succeed` | `Safety.lean` | Deposits in pre-funding order with the correct expectedHeld all succeed and fully fund the channel. | ForceMove-C01, docs-0060-02 | ForceMove:1797-1808 |
 | `deposit_to_participant_fails` | `Safety.lean` | A deposit to a participant address fails (go-nitro). | Nitro-04, docs-0060-01 | go-nitro MultiAssetHolder.sol:43 |
-| `held_falls_only_by_payout` | `Safety.lean` | Coins leave the contract only by a redistribution paying one participant. | Nitro-06, Nitro-07, SATP-16 | go-nitro MultiAssetHolder.sol:396-408 |
+| `held_falls_only_by_payout` | `Safety.lean` | On a reachable state, coins leave the contract only by a redistribution paying one participant. | Nitro-06, Nitro-07, SATP-16 | go-nitro MultiAssetHolder.sol:396-408 |
 | `channel_balance_falls_only_by_redistribution` | `Safety.lean` | A channel balance falls only by a redistribution. | Nitro-07 | Nitro:227-229 |
 | `paid_out_monotone` | `Safety.lean` | Coins paid out to a participant are never taken back. | Nitro-06 | docs |
 | `payout_priority_formula` | `Safety.lean` | Entry k is paid min(owed, held - total owed before k). | ForceMove-A16, ForceMove-B07, Nitro-26, SATP-12, docs-0080-03 | ForceMove:1837-1853 |
@@ -302,14 +328,14 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `payout_bounded` | `Safety.lean` | The payout never exceeds the coins held or an entry amount. | Nitro-26, Nitro-28, docs-0080-03 | docs |
 | `paidTo_first_entry_only` | `Safety.lean` | A destination is paid at most its first entry. | Nitro-25 | Nitro:744-746 |
 | `affords_when_fully_funded` | `Safety.lean` | A fully funded allocation affords every entry in full. | Nitro-16, Nitro-27 | Nitro:749-751 |
-| `transfer_effects` | `Safety.lean` | The transfer pays the affordable amount x: three effects (go-nitro, Nitro). | ForceMove-A15, Nitro-10, Nitro-28, docs-0030-03, docs-0080-03, docs-0080-04 | go-nitro MultiAssetHolder.sol:72-100 |
+| `transfer_effects` | `Safety.lean` | On a reachable state, the transfer pays the affordable amount x: three effects (go-nitro, Nitro). | ForceMove-A15, Nitro-10, Nitro-28, docs-0030-03, docs-0080-03, docs-0080-04 | go-nitro MultiAssetHolder.sol:72-100 |
 | `reduceOwed_owed` | `Safety.lean` | Reducing an owed amount is exact and local. | Nitro-28 | docs |
 | `transfer_can_happen` | `Safety.lean` | A transfer on a finalized allocation entry succeeds and pays the affordable amount. | ForceMove-C03, Nitro-15, Nitro-28, docs-0080-06 | docs |
 | `transfer_fails_otherwise` | `Safety.lean` | A transfer with no allocation entry (or a guarantee entry) fails. | ForceMove-A20, Nitro-29, docs-0030-04 | Nitro:771-772 |
-| `transfer_zero_moves_nothing` | `Safety.lean` | A transfer that affords nothing moves no coins. | Nitro-29 | docs |
+| `transfer_zero_moves_nothing` | `Safety.lean` | A transfer that affords nothing changes no balance reading and no coins held. | Nitro-29 | docs |
 | `transfer_requires_finalized` | `Safety.lean` | A transfer succeeds only on a finalized channel. | ForceMove-A15, Nitro-10, SATP-16, docs-0080-01 | Nitro:261-266 |
 | `redistribution_ignores_caller` | `Safety.lean` | Transfer, claim and reclaim give the same result for every caller. | Nitro-15 | Nitro:312-313 |
-| `redistribution_conserves_total` | `Safety.lean` | Redistribution keeps the sum of balances (held plus paid out). | Nitro-08 | docs |
+| `redistribution_conserves_total` | `Safety.lean` | On a reachable state, redistribution keeps the sum of balances (held plus paid out). | Nitro-08 | docs |
 | `finalized_two_ways` | `Safety.lean` | A finalized outcome came from a conclude or a timed-out challenge. | ForceMove-A14, ForceMove-B03, Nitro-11, SATP-16, docs-0070-04 | Nitro:770 |
 | `finalized_permanent` | `Safety.lean` | A finalized channel stays finalized. | ForceMove-A14, ForceMove-D12, Nitro-14 | Nitro:301-302 |
 | `finalized_outcome_only_redistributed` | `Safety.lean` | A finalized outcome is only ever redistributed, never replaced. | Nitro-14 | docs |
@@ -320,7 +346,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `challenge_effects` | `Safety.lean` | A fresh challenge puts the channel in challenge mode and moves no coins. | ForceMove-B04, ForceMove-D12, SATP-14 | docs |
 | `checkpoint_requires` | `Safety.lean` | A checkpoint needs a non-finalized channel, support and a strictly higher turn. | ForceMove-A11, ForceMove-A12, ForceMove-A13, ForceMove-A21, ForceMove-B02, docs-0070-10 | go-nitro ForceMove.sol:91-100 |
 | `checkpoint_can_happen` | `Safety.lean` | A valid checkpoint reopens the channel at the new turn and clears a challenge. | ForceMove-A18, ForceMove-A21, ForceMove-B04, docs-0070-10 | ForceMove:1266-1269 |
-| `turnNumRecord_monotone` | `Safety.lean` | No step lowers the stored turn number. | ForceMove-A21, ForceMove-B02, docs-0040-03, docs-0070-03 | ForceMove:1543-1545 |
+| `turnNumRecord_monotone` | `Safety.lean` | No step lowers the stored turn number, except a conclude of the channel, which finalizes it. | ForceMove-A21, ForceMove-B02, docs-0040-03, docs-0070-03 | ForceMove:1543-1545 |
 | `conclude_requires` | `Safety.lean` | A conclude needs a non-finalized channel, isFinal and unanimous signatures. | ForceMove-A14, Nitro-13, SATP-16, docs-0010-05, docs-0070-01 | SATP:288-289 |
 | `conclude_needs_all` | `Safety.lean` | A conclude carries a state signed by every participant, for every app. | ForceMove-A09, Nitro-13, SATP-08, SATP-16, docs-0020-01, docs-0070-01 | go-nitro ForceMove.sol:147-152 |
 | `conclude_can_happen` | `Safety.lean` | A conclusion proof finalizes at once with its outcome; exact result. | ForceMove-A14, Nitro-13, SATP-16, docs-0070-09 | Nitro:299-300 |
@@ -335,7 +361,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `mover_determined_by_turn` | `Safety.lean` | The mover is a function of channel and turn number. | ForceMove-D05, ForceMove-D06 | ForceMove:724-727 |
 | `mover_cyclic` | `Safety.lean` | Turns cycle with period n. | ForceMove-D06 | ForceMove:725-727 |
 | `reclaim_requires` | `Safety.lean` | A reclaim needs both channels finalized, a guarantee entry, left/right entries, and matching amounts. | SATP-15, docs-0030-04 | SATP:348-352 |
-| `reclaim_effects` | `Safety.lean` | A reclaim credits left and right from the target and deletes the guarantee. | SATP-15, docs-0080-05 | SATP:358-363 |
+| `reclaim_effects` | `Safety.lean` | A reclaim of a deduplicated ledger by another channel credits left and right from the target and deletes the guarantee. | SATP-15, docs-0080-05 | SATP:358-363 |
 | `reclaim_can_happen` | `Safety.lean` | A reclaim with its preconditions succeeds; exact result. | SATP-15, docs-0080-05 | docs |
 | `reclaim_fails_without_entries` | `Safety.lean` | A reclaim fails when left/right lack entries or the amounts mismatch (go-nitro). | SATP-15 | go-nitro MultiAssetHolder.sol:363-365 |
 | `isOpen_iff` | `Safety.lean` | isOpen means open or challenge mode. | SATP-13, docs-0040-02 | SATP:294-298 |
