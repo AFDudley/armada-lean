@@ -15,42 +15,46 @@ import ArmadaLean.Nitro.Address
 
 namespace ArmadaLean.Nitro
 
+variable {E : Type}
+
 /-- One outcome item. SATP:320-325: an allocation `A(a)` is an amount paid to
     a destination; a guarantee `G(x, [A, B])` is an amount and an ordered
     list of destinations; `item.amount = x` in both cases. go-nitro:
     `Allocation { destination, amount, allocationType, metadata }` with the
     guarantee metadata `{ left, right }` (MultiAssetHolder.sol:516-519). -/
-inductive Item
+inductive Item (E : Type)
   | alloc (amount : Coins)
-  | guarantee (amount : Coins) (peers : List Address)
+  | guarantee (amount : Coins) (peers : List (Address E))
   deriving DecidableEq, Repr
 
 /-- SATP:324-325 `item.amount`. -/
-def Item.amount : Item → Coins
+def Item.amount : Item E → Coins
   | .alloc a => a
   | .guarantee x _ => x
 
 /-- SATP:352 `isGuarantee`; go-nitro MultiAssetHolder.sol:276-280. -/
-def Item.isGuarantee : Item → Bool
+def Item.isGuarantee : Item E → Bool
   | .alloc _ => false
   | .guarantee _ _ => true
 
 /-- One entry of an allocation. SATP:334-335: "mapping a destination to
     either an allocation or a guarantee"; Nitro:742-743 "pairs of addresses
     and totals". -/
-structure Entry where
-  dest : Address
-  item : Item
+structure Entry (E : Type) where
+  dest : Address E
+  item : Item E
   deriving DecidableEq, Repr
 
 /-- The total of an entry. -/
-def Entry.amount (e : Entry) : Coins := e.item.amount
+def Entry.amount (e : Entry E) : Coins := e.item.amount
 
 /-- An allocation. SATP:339-341: "Keys are ordered from left to right";
     SATP:377-379 (footnote 9): "the order may also dictate which destinations
     receive priority". Nitro:747-749: "The allocation is in priority order".
     go-nitro MultiAssetHolder.sol:162-191 pays in list order. -/
-abbrev Allocation := List Entry
+abbrev Allocation (E : Type) := List (Entry E)
+
+variable [DecidableEq E]
 
 /-- Nitro:744-746: "each address only appears once in the allocation and
     require that implementations enforce this by ignoring any additional
@@ -58,27 +62,27 @@ abbrev Allocation := List Entry
     "Assumes no repeated entries" (MultiAssetHolder.sol:67). The paper form
     is kept: this keeps the first entry per address. `seen` holds the
     destinations already kept. -/
-def Allocation.dedupFrom (seen : List Address) : Allocation → Allocation
+def Allocation.dedupFrom (seen : List (Address E)) : Allocation E → Allocation E
   | [] => []
   | e :: rest =>
     if e.dest ∈ seen then Allocation.dedupFrom seen rest
     else e :: Allocation.dedupFrom (e.dest :: seen) rest
 
 /-- `dedupFrom` with nothing seen. -/
-def Allocation.dedup (o : Allocation) : Allocation := Allocation.dedupFrom [] o
+def Allocation.dedup (o : Allocation E) : Allocation E := Allocation.dedupFrom [] o
 
 /-- The first entry for a destination. go-nitro `foundLeft`/`foundRight`
     (MultiAssetHolder.sol:349-358) also take the first match. -/
-def Allocation.find (o : Allocation) (d : Address) : Option Entry :=
+def Allocation.find (o : Allocation E) (d : Address E) : Option (Entry E) :=
   o.find? (fun e => decide (e.dest = d))
 
 /-- Nitro:770 "the amount owed to B in the outcome of A": the amount of the
     first entry for `d`, or zero. -/
-def Allocation.owed (o : Allocation) (d : Address) : Coins :=
+def Allocation.owed (o : Allocation E) (d : Address E) : Coins :=
   ((o.find d).map Entry.amount).getD 0
 
 /-- The total due under an allocation. -/
-def Allocation.total (o : Allocation) : Coins :=
+def Allocation.total (o : Allocation E) : Coins :=
   (o.map Entry.amount).sum
 
 /-- Priority payout. go-nitro `compute_transfer_effects_and_interactions`
@@ -86,7 +90,7 @@ def Allocation.total (o : Allocation) : Coins :=
     `affordsForDestination = min(amount, surplus)` and `surplus` falls by it.
     Nitro:747-749 and ForceMove:1837-1853 say the same. Returns the list of
     `(destination, paid)` in entry order. -/
-def Allocation.payout : Coins → Allocation → List (Address × Coins)
+def Allocation.payout : Coins → Allocation E → List (Address E × Coins)
   | _, [] => []
   | held, e :: rest =>
     let x := min e.amount held
@@ -94,24 +98,24 @@ def Allocation.payout : Coins → Allocation → List (Address × Coins)
 
 /-- What `d` receives when `held` coins are paid out in priority order
     (duplicates after the first entry are ignored, Nitro:744-746). -/
-def Allocation.paidTo (held : Coins) (o : Allocation) (d : Address) : Coins :=
+def Allocation.paidTo (held : Coins) (o : Allocation E) (d : Address E) : Coins :=
   (((o.dedup.payout held).filter (fun p => decide (p.1 = d))).map (·.2)).sum
 
 /-- Nitro:749-751: "'A can afford x for B', if B would receive at least x
     coins, were the coins currently held by A to be paid out in priority
     order." SATP and go-nitro have no named notion; go-nitro pays the
     afforded amount itself. -/
-def Allocation.Affords (held : Coins) (o : Allocation) (d : Address) (x : Coins) : Prop :=
+def Allocation.Affords (held : Coins) (o : Allocation E) (d : Address E) (x : Coins) : Prop :=
   x ≤ o.paidTo held d
 
-instance (held : Coins) (o : Allocation) (d : Address) (x : Coins) :
+instance (held : Coins) (o : Allocation E) (d : Address E) (x : Coins) :
     Decidable (o.Affords held d x) :=
   inferInstanceAs (Decidable (x ≤ o.paidTo held d))
 
 /-- Reduce the amount owed to `d` by `x`. go-nitro MultiAssetHolder.sol:175
     `newAllocations[i].amount = allocations[i].amount - affordsForDestination`;
     Nitro:770. Only the first entry for `d` changes. -/
-def Allocation.reduceOwed (o : Allocation) (d : Address) (x : Coins) : Allocation :=
+def Allocation.reduceOwed (o : Allocation E) (d : Address E) (x : Coins) : Allocation E :=
   match o with
   | [] => []
   | e :: rest =>
@@ -125,7 +129,7 @@ def Allocation.reduceOwed (o : Allocation) (d : Address) (x : Coins) : Allocatio
     `left`. When `d` has no entry nothing changes: go-nitro reverts
     ("could not find left", MultiAssetHolder.sol:363-364), and `reclaim`
     requires the entry. -/
-def Allocation.addTo (o : Allocation) (d : Address) (x : Coins) : Allocation :=
+def Allocation.addTo (o : Allocation E) (d : Address E) (x : Coins) : Allocation E :=
   match o with
   | [] => []
   | e :: rest =>
@@ -136,12 +140,12 @@ def Allocation.addTo (o : Allocation) (d : Address) (x : Coins) : Allocation :=
 
 /-- SATP:361 `delete o_ledger[targetChannelId]`; go-nitro
     MultiAssetHolder.sol:335-338 skips the guarantee entry. -/
-def Allocation.remove (o : Allocation) (d : Address) : Allocation :=
+def Allocation.remove (o : Allocation E) (d : Address E) : Allocation E :=
   o.filter (fun e => decide (e.dest ≠ d))
 
 /-- SATP:340-341 `o[i]`; go-nitro `targetAllocations[0]`,
     `targetAllocations[1]`. The amount at index `i`, or zero. -/
-def Allocation.amountAt (o : Allocation) (i : Nat) : Coins :=
+def Allocation.amountAt (o : Allocation E) (i : Nat) : Coins :=
   ((o[i]?).map Entry.amount).getD 0
 
 /-- The outcome of a channel. SATP:334-335 and go-nitro: an allocation (the
@@ -149,12 +153,12 @@ def Allocation.amountAt (o : Allocation) (i : Nat) : Coins :=
     outcome is not modelled (operator ruling 2026-10-27; see the module
     comment). The single-constructor inductive keeps the `.allocation o`
     pattern at every use. -/
-inductive Outcome
-  | allocation (entries : Allocation)
+inductive Outcome (E : Type)
+  | allocation (entries : Allocation E)
   deriving DecidableEq, Repr
 
 /-- The allocation of an outcome. -/
-def Outcome.entries : Outcome → Allocation
+def Outcome.entries : Outcome E → Allocation E
   | .allocation o => o
 
 end ArmadaLean.Nitro

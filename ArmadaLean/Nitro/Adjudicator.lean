@@ -20,51 +20,63 @@ import ArmadaLean.Nitro.Channel
 
 namespace ArmadaLean.Nitro
 
+variable {E : Type}
+
 /-- The deployed applications. SATP:252-254; go-nitro IForceMoveApp.sol. -/
-abbrev Apps := AppId → Rules
+abbrev Apps (E : Type) := AppId → Rules E
 
 /-- The adjudicator. go-nitro: `holdings` per channel (MultiAssetHolder.sol:23)
     and `statusOf` per channel id (StatusManager.sol); SATP:240-241;
     Nitro:149-164. `held` is the total of coins the contract holds
     (Nitro:230-231). `now` is `block.timestamp`. -/
-structure Adjudicator where
-  balances : Balances
+structure Adjudicator (E : Type) where
+  balances : Balances E
   held : Coins
-  status : List (FixedPart × ChannelStatus)
+  status : List (FixedPart × ChannelStatus E)
   now : Time
 
 /-- SATP:240-241 `statusOf`; go-nitro `statusOf`. A channel with no record
     is open at turn 0 (go-nitro: an empty status unpacks to zeros). -/
-def Adjudicator.statusOf (s : Adjudicator) (c : FixedPart) : ChannelStatus :=
+def Adjudicator.statusOf (s : Adjudicator E) (c : FixedPart) : ChannelStatus E :=
   (s.status.lookup c).getD (.open 0)
 
 /-- Write one channel's status. -/
-def Adjudicator.setStatus (s : Adjudicator) (c : FixedPart) (st : ChannelStatus) : Adjudicator :=
+def Adjudicator.setStatus (s : Adjudicator E) (c : FixedPart) (st : ChannelStatus E) :
+    Adjudicator E :=
   { s with status := (c, st) :: s.status.filter (fun e => decide (e.1 ≠ c)) }
 
-/-- Nitro:602-603 `⟦χ ↦ Ω⟧`: the finalized outcome of a channel address. A
-    participant address has no outcome. -/
-def Adjudicator.finalOutcome (s : Adjudicator) (a : Address) : Option Outcome :=
+/-- The stored outcome of a finalized channel address: the allocation that
+    remains after payouts (Nitro:263-264). An external destination has no
+    outcome. -/
+def Adjudicator.finalOutcome (s : Adjudicator E) (a : Address E) : Option (Outcome E) :=
   match a with
-  | .participant _ => none
+  | .external _ => none
   | .channel c => (s.statusOf c).finalOutcome s.now
 
+/-- Nitro:602-603 `⟦χ ↦ Ω⟧`: the outcome a channel address finalized with. -/
+def Adjudicator.finalizedWith (s : Adjudicator E) (a : Address E) : Option (Outcome E) :=
+  match a with
+  | .external _ => none
+  | .channel c => (s.statusOf c).finalizedWith s.now
+
 /-- The mode of a channel at the chain's current time. -/
-def Adjudicator.mode (s : Adjudicator) (c : FixedPart) : Mode :=
+def Adjudicator.mode (s : Adjudicator E) (c : FixedPart) : Mode :=
   (s.statusOf c).mode s.now
+
+variable [DecidableEq E]
 
 /-- Nitro:395-398: "where the channel L itself has enough coins in the
     adjudicator to cover the entire allocation. In this case, we say the
     channel is directly funded." -/
-def Adjudicator.DirectlyFunded (s : Adjudicator) (c : FixedPart) : Prop :=
+def Adjudicator.DirectlyFunded (s : Adjudicator E) (c : FixedPart) : Prop :=
   ∃ o, s.finalOutcome c.address = some (.allocation o) ∧ o.total ≤ s.balances.get c.address
 
 /-- Nitro:480-481 "directly funded with x coins": the channel holds `x`. -/
-def Adjudicator.DirectlyFundedWith (s : Adjudicator) (c : FixedPart) (x : Coins) : Prop :=
+def Adjudicator.DirectlyFundedWith (s : Adjudicator E) (c : FixedPart) (x : Coins) : Prop :=
   x ≤ s.balances.get c.address
 
 /-- The empty adjudicator. -/
-def Adjudicator.genesis : Adjudicator :=
+def Adjudicator.genesis : Adjudicator E :=
   { balances := [], held := 0, status := [], now := 0 }
 
 /-- go-nitro MultiAssetHolder.sol:38-63 `deposit(asset, channelId,
@@ -84,24 +96,24 @@ def Adjudicator.genesis : Adjudicator :=
     `Reachable` history; `expectedHeld` is what the depositor saw, and the
     guard fails when the chain no longer holds it. The model has no forks
     and no finality. -/
-def Adjudicator.deposit (s : Adjudicator) (a : Address) (expectedHeld x : Coins) :
-    Option Adjudicator :=
+def Adjudicator.deposit (s : Adjudicator E) (a : Address E) (expectedHeld x : Coins) :
+    Option (Adjudicator E) :=
   match a with
   | .channel _ =>
     if s.balances.get a = expectedHeld then
       some { s with balances := s.balances.add a x, held := s.held + x }
     else
       none
-  | .participant _ => none
+  | .external _ => none
 
 /-- Pay `x` coins to a destination. go-nitro `_executeSingleAssetExit`
-    (MultiAssetHolder.sol:396-408): an external destination receives the
+    (MultiAssetHolder.sol:402-415): an external destination receives the
     asset from the contract; a channel destination's holding rises. There
     is no withdrawal operation in go-nitro: Nitro:169-199 `W_A(x)` is
     realized by this payout, and SATP:764-768 defers withdrawals. -/
-def Adjudicator.payTo (s : Adjudicator) (b : Address) (x : Coins) : Adjudicator :=
+def Adjudicator.payTo (s : Adjudicator E) (b : Address E) (x : Coins) : Adjudicator E :=
   match b with
-  | .participant _ => { s with balances := s.balances.add b x, held := s.held - x }
+  | .external _ => { s with balances := s.balances.add b x, held := s.held - x }
   | .channel _ => { s with balances := s.balances.add b x }
 
 /-- go-nitro MultiAssetHolder.sol:72-100 `transfer`: on a finalized channel,
@@ -112,7 +124,8 @@ def Adjudicator.payTo (s : Adjudicator) (b : Address) (x : Coins) : Adjudicator 
     with `x ≤` the affordable amount; the code pays the whole affordable
     amount, so `x` is not a parameter. SATP:764-768 defers payouts. The
     multi-index batch (`indices`) is an encoding and is not modelled. -/
-def Adjudicator.transfer (s : Adjudicator) (a : FixedPart) (b : Address) : Option Adjudicator :=
+def Adjudicator.transfer (s : Adjudicator E) (a : FixedPart) (b : Address E) :
+    Option (Adjudicator E) :=
   match s.finalOutcome a.address with
   | some (.allocation o) =>
     match o.find b with
@@ -133,7 +146,7 @@ def Adjudicator.transfer (s : Adjudicator) (a : FixedPart) (b : Address) : Optio
     `o_target[0] + o_target[1] = x` (line 365). The balances do not change
     (line 391: "no changes are made to the target channel"; the ledger's
     holding is untouched). -/
-def Adjudicator.reclaim (s : Adjudicator) (l v : FixedPart) : Option Adjudicator :=
+def Adjudicator.reclaim (s : Adjudicator E) (l v : FixedPart) : Option (Adjudicator E) :=
   match s.finalOutcome l.address, s.finalOutcome v.address with
   | some (.allocation oLedger), some (.allocation oTarget) =>
     match oLedger.find v.address with
@@ -159,8 +172,8 @@ def Adjudicator.reclaim (s : Adjudicator) (l v : FixedPart) : Option Adjudicator
     lets a participant push the deadline forever; the code corrects it.
     ForceMove:1340-1354 forbids a challenge while one runs; the code allows
     one at a higher turn. -/
-def Adjudicator.challenge (apps : Apps) (s : Adjudicator) (challenger : Participant)
-    (c : FixedPart) (proof : SupportProof) (candidate : State) : Option Adjudicator :=
+def Adjudicator.challenge (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E) : Option (Adjudicator E) :=
   if challenger ∈ c.participants ∧
       (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
       ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
@@ -176,8 +189,8 @@ def Adjudicator.challenge (apps : Apps) (s : Adjudicator) (challenger : Particip
     operation. ForceMove:1399-1440 `refute` and `respondWithMove` and
     ForceMove:1543-1545 ("store the turnNum of the response state") are
     superseded by it. -/
-def Adjudicator.checkpoint (apps : Apps) (s : Adjudicator) (c : FixedPart)
-    (proof : SupportProof) (candidate : State) : Option Adjudicator :=
+def Adjudicator.checkpoint (apps : Apps E) (s : Adjudicator E) (c : FixedPart)
+    (proof : SupportProof E) (candidate : State E) : Option (Adjudicator E) :=
   if (s.statusOf c).IsOpen s.now ∧
       (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
       (s.statusOf c).turnNumRecord < candidate.turnNum then
@@ -193,34 +206,34 @@ def Adjudicator.checkpoint (apps : Apps) (s : Adjudicator) (c : FixedPart)
     Nitro:296-300; ForceMove:1495-1507. go-nitro also resets the stored turn
     to 0; no operation reads the turn of a finalized channel, so the model
     keeps the candidate's turn. -/
-def Adjudicator.conclude (s : Adjudicator) (c : FixedPart) (ss : SignedState) :
-    Option Adjudicator :=
+def Adjudicator.conclude (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) :
+    Option (Adjudicator E) :=
   if (s.statusOf c).IsOpen s.now ∧ ConclusionProof c ss then
-    some (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome))
+    some (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome))
   else
     none
 
 /-- The chain clock moves forward. go-nitro reads `block.timestamp`;
     ForceMove:1261-1265: a challenge that receives no response "within the
     timeout period" terminates. -/
-def Adjudicator.tick (s : Adjudicator) (dt : Time) : Adjudicator :=
+def Adjudicator.tick (s : Adjudicator E) (dt : Time) : Adjudicator E :=
   { s with now := s.now + dt }
 
 /-- An on-chain operation. go-nitro NitroAdjudicator: `deposit`,
     `transfer`, `reclaim`, `challenge`, `checkpoint`, `conclude` (the batch
     helpers `transferAllAssets` and `concludeAndTransferAllAssets` are
     sequences of these). -/
-inductive Op
-  | deposit (a : Address) (expectedHeld x : Coins)
-  | transfer (a : FixedPart) (b : Address)
+inductive Op (E : Type)
+  | deposit (a : Address E) (expectedHeld x : Coins)
+  | transfer (a : FixedPart) (b : Address E)
   | reclaim (l v : FixedPart)
-  | challenge (c : FixedPart) (proof : SupportProof) (candidate : State)
-  | checkpoint (c : FixedPart) (proof : SupportProof) (candidate : State)
-  | conclude (c : FixedPart) (ss : SignedState)
+  | challenge (c : FixedPart) (proof : SupportProof E) (candidate : State E)
+  | checkpoint (c : FixedPart) (proof : SupportProof E) (candidate : State E)
+  | conclude (c : FixedPart) (ss : SignedState E)
   | tick (dt : Time)
 
 /-- The signed states an operation submits. -/
-def Op.proofStates : Op → SupportProof
+def Op.proofStates : Op E → SupportProof E
   | .challenge _ proof _ => proof
   | .checkpoint _ proof _ => proof
   | .conclude _ ss => [ss]
@@ -228,14 +241,14 @@ def Op.proofStates : Op → SupportProof
 
 /-- Nitro:312-313: "There is no restriction on who can trigger the
     operations." go-nitro `transfer` and `reclaim` have no caller check. -/
-def Op.isRedistribution : Op → Bool
+def Op.isRedistribution : Op E → Bool
   | .transfer .. => true
   | .reclaim .. => true
   | _ => false
 
 /-- Apply one operation by one caller. -/
-def Adjudicator.apply (apps : Apps) (caller : Participant) (op : Op) (s : Adjudicator) :
-    Option Adjudicator :=
+def Adjudicator.apply (apps : Apps E) (caller : Participant) (op : Op E) (s : Adjudicator E) :
+    Option (Adjudicator E) :=
   match op with
   | .deposit a e x => s.deposit a e x
   | .transfer a b => s.transfer a b
@@ -246,18 +259,42 @@ def Adjudicator.apply (apps : Apps) (caller : Participant) (op : Op) (s : Adjudi
   | .tick dt => some (s.tick dt)
 
 /-- One successful on-chain step. -/
-inductive Step (apps : Apps) : Adjudicator → Adjudicator → Prop
-  | mk (caller : Participant) (op : Op) (s s' : Adjudicator)
+inductive Step (apps : Apps E) : Adjudicator E → Adjudicator E → Prop
+  | mk (caller : Participant) (op : Op E) (s s' : Adjudicator E)
       (h : s.apply apps caller op = some s') : Step apps s s'
 
 /-- The states reachable from genesis: the reflexive transitive closure of
     `Step` (Mathlib `Relation.ReflTransGen`). -/
-def Reachable (apps : Apps) (s : Adjudicator) : Prop :=
+def Reachable (apps : Apps E) (s : Adjudicator E) : Prop :=
   Relation.ReflTransGen (Step apps) Adjudicator.genesis s
+
+/-- The signatures that exist: `(q, st) ∈ signed` when `q` signed `st`. A
+    proof state is genuine when each listed signer signed it, and each
+    signer listed in its voucher signed a state that carries the voucher
+    (SATP:703 `voucherSignedByAll`). Symbolic signatures are data
+    (`Channel.lean`); this predicate says which of them a history may use. -/
+def SignedState.SignedIn (signed : List (Participant × State E)) (ss : SignedState E) : Prop :=
+  (∀ q ∈ ss.signers, (q, ss.state) ∈ signed) ∧
+  ∀ v, ss.state.voucher? = some v → ∀ q ∈ v.signers, ∃ st, (q, st) ∈ signed ∧ st.voucher? = some v
+
+/-- One successful on-chain step whose proof states are all genuine for
+    `signed`. -/
+inductive SignedStep (apps : Apps E) (signed : List (Participant × State E)) :
+    Adjudicator E → Adjudicator E → Prop
+  | mk (caller : Participant) (op : Op E) (s s' : Adjudicator E)
+      (hsig : ∀ ss ∈ op.proofStates, ss.SignedIn signed)
+      (h : s.apply apps caller op = some s') : SignedStep apps signed s s'
+
+/-- The states reachable from genesis by steps that use only the signatures
+    in `signed` (Mathlib `Relation.ReflTransGen`). SATP:168: forging a
+    signature is infeasible. -/
+def ReachableSigned (apps : Apps E) (signed : List (Participant × State E)) (s : Adjudicator E) :
+    Prop :=
+  Relation.ReflTransGen (SignedStep apps signed) Adjudicator.genesis s
 
 /-- Apply a list of (caller, op) pairs. A failed operation changes nothing
     and the sequence continues. -/
-def Adjudicator.applyAll (apps : Apps) : List (Participant × Op) → Adjudicator → Adjudicator
+def Adjudicator.applyAll (apps : Apps E) : List (Participant × Op E) → Adjudicator E → Adjudicator E
   | [], s => s
   | (caller, op) :: rest, s => Adjudicator.applyAll apps rest ((s.apply apps caller op).getD s)
 

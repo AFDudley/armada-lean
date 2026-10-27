@@ -11,25 +11,31 @@ import ArmadaLean.Nitro.Lemmas
 
 namespace ArmadaLean.Nitro
 
+variable {E : Type} [DecidableEq E]
+
+omit [DecidableEq E] in
 /-- ForceMove-D02, Nitro-02, Nitro-03, SATP-05, docs-0010-02, ForceMove-F01.
     SATP:213-215: the id is computed from the constants and the nonce makes
     channels distinct; Nitro:158-160: impossible "to construct a channel
     whose address is A"; go-nitro NitroUtils.sol:122-133. Two fixed parts
     with one address are one channel. -/
-theorem channel_address_inj (c c' : FixedPart) (h : c.address = c'.address) : c = c' := by
+theorem channel_address_inj (c c' : FixedPart) (h : (c.address : Address E) = c'.address) :
+    c = c' := by
   simpa using h
 
-/-- ForceMove-D02, Nitro-02. go-nitro `_isExternalDestination`: a channel
-    id is never an external address, so a channel's funds cannot be read as
-    a participant's. -/
-theorem channel_address_ne_participant (c : FixedPart) (p : Participant) :
-    c.address ≠ .participant p := by
+omit [DecidableEq E] in
+/-- ForceMove-D02, Nitro-02. go-nitro `_isExternalDestination`
+    (MultiAssetHolder.sol:436): a channel id is never an external
+    destination, so a channel's funds cannot be read as an external
+    destination's. -/
+theorem channel_address_ne_external (c : FixedPart) (e : E) :
+    c.address ≠ Address.external e := by
   simp
 
 /-- Nitro-01. Nitro:162-163: "If an address does not appear in the table we
     take the balance to be zero." go-nitro: an unset `holdings` entry reads
     as 0. -/
-theorem balances_absent_zero (b : Balances) (a : Address) (h : ∀ e ∈ b, e.1 ≠ a) :
+theorem balances_absent_zero (b : Balances E) (a : Address E) (h : ∀ e ∈ b, e.1 ≠ a) :
     b.get a = 0 := by
   exact Balances.get_of_forall_ne h
 
@@ -38,13 +44,14 @@ theorem balances_absent_zero (b : Balances) (a : Address) (h : ∀ e ∈ b, e.1 
     balances." go-nitro: `holdings` is per channel, and a payout to an
     external destination leaves the contract (MultiAssetHolder.sol:401-402),
     so the coins held equal the sum of the channel balances. -/
-theorem held_eq_channel_balances (apps : Apps) (s : Adjudicator) (h : Reachable apps s) :
+theorem held_eq_channel_balances (apps : Apps E) (s : Adjudicator E) (h : Reachable apps s) :
     s.held = s.balances.channelTotal := by
   exact (Adjudicator.heldInv_reachable h).2
 
+omit [DecidableEq E] in
 /-- Nitro-08. Every coin that entered the adjudicator is held for a channel
     or was paid out to a participant. -/
-theorem balances_total_split (b : Balances) :
+theorem balances_total_split (b : Balances E) :
     b.total = b.channelTotal + b.paidOutTotal := by
   induction b with
   | nil => rfl
@@ -61,7 +68,7 @@ theorem balances_total_split (b : Balances) :
     deposit raises the balance by `x` and brings `x` coins into the
     adjudicator. It touches nothing else. A second deposit adds to the
     first. -/
-theorem deposit_effects (s : Adjudicator) (c : FixedPart) (e x : Coins) (s' : Adjudicator)
+theorem deposit_effects (s : Adjudicator E) (c : FixedPart) (e x : Coins) (s' : Adjudicator E)
     (h : s.deposit c.address e x = some s') :
     s.balances.get c.address = e ∧
     s'.balances.get c.address = e + x ∧
@@ -78,7 +85,7 @@ theorem deposit_effects (s : Adjudicator) (c : FixedPart) (e x : Coins) (s' : Ad
     deposit to an external destination reverts, so the address must be a
     channel; the code is followed. The deposit succeeds for every caller
     and every channel. -/
-theorem deposit_can_happen (apps : Apps) (caller : Participant) (s : Adjudicator) (c : FixedPart)
+theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicator E) (c : FixedPart)
     (x : Coins) :
     s.apply apps caller (.deposit c.address (s.balances.get c.address) x) =
       some { s with balances := s.balances.add c.address x, held := s.held + x } := by
@@ -88,7 +95,7 @@ theorem deposit_can_happen (apps : Apps) (caller : Participant) (s : Adjudicator
     expectedHeld, 'held != expectedHeld')`: a deposit whose observation is
     stale fails. A history in which an earlier deposit was dropped or
     reordered is one such history. -/
-theorem deposit_requires_expectedHeld (s : Adjudicator) (c : FixedPart) (e x : Coins)
+theorem deposit_requires_expectedHeld (s : Adjudicator E) (c : FixedPart) (e x : Coins)
     (h : s.balances.get c.address ≠ e) : s.deposit c.address e x = none := by
   simp at h
   simp [Adjudicator.deposit, h]
@@ -97,7 +104,7 @@ theorem deposit_requires_expectedHeld (s : Adjudicator) (c : FixedPart) (e x : C
     position `k` must see before it deposits (ForceMove:1197-1208,
     ForceMove:1797-1808; docs 0060: "participants should not deposit until
     those with higher priority have had their deposits confirmed"). -/
-def Allocation.aheadOf (o : Allocation) (k : Nat) : Coins :=
+def Allocation.aheadOf (o : Allocation E) (k : Nat) : Coins :=
   Allocation.total (o.take k)
 
 /-- docs-0060-02, ForceMove-B07, docs-0060-06. The funding-order theorem,
@@ -110,9 +117,9 @@ def Allocation.aheadOf (o : Allocation) (k : Nat) : Coins :=
     the deposit is paid to no entry ahead of it. A reorganization that
     dropped an earlier deposit makes the guard fail
     (`deposit_requires_expectedHeld`); it is not a separate case. -/
-theorem deposit_respects_funding_order (apps : Apps) (s s' : Adjudicator) (hr : Reachable apps s)
-    (caller : Participant) (c : FixedPart) (o : Allocation) (hdedup : o.dedup = o) (k : Nat)
-    (e : Entry) (he : o[k]? = some e)
+theorem deposit_respects_funding_order (apps : Apps E) (s s' : Adjudicator E) (hr : Reachable apps s)
+    (caller : Participant) (c : FixedPart) (o : Allocation E) (hdedup : o.dedup = o) (k : Nat)
+    (e : Entry E) (he : o[k]? = some e)
     (h : s.apply apps caller (.deposit c.address (o.aheadOf k) e.amount) = some s') :
     s.balances.get c.address = o.aheadOf k ∧
     s'.balances.get c.address = o.aheadOf k + e.amount ∧
@@ -142,7 +149,7 @@ theorem deposit_respects_funding_order (apps : Apps) (s s' : Adjudicator) (hr : 
     pre-funding outcome, each with `expectedHeld` equal to the allocations
     ahead of it, all succeed from a channel that holds nothing, and leave
     the channel fully funded (ForceMove:1797-1808). -/
-theorem deposits_in_order_succeed (apps : Apps) (s : Adjudicator) (c : FixedPart) (o : Allocation)
+theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (o : Allocation E)
     (callers : List Participant) (h0 : s.balances.get c.address = 0) :
     let op := fun k => ((callers[k]?).getD ⟨0⟩, Op.deposit c.address (o.aheadOf k) (o.amountAt k))
     let ops := (List.range o.length).map op
@@ -187,9 +194,9 @@ theorem deposits_in_order_succeed (apps : Apps) (s : Adjudicator) (c : FixedPart
   rw [this, Allocation.aheadOf, List.take_length]
 
 /-- docs-0060-01, Nitro-04. go-nitro MultiAssetHolder.sol:43 "Deposit to
-    external destination": a deposit to a participant address fails. -/
-theorem deposit_to_participant_fails (s : Adjudicator) (p : Participant) (e x : Coins) :
-    s.deposit (.participant p) e x = none := by
+    external destination": a deposit to an external destination fails. -/
+theorem deposit_to_external_fails (s : Adjudicator E) (d : E) (e x : Coins) :
+    s.deposit (.external d) e x = none := by
   rfl
 
 /-- Nitro-06, Nitro-07, SATP-16. go-nitro MultiAssetHolder.sol:396-408: coins
@@ -202,23 +209,23 @@ theorem deposit_to_participant_fails (s : Adjudicator) (p : Participant) (e x : 
     The hypothesis `hr` is from the operator ruling 2026-10-27 (counterexample
     in Counter.lean): on an unreachable state the coins held can be fewer
     than the payout. -/
-theorem held_falls_only_by_payout (apps : Apps) (s s' : Adjudicator) (hr : Reachable apps s)
+theorem held_falls_only_by_payout (apps : Apps E) (s s' : Adjudicator E) (hr : Reachable apps s)
     (caller : Participant)
-    (op : Op) (h : s.apply apps caller op = some s') (hlt : s'.held < s.held) :
+    (op : Op E) (h : s.apply apps caller op = some s') (hlt : s'.held < s.held) :
     op.isRedistribution = true ∧
-    ∃ p, s'.balances.get (.participant p) = s.balances.get (.participant p) + (s.held - s'.held) ∧
-      ∀ q, q ≠ p → s'.balances.get (.participant q) = s.balances.get (.participant q) := by
+    ∃ d : E, s'.balances.get (.external d) = s.balances.get (.external d) + (s.held - s'.held) ∧
+      ∀ d', d' ≠ d → s'.balances.get (.external d') = s.balances.get (.external d') := by
   obtain ⟨-, hheld⟩ := Adjudicator.heldInv_reachable hr
   cases op with
   | transfer a b =>
     obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
-    have hle := Balances.get_le_sumIf (fun a => decide (a.isParticipant = false)) s.balances
+    have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
       (a := a.address) (by simp)
     rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
     cases b with
     | channel d => simp [hh] at hlt
-    | participant p =>
+    | external p =>
       refine ⟨rfl, p, ?_, fun q hq => ?_⟩
       · rw [hb, hh]; simp; grind
       · rw [hb]; simp [hq]
@@ -233,8 +240,8 @@ theorem held_falls_only_by_payout (apps : Apps) (s s' : Adjudicator) (hr : Reach
 /-- Nitro-07. Nitro:227-229: no operation takes a channel's coins except a
     redistribution. go-nitro: only `holdings[asset][channelId] -=
     totalPayouts` (MultiAssetHolder.sol:203) lowers a holding. -/
-theorem channel_balance_falls_only_by_redistribution (apps : Apps) (s s' : Adjudicator)
-    (caller : Participant) (op : Op) (h : s.apply apps caller op = some s') (c : FixedPart)
+theorem channel_balance_falls_only_by_redistribution (apps : Apps E) (s s' : Adjudicator E)
+    (caller : Participant) (op : Op E) (h : s.apply apps caller op = some s') (c : FixedPart)
     (hlt : s'.balances.get c.address < s.balances.get c.address) :
     op.isRedistribution = true := by
   cases op with
@@ -248,11 +255,12 @@ theorem channel_balance_falls_only_by_redistribution (apps : Apps) (s s' : Adjud
   | conclude c' ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp at hlt
   | tick dt => simp at h; subst h; simp at hlt
 
-/-- Nitro-06. A participant's paid-out balance never falls: go-nitro has no
-    operation that takes coins back from an external destination. -/
-theorem paid_out_monotone (apps : Apps) (s s' : Adjudicator) (h : Step apps s s')
-    (p : Participant) :
-    s.balances.get (.participant p) ≤ s'.balances.get (.participant p) := by
+/-- Nitro-06. An external destination's paid-out balance never falls:
+    go-nitro has no operation that takes coins back from an external
+    destination. -/
+theorem paid_out_monotone (apps : Apps E) (s s' : Adjudicator E) (h : Step apps s s')
+    (d : E) :
+    s.balances.get (.external d) ≤ s'.balances.get (.external d) := by
   cases h with
   | mk caller op _ _ h =>
   cases op with
@@ -269,23 +277,25 @@ theorem paid_out_monotone (apps : Apps) (s s' : Adjudicator) (h : Step apps s s'
   | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp
   | tick dt => simp at h; subst h; simp
 
+omit [DecidableEq E] in
 /-- ForceMove-A16, ForceMove-B07, Nitro-26, SATP-12, docs-0080-03. go-nitro
     MultiAssetHolder.sol:162-191: entry `k` is paid `min(amount, surplus)`
     where `surplus` is the coins held minus what the earlier entries took.
     ForceMove:1837-1853: `min(owed_k, balance − pending)`; Nitro:747-749:
     "the addresses at the beginning of the allocation will receive funds
     first." -/
-theorem payout_priority_formula (held : Coins) (o : Allocation) (k : Nat) (e : Entry)
+theorem payout_priority_formula (held : Coins) (o : Allocation E) (k : Nat) (e : Entry E)
     (h : o[k]? = some e) :
     (o.payout held)[k]? = some (e.dest, min e.amount (held - Allocation.total (o.take k))) := by
   exact Allocation.payout_getElem? h
 
+omit [DecidableEq E] in
 /-- ForceMove-B07, Nitro-26, docs-0060-06. ForceMove:1812-1821: "paying out
     Alice first, allowing her to recover her funds even if Bob does not
     deposit." If a later entry receives anything, every earlier entry
     received its full amount. -/
-theorem payout_earlier_paid_in_full (held : Coins) (o : Allocation) (i j : Nat)
-    (ei ej : Entry) (pi pj : Coins) (hi : o[i]? = some ei) (hj : o[j]? = some ej) (hij : i < j)
+theorem payout_earlier_paid_in_full (held : Coins) (o : Allocation E) (i j : Nat)
+    (ei ej : Entry E) (pi pj : Coins) (hi : o[i]? = some ei) (hj : o[j]? = some ej) (hij : i < j)
     (hpi : (o.payout held)[i]? = some (ei.dest, pi))
     (hpj : (o.payout held)[j]? = some (ej.dest, pj)) (hpos : 0 < pj) :
     pi = ei.amount := by
@@ -296,11 +306,12 @@ theorem payout_earlier_paid_in_full (held : Coins) (o : Allocation) (i j : Nat)
   have h2 := Allocation.total_take_mono o (show i + 1 ≤ j by omega)
   grind
 
+omit [DecidableEq E] in
 /-- Nitro-26, Nitro-28, docs-0080-03. The payout never exceeds the coins
     held, and never pays an entry more than its amount. -/
-theorem payout_bounded (held : Coins) (o : Allocation) :
+theorem payout_bounded (held : Coins) (o : Allocation E) :
     ((o.payout held).map (·.2)).sum ≤ held ∧
-    ∀ (i : Nat) (e : Entry) (x : Coins), o[i]? = some e → (o.payout held)[i]? = some (e.dest, x) →
+    ∀ (i : Nat) (e : Entry E) (x : Coins), o[i]? = some e → (o.payout held)[i]? = some (e.dest, x) →
       x ≤ e.amount := by
   refine ⟨Allocation.payout_sum_le held o, fun i e x hi hx => ?_⟩
   rw [Allocation.payout_getElem? hi] at hx
@@ -310,14 +321,14 @@ theorem payout_bounded (held : Coins) (o : Allocation) :
 /-- Nitro-25. Nitro:744-746: "ignoring any additional entries for a given
     address after the first." A destination receives at most the amount of
     its first entry. -/
-theorem paidTo_first_entry_only (held : Coins) (o : Allocation) (d : Address) :
+theorem paidTo_first_entry_only (held : Coins) (o : Allocation E) (d : Address E) :
     o.paidTo held d ≤ o.owed d := by
   rw [Allocation.paidTo_eq_get, ← Allocation.owed_dedup]
   exact Allocation.payout_get_le_owed _ _ _
 
 /-- Nitro-27, Nitro-16. Nitro:749-751: a channel that holds the whole total
     of its allocation affords every entry in full. -/
-theorem affords_when_fully_funded (held : Coins) (o : Allocation) (d : Address)
+theorem affords_when_fully_funded (held : Coins) (o : Allocation E) (d : Address E)
     (h : o.total ≤ held) : o.Affords held d (o.owed d) := by
   unfold Allocation.Affords
   rw [Allocation.paidTo_eq_get, ← Allocation.owed_dedup]
@@ -333,8 +344,8 @@ theorem affords_when_fully_funded (held : Coins) (o : Allocation) (d : Address)
     contract. The hypothesis `hr` is from the operator ruling 2026-10-27
     (counterexample in Counter.lean): on an unreachable state the coins held
     can be fewer than the payout. -/
-theorem transfer_effects (apps : Apps) (s : Adjudicator) (hr : Reachable apps s) (a : FixedPart)
-    (b : Address) (s' : Adjudicator)
+theorem transfer_effects (apps : Apps E) (s : Adjudicator E) (hr : Reachable apps s) (a : FixedPart)
+    (b : Address E) (s' : Adjudicator E)
     (h : s.transfer a b = some s') :
     ∃ o x, s.finalOutcome a.address = some (.allocation o) ∧
       x = o.paidTo (s.balances.get a.address) b ∧
@@ -342,11 +353,11 @@ theorem transfer_effects (apps : Apps) (s : Adjudicator) (hr : Reachable apps s)
       (b ≠ a.address → s'.balances.get b = s.balances.get b + x) ∧
       (∀ d, d ≠ a.address → d ≠ b → s'.balances.get d = s.balances.get d) ∧
       s'.finalOutcome a.address = some (.allocation (o.reduceOwed b x)) ∧
-      s'.held + (if b.isParticipant then x else 0) = s.held ∧ s'.now = s.now := by
+      s'.held + (if b.isExternal then x else 0) = s.held ∧ s'.now = s.now := by
   obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
   obtain ⟨o, _, x, hf, -, hx, hb, hh, hs, hn⟩ := Adjudicator.transfer_some h
   have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
-  have hle := Balances.get_le_sumIf (fun a => decide (a.isParticipant = false)) s.balances
+  have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
     (a := a.address) (by simp)
   rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
   refine ⟨o, x, hf, hx, ?_, fun hba => ?_, fun d hda hdb => ?_, ?_, ?_, hn⟩
@@ -360,7 +371,7 @@ theorem transfer_effects (apps : Apps) (s : Adjudicator) (hr : Reachable apps s)
     · simp_all
 
 /-- Nitro-28. The reduction of an owed amount is exact. -/
-theorem reduceOwed_owed (o : Allocation) (d : Address) (x : Coins) :
+theorem reduceOwed_owed (o : Allocation E) (d : Address E) (x : Coins) :
     (o.reduceOwed d x).owed d = o.owed d - x ∧
     ∀ d', d' ≠ d → (o.reduceOwed d x).owed d' = o.owed d' := by
   refine ⟨by simp [Allocation.owed_reduceOwed], fun d' h => ?_⟩
@@ -370,7 +381,7 @@ theorem reduceOwed_owed (o : Allocation) (d : Address) (x : Coins) :
     a finalized channel with an allocation entry for `b` succeeds, and pays
     the whole affordable amount (MultiAssetHolder.sol:66). The exact result
     is stated. -/
-theorem transfer_can_happen (s : Adjudicator) (a : FixedPart) (b : Address) (o : Allocation)
+theorem transfer_can_happen (s : Adjudicator E) (a : FixedPart) (b : Address E) (o : Allocation E)
     (amt : Coins) (hf : s.finalOutcome a.address = some (.allocation o))
     (hb : o.find b = some ⟨b, .alloc amt⟩) :
     ∃ s', s.transfer a b = some s' ∧
@@ -394,7 +405,7 @@ theorem transfer_can_happen (s : Adjudicator) (a : FixedPart) (b : Address) (o :
     go-nitro: the transfer pays what is affordable; it reverts when the
     channel is not finalized, when `b` has no entry, or when the entry is a
     guarantee ("cannot transfer a guarantee", MultiAssetHolder.sol:172). -/
-theorem transfer_fails_otherwise (s : Adjudicator) (a : FixedPart) (b : Address)
+theorem transfer_fails_otherwise (s : Adjudicator E) (a : FixedPart) (b : Address E)
     (h : ∀ o, s.finalOutcome a.address = some (.allocation o) →
       ∀ amt, o.find b ≠ some ⟨b, .alloc amt⟩) :
     s.transfer a b = none := by
@@ -408,8 +419,8 @@ theorem transfer_fails_otherwise (s : Adjudicator) (a : FixedPart) (b : Address)
     Every balance reads the same; the list itself can change (`add b 0`
     writes an entry). Operator ruling 2026-10-27 (counterexample in
     Counter.lean). -/
-theorem transfer_zero_moves_nothing (s : Adjudicator) (a : FixedPart) (b : Address)
-    (s' : Adjudicator) (h : s.transfer a b = some s')
+theorem transfer_zero_moves_nothing (s : Adjudicator E) (a : FixedPart) (b : Address E)
+    (s' : Adjudicator E) (h : s.transfer a b = some s')
     (h0 : ∀ o, s.finalOutcome a.address = some (.allocation o) →
       o.paidTo (s.balances.get a.address) b = 0) :
     (∀ d, s'.balances.get d = s.balances.get d) ∧ s'.held = s.held := by
@@ -427,8 +438,8 @@ theorem transfer_zero_moves_nothing (s : Adjudicator) (a : FixedPart) (b : Addre
     `_requireChannelFinalized` (MultiAssetHolder.sol:127); Nitro:261-266:
     redistribution reads a finalized outcome; ForceMove:1725-1728. A transfer
     succeeds only on a finalized channel. -/
-theorem transfer_requires_finalized (s : Adjudicator) (a : FixedPart) (b : Address)
-    (s' : Adjudicator) (h : s.transfer a b = some s') : s.mode a = .finalized := by
+theorem transfer_requires_finalized (s : Adjudicator E) (a : FixedPart) (b : Address E)
+    (s' : Adjudicator E) (h : s.transfer a b = some s') : s.mode a = .finalized := by
   obtain ⟨o, -, -, hf, -⟩ := Adjudicator.transfer_some h
   rw [Adjudicator.mode_eq, ChannelStatus.mode_eq_finalized_iff]
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
@@ -437,7 +448,7 @@ theorem transfer_requires_finalized (s : Adjudicator) (a : FixedPart) (b : Addre
 /-- Nitro-15. Nitro:312-313: "There is no restriction on who can trigger the
     operations." go-nitro `transfer` and `reclaim` read no caller. A
     redistribution gives the same result for every caller. -/
-theorem redistribution_ignores_caller (apps : Apps) (s : Adjudicator) (op : Op)
+theorem redistribution_ignores_caller (apps : Apps E) (s : Adjudicator E) (op : Op E)
     (c1 c2 : Participant) (h : op.isRedistribution = true) :
     s.apply apps c1 op = s.apply apps c2 op := by
   cases op <;> first | rfl | simp [Op.isRedistribution] at h
@@ -447,9 +458,9 @@ theorem redistribution_ignores_caller (apps : Apps) (s : Adjudicator) (op : Op)
     the operator ruling 2026-10-27 (counterexample in Counter.lean): on an
     unreachable state an address can have two entries, or the coins held
     can be fewer than the payout. -/
-theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (hr : Reachable apps s)
+theorem redistribution_conserves_total (apps : Apps E) (s s' : Adjudicator E) (hr : Reachable apps s)
     (caller : Participant)
-    (op : Op) (hop : op.isRedistribution = true) (h : s.apply apps caller op = some s') :
+    (op : Op E) (hop : op.isRedistribution = true) (h : s.apply apps caller op = some s') :
     s'.balances.total = s.balances.total ∧
     s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal := by
   obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
@@ -457,11 +468,11 @@ theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (hr : 
   | transfer a b =>
     obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
-    have hle := Balances.get_le_sumIf (fun a => decide (a.isParticipant = false)) s.balances
+    have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
       (a := a.address) (by simp)
     rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
     have h1 := Balances.sumIf_add_sub (fun _ => true) hnd a.address b hxa
-    have h2 := Balances.sumIf_add_sub (fun a => decide (a.isParticipant = true)) hnd a.address b hxa
+    have h2 := Balances.sumIf_add_sub (fun a => decide (a.isExternal = true)) hnd a.address b hxa
     rw [Balances.total_eq_sumIf, Balances.total_eq_sumIf, Balances.paidOutTotal_eq_sumIf,
       Balances.paidOutTotal_eq_sumIf, hb, hh]
     cases b <;> simp at h1 h2 ⊢ <;> grind
@@ -472,27 +483,27 @@ theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (hr : 
 /-- One redistribution of a finalized outcome: Nitro:770 (transfer),
     SATP:358-361 and go-nitro `compute_reclaim_effects` (reclaim on the
     ledger). -/
-inductive RedistributeStep : Outcome → Outcome → Prop
-  | reduce (o : Allocation) (d : Address) (x : Coins) :
+inductive RedistributeStep : Outcome E → Outcome E → Prop
+  | reduce (o : Allocation E) (d : Address E) (x : Coins) :
       RedistributeStep (.allocation o) (.allocation (o.reduceOwed d x))
-  | reclaim (o : Allocation) (left right v : Address) (x y : Coins) :
+  | reclaim (o : Allocation E) (left right v : Address E) (x y : Coins) :
       RedistributeStep (.allocation o) (.allocation (((o.addTo left x).addTo right y).remove v))
 
 /-- Zero or more redistributions (Mathlib `Relation.ReflTransGen`). -/
-def Redistributed : Outcome → Outcome → Prop :=
+def Redistributed : Outcome E → Outcome E → Prop :=
   Relation.ReflTransGen RedistributeStep
 
 /-- The conclusion of `finalized_two_ways` for a channel `c` and an outcome
     `Ω` at the state `s`: a conclude, or a challenge whose deadline is at or
     before `s.now`, followed by redistributions. -/
-def FinalizedTwoWays (apps : Apps) (s : Adjudicator) (c : FixedPart) (Ω : Outcome) : Prop :=
+def FinalizedTwoWays (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (Ω : Outcome E) : Prop :=
   ∃ s0 s1 caller, Reachable apps s0 ∧
     ((∃ ss, s0.apply apps caller (.conclude c ss) = some s1 ∧ ConclusionProof c ss ∧
         Redistributed ss.state.outcome Ω) ∨
      (∃ proof candidate, s0.apply apps caller (.challenge c proof candidate) = some s1 ∧
         s0.now + c.challengeDuration ≤ s.now ∧ Redistributed candidate.outcome Ω))
 
-theorem FinalizedTwoWays.mono {apps : Apps} {s s' : Adjudicator} {c : FixedPart} {Ω Ω' : Outcome}
+theorem FinalizedTwoWays.mono {apps : Apps E} {s s' : Adjudicator E} {c : FixedPart} {Ω Ω' : Outcome E}
     (h : FinalizedTwoWays apps s c Ω) (hn : s.now ≤ s'.now) (hR : Redistributed Ω Ω') :
     FinalizedTwoWays apps s' c Ω' := by
   obtain ⟨s0, s1, caller, hr0, ⟨ss, h1, h2, h3⟩ | ⟨proof, cand, h1, h2, h3⟩⟩ := h
@@ -502,15 +513,15 @@ theorem FinalizedTwoWays.mono {apps : Apps} {s s' : Adjudicator} {c : FixedPart}
 /-- Nitro:288-290: the origin of a channel status. A running challenge came
     from a challenge step whose deadline it keeps; a finalized status
     satisfies `FinalizedTwoWays`. -/
-def StatusOrigin (apps : Apps) (s : Adjudicator) (c : FixedPart) : Prop :=
+def StatusOrigin (apps : Apps E) (s : Adjudicator E) (c : FixedPart) : Prop :=
   match s.statusOf c with
   | .open _ => True
   | .challenged _ ch => ∃ s0 s1 caller proof, Reachable apps s0 ∧
       s0.apply apps caller (.challenge c proof ch.state) = some s1 ∧
       s0.now + c.challengeDuration = ch.deadline
-  | .finalized _ Ω => FinalizedTwoWays apps s c Ω
+  | .finalized _ _ Ω => FinalizedTwoWays apps s c Ω
 
-theorem statusOrigin_of_eq {apps : Apps} {s s' : Adjudicator} {c : FixedPart}
+theorem statusOrigin_of_eq {apps : Apps E} {s s' : Adjudicator E} {c : FixedPart}
     (ho : StatusOrigin apps s c) (hs : s'.statusOf c = s.statusOf c) (hn : s.now ≤ s'.now) :
     StatusOrigin apps s' c := by
   unfold StatusOrigin at ho ⊢
@@ -521,29 +532,31 @@ theorem statusOrigin_of_eq {apps : Apps} {s s' : Adjudicator} {c : FixedPart}
   · exact ho.mono hn Relation.ReflTransGen.refl
 
 /-- A redistribution of a finalized outcome keeps its origin. -/
-theorem statusOrigin_redistribute {apps : Apps} {s s' : Adjudicator} {c : FixedPart} {Ω Ω' : Outcome}
-    {t : Nat} (ho : StatusOrigin apps s c) (hf : (s.statusOf c).finalOutcome s.now = some Ω)
-    (hR : Redistributed Ω Ω') (hn : s.now ≤ s'.now) (hs : s'.statusOf c = .finalized t Ω') :
+theorem statusOrigin_redistribute {apps : Apps E} {s s' : Adjudicator E} {c : FixedPart} {Ω Ω' : Outcome E}
+    (ho : StatusOrigin apps s c) (hf : (s.statusOf c).finalOutcome s.now = some Ω)
+    (hR : Redistributed Ω Ω') (hn : s.now ≤ s'.now)
+    (hs : s'.statusOf c = (s.statusOf c).withOutcome Ω') :
     StatusOrigin apps s' c := by
   unfold StatusOrigin at ho ⊢
   rw [hs]
-  split at ho
-  · rename_i hst; rw [hst] at hf; simp at hf
-  · rename_i ch hst
-    rw [hst] at hf
+  revert ho hf
+  cases s.statusOf c with
+  | «open» t => intro _ hf; simp at hf
+  | challenged t ch =>
+    intro ho hf
     simp only [ChannelStatus.finalOutcome_challenged] at hf
     split at hf
-    · rename_i hd
-      cases hf
+    · cases hf
       obtain ⟨s0, s1, caller, proof, hr0, h1, h2⟩ := ho
       exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by grind, hR⟩⟩
     · cases hf
-  · rename_i hst
-    rw [hst] at hf
-    cases hf
+  | finalized t f o =>
+    intro ho hf
+    simp only [ChannelStatus.finalOutcome_finalized, Option.some.injEq] at hf
+    subst hf
     exact ho.mono hn hR
 
-theorem statusOrigin_step {apps : Apps} {s s' : Adjudicator} {caller : Participant} {op : Op}
+theorem statusOrigin_step {apps : Apps E} {s s' : Adjudicator E} {caller : Participant} {op : Op E}
     (hr : Reachable apps s) (ho : ∀ c, StatusOrigin apps s c)
     (h : s.apply apps caller op = some s') (c : FixedPart) : StatusOrigin apps s' c := by
   have hn := Adjudicator.apply_now_le h
@@ -555,7 +568,7 @@ theorem statusOrigin_step {apps : Apps} {s s' : Adjudicator} {caller : Participa
   | transfer a b =>
     obtain ⟨o, _, x, hf, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
     have hsc := Adjudicator.statusOf_of_status hs c
-    simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq] at hsc
+    simp only [Adjudicator.statusOf_setStatus] at hsc
     by_cases hca : c = a
     · subst hca
       simp only [if_true] at hsc
@@ -572,7 +585,7 @@ theorem statusOrigin_step {apps : Apps} {s s' : Adjudicator} {caller : Participa
       exact statusOrigin_redistribute (ho c) hL
         (Relation.ReflTransGen.single
           (RedistributeStep.reclaim oL left right v.address (oV.amountAt 0) (oV.amountAt 1))) hn
-        (by simp only [Adjudicator.statusOf_setStatus, if_true, ChannelStatus.withOutcome_eq]; rfl)
+        (by simp only [Adjudicator.statusOf_setStatus, if_true])
     · exact statusOrigin_of_eq (ho c) (by simp [hcl]) hn
   | challenge c' proof cand =>
     have h' := h
@@ -598,7 +611,7 @@ theorem statusOrigin_step {apps : Apps} {s s' : Adjudicator} {caller : Participa
       exact ⟨s, _, caller, hr, Or.inl ⟨ss, h', hp, Relation.ReflTransGen.refl⟩⟩
     · exact statusOrigin_of_eq (ho c) (by simp [hcc]) hn
 
-theorem statusOrigin_reachable {apps : Apps} {s : Adjudicator} (hr : Reachable apps s)
+theorem statusOrigin_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s)
     (c : FixedPart) : StatusOrigin apps s c := by
   induction hr generalizing c with
   | refl => unfold StatusOrigin; exact trivial
@@ -614,7 +627,7 @@ theorem statusOrigin_reachable {apps : Apps} {s : Adjudicator} (hr : Reachable a
     proof." go-nitro: only `challenge` and `_conclude` write a nonzero
     finalization time. A finalized outcome traces to one such step, and has only
     been redistributed since. -/
-theorem finalized_two_ways (apps : Apps) (s : Adjudicator) (c : FixedPart) (Ω : Outcome)
+theorem finalized_two_ways (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (Ω : Outcome E)
     (hr : Reachable apps s) (hf : s.finalOutcome c.address = some Ω) :
     ∃ s0 s1 caller, Reachable apps s0 ∧
       ((∃ ss, s0.apply apps caller (.conclude c ss) = some s1 ∧ ConclusionProof c ss ∧
@@ -645,7 +658,7 @@ theorem finalized_two_ways (apps : Apps) (s : Adjudicator) (c : FixedPart) (Ω :
     go-nitro: every status write in `challenge`, `checkpoint` and
     `_conclude` is guarded by a not-finalized check. Once finalized, a
     channel stays finalized. -/
-theorem finalized_permanent (apps : Apps) (s s' : Adjudicator) (c : FixedPart)
+theorem finalized_permanent (apps : Apps E) (s s' : Adjudicator E) (c : FixedPart)
     (h : Step apps s s') (hf : s.mode c = .finalized) : s'.mode c = .finalized := by
   cases h with
   | mk caller op _ _ h =>
@@ -660,15 +673,15 @@ theorem finalized_permanent (apps : Apps) (s s' : Adjudicator) (c : FixedPart)
   | transfer a b =>
     obtain ⟨_, _, _, -, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
     rw [Adjudicator.statusOf_of_status hs]
-    simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq]
+    simp only [Adjudicator.statusOf_setStatus]
     split
-    · rfl
+    · exact ChannelStatus.mode_withOutcome _ _ _
     · exact ChannelStatus.mode_finalized_mono hf hn
   | reclaim l v =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h
-    simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq]
+    simp only [Adjudicator.statusOf_setStatus]
     split
-    · rfl
+    · exact ChannelStatus.mode_withOutcome _ _ _
     · exact hf
   | challenge c' proof cand =>
     obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
@@ -693,14 +706,14 @@ theorem finalized_permanent (apps : Apps) (s s' : Adjudicator) (c : FixedPart)
 /-- Nitro-14. A finalized outcome is never replaced by a second
     finalization. Every later outcome of the channel is a redistribution of
     the first. -/
-theorem finalized_outcome_only_redistributed (apps : Apps) (s s' : Adjudicator) (c : FixedPart)
-    (Ω : Outcome) (h : Step apps s s') (hf : s.finalOutcome c.address = some Ω) :
+theorem finalized_outcome_only_redistributed (apps : Apps E) (s s' : Adjudicator E) (c : FixedPart)
+    (Ω : Outcome E) (h : Step apps s s') (hf : s.finalOutcome c.address = some Ω) :
     ∃ Ω', s'.finalOutcome c.address = some Ω' ∧ Redistributed Ω Ω' := by
   cases h with
   | mk caller op _ _ h =>
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf ⊢
   have hn := Adjudicator.apply_now_le h
-  have hsame : ∀ {t : Adjudicator}, t.statusOf c = s.statusOf c → s.now ≤ t.now →
+  have hsame : ∀ {t : Adjudicator E}, t.statusOf c = s.statusOf c → s.now ≤ t.now →
       ∃ Ω', (t.statusOf c).finalOutcome t.now = some Ω' ∧ Redistributed Ω Ω' :=
     fun hs hn => ⟨Ω, by rw [hs]; exact ChannelStatus.finalOutcome_mono hf hn,
       Relation.ReflTransGen.refl⟩
@@ -714,22 +727,23 @@ theorem finalized_outcome_only_redistributed (apps : Apps) (s s' : Adjudicator) 
   | transfer a b =>
     obtain ⟨o, _, x, hfo, -, -, -, -, hs, hn'⟩ := Adjudicator.transfer_some h
     rw [Adjudicator.statusOf_of_status hs, hn']
-    simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq]
+    simp only [Adjudicator.statusOf_setStatus]
     split
     · rename_i hca; subst hca
       simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hf] at hfo
       cases hfo
-      exact ⟨_, rfl, Relation.ReflTransGen.single (RedistributeStep.reduce o b x)⟩
+      exact ⟨_, ChannelStatus.finalOutcome_withOutcome _ _ _,
+        Relation.ReflTransGen.single (RedistributeStep.reduce o b x)⟩
     · exact ⟨Ω, hf, Relation.ReflTransGen.refl⟩
   | reclaim l v =>
     obtain ⟨oL, _, _, left, right, hL, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h
-    simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq,
-      Adjudicator.setStatus_now]
+    simp only [Adjudicator.statusOf_setStatus, Adjudicator.setStatus_now]
     split
     · rename_i hcl; subst hcl
       simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hf] at hL
       cases hL
-      exact ⟨_, rfl, Relation.ReflTransGen.single (RedistributeStep.reclaim oL left right _ _ _)⟩
+      exact ⟨_, ChannelStatus.finalOutcome_withOutcome _ _ _,
+        Relation.ReflTransGen.single (RedistributeStep.reclaim oL left right _ _ _)⟩
     · exact ⟨Ω, hf, Relation.ReflTransGen.refl⟩
   | challenge c' proof cand =>
     obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
@@ -748,15 +762,16 @@ theorem finalized_outcome_only_redistributed (apps : Apps) (s s' : Adjudicator) 
     · subst hcc; exact absurd hfin ho
     · exact hsame (by simp [hcc]) hn
 
+omit [DecidableEq E] in
 /-- ForceMove-A10, ForceMove-A21, SATP-14, docs-0070-02, docs-0070-03.
     go-nitro ForceMove.sol:46-60: in Open mode the turn must not decrease,
-    in Challenge mode it must increase, in Finalized mode the call reverts;
+    in (Challenge E) mode it must increase, in Finalized mode the call reverts;
     the app must support the candidate; the challenger must be a
     participant. SATP:303-305 (`isOpen`, `version >=`) is corrected by the
-    strict check in Challenge mode. ForceMove:1340-1354 forbids a challenge
+    strict check in (Challenge E) mode. ForceMove:1340-1354 forbids a challenge
     while one runs; the code allows one at a higher turn. -/
-theorem challenge_requires (apps : Apps) (s : Adjudicator) (challenger : Participant)
-    (c : FixedPart) (proof : SupportProof) (candidate : State) (s' : Adjudicator)
+theorem challenge_requires (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E) (s' : Adjudicator E)
     (h : s.challenge apps challenger c proof candidate = some s') :
     challenger ∈ c.participants ∧
     (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
@@ -764,10 +779,11 @@ theorem challenge_requires (apps : Apps) (s : Adjudicator) (challenger : Partici
      (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) := by
   exact (Adjudicator.challenge_some h).1
 
+omit [DecidableEq E] in
 /-- SATP-14. go-nitro ForceMove.sol:52-54 and SATP:303: a challenge on a
     finalized channel fails. -/
-theorem challenge_fails_when_finalized (apps : Apps) (s : Adjudicator) (challenger : Participant)
-    (c : FixedPart) (proof : SupportProof) (candidate : State) (hf : s.mode c = .finalized) :
+theorem challenge_fails_when_finalized (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E) (hf : s.mode c = .finalized) :
     s.challenge apps challenger c proof candidate = none := by
   cases hc : s.challenge apps challenger c proof candidate with
   | none => rfl
@@ -775,11 +791,12 @@ theorem challenge_fails_when_finalized (apps : Apps) (s : Adjudicator) (challeng
     obtain ⟨⟨-, -, -, hm⟩, -⟩ := Adjudicator.challenge_some hc
     rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
 
+omit [DecidableEq E] in
 /-- SATP-14. go-nitro ForceMove.sol:48-50 `_requireIncreasedTurnNumber`: a
     re-challenge at an equal turn during a running challenge fails. SATP
     Listing 1 would accept it and reset the deadline; the code is followed. -/
-theorem rechallenge_equal_turn_fails (apps : Apps) (s : Adjudicator) (challenger : Participant)
-    (c : FixedPart) (proof : SupportProof) (candidate : State) (hm : s.mode c = .challenge)
+theorem rechallenge_equal_turn_fails (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E) (hm : s.mode c = .challenge)
     (ht : candidate.turnNum ≤ (s.statusOf c).turnNumRecord) :
     s.challenge apps challenger c proof candidate = none := by
   cases hc : s.challenge apps challenger c proof candidate with
@@ -790,12 +807,13 @@ theorem rechallenge_equal_turn_fails (apps : Apps) (s : Adjudicator) (challenger
     · rw [hm] at hm'; cases hm'
     · omega
 
+omit [DecidableEq E] in
 /-- ForceMove-A10, ForceMove-C02, ForceMove-F03, Nitro-12, SATP-14,
     docs-0070-08. go-nitro ForceMove.sol:70-76: the status becomes the
     candidate's turn with deadline `block.timestamp + challengeDuration`;
     SATP:308-310; ForceMove:1353. The exact result. -/
-theorem challenge_can_happen (apps : Apps) (s : Adjudicator) (challenger : Participant)
-    (c : FixedPart) (proof : SupportProof) (candidate : State)
+theorem challenge_can_happen (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E)
     (hp : challenger ∈ c.participants)
     (hs : (apps c.appDef).supports c proof candidate = true) (hc : candidate.channel = c)
     (ht : (s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
@@ -804,11 +822,12 @@ theorem challenge_can_happen (apps : Apps) (s : Adjudicator) (challenger : Parti
       (s.setStatus c (.challenged candidate.turnNum ⟨candidate, s.now + c.challengeDuration⟩)) := by
   simp only [Adjudicator.challenge, if_pos (And.intro hp (And.intro hs (And.intro hc ht)))]
 
+omit [DecidableEq E] in
 /-- ForceMove-D12, ForceMove-B04, SATP-14. A fresh challenge with a positive
-    duration puts the channel in challenge mode. Balances, coins held and
+    duration puts the channel in challenge mode. (Balances E), coins held and
     the clock do not move. -/
-theorem challenge_effects (apps : Apps) (s : Adjudicator) (challenger : Participant)
-    (c : FixedPart) (proof : SupportProof) (candidate : State) (s' : Adjudicator)
+theorem challenge_effects (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E) (s' : Adjudicator E)
     (h : s.challenge apps challenger c proof candidate = some s') (hd : 0 < c.challengeDuration) :
     s'.mode c = .challenge ∧ s'.balances = s.balances ∧ s'.held = s.held ∧ s'.now = s.now ∧
     ∀ c', c' ≠ c → s'.statusOf c' = s.statusOf c' := by
@@ -818,26 +837,28 @@ theorem challenge_effects (apps : Apps) (s : Adjudicator) (challenger : Particip
   simp
   grind
 
+omit [DecidableEq E] in
 /-- ForceMove-A11, ForceMove-A12, ForceMove-A13, ForceMove-B02, ForceMove-A21,
     docs-0070-10. go-nitro ForceMove.sol:91-100 `checkpoint`: the channel is
     not finalized, the turn is strictly higher than the record, the app
     supports the candidate. ForceMove:1431-1440 `respondWithMove` and
     ForceMove:1377-1381 ("each of these responses lead to an increase in the
     turnNum") are superseded by it; SATP has no such operation. -/
-theorem checkpoint_requires (apps : Apps) (s : Adjudicator) (c : FixedPart) (proof : SupportProof)
-    (candidate : State) (s' : Adjudicator) (h : s.checkpoint apps c proof candidate = some s') :
+theorem checkpoint_requires (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (proof : SupportProof E)
+    (candidate : State E) (s' : Adjudicator E) (h : s.checkpoint apps c proof candidate = some s') :
     s.mode c ≠ .finalized ∧ (apps c.appDef).supports c proof candidate = true ∧
     candidate.channel = c ∧ (s.statusOf c).turnNumRecord < candidate.turnNum := by
   obtain ⟨⟨ho, hs, hc, ht⟩, -⟩ := Adjudicator.checkpoint_some h
   exact ⟨ho, hs, hc, ht⟩
 
+omit [DecidableEq E] in
 /-- ForceMove-A18, ForceMove-B04, ForceMove-A21, docs-0070-10. go-nitro
     ForceMove.sol:104-113: the status becomes Open at the candidate's turn
     and a running challenge is cleared (`ChallengeCleared`).
     ForceMove:1266-1269: "If a valid response is received, the game returns
     to the Collaborative mode"; ForceMove:1765-1770 `cancelChallenge`. -/
-theorem checkpoint_can_happen (apps : Apps) (s : Adjudicator) (c : FixedPart)
-    (proof : SupportProof) (candidate : State) (hm : s.mode c ≠ .finalized)
+theorem checkpoint_can_happen (apps : Apps E) (s : Adjudicator E) (c : FixedPart)
+    (proof : SupportProof E) (candidate : State E) (hm : s.mode c ≠ .finalized)
     (hs : (apps c.appDef).supports c proof candidate = true) (hc : candidate.channel = c)
     (ht : (s.statusOf c).turnNumRecord < candidate.turnNum) :
     s.checkpoint apps c proof candidate = some (s.setStatus c (.open candidate.turnNum)) ∧
@@ -854,7 +875,7 @@ theorem checkpoint_can_happen (apps : Apps) (s : Adjudicator) (c : FixedPart)
     which finalizes it in the same step: `Adjudicator.conclude` has no turn
     check and stores the candidate's turn (go-nitro stores 0). Operator
     ruling 2026-10-27 (counterexample in Counter.lean). -/
-theorem turnNumRecord_monotone (apps : Apps) (s s' : Adjudicator) (c : FixedPart)
+theorem turnNumRecord_monotone (apps : Apps E) (s s' : Adjudicator E) (c : FixedPart)
     (h : Step apps s s') :
     (s.statusOf c).turnNumRecord ≤ (s'.statusOf c).turnNumRecord ∨
     ∃ caller ss, s.apply apps caller (.conclude c ss) = some s' ∧ s'.mode c = .finalized := by
@@ -876,15 +897,15 @@ theorem turnNumRecord_monotone (apps : Apps) (s s' : Adjudicator) (c : FixedPart
   | transfer a b =>
     obtain ⟨_, _, _, -, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
     left; rw [Adjudicator.statusOf_of_status hs]
-    simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq]
+    simp only [Adjudicator.statusOf_setStatus]
     split
-    · rename_i hca; subst hca; simp
+    · rename_i hca; subst hca; exact (ChannelStatus.turnNumRecord_withOutcome _ _).ge
     · exact le_rfl
   | reclaim l v =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h
-    left; simp only [Adjudicator.statusOf_setStatus, ChannelStatus.withOutcome_eq]
+    left; simp only [Adjudicator.statusOf_setStatus]
     split
-    · rename_i hcl; subst hcl; simp
+    · rename_i hcl; subst hcl; exact (ChannelStatus.turnNumRecord_withOutcome _ _).ge
     · exact le_rfl
   | challenge c' proof cand =>
     obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
@@ -899,73 +920,82 @@ theorem turnNumRecord_monotone (apps : Apps) (s s' : Adjudicator) (c : FixedPart
     · rename_i hcc; subst hcc; simp; omega
     · exact le_rfl
 
+omit [DecidableEq E] in
 /-- ForceMove-A14, Nitro-13, SATP-16, docs-0070-01, docs-0010-05. go-nitro
     ForceMove.sol:142-152: a conclude needs a non-finalized channel, a final
     candidate and unanimous signatures; the application is not consulted.
     SATP:288-289: "supporting a state with isFinal = true";
     ForceMove:1495-1500. -/
-theorem conclude_requires (s : Adjudicator) (c : FixedPart) (ss : SignedState) (s' : Adjudicator)
+theorem conclude_requires (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) (s' : Adjudicator E)
     (h : s.conclude c ss = some s') :
     s.mode c ≠ .finalized ∧ ss.state.channel = c ∧ ss.state.isFinal = true ∧ ss.ByAll := by
   obtain ⟨⟨ho, hc, hf, hall⟩, -⟩ := Adjudicator.conclude_some h
   exact ⟨ho, hc, hf, hall⟩
 
+omit [DecidableEq E] in
 /-- ForceMove-A09, Nitro-13, SATP-08, SATP-16, docs-0070-01, docs-0020-01.
     go-nitro ForceMove.sol:147-152 `'!unanimous'`; Nitro:297-298: "all the
     participants sign a special conclude state, called a conclusion proof".
     A conclude carries one state signed by every participant, for every
     application. -/
-theorem conclude_needs_all (s : Adjudicator) (c : FixedPart) (ss : SignedState) (s' : Adjudicator)
+theorem conclude_needs_all (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) (s' : Adjudicator E)
     (h : s.conclude c ss = some s') (p : Participant) (hp : p ∈ c.participants) :
     p ∈ ss.signers := by
   obtain ⟨⟨-, hc, -, hall⟩, -⟩ := Adjudicator.conclude_some h
   exact hall p (hc ▸ hp)
 
+omit [DecidableEq E] in
 /-- ForceMove-A14, Nitro-13, SATP-16, docs-0070-09. go-nitro
     ForceMove.sol:155-163: the channel finalizes at `block.timestamp` with
     the candidate's outcome; Nitro:299-300: "the participants avoid having
     to wait for the challenge period"; ForceMove:1507. The exact result. -/
-theorem conclude_can_happen (s : Adjudicator) (c : FixedPart) (ss : SignedState)
+theorem conclude_can_happen (s : Adjudicator E) (c : FixedPart) (ss : SignedState E)
     (hm : s.mode c ≠ .finalized) (hproof : ConclusionProof c ss) :
-    s.conclude c ss = some (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome)) ∧
-    (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome)).finalOutcome c.address =
-      some ss.state.outcome ∧
-    (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome)).mode c = .finalized := by
+    s.conclude c ss =
+      some (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) ∧
+    (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)).finalOutcome
+      c.address = some ss.state.outcome ∧
+    (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)).mode c =
+      .finalized := by
   refine ⟨?_, by simp, by rw [Adjudicator.mode_eq]; simp⟩
   simp only [Adjudicator.conclude]
   rw [if_pos ⟨hm, hproof⟩]
 
+omit [DecidableEq E] in
 /-- ForceMove-A04, ForceMove-A05, docs-0070-07. go-nitro `_conclude` writes
     only `statusOf`; ForceMove:976-980, 1017-1022: the conclude transition
     keeps the resolution. A conclude moves no coins. -/
-theorem conclude_moves_no_value (s : Adjudicator) (c : FixedPart) (ss : SignedState)
-    (s' : Adjudicator) (h : s.conclude c ss = some s') :
+theorem conclude_moves_no_value (s : Adjudicator E) (c : FixedPart) (ss : SignedState E)
+    (s' : Adjudicator E) (h : s.conclude c ss = some s') :
     s'.balances = s.balances ∧ s'.held = s.held ∧ s'.now = s.now := by
   obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
   exact ⟨rfl, rfl, rfl⟩
 
+omit [DecidableEq E] in
 /-- ForceMove-B03, ForceMove-D12, Nitro-12, docs-0040-05, docs-0040-06.
     go-nitro StatusManager.sol:10-11: a finalization time at or before
     `block.timestamp` is Finalized; ForceMove:1260-1265: "If no response is received within the
     timeout period, the game transitions into the Terminated mode";
     ForceMove:449-453: "the resolution stored on the challenge state s will
     decide how the funds should be split." -/
-theorem timeout_finalizes (s : Adjudicator) (c : FixedPart) (t : Nat) (ch : Challenge)
+theorem timeout_finalizes (s : Adjudicator E) (c : FixedPart) (t : Nat) (ch : Challenge E)
     (hs : s.statusOf c = .challenged t ch) (hd : ch.deadline ≤ s.now) :
     s.mode c = .finalized ∧ s.finalOutcome c.address = some ch.state.outcome := by
   simp [Adjudicator.mode_eq, hs, hd]
 
+omit [DecidableEq E] in
 /-- ForceMove-D12. go-nitro StatusManager.sol:12-13: a future finalization
-    time is Challenge mode; ForceMove:1295 `inProgress: c ↦ c.endTime > now()`. -/
-theorem challenge_in_progress_before_deadline (s : Adjudicator) (c : FixedPart) (t : Nat)
-    (ch : Challenge) (hs : s.statusOf c = .challenged t ch) (hd : s.now < ch.deadline) :
+    time is (Challenge E) mode; ForceMove:1295 `inProgress: c ↦ c.endTime > now()`. -/
+theorem challenge_in_progress_before_deadline (s : Adjudicator E) (c : FixedPart) (t : Nat)
+    (ch : Challenge E) (hs : s.statusOf c = .challenged t ch) (hd : s.now < ch.deadline) :
     s.mode c = .challenge ∧ s.finalOutcome c.address = none := by
   simp [Adjudicator.mode_eq, hs, Nat.not_le.2 hd]
 
+omit [DecidableEq E] in
 /-- ForceMove-F03, docs-0040-05. docs: "a passive transition which happens
     when a block is produced with a sufficiently large timestamp." The clock
     changes no balance and no status. -/
-theorem tick_moves_only_time (s : Adjudicator) (dt : Time) :
+theorem tick_moves_only_time (s : Adjudicator E) (dt : Time) :
     (s.tick dt).balances = s.balances ∧ (s.tick dt).held = s.held ∧
     (s.tick dt).status = s.status ∧ (s.tick dt).now = s.now + dt := by
   exact ⟨rfl, rfl, rfl, rfl⟩
@@ -973,7 +1003,7 @@ theorem tick_moves_only_time (s : Adjudicator) (dt : Time) :
 /-- ForceMove-A20. go-nitro: a failed `require` reverts the transaction;
     ForceMove:685-686: "making an invalid move is equivalent to not making
     any move at all." A failed operation leaves the chain unchanged. -/
-theorem failed_op_no_effect (apps : Apps) (caller : Participant) (op : Op) (s : Adjudicator)
+theorem failed_op_no_effect (apps : Apps E) (caller : Participant) (op : Op E) (s : Adjudicator E)
     (h : s.apply apps caller op = none) :
     Adjudicator.applyAll apps [(caller, op)] s = s := by
   simp [Adjudicator.applyAll, h]
@@ -983,8 +1013,8 @@ theorem failed_op_no_effect (apps : Apps) (caller : Participant) (op : Op) (s : 
     the channel how (or even whether) the game is funded." The dispute
     operations read no balance: their success and their status result do
     not depend on the balances. -/
-theorem funding_decoupled_from_rules (apps : Apps) (caller : Participant) (s : Adjudicator)
-    (b : Balances) (op : Op) (hop : op.isRedistribution = false ∧ ∀ a e x, op ≠ .deposit a e x) :
+theorem funding_decoupled_from_rules (apps : Apps E) (caller : Participant) (s : Adjudicator E)
+    (b : Balances E) (op : Op E) (hop : op.isRedistribution = false ∧ ∀ a e x, op ≠ .deposit a e x) :
     ((s.apply apps caller op).map Adjudicator.status) =
       (({ s with balances := b }.apply apps caller op).map Adjudicator.status) := by
   obtain ⟨h1, h2⟩ := hop
@@ -1006,8 +1036,8 @@ theorem funding_decoupled_from_rules (apps : Apps) (caller : Participant) (s : A
     whose signer is the mover; ForceMove:761-778: the channel is fixed and
     the turn number increments by one. Under the ForceMove rules a supported
     candidate ends a run of `n` such moves. -/
-theorem forceMove_supports_valid_run (vt : State → State → Bool) (c : FixedPart)
-    (proof : SupportProof) (candidate : State)
+theorem forceMove_supports_valid_run (vt : State E → State E → Bool) (c : FixedPart)
+    (proof : SupportProof E) (candidate : State E)
     (h : (forceMoveRules vt).supports c proof candidate = true) :
     proof.length = c.n ∧
     (∀ (i : Nat) m1 m2, proof[i]? = some m1 → proof[i + 1]? = some m2 →
@@ -1015,7 +1045,7 @@ theorem forceMove_supports_valid_run (vt : State → State → Bool) (c : FixedP
       m2.ByMover ∧ (m2.state.isFinal = false → vt m1.state m2.state = true)) ∧
     (∃ m, proof.getLast? = some m ∧ m.state = candidate) := by
   simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨hlen, hrun⟩, -⟩, hlast⟩ := h
+  obtain ⟨⟨⟨⟨hlen, -⟩, hrun⟩, -⟩, hlast⟩ := h
   refine ⟨hlen, fun i m1 m2 h1 h2 => ?_, ?_⟩
   · have hm := validRun_getElem? hrun h1 h2
     simp only [validMove, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
@@ -1036,9 +1066,9 @@ theorem forceMove_supports_valid_run (vt : State → State → Bool) (c : FixedP
     ForceMove:976-980: GAME→CONCLUDE needs the resolution unchanged;
     ForceMove:1017-1022: from CONCLUDE only CONCLUDE with the same
     resolution; ForceMove:1203-1208: backing out keeps the resolution. -/
-theorem forceMove_conclude_keeps_outcome (vt : State → State → Bool) (c : FixedPart)
-    (proof : SupportProof) (candidate : State)
-    (h : (forceMoveRules vt).supports c proof candidate = true) (i : Nat) (m1 m2 : SignedState)
+theorem forceMove_conclude_keeps_outcome (vt : State E → State E → Bool) (c : FixedPart)
+    (proof : SupportProof E) (candidate : State E)
+    (h : (forceMoveRules vt).supports c proof candidate = true) (i : Nat) (m1 m2 : SignedState E)
     (h1 : proof[i]? = some m1) (h2 : proof[i + 1]? = some m2) :
     (m2.state.isFinal = true → m2.state.outcome = m1.state.outcome) ∧
     (m1.state.isFinal = true → m2.state.isFinal = true) := by
@@ -1055,17 +1085,19 @@ theorem forceMove_conclude_keeps_outcome (vt : State → State → Bool) (c : Fi
     · rw [hf] at hfin; cases hfin
     · exact hfin
 
+omit [DecidableEq E] in
 /-- ForceMove-D05, ForceMove-D06 (ForceMove only). ForceMove:724-727: "the
     mover is fully determined by the turn number". -/
-theorem mover_determined_by_turn (s t : State) (hc : s.channel = t.channel)
+theorem mover_determined_by_turn (s t : State E) (hc : s.channel = t.channel)
     (ht : s.turnNum = t.turnNum) : s.mover = t.mover := by
   unfold State.mover
   rw [hc, ht]
 
+omit [DecidableEq E] in
 /-- ForceMove-D06 (ForceMove only). ForceMove:725-727: "players must take
     turns in a cyclical order." The mover of turn `k + n` is the mover of
     turn `k`. -/
-theorem mover_cyclic (s : State) (k : Nat) :
+theorem mover_cyclic (s : State E) (k : Nat) :
     { s with turnNum := k + s.channel.n }.mover = { s with turnNum := k }.mover := by
   simp [State.mover, Nat.add_mod_right]
 
@@ -1074,7 +1106,7 @@ theorem mover_cyclic (s : State) (k : Nat) :
     and a guarantee entry for the target in the ledger's outcome. go-nitro
     adds: `left` and `right` have entries in the ledger (lines 363-364) and
     the target's first two amounts sum to the guarantee amount (line 365). -/
-theorem reclaim_requires (s : Adjudicator) (l v : FixedPart) (s' : Adjudicator)
+theorem reclaim_requires (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E)
     (h : s.reclaim l v = some s') :
     s.mode l = .finalized ∧ s.mode v = .finalized ∧
     ∃ oL oV x left right, s.finalOutcome l.address = some (.allocation oL) ∧
@@ -1098,8 +1130,8 @@ theorem reclaim_requires (s : Adjudicator) (l v : FixedPart) (s' : Adjudicator)
     (counterexample in Counter.lean): a ledger that guarantees itself, or a
     ledger with a second entry for `v` (Nitro-25: each address appears
     once), breaks the statement. -/
-theorem reclaim_effects (s : Adjudicator) (l v : FixedPart) (s' : Adjudicator)
-    (oL oV : Allocation) (x : Coins) (left right : Address)
+theorem reclaim_effects (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E)
+    (oL oV : Allocation E) (x : Coins) (left right : Address E)
     (hL : s.finalOutcome l.address = some (.allocation oL))
     (hV : s.finalOutcome v.address = some (.allocation oV))
     (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩)
@@ -1146,8 +1178,8 @@ theorem reclaim_effects (s : Adjudicator) (l v : FixedPart) (s' : Adjudicator)
 
 /-- SATP-15, docs-0080-05. The reclaim succeeds whenever its preconditions
     hold. The exact result is stated. -/
-theorem reclaim_can_happen (s : Adjudicator) (l v : FixedPart) (oL oV : Allocation) (x : Coins)
-    (left right : Address) (hL : s.finalOutcome l.address = some (.allocation oL))
+theorem reclaim_can_happen (s : Adjudicator E) (l v : FixedPart) (oL oV : Allocation E) (x : Coins)
+    (left right : Address E) (hL : s.finalOutcome l.address = some (.allocation oL))
     (hV : s.finalOutcome v.address = some (.allocation oV))
     (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩)
     (hl : (oL.remove v.address).find left ≠ none) (hr : (oL.remove v.address).find right ≠ none)
@@ -1162,8 +1194,8 @@ theorem reclaim_can_happen (s : Adjudicator) (l v : FixedPart) (oL oV : Allocati
     or `right` has no ledger entry, or whose target amounts do not sum to
     the guarantee amount, fails. SATP Listing 2 has no such checks; the code
     is followed. -/
-theorem reclaim_fails_without_entries (s : Adjudicator) (l v : FixedPart) (oL oV : Allocation)
-    (x : Coins) (left right : Address) (hL : s.finalOutcome l.address = some (.allocation oL))
+theorem reclaim_fails_without_entries (s : Adjudicator E) (l v : FixedPart) (oL oV : Allocation E)
+    (x : Coins) (left right : Address E) (hL : s.finalOutcome l.address = some (.allocation oL))
     (hV : s.finalOutcome v.address = some (.allocation oV))
     (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩)
     (hbad : (oL.remove v.address).find left = none ∨ (oL.remove v.address).find right = none ∨
@@ -1185,18 +1217,20 @@ theorem reclaim_fails_without_entries (s : Adjudicator) (l v : FixedPart) (oL oV
     · exact absurd h hr
     · exact absurd hx h
 
+omit [DecidableEq E] in
 /-- SATP-13, docs-0040-02. SATP:294-298 `isOpen`: "the channel has no active
     challenge or the channel has not yet finalized"; go-nitro
     StatusManager.sol:5-14. -/
-theorem isOpen_iff (st : ChannelStatus) (now : Time) :
+theorem isOpen_iff (st : ChannelStatus E) (now : Time) :
     st.IsOpen now ↔ (st.mode now = .open ∨ st.mode now = .challenge) := by
   unfold ChannelStatus.IsOpen
   cases st.mode now <;> simp
 
+omit [DecidableEq E] in
 /-- ForceMove-D11, Nitro-11. Every channel is in exactly one mode. A channel
     with no record is open (go-nitro: an empty status unpacks to a zero
     finalization time). -/
-theorem mode_of_absent (s : Adjudicator) (c : FixedPart) (h : ∀ e ∈ s.status, e.1 ≠ c) :
+theorem mode_of_absent (s : Adjudicator E) (c : FixedPart) (h : ∀ e ∈ s.status, e.1 ≠ c) :
     s.mode c = .open ∧ (s.statusOf c).turnNumRecord = 0 := by
   have hl : s.status.lookup c = none := by
     simp only [List.lookup_eq_none_iff, bne_iff_ne, ne_eq]
@@ -1206,8 +1240,8 @@ theorem mode_of_absent (s : Adjudicator) (c : FixedPart) (h : ∀ e ∈ s.status
 
 /-- Nitro-08, Nitro-05. Only a deposit raises the coins held and only a
     payout to a participant lowers them. -/
-theorem held_changes_only_by_deposit_payout (apps : Apps) (s s' : Adjudicator)
-    (caller : Participant) (op : Op) (h : s.apply apps caller op = some s')
+theorem held_changes_only_by_deposit_payout (apps : Apps E) (s s' : Adjudicator E)
+    (caller : Participant) (op : Op E) (h : s.apply apps caller op = some s')
     (hne : s'.held ≠ s.held) :
     (∃ a e x, op = .deposit a e x) ∨ op.isRedistribution = true := by
   cases op with
