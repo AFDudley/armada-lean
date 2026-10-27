@@ -280,6 +280,68 @@ theorem channel_spend_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cfg
     SpendEnabled s'.pool tn root t entries (entries.map fun e => nullifier nk e.1.2) := by
   sorry
 
+/-! ### The outcome rule (operator ruling 2026-10-27 on finding F6, option A) -/
+
+/-- **A finalizing call with a sub-minimum channel entry fails.** A challenge,
+    checkpoint or conclude whose candidate outcome breaks the outcome rule
+    fails for every pool state: the check reads only the submitted state. -/
+theorem candidate_breaking_rule_fails (s : ArmadaState) (call : Call) (Ω : Nitro.Outcome)
+    (hcand : call.candidateOutcome = some Ω) (hbad : ¬ OutcomeRespectsMin cfg Ω.entries) :
+    ∀ ps : PoolState, ¬ CallEnabled cfg apps { s with pool := ps } call := by
+  sorry
+
+/-- **A running challenge holds an outcome that obeys the rule.** -/
+theorem challenged_outcome_respects_min {s : ArmadaState} (hs : ArmadaReachable cfg apps s)
+    (t : Token) (c : FixedPart) (n : Nat) (ch : Nitro.Challenge)
+    (hst : (s.chanOf t c).status = .challenged n ch) :
+    OutcomeRespectsMin cfg ch.state.outcome.entries := by
+  sorry
+
+/-- **Every channel finalizes with an outcome that obeys the rule.** A
+    finalized outcome is a redistribution (transfers and reclaims, Nitro
+    `Redistributed`) of an outcome that obeyed the rule when the channel
+    finalized: the candidate of a conclude or of a timed-out challenge. -/
+theorem finalized_outcome_from_respecting {s : ArmadaState} (hs : ArmadaReachable cfg apps s)
+    (t : Token) (c : FixedPart) (Ω : Nitro.Outcome)
+    (hfin : (s.chanOf t c).status.finalOutcome s.now = some Ω) :
+    ∃ Ω0, OutcomeRespectsMin cfg Ω0.entries ∧ Nitro.Redistributed Ω0 Ω := by
+  sorry
+
+/-- **Which steps break the rule on a finalized outcome.** If channel `c` is
+    finalized with an allocation `o` that obeys the rule, then after any step
+    its finalized allocation still obeys the rule, or the step is one of:
+    * a partial payout on `c` to a channel `d` (`0 < x <` the owed amount):
+      the remainder can be below `cfg.minCredit`;
+    * a reclaim with ledger `c` whose credits to a channel `left` or `right`
+      break `ReclaimCreditsRespectMin`. Reclaim does not check the rule (design
+      choice D14); under `ReclaimCreditsRespectMin` it keeps the rule. -/
+theorem respects_min_step {s s' : ArmadaState} (hs : ArmadaReachable cfg apps s) {call : Call}
+    (h : ArmadaStep cfg apps call s s') {t : Token} {c : FixedPart} {o : Allocation}
+    (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
+    (hrule : OutcomeRespectsMin cfg o) :
+    (∃ o', (s'.chanOf t c).status.finalOutcome s'.now = some (.allocation o') ∧
+      OutcomeRespectsMin cfg o') ∨
+    (∃ (d : FixedPart) (ins : List Note) (x : Coins), call = .transfer t c d.address ins x ∧
+      0 < x ∧ x < o.owed d.address) ∨
+    (∃ v oV x left right, call = .reclaim t c v ∧
+      (s.chanOf t v).status.finalOutcome s.now = some (.allocation oV) ∧
+      o.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
+      ¬ ReclaimCreditsRespectMin cfg oV left right) := by
+  sorry
+
+/-- **A credit from a funded channel meets the minimum.** If finalized `c`
+    affords its entry for `b` in full and that entry obeys the rule (0 or at
+    least `cfg.minCredit`), a positive payout of the entry passes the
+    minimum-credit check. So a pending credit fails the minimum only when `c`
+    is underfunded at that entry or the entry is a remainder below the
+    minimum (finding F8). -/
+theorem funded_credit_meets_min (s : ArmadaState) (t : Token) (c : FixedPart) (b : Address)
+    (o : Allocation) (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
+    (hentry : o.owed b = 0 ∨ cfg.minCredit ≤ o.owed b)
+    (hfull : o.Affords (s.balance t c) b (o.owed b)) :
+    0 < s.payout t c o b → CreditAllowed cfg s t b (s.payout t c o b) := by
+  sorry
+
 /-- **Non-interference for a pending payout, as a bound.** Let channel `c` be
     finalized with allocation `o`, and let the transfer of `c`'s entry for `b`
     from the notes `ins`, of amount `x`, be executable at `s`. After any step
@@ -291,8 +353,9 @@ theorem channel_spend_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cfg
     * a positive credit into `c` from another channel's payout, of at least
       `cfg.minCredit`, while `c` does not afford `b`'s entry in full;
     * a step that finalizes the destination channel `d` of the pending payout,
-      when `0 < x < cfg.minCredit`. The pending credit then falls below the
-      minimum (finding F6).
+      when `0 < x < cfg.minCredit`. By the outcome rule this needs `c`
+      underfunded at `b`'s entry, or `b`'s entry a remainder below the
+      minimum after a partial payout (findings F6, F8).
     `finalized_staling_calls_bounded` counts the first two kinds and bounds the
     payouts by the credits. The pool part of the proof is `spend_not_blocked`
     (PoolSafety.lean:1797), through `channel_spend_not_blocked`. -/
@@ -307,6 +370,7 @@ theorem pending_payout_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cf
     (∃ d ins' x', call = .transfer t d c.address ins' x' ∧ 0 < x' ∧ cfg.minCredit ≤ x' ∧
       ¬ o.Affords (s.balance t c) b (o.owed b)) ∨
     (∃ d, b = d.address ∧ 0 < x ∧ x < cfg.minCredit ∧
+      (¬ o.Affords (s.balance t c) b (o.owed b) ∨ (0 < o.owed b ∧ o.owed b < cfg.minCredit)) ∧
       (s.chanOf t d).status.mode s.now ≠ .finalized ∧
       (s'.chanOf t d).status.mode s'.now = .finalized) := by
   sorry

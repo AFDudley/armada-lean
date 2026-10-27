@@ -160,8 +160,9 @@ theorem ledger_partial_withdrawal_notes (Ts : Threats cfg apps) (hPool : PoolExe
     ledger balances `balm + balp`, with both ledgers finalized, no entry for
     `V` left, and `P`'s entries fully paid. The hypotheses are those of the
     Nitro theorem, read on the Nitro view of token `t`, plus the funding
-    hypotheses `hfundm`, `hfundp` and the hypothesis `hnofinal` that `P` sent
-    no final state of either ledger (finding F4). -/
+    hypotheses `hfundm`, `hfundp`, the hypothesis `hnofinal` that `P` sent
+    no final state of either ledger (finding F4), and `hminm`, `hminp`: the
+    ledger outcomes obey the outcome rule, so `P` can challenge with them. -/
 theorem satp_theorem_3_2_notes {P : Participant} (T : Threat P) (A : Assumptions cfg apps P T)
     (hPool : PoolExecutes cfg) (r : Route) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules)
@@ -184,7 +185,8 @@ theorem satp_theorem_3_2_notes {P : Participant} (T : Threat P) (A : Assumptions
       (net.view t).chain.finalOutcome r.V.address = none)
     (hfundm : om.total ≤ net.chain.balance t Lm) (hfundp : op.total ≤ net.chain.balance t Lp)
     (hnofinal : ∀ s ∈ net.sent, s.state.channel = Lm ∨ s.state.channel = Lp →
-      s.state.isFinal = false) :
+      s.state.isFinal = false)
+    (hminm : OutcomeRespectsMin cfg om) (hminp : OutcomeRespectsMin cfg op) :
     Unbeatable cfg apps T
       (fun net' => (net.chain.book t).paid P + balm + balp ≤ (net'.chain.book t).paid P ∧
         ∃ om' op', (net'.view t).Finalized Lm (.allocation om') ∧
@@ -197,8 +199,8 @@ theorem satp_theorem_3_2_notes {P : Participant} (T : Threat P) (A : Assumptions
     SATP:500-501). If `V` finalizes with `{A : a, B : b}`, Alice has a
     strategy to obtain payment notes worth her pre-protocol balance in `L₀`
     minus `a0` plus `a`, with `L₀` finalized, no entry for `V` left, and her
-    entry fully paid, when `L₀`'s notes cover its outcome and she sent no
-    final state of `L₀` (finding F4). -/
+    entry fully paid, when `L₀`'s notes cover its outcome, she sent no final
+    state of `L₀` (finding F4), and `L₀`'s outcome obeys the outcome rule. -/
 theorem satp_end_user_recovers_notes {P : Participant} (T : Threat P)
     (A : Assumptions cfg apps P T) (hPool : PoolExecutes cfg) (r : Route) (alice bob : Participant)
     (hr : r.WellFormed apps) (hV : apps r.V.appDef = satpVirtualRules)
@@ -214,7 +216,8 @@ theorem satp_end_user_recovers_notes {P : Participant} (T : Threat P)
     (hfin : (net.view t).Finalized r.V (.allocation [alloc alice.address a, alloc bob.address b]))
     (hchain : (net.view t).chain.finalOutcome L0.address = none)
     (hfund : o.total ≤ net.chain.balance t L0)
-    (hnofinal : ∀ s ∈ net.sent, s.state.channel = L0 → s.state.isFinal = false) :
+    (hnofinal : ∀ s ∈ net.sent, s.state.channel = L0 → s.state.isFinal = false)
+    (hmin : OutcomeRespectsMin cfg o) :
     Unbeatable cfg apps T
       (fun net' => (net.chain.book t).paid P + bal + a ≤ (net'.chain.book t).paid P + r.a0 ∧
         ∃ o', (net'.view t).Finalized L0 (.allocation o') ∧ o'.find r.V.address = none ∧

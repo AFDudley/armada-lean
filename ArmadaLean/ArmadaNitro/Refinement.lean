@@ -83,15 +83,18 @@ theorem nitro_step_carries (R : Adjudicator → Adjudicator → Prop)
 
 /-- **The status calls lift.** A Nitro reclaim, challenge, checkpoint or
     conclude that succeeds on the abstraction is an Armada step, and so is a
-    tick. These calls spend no note, so the pool adds no condition. -/
+    tick, if the submitted candidate obeys the Armada outcome rule (`hmin`;
+    operator ruling 2026-10-27 on F6). These calls spend no note, so the pool
+    adds no condition. -/
 theorem nitro_status_call_lifts (s : ArmadaState) (t : Token) (call : Call)
     (hcall : (∃ l v, call = .reclaim t l v) ∨
       (∃ p c proof candidate, call = .challenge t p c proof candidate) ∨
       (∃ c proof candidate, call = .checkpoint t c proof candidate) ∨
       (∃ c ss, call = .conclude t c ss) ∨ (∃ dt, call = .tick dt))
     (op : Nitro.Op) (hop : call.toNitro t = some op) (caller : Participant)
-    (hcaller : ∀ p, call.challenger = some p → caller = p) (n : Adjudicator)
-    (hn : (toNitro s t).apply apps caller op = some n) :
+    (hcaller : ∀ p, call.challenger = some p → caller = p)
+    (hmin : ∀ Ω, call.candidateOutcome = some Ω → OutcomeRespectsMin cfg Ω.entries)
+    (n : Adjudicator) (hn : (toNitro s t).apply apps caller op = some n) :
     ∃ s', ArmadaStep cfg apps call s s' ∧ NitroEquiv n (toNitro s' t) ∧ s'.pool = s.pool := by
   sorry
 
