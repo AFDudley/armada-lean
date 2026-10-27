@@ -8,10 +8,11 @@
   merge call and no batch call (operator ruling 2026-10-27, 1 and 3). A batch
   is a sequence of calls; `ArmadaReachable` covers every sequence.
 
-  A call label holds what a caller submits: the token, the channel, and the
-  notes that the call spends. A pool proof names the nullifiers of the notes
-  it spends, so the spent notes belong to the submitted call. The keys of the
-  created notes are chosen by the pool and are witnesses of the step.
+  A call label holds what a caller submits: the token, the channel, the notes
+  that the call spends, and the amounts. A pool proof names the nullifiers of
+  the notes it spends and fixes the values of the notes it creates, so these
+  belong to the submitted call. The pool chooses the keys of the created
+  notes; they are witnesses of the step.
 
   The status calls (reclaim, challenge, checkpoint, conclude) run the Nitro
   function on the abstraction `toNitro s t` and write back the one status that
@@ -34,15 +35,17 @@ open ArmadaLean.Nitro (Coins Time Participant FixedPart Address Outcome Allocati
       compare-and-swap value `expectedHeld` (ruling 5). The depositor's notes
       `fund` pay for a deposit note; the call merges the deposit note with the
       channel notes `merged` into one channel note (ruling 3).
-    * `transfer t c b ins`: go-nitro `transfer` (MultiAssetHolder.sol:72-100)
-      of channel `c`'s entry for `b`, paid from the channel notes `ins`.
+    * `transfer t c b ins x`: go-nitro `transfer` (MultiAssetHolder.sol:72-100)
+      of channel `c`'s entry for `b`, paid from the channel notes `ins`. `x` is
+      the payout amount. The pool proof fixes it, because the proof fixes the
+      values of its output notes.
     * `reclaim`, `challenge`, `checkpoint`, `conclude`: the Nitro operations of
       the same names, for token `t`.
     * `tick dt`: the chain clock moves. -/
 inductive Call
   | env
   | deposit (t : Token) (c : FixedPart) (expectedHeld x : Coins) (fund merged : List Note)
-  | transfer (t : Token) (c : FixedPart) (b : Address) (ins : List Note)
+  | transfer (t : Token) (c : FixedPart) (b : Address) (ins : List Note) (x : Coins)
   | reclaim (t : Token) (l v : FixedPart)
   | challenge (t : Token) (challenger : Participant) (c : FixedPart) (proof : SupportProof)
       (candidate : Nitro.State)
@@ -56,7 +59,7 @@ inductive Call
 def Call.toNitro (t : Token) : Call → Option Nitro.Op
   | .env => none
   | .deposit t' c e x _ _ => if t' = t then some (.deposit c.address e x) else none
-  | .transfer t' c b _ => if t' = t then some (.transfer c b) else none
+  | .transfer t' c b _ _ => if t' = t then some (.transfer c b) else none
   | .reclaim t' l v => if t' = t then some (.reclaim l v) else none
   | .challenge t' _ c proof candidate =>
     if t' = t then some (.challenge c proof candidate) else none
@@ -141,28 +144,28 @@ inductive ArmadaStep (cfg : Config) (apps : Apps) : Call → ArmadaState → Arm
       (hFin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
       (hEntry : ∃ amt, o.find b = some ⟨b, .alloc amt⟩)
       (hZero : s.payout t c o b = 0) :
-      ArmadaStep cfg apps (.transfer t c b []) s
+      ArmadaStep cfg apps (.transfer t c b [] 0) s
         (s.setChan t c { s.chanOf t c with
           status := (s.chanOf t c).status.withOutcome (.allocation (o.reduceOwed b 0)) })
   /-- Transfer (go-nitro MultiAssetHolder.sol:72-100; Nitro:765-772). The
       channel is finalized with an allocation that has an allocation entry for
-      `b` (ruling 3). The call pays the affordable amount `x > 0`. It spends
-      only the channel notes `ins`. It creates the payout note `pay` of value
-      `x` with the note key of `b` (ruling 4) and the change note `change`,
-      the one note that goes back to the channel (ruling 3). -/
+      `b` (ruling 3). The submitted amount `x` is the affordable amount, and
+      `x > 0`. The call spends only the channel notes `ins`. It creates the
+      payout note `pay` of value `x` with the note key of `b` (ruling 4) and
+      the change note `change`, the one note that goes back to the channel
+      (ruling 3). -/
   | transfer {s : ArmadaState} (t : Token) (c : FixedPart) (b : Address) (o : Allocation)
-      (ins keep : List Note) (ps' : PoolState) (pay change : Note)
+      (ins keep : List Note) (x : Coins) (ps' : PoolState) (pay change : Note)
       (hFin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
       (hEntry : ∃ amt, o.find b = some ⟨b, .alloc amt⟩)
-      (hPos : 0 < s.payout t c o b)
+      (hX : s.payout t c o b = x) (hPos : 0 < x)
       (hIns : (s.chanOf t c).notes.Perm (ins ++ keep))
       (hCall : PoolCall s.pool ps' t ins [pay, change])
-      (hPay : pay.2.value = s.payout t c o b ∧ PayKey cfg b pay.2)
+      (hPay : pay.2.value = x ∧ PayKey cfg b pay.2)
       (hChange : OwnedBy cfg.self change.2) :
-      ArmadaStep cfg apps (.transfer t c b ins) s
+      ArmadaStep cfg apps (.transfer t c b ins x) s
         (({ s with pool := ps' }.setChan t c
-            { status := (s.chanOf t c).status.withOutcome
-                (.allocation (o.reduceOwed b (s.payout t c o b))),
+            { status := (s.chanOf t c).status.withOutcome (.allocation (o.reduceOwed b x)),
               notes := keep ++ [change] }).credit t b pay)
   /-- Nitro `Adjudicator.reclaim` (SATP Listing 2; go-nitro `reclaim`). -/
   | reclaim {s : ArmadaState} (t : Token) (l v : FixedPart) (n : Adjudicator)

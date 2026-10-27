@@ -77,7 +77,7 @@ theorem payment_notes_keyed {s : ArmadaState} (hs : ArmadaReachable cfg apps s)
 /-- A transfer on channel `c` spends exactly its listed notes, and they are
     `c`'s notes. -/
 theorem transfer_spends_own_notes {s s' : ArmadaState} {t : Token} {c : FixedPart} {b : Address}
-    {ins : List Note} (h : ArmadaStep cfg apps (.transfer t c b ins) s s') :
+    {ins : List Note} {x : Coins} (h : ArmadaStep cfg apps (.transfer t c b ins x) s s') :
     (∀ e, Spends s.pool s'.pool t e ↔ e ∈ ins) ∧ ∀ e ∈ ins, e ∈ (s.chanOf t c).notes := by
   sorry
 
@@ -109,7 +109,7 @@ theorem spend_of_channel_note {s s' : ArmadaState} (hs : ArmadaReachable cfg app
     {call : Call} (h : ArmadaStep cfg apps call s s') {t : Token} {c : FixedPart} {e : Note}
     (he : e ∈ (s.chanOf t c).notes) (hsp : Spends s.pool s'.pool t e) :
     (∃ expectedHeld x fund merged, call = .deposit t c expectedHeld x fund merged ∧ e ∈ merged) ∨
-    (∃ b ins, call = .transfer t c b ins ∧ e ∈ ins) := by
+    (∃ b ins x, call = .transfer t c b ins x ∧ e ∈ ins) := by
   sorry
 
 /-! ### Conservation (Hydra solvency shape) -/
@@ -143,7 +143,7 @@ theorem adjudicator_held_le_pool_held {s : ArmadaState} (hs : ArmadaReachable cf
 /-- A transfer moves no token out of the pool: the payee receives a note
     (ruling 4), so the pool's custody and its unshield record do not change. -/
 theorem transfer_keeps_custody {s s' : ArmadaState} {t : Token} {c : FixedPart} {b : Address}
-    {ins : List Note} (h : ArmadaStep cfg apps (.transfer t c b ins) s s') :
+    {ins : List Note} {x : Coins} (h : ArmadaStep cfg apps (.transfer t c b ins x) s s') :
     s'.pool.held = s.pool.held ∧ s'.pool.payouts = s.pool.payouts := by
   sorry
 
@@ -166,7 +166,8 @@ theorem deposit_requires_expectedHeld {s s' : ArmadaState} {t : Token} {c : Fixe
 
 /-- A transfer happens only after finalization. -/
 theorem transfer_requires_finalized {s s' : ArmadaState} {t : Token} {c : FixedPart}
-    {b : Address} {ins : List Note} (h : ArmadaStep cfg apps (.transfer t c b ins) s s') :
+    {b : Address} {ins : List Note} {x : Coins}
+    (h : ArmadaStep cfg apps (.transfer t c b ins x) s s') :
     (s.chanOf t c).status.mode s.now = .finalized := by
   sorry
 
@@ -192,7 +193,7 @@ theorem finalized_channel_spend_is_transfer {s s' : ArmadaState}
     (hs : ArmadaReachable cfg apps s) {call : Call} (h : ArmadaStep cfg apps call s s')
     {t : Token} {c : FixedPart} {e : Note} (he : e ∈ (s.chanOf t c).notes)
     (hsp : Spends s.pool s'.pool t e) (hfin : (s.chanOf t c).status.mode s.now = .finalized) :
-    ∃ b ins, call = .transfer t c b ins ∧ e ∈ ins := by
+    ∃ b ins x, call = .transfer t c b ins x ∧ e ∈ ins := by
   sorry
 
 /-- A finalized channel stays finalized (Nitro `finalized_permanent`). -/
@@ -206,16 +207,16 @@ theorem finalized_channel_stays_finalized {call : Call} {s s' : ArmadaState}
 
 /-- **Only permitted payouts spend a finalized channel's notes.** Once channel
     `c` is finalized with allocation `o`, a step that spends a note of `c` is
-    a transfer on `c` of an allocation entry of `o` that `c` affords, and it
-    creates the payout note of exactly the affordable amount with the payee's
-    note key. -/
+    a transfer on `c` of an allocation entry of `o`. Its amount is the
+    positive amount that `c` affords the entry. It creates the payout note of
+    that amount with the payee's note key. -/
 theorem finalized_spend_permitted {s s' : ArmadaState} (hs : ArmadaReachable cfg apps s)
     {t : Token} {c : FixedPart} {o : Allocation}
     (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
     {call : Call} (h : ArmadaStep cfg apps call s s') {e : Note}
     (he : e ∈ (s.chanOf t c).notes) (hsp : Spends s.pool s'.pool t e) :
-    ∃ b ins amt, call = .transfer t c b ins ∧ e ∈ ins ∧ o.find b = some ⟨b, .alloc amt⟩ ∧
-      0 < s.payout t c o b ∧
+    ∃ b ins amt, call = .transfer t c b ins (s.payout t c o b) ∧ e ∈ ins ∧
+      o.find b = some ⟨b, .alloc amt⟩ ∧ 0 < s.payout t c o b ∧
       ∃ pay, Creates s.pool s'.pool t pay ∧ pay.2.value = s.payout t c o b ∧
         PayKey cfg b pay.2 := by
   sorry
@@ -231,32 +232,33 @@ theorem channel_spend_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cfg
     (hOwn : ∀ e ∈ entries, e ∈ (s.chanOf t c).notes) (hTree : ∀ e ∈ entries, e.1.1 = tn)
     (hEnabled : SpendEnabled s.pool tn root t entries (entries.map fun e => nullifier nk e.1.2))
     (hNotDeposit : ¬ ∃ expectedHeld x fund merged, call = .deposit t c expectedHeld x fund merged)
-    (hNotTransfer : ¬ ∃ b ins, call = .transfer t c b ins) :
+    (hNotTransfer : ¬ ∃ b ins x, call = .transfer t c b ins x) :
     SpendEnabled s'.pool tn root t entries (entries.map fun e => nullifier nk e.1.2) := by
   sorry
 
 /-- **Non-interference for a pending payout.** Let channel `c` be finalized
     with allocation `o`, and let the transfer of `c`'s entry for `b` from the
-    notes `ins` be executable at `s`. After any step by any caller, the same
-    transfer is still executable, or the step is one of:
+    notes `ins`, of amount `x`, be executable at `s`. After any step by any
+    caller, the same transfer is still executable, or the step is one of:
     * a transfer on `c` (it pays one of `c`'s outcome entries);
     * a reclaim with ledger `c` (it redistributes one of `c`'s outcome
       entries, a guarantee);
     * a transfer on another channel that credits `c`, while `c` does not
-      afford `b`'s entry in full. The credit raises the affordable amount, and
-      a pending payout fixes its amount in its pool proof.
+      afford `b`'s entry in full. The credit raises the affordable amount
+      above `x`, and the pending payout's pool proof fixes `x`.
     The third case is the counterexample to the strong reading "only by paying
     one of `c`'s outcome entries" (`docs/armada-nitro-theorems.md`, finding
-    F1). -/
+    F1). The pool part of the proof is `spend_not_blocked`
+    (PoolSafety.lean:1797), through `channel_spend_not_blocked`. -/
 theorem pending_payout_not_blocked {s s' : ArmadaState} (hs : ArmadaReachable cfg apps s)
-    {t : Token} {c : FixedPart} {b : Address} {ins : List Note} {o : Allocation}
+    {t : Token} {c : FixedPart} {b : Address} {ins : List Note} {x : Coins} {o : Allocation}
     (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
-    (hEn : CallEnabled cfg apps s (.transfer t c b ins))
+    (hEn : CallEnabled cfg apps s (.transfer t c b ins x))
     {call : Call} (h : ArmadaStep cfg apps call s s') :
-    CallEnabled cfg apps s' (.transfer t c b ins) ∨
-    (∃ b' ins', call = .transfer t c b' ins') ∨
+    CallEnabled cfg apps s' (.transfer t c b ins x) ∨
+    (∃ b' ins' x', call = .transfer t c b' ins' x') ∨
     (∃ v, call = .reclaim t c v) ∨
-    (∃ d ins', call = .transfer t d c.address ins' ∧
+    (∃ d ins' x', call = .transfer t d c.address ins' x' ∧
       ¬ o.Affords (s.balance t c) b (o.owed b)) := by
   sorry
 

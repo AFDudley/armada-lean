@@ -52,7 +52,7 @@ theorem finalized_affordable_pays (hPool : PoolExecutes cfg) {s : ArmadaState}
     {o : Allocation} {amt : Coins}
     (hfin : (s.chanOf t c).status.finalOutcome s.now = some (.allocation o))
     (hb : o.find b = some ⟨b, .alloc amt⟩) (hpos : 0 < s.payout t c o b) :
-    ∃ s', ArmadaStep cfg apps (.transfer t c b (s.chanOf t c).notes) s s' ∧
+    ∃ s', ArmadaStep cfg apps (.transfer t c b (s.chanOf t c).notes (s.payout t c o b)) s s' ∧
       PaidNote cfg s' t b (s.payout t c o b) := by
   sorry
 
