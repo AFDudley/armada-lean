@@ -57,6 +57,10 @@ Toolchain: Lean v4.33.1, no Mathlib.
 - Deleted `transact_cannot_be_blocked` and `transactOwned_cannot_be_blocked`. Their
   conclusion `∃ s', Step { s with shieldsPaused := b } s'` covered the admin step only.
   Theorem 1 below replaces them for every step by every caller.
+- Operator ruling, 2026-10-27: the pool has no token deny list. The contract's
+  `tokenBlocklist` (`PrivacyPoolStorage.sol:134`, set by the owner at
+  `PrivacyPool.sol:335-350`, checked at `ShieldModule.sol:245,259`) is not modelled, and
+  `shield_can_happen` takes no blocklist hypothesis. The contract must drop it.
 
 ### P-4. "Absent" as `Option`, not a zero sentinel
 
