@@ -804,12 +804,15 @@ theorem mode_eq (s : Adjudicator E) (c : FixedPart) : s.mode c = (s.statusOf c).
 
 theorem deposit_some {s : Adjudicator E} {a : Address E} {e x : Coins} {s' : Adjudicator E}
     (h : s.deposit a e x = some s') :
-    (∃ c, a = .channel c) ∧ s.balances.get a = e ∧ s'.balances = s.balances.add a x ∧
-      s'.held = s.held + x ∧ s'.status = s.status ∧ s'.now = s.now := by
+    (∃ c, a = .channel c ∧ c.kind = .assetHolding) ∧ s.balances.get a = e ∧
+      s'.balances = s.balances.add a x ∧ s'.held = s.held + x ∧ s'.status = s.status ∧
+      s'.now = s.now := by
   unfold deposit at h
   split at h
   · split at h
-    · cases h; exact ⟨⟨_, rfl⟩, by assumption, rfl, rfl, rfl, rfl⟩
+    · rename_i hc
+      cases h
+      exact ⟨⟨_, rfl, hc.1⟩, hc.2, rfl, rfl, rfl, rfl⟩
     · cases h
   · cases h
 
@@ -822,16 +825,19 @@ theorem transfer_some {s : Adjudicator E} {a : FixedPart} {b : Address E} {s' : 
       s'.held = (if b.isExternal then s.held - x else s.held) ∧
       s'.status = (s.setStatus a ((s.statusOf a).withOutcome
         (.allocation (o.reduceOwed b x)))).status ∧
-      s'.now = s.now := by
+      s'.now = s.now ∧ a.kind = .assetHolding ∧ b.fundable = true := by
   unfold transfer at h
   split at h
-  · rename_i o hf
+  · rename_i hcond
     split at h
-    · rename_i d amt hfind
-      have hd : d = b := Allocation.find_dest hfind
-      subst hd
-      cases h
-      exact ⟨o, amt, _, hf, hfind, rfl, by simp, by simp, by simp, by simp⟩
+    · rename_i o hf
+      split at h
+      · rename_i d amt hfind
+        have hd : d = b := Allocation.find_dest hfind
+        subst hd
+        cases h
+        exact ⟨o, amt, _, hf, hfind, rfl, by simp, by simp, by simp, by simp, hcond.1, hcond.2⟩
+      · cases h
     · cases h
   · cases h
 
@@ -839,26 +845,31 @@ theorem transfer_some {s : Adjudicator E} {a : FixedPart} {b : Address E} {s' : 
 theorem reclaim_some {s : Adjudicator E} {l v : FixedPart} {s' : Adjudicator E}
     (h : s.reclaim l v = some s') :
     ∃ oL oV x left right, s.finalOutcome l.address = some (.allocation oL) ∧
-      s.finalOutcome v.address = some (.allocation oV) ∧
+      s.finalizedWith v.address = some (.allocation oV) ∧
       oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
       (oL.remove v.address).find left ≠ none ∧ (oL.remove v.address).find right ≠ none ∧
       oV.amountAt 0 + oV.amountAt 1 = x ∧
       s' = s.setStatus l ((s.statusOf l).withOutcome (.allocation
-        (((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address))) := by
+        (((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address))) ∧
+      l.kind = .assetHolding ∧ v.kind = .virtual := by
   unfold reclaim at h
   split at h
-  · rename_i oL oV hL hV
+  · rename_i hk
     split at h
-    · rename_i d x left right hfind
-      have hd : d = v.address := Allocation.find_dest hfind
-      subst hd
+    · rename_i oL oV hL hV
       split at h
-      · rename_i hc
-        cases h
-        exact ⟨oL, oV, x, left, right, hL, hV, hfind, hc.1, hc.2.1, hc.2.2, rfl⟩
+      · rename_i d x left right hfind
+        have hd : d = v.address := Allocation.find_dest hfind
+        subst hd
+        split at h
+        · rename_i hc
+          cases h
+          exact ⟨oL, oV, x, left, right, hL, hV, hfind, hc.1, hc.2.1, hc.2.2, rfl, hk.1, hk.2⟩
+        · cases h
       · cases h
     · cases h
   · cases h
+
 
 omit [DecidableEq E] in
 theorem challenge_some {apps : Apps E} {s : Adjudicator E} {challenger : Participant} {c : FixedPart}
@@ -953,12 +964,64 @@ theorem apply_now_le {apps : Apps E} {caller : Participant} {op : Op E} {s s' : 
     (h : s.apply apps caller op = some s') : s.now ≤ s'.now := by
   cases op with
   | deposit a e x => simp [(deposit_some h).2.2.2.2.2]
-  | transfer a b => obtain ⟨_, _, _, _, _, _, _, _, _, hn⟩ := transfer_some h; simp [hn]
-  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := reclaim_some h; simp
+  | transfer a b => obtain ⟨_, _, _, _, _, _, _, _, _, hn, _, _⟩ := transfer_some h; simp [hn]
+  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; simp
   | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; simp
   | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; simp
   | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; simp
   | tick dt => simp at h; subst h; simp
+
+/-- The outcome of finalization never changes: `transfer` and `reclaim`
+    rewrite only the stored outcome, through `withOutcome`, which keeps the
+    outcome of finalization; `challenge`, `checkpoint` and `conclude` all
+    require the channel to be open, so none can act on an already-finalized
+    one. Used by `Adjudicator.reclaim`'s channel-types repair (operator
+    ruling 2026-10-27): a virtual channel's outcome, once finalized, is
+    exactly what `reclaim` reads. -/
+theorem finalizedWith_apply {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
+    (h : s.apply apps caller op = some s') {c : FixedPart} {f : Outcome E}
+    (hf : s.finalizedWith c.address = some f) : s'.finalizedWith c.address = some f := by
+  have hn := apply_now_le h
+  simp only [FixedPart.address_eq, finalizedWith_channel] at hf ⊢
+  have hmode : (s.statusOf c).mode s.now = .finalized := by
+    rw [ChannelStatus.mode_eq_finalized_iff, ← ChannelStatus.finalizedWith_isSome_iff, hf]; rfl
+  cases op with
+  | deposit a e x =>
+    obtain ⟨-, -, -, -, hs, -⟩ := deposit_some h
+    rw [statusOf_of_status hs]; exact ChannelStatus.finalizedWith_mono hf hn
+  | tick dt => simp at h; subst h; exact ChannelStatus.finalizedWith_mono hf hn
+  | transfer a b =>
+    obtain ⟨_, _, _, -, -, -, -, -, hs, hn', -, -⟩ := transfer_some h
+    rw [statusOf_of_status hs, hn']
+    simp only [statusOf_setStatus]
+    split
+    · rename_i hca; subst hca; exact ChannelStatus.finalizedWith_withOutcome hf _ _
+    · exact hf
+  | reclaim l v =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h
+    simp only [statusOf_setStatus, setStatus_now]
+    split
+    · rename_i hcl; subst hcl; exact ChannelStatus.finalizedWith_withOutcome hf _ _
+    · exact hf
+  | challenge c' proof cand =>
+    obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := challenge_some h
+    simp only [statusOf_setStatus, setStatus_now]
+    split
+    · rename_i hcc; subst hcc; rw [mode_eq] at hm
+      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hmode <;> cases hmode
+    · exact hf
+  | checkpoint c' proof cand =>
+    obtain ⟨⟨ho, -⟩, rfl⟩ := checkpoint_some h
+    simp only [statusOf_setStatus, setStatus_now]
+    split
+    · rename_i hcc; subst hcc; exact absurd hmode ho
+    · exact hf
+  | conclude c' ss =>
+    obtain ⟨⟨ho, -⟩, rfl⟩ := conclude_some h
+    simp only [statusOf_setStatus, setStatus_now]
+    split
+    · rename_i hcc; subst hcc; exact absurd hmode ho
+    · exact hf
 
 /-! ### The coins-held invariant -/
 
@@ -975,7 +1038,7 @@ theorem heldInv_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : 
   obtain ⟨hnd, hheld⟩ := hi
   cases op with
   | deposit a e x =>
-    obtain ⟨⟨c, rfl⟩, -, hb, hh, -, -⟩ := deposit_some h
+    obtain ⟨⟨c, rfl, -⟩, -, hb, hh, -, -⟩ := deposit_some h
     refine ⟨hb ▸ hnd.add _ _, ?_⟩
     have := Balances.sumIf_set (fun a => decide (a.isExternal = false)) hnd (.channel c)
       (s.balances.get (.channel c) + x)
@@ -985,7 +1048,7 @@ theorem heldInv_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : 
     simp at this
     grind
   | transfer a b =>
-    obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := transfer_some h
+    obtain ⟨o, _, x, -, -, hx, hb, hh, -, -, -, -⟩ := transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
     refine ⟨hb ▸ (hnd.add _ _).sub _ _, ?_⟩
     have := Balances.sumIf_add_sub (fun a => decide (a.isExternal = false)) hnd a.address b hxa
@@ -995,7 +1058,7 @@ theorem heldInv_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : 
     rw [Balances.channelTotal_eq_sumIf] at hheld
     cases b <;> simp at this ⊢ <;> grind
   | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := reclaim_some h; exact ⟨hnd, hheld⟩
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; exact ⟨hnd, hheld⟩
   | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; exact ⟨hnd, hheld⟩
   | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; exact ⟨hnd, hheld⟩
   | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; exact ⟨hnd, hheld⟩

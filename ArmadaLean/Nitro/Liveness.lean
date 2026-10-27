@@ -640,7 +640,8 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
     (alice bob P Pprev Pnext : Participant)
     (Lm Lp : FixedPart) (om op : Allocation E) (a b : Coins)
     (hdist : r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext)
-    (hV : s.finalOutcome r.V.address =
+    (hkLm : Lm.kind = .assetHolding) (hkLp : Lp.kind = .assetHolding) (hkV : r.V.kind = .virtual)
+    (hV : s.finalizedWith r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]))
     (hLm : s.finalOutcome Lm.address = some (.allocation om))
     (hLp : s.finalOutcome Lp.address = some (.allocation op))
@@ -664,26 +665,20 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
   have hVb : oV.amountAt 1 = b := rfl
   have hx : oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 := hab
   have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by simp
-  -- `Lm ≠ V` and `Lp ≠ V`: `V`'s outcome has no entry for `V`.
-  have hmV : Lm ≠ r.V := by
-    rintro rfl; rw [hV] at hLm
-    simp only [Option.some.injEq, Outcome.allocation.injEq] at hLm; subst hLm
-    simp [oV, Allocation.find, alloc] at hgm
-  have hpV : Lp ≠ r.V := by
-    rintro rfl; rw [hV] at hLp
-    simp only [Option.some.injEq, Outcome.allocation.injEq] at hLp; subst hLp
-    simp [oV, Allocation.find, alloc] at hgp
+  -- `Lm ≠ V` and `Lp ≠ V`: an asset-holding channel is never a virtual one.
+  have hmV : Lm ≠ r.V := by rintro rfl; rw [hkV] at hkLm; cases hkLm
+  have hpV : Lp ≠ r.V := by rintro rfl; rw [hkV] at hkLp; cases hkLp
   let om' := ((om.addTo dPp (oV.amountAt 0)).addTo dP (oV.amountAt 1)).remove r.V.address
   let op' := ((op.addTo dP (oV.amountAt 0)).addTo dPn (oV.amountAt 1)).remove r.V.address
-  have hr1 := reclaim_can_happen s Lm r.V om oV (r.a0 + r.b0) dPp dP hLm hV hgm
+  have hr1 := reclaim_can_happen s Lm r.V om oV (r.a0 + r.b0) dPp dP hkLm hkV hLm hV hgm
     (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.1)
     (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.2) hx
   set s1 := s.setStatus Lm ((s.statusOf Lm).withOutcome (.allocation om'))
-  have hV1 : s1.finalOutcome r.V.address = some (.allocation oV) := by
+  have hV1 : s1.finalizedWith r.V.address = some (.allocation oV) := by
     simpa [s1, Ne.symm hmV] using hV
   have hLp1 : s1.finalOutcome Lp.address = some (.allocation op) := by
     simpa [s1, Ne.symm hne] using hLp
-  have hr2 := reclaim_can_happen s1 Lp r.V op oV (r.a0 + r.b0) dP dPn hLp1 hV1 hgp
+  have hr2 := reclaim_can_happen s1 Lp r.V op oV (r.a0 + r.b0) dP dPn hkLp hkV hLp1 hV1 hgp
     (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.1)
     (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.2) hx
   refine ⟨s1, _, om', op', hr1, hr2, ?_, ?_, ?_, ?_, ?_, ?_⟩

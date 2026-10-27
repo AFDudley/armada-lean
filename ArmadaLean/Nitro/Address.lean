@@ -43,15 +43,33 @@ structure AppId where
   id : Nat
   deriving DecidableEq, Repr
 
+/-- A channel's funding construction (operator ruling 2026-10-27). SATP §1
+    (SATP:79-84) and SATP §3.1: an asset-holding channel is funded by
+    deposits or by an allocation in another channel's outcome, and holds
+    its own assets; a ledger channel is this type. A virtual channel is
+    funded only by guarantees held in two or more ledger channels and
+    holds no assets of its own. The kind is fixed at the channel's
+    construction, not inferred from the operations a caller submits:
+    SATP:213 and Nitro:158-160 hash the fixed part to the channel id, so a
+    channel built a different way is a different channel, and `kind`
+    cannot change after the channel opens. -/
+inductive ChannelKind
+  | assetHolding
+  | virtual
+  deriving DecidableEq, Repr
+
 /-- The fixed part of a channel. SATP:198-203 `ChannelConsts { peers, appDef,
     nonce, challengeDuration }`; go-nitro INitroTypes.sol:13-18 `FixedPart
     { participants, channelNonce, appDefinition, challengeDuration }`. The
-    two agree. -/
+    two agree. `kind` is the specification's addition (operator ruling
+    2026-10-27, `ChannelKind`): go-nitro and SATP have no such field, and
+    encode the distinction only in which operations happen to succeed. -/
 structure FixedPart where
   participants : List Participant
   nonce : Nat
   appDef : AppId
   challengeDuration : Time
+  kind : ChannelKind
   deriving DecidableEq, Repr
 
 /-- The number of participants. ForceMove:607 `numberOfParticipants`;
@@ -87,6 +105,14 @@ def FixedPart.address (c : FixedPart) : Address E := .channel c
 def Address.isExternal : Address E → Bool
   | .external _ => true
   | .channel _ => false
+
+/-- A destination `transfer` may pay into on-chain: an external destination,
+    or an asset-holding channel (operator ruling 2026-10-27, `ChannelKind`).
+    A virtual channel holds no assets of its own and is never credited this
+    way (SATP §3.1). -/
+def Address.fundable : Address E → Bool
+  | .external _ => true
+  | .channel c => decide (c.kind = .assetHolding)
 
 /-- A balance table. Nitro:161-163: "a simple mapping that stores the
     quantity of coins for an address. If an address does not appear in the

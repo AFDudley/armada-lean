@@ -21,11 +21,11 @@ open ArmadaLean.Nitro
 def p0 : Participant := ⟨0⟩
 def q0 : Participant := ⟨1⟩
 /-- A one-participant channel; challenge duration 2. -/
-def c1 : FixedPart := ⟨[p0], 0, ⟨0⟩, 2⟩
+def c1 : FixedPart := ⟨[p0], 0, ⟨0⟩, 2, .assetHolding⟩
 /-- A second one-participant channel. -/
-def c3 : FixedPart := ⟨[p0], 3, ⟨0⟩, 2⟩
+def c3 : FixedPart := ⟨[p0], 3, ⟨0⟩, 2, .assetHolding⟩
 /-- A two-participant channel. -/
-def c2 : FixedPart := ⟨[p0, q0], 1, ⟨0⟩, 2⟩
+def c2 : FixedPart := ⟨[p0, q0], 1, ⟨0⟩, 2, .assetHolding⟩
 def apps0 : Apps Nat := fun _ => consensusRules
 def d0 : Address Nat := .external 0
 def d1 : Address Nat := .external 1
@@ -47,8 +47,8 @@ theorem sCon_reach : Reachable apps0 sCon := .tail sDep_reach (.mk _ _ _ _ sDep_
 
 /-! ## Reclaim values: ledger `cL` guarantees `cV` for `[d0, d1]`. -/
 
-def cL : FixedPart := ⟨[p0], 5, ⟨0⟩, 2⟩
-def cV : FixedPart := ⟨[p0], 6, ⟨0⟩, 2⟩
+def cL : FixedPart := ⟨[p0], 5, ⟨0⟩, 2, .assetHolding⟩
+def cV : FixedPart := ⟨[p0], 6, ⟨0⟩, 2, .virtual⟩
 def oL : Allocation Nat := [alloc d0 0, alloc d1 0, ⟨cV.address, .guarantee 1 [d0, d1]⟩]
 def oV : Allocation Nat := [alloc d0 1, alloc d1 0]
 def sR : Adjudicator Nat :=
@@ -347,51 +347,9 @@ section Chain
 
 variable {E : Type} [DecidableEq E]
 
-/-- The outcome of finalization never changes. -/
-theorem finalizedWith_apply {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
-    (h : s.apply apps caller op = some s') {c : FixedPart} {f : Outcome E}
-    (hf : s.finalizedWith c.address = some f) : s'.finalizedWith c.address = some f := by
-  have hn := Adjudicator.apply_now_le h
-  simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel] at hf ⊢
-  have hmode : (s.statusOf c).mode s.now = .finalized := by
-    rw [ChannelStatus.mode_eq_finalized_iff, ← ChannelStatus.finalizedWith_isSome_iff, hf]; rfl
-  cases op with
-  | deposit a e x =>
-    obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-    rw [Adjudicator.statusOf_of_status hs]; exact ChannelStatus.finalizedWith_mono hf hn
-  | tick dt => simp at h; subst h; exact ChannelStatus.finalizedWith_mono hf hn
-  | transfer a b =>
-    obtain ⟨_, _, _, -, -, -, -, -, hs, hn'⟩ := Adjudicator.transfer_some h
-    rw [Adjudicator.statusOf_of_status hs, hn']
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hca; subst hca; exact ChannelStatus.finalizedWith_withOutcome hf _ _
-    · exact hf
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h
-    simp only [Adjudicator.statusOf_setStatus, Adjudicator.setStatus_now]
-    split
-    · rename_i hcl; subst hcl; exact ChannelStatus.finalizedWith_withOutcome hf _ _
-    · exact hf
-  | challenge c' proof cand =>
-    obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
-    simp only [Adjudicator.statusOf_setStatus, Adjudicator.setStatus_now]
-    split
-    · rename_i hcc; subst hcc; rw [Adjudicator.mode_eq] at hm
-      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hmode <;> cases hmode
-    · exact hf
-  | checkpoint c' proof cand =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := Adjudicator.checkpoint_some h
-    simp only [Adjudicator.statusOf_setStatus, Adjudicator.setStatus_now]
-    split
-    · rename_i hcc; subst hcc; exact absurd hmode ho
-    · exact hf
-  | conclude c' ss =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := Adjudicator.conclude_some h
-    simp only [Adjudicator.statusOf_setStatus, Adjudicator.setStatus_now]
-    split
-    · rename_i hcc; subst hcc; exact absurd hmode ho
-    · exact hf
+/-- `Adjudicator.finalizedWith_apply` (`Lemmas.lean`): the outcome of
+    finalization never changes. -/
+alias finalizedWith_apply := Adjudicator.finalizedWith_apply
 
 /-- The channel an operation writes. -/
 def opOn : Op E → FixedPart → Prop
@@ -417,7 +375,7 @@ theorem statusOf_apply_of_not_on {apps : Apps E} {caller : Participant} {op : Op
     simp only [Adjudicator.statusOf_setStatus, opOn] at hc ⊢
     rw [if_neg (Ne.symm hc)]
   | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
     simp only [Adjudicator.statusOf_setStatus, opOn] at hc ⊢
     rw [if_neg (Ne.symm hc)]
   | challenge c' proof cand =>
@@ -673,14 +631,14 @@ theorem waitInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
       | tick dt => exact absurd hon id
       | transfer a b =>
         simp only [opOn] at hon; subst a
-        obtain ⟨_, _, _, _, _, _, _, _, hs, hn⟩ := Adjudicator.transfer_some h
+        obtain ⟨_, _, _, _, _, _, _, _, hs, hn, _, _⟩ := Adjudicator.transfer_some h
         refine .inr ?_
         rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
           Adjudicator.statusOf_of_status hs]
         simp [hst]
       | reclaim l v =>
         simp only [opOn] at hon; subst l
-        obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
         exact .inr (by simp [hst])
       | challenge c' proof cand =>
         simp only [opOn] at hon; subst c'
@@ -757,7 +715,8 @@ theorem zeroBal_apply {apps : Apps E} {caller : Participant} {op : Op E} {s s' :
       have := Allocation.paidTo_le_held (s.balances.get a.address) o b
       rw [hz] at this; rw [hx, hz]; exact Nat.le_zero.1 this
     rw [hb]; simp [hx0, hz]
-  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl⟩ := Adjudicator.reclaim_some h; simp [hz]
+  | reclaim l v =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; simp [hz]
   | challenge c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h; simp [hz]
   | checkpoint c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp [hz]
   | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp [hz]
@@ -1218,8 +1177,8 @@ example : ∃ s : Adjudicator Nat, s.IsDAG := ⟨g0, g0_dag⟩
 
 /-! ### Ledger constructions: `A = p0` at `0`, `B = q0` at `1`. -/
 
-def cLW : FixedPart := ⟨[p0, q0], 7, ⟨0⟩, 2⟩
-def cχ : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 2⟩
+def cLW : FixedPart := ⟨[p0, q0], 7, ⟨0⟩, 2, .assetHolding⟩
+def cχ : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 2, .assetHolding⟩
 def wLS : LedgerWithSub Nat := ⟨p0, q0, 0, 1, cLW, cχ, 0, 0, 0⟩
 def sLW : Adjudicator Nat := g0.setStatus cLW (.finalized 0 wLS.outcome wLS.outcome)
 
@@ -1342,7 +1301,7 @@ example : ∃ (s s' : Adjudicator Nat) (L : FixedPart) (A B χ : Address Nat) (a
 
 /-- `ledger_partial_withdrawal`: `cLW` is `L`, open; `cL2` is `L'`,
     challenged with its outcome until time 2. -/
-def cL2 : FixedPart := ⟨[p0, q0], 9, ⟨0⟩, 2⟩
+def cL2 : FixedPart := ⟨[p0, q0], 9, ⟨0⟩, 2, .assetHolding⟩
 def ΩW : Outcome Nat := .allocation [alloc cL2.address (0 + 0 + 0), alloc (.external 0) 0]
 def ΩL' : Outcome Nat :=
   .allocation [alloc (.external 0) 0, alloc (.external 1) 0, alloc c3.address 0]
@@ -1419,17 +1378,17 @@ example : ∃ (v : Views Nat) (A B : Participant) (dA dB : Nat) (L L' χ : Fixed
 /-! ### SATP: a route of two peers (`p0` Alice, `q0` Bob) and of three. -/
 
 def apps2 : Apps Nat := fun id => if id = ⟨1⟩ then satpVirtualRules else consensusRules
-def Lr : FixedPart := ⟨[p0, q0], 10, ⟨0⟩, 2⟩
-def Vr : FixedPart := ⟨[p0, q0], 11, ⟨1⟩, 2⟩
+def Lr : FixedPart := ⟨[p0, q0], 10, ⟨0⟩, 2, .assetHolding⟩
+def Vr : FixedPart := ⟨[p0, q0], 11, ⟨1⟩, 2, .virtual⟩
 def r2 : Route Nat := ⟨[p0, q0], [Lr], Vr, 1, 0, fun p => p.key⟩
 def vch : Voucher := ⟨Vr, 0, 0, 0, []⟩
 def stV : State Nat :=
   ⟨Vr, 1, originalOutcome 0 1 1 0, false, .satpVirtual ⟨.none, vch⟩⟩
 
 theorem r2_wf : r2.WellFormed apps2 := by
-  refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, fun i L h => ?_⟩
+  refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | i
-    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, rfl⟩
+    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, rfl, rfl⟩
     · simp [r2] at h
   · rcases i with _ | i
     · simp [r2] at h; subst h; decide
@@ -1489,16 +1448,16 @@ example : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat 
 
 /-- Three peers `p0`, `q0`, `w0`; `q0` is the intermediary. -/
 def w0 : Participant := ⟨2⟩
-def Lm3 : FixedPart := ⟨[p0, q0], 20, ⟨0⟩, 2⟩
-def Lp3 : FixedPart := ⟨[q0, w0], 21, ⟨0⟩, 2⟩
-def V3 : FixedPart := ⟨[p0, q0, w0], 22, ⟨1⟩, 2⟩
+def Lm3 : FixedPart := ⟨[p0, q0], 20, ⟨0⟩, 2, .assetHolding⟩
+def Lp3 : FixedPart := ⟨[q0, w0], 21, ⟨0⟩, 2, .assetHolding⟩
+def V3 : FixedPart := ⟨[p0, q0, w0], 22, ⟨1⟩, 2, .virtual⟩
 def r3 : Route Nat := ⟨[p0, q0, w0], [Lm3, Lp3], V3, 1, 1, fun p => p.key⟩
 
 theorem r3_wf : r3.WellFormed apps2 := by
-  refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, fun i L h => ?_⟩
+  refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | _ | i
-    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, rfl⟩
-    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, rfl⟩
+    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, rfl, rfl⟩
     · simp [r3] at h
   · rcases i with _ | _ | i
     · simp [r3] at h; subst h; decide

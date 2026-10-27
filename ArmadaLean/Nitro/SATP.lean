@@ -129,13 +129,15 @@ structure Route (E : Type) where
 
 /-- SATP:400-402 and SATP:679-680: the ledgers link consecutive peers and run the
     consensus app; `V`'s peers are the route; the peers' destinations are
-    distinct. -/
+    distinct. Channel types (operator ruling 2026-10-27, `ChannelKind`,
+    SATP §1 SATP:79-84): a ledger channel is asset-holding, and `V`, funded
+    only by the ledgers' guarantees, is virtual. -/
 def Route.WellFormed (apps : Apps E) (r : Route E) : Prop :=
   r.ledgers.length + 1 = r.peers.length ∧ 2 ≤ r.peers.length ∧ r.peers.Nodup ∧
   (r.peers.map r.dest).Nodup ∧
   (∀ (i : Nat) L, r.ledgers[i]? = some L → ∃ P Q, r.peers[i]? = some P ∧ r.peers[i + 1]? = some Q ∧
-    L.participants = [P, Q] ∧ IsLedgerChannel apps L) ∧
-  r.V.participants = r.peers ∧
+    L.participants = [P, Q] ∧ IsLedgerChannel apps L ∧ L.kind = .assetHolding) ∧
+  r.V.participants = r.peers ∧ r.V.kind = .virtual ∧
   (∀ (i : Nat) L, r.ledgers[i]? = some L → L ≠ r.V)
 
 /-- SATP:413 `Gi = V : G(a0 + b0, [Pi, Pi+1])`. -/

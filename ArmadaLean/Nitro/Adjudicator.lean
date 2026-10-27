@@ -95,12 +95,17 @@ def Adjudicator.genesis : Adjudicator E :=
     history that drops or reorders earlier deposits is just another
     `Reachable` history; `expectedHeld` is what the depositor saw, and the
     guard fails when the chain no longer holds it. The model has no forks
-    and no finality. -/
+    and no finality.
+
+    Channel types (operator ruling 2026-10-27, `ChannelKind`, SATP §1
+    SATP:79-84, SATP §3.1): only an asset-holding channel accepts a
+    deposit. A virtual channel is funded only by guarantees in ledger
+    channels, never by a deposit of its own. -/
 def Adjudicator.deposit (s : Adjudicator E) (a : Address E) (expectedHeld x : Coins) :
     Option (Adjudicator E) :=
   match a with
-  | .channel _ =>
-    if s.balances.get a = expectedHeld then
+  | .channel c =>
+    if c.kind = .assetHolding ∧ s.balances.get a = expectedHeld then
       some { s with balances := s.balances.add a x, held := s.held + x }
     else
       none
@@ -123,44 +128,79 @@ def Adjudicator.payTo (s : Adjudicator E) (b : Address E) (x : Coins) : Adjudica
     entry cannot be transferred (line 171-172). Nitro:765-772 `T(A, B, x)`
     with `x ≤` the affordable amount; the code pays the whole affordable
     amount, so `x` is not a parameter. SATP:764-768 defers payouts. The
-    multi-index batch (`indices`) is an encoding and is not modelled. -/
+    multi-index batch (`indices`) is an encoding and is not modelled.
+
+    Channel types (operator ruling 2026-10-27, `ChannelKind`, SATP §1
+    SATP:79-84, SATP §3.1): only an asset-holding channel holds coins to
+    pay out, so `a` must be one; a virtual channel source is never
+    transferred from. The paid destination `b`, when it names a channel,
+    must itself be asset-holding (`Address.fundable`): a virtual channel
+    never receives a credit from another channel's payout, because it
+    holds no assets of its own. -/
 def Adjudicator.transfer (s : Adjudicator E) (a : FixedPart) (b : Address E) :
     Option (Adjudicator E) :=
-  match s.finalOutcome a.address with
-  | some (.allocation o) =>
-    match o.find b with
-    | some ⟨_, .alloc _⟩ =>
-      let x := o.paidTo (s.balances.get a.address) b
-      some (((s.setStatus a ((s.statusOf a).withOutcome (.allocation (o.reduceOwed b x)))).payTo b x)
-        |> fun s' => { s' with balances := s'.balances.sub a.address x })
+  if a.kind = .assetHolding ∧ b.fundable = true then
+    match s.finalOutcome a.address with
+    | some (.allocation o) =>
+      match o.find b with
+      | some ⟨_, .alloc _⟩ =>
+        let x := o.paidTo (s.balances.get a.address) b
+        some (((s.setStatus a ((s.statusOf a).withOutcome (.allocation (o.reduceOwed b x)))).payTo b x)
+          |> fun s' => { s' with balances := s'.balances.sub a.address x })
+      | _ => none
     | _ => none
-  | _ => none
+  else none
 
 /-- SATP:344-364 `reclaim(ledgerChannelId, targetChannelId)` (Listing 2) as
     corrected by go-nitro `reclaim` and `compute_reclaim_effects`
-    (MultiAssetHolder.sol:233-370). Both channels are finalized. The ledger's
+    (MultiAssetHolder.sol:233-370). The ledger is finalized. The ledger's
     entry for the target is a guarantee `G(x, [left, right])`. Then
     `o_ledger[left] += o_target[0]`, `o_ledger[right] += o_target[1]`, and
     the guarantee entry is deleted. go-nitro adds three checks SATP lacks:
     `left` and `right` must have entries in the ledger (lines 363-364) and
     `o_target[0] + o_target[1] = x` (line 365). The balances do not change
     (line 391: "no changes are made to the target channel"; the ledger's
-    holding is untouched). -/
+    holding is untouched).
+
+    Channel types (operator ruling 2026-10-27, `ChannelKind`, SATP §1
+    SATP:79-84, SATP §3.1): a guarantee names only a virtual channel as its
+    target, so `reclaim` requires `v` to be one. The credit lands in the
+    ledger's own allocation entries, "credits from another channel's
+    payout" in the ruling's words, so `l` must be asset-holding, as
+    `transfer`'s paid channel destination must be.
+
+    The target's finalized outcome (operator ruling 2026-10-27, SATP §2.4
+    SATP:335-338: "x tokens to be reclaimed, using the 'finalized' outcome
+    of V"): `reclaim` reads `finalizedWith v.address`, the outcome `v`
+    finalized with, not its current stored outcome. go-nitro reads the
+    current stored outcome, and `transfer` can rewrite that outcome between
+    finalization and a later `reclaim` call: a reclaim denial-of-service
+    reproduced against go-nitro at `64c4ee9a1`
+    (`armada-laconic/labbook/2026-10-27-gonitro-reclaim-dos.md`) deposits
+    into a finalized virtual channel, pays the deposit out by `transfer`,
+    and every later `reclaim` then reverts forever on the amount check.
+    With channel types a virtual channel accepts neither a deposit nor a
+    transfer (`Adjudicator.deposit`, `Adjudicator.transfer`), so its stored
+    outcome cannot move once finalized; reading `finalizedWith` states that
+    fact directly, as SATP reads it, instead of leaving it to follow only
+    from the deposit and transfer guards. -/
 def Adjudicator.reclaim (s : Adjudicator E) (l v : FixedPart) : Option (Adjudicator E) :=
-  match s.finalOutcome l.address, s.finalOutcome v.address with
-  | some (.allocation oLedger), some (.allocation oTarget) =>
-    match oLedger.find v.address with
-    | some ⟨_, .guarantee x [left, right]⟩ =>
-      if (oLedger.remove v.address).find left ≠ none ∧
-          (oLedger.remove v.address).find right ≠ none ∧
-          oTarget.amountAt 0 + oTarget.amountAt 1 = x then
-        let o1 := oLedger.addTo left (oTarget.amountAt 0)
-        let o2 := o1.addTo right (oTarget.amountAt 1)
-        some (s.setStatus l ((s.statusOf l).withOutcome (.allocation (o2.remove v.address))))
-      else
-        none
-    | _ => none
-  | _, _ => none
+  if l.kind = .assetHolding ∧ v.kind = .virtual then
+    match s.finalOutcome l.address, s.finalizedWith v.address with
+    | some (.allocation oLedger), some (.allocation oTarget) =>
+      match oLedger.find v.address with
+      | some ⟨_, .guarantee x [left, right]⟩ =>
+        if (oLedger.remove v.address).find left ≠ none ∧
+            (oLedger.remove v.address).find right ≠ none ∧
+            oTarget.amountAt 0 + oTarget.amountAt 1 = x then
+          let o1 := oLedger.addTo left (oTarget.amountAt 0)
+          let o2 := o1.addTo right (oTarget.amountAt 1)
+          some (s.setStatus l ((s.statusOf l).withOutcome (.allocation (o2.remove v.address))))
+        else
+          none
+      | _ => none
+    | _, _ => none
+  else none
 
 /-- go-nitro ForceMove.sol:38-76 `challenge`: in Open mode the candidate's
     turn must not decrease the record; in Challenge mode it must increase
