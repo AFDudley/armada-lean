@@ -19,10 +19,6 @@ import ArmadaLean.Nitro.Channel
 
 namespace ArmadaLean.Nitro
 
-/- `Rules.supports` is a `Prop`. The operations that read it decide it
-   classically. -/
-open Classical
-
 /-- The deployed applications. SATP:252-254; go-nitro IForceMoveApp.sol. -/
 abbrev Apps := AppId → Rules
 
@@ -148,10 +144,10 @@ def Adjudicator.reclaim (s : Adjudicator) (l v : FixedPart) : Option Adjudicator
     lets a participant push the deadline forever; the code corrects it.
     ForceMove:1340-1354 forbids a challenge while one runs; the code allows
     one at a higher turn. -/
-noncomputable def Adjudicator.challenge (apps : Apps) (s : Adjudicator) (challenger : Participant)
+def Adjudicator.challenge (apps : Apps) (s : Adjudicator) (challenger : Participant)
     (c : FixedPart) (proof : SupportProof) (candidate : State) : Option Adjudicator :=
   if challenger ∈ c.participants ∧
-      (apps c.appDef).supports c proof candidate ∧ candidate.channel = c ∧
+      (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
       ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
        (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) then
     some (s.setStatus c (.challenged candidate.turnNum ⟨candidate, s.now + c.challengeDuration⟩))
@@ -165,10 +161,10 @@ noncomputable def Adjudicator.challenge (apps : Apps) (s : Adjudicator) (challen
     operation. ForceMove:1399-1440 `refute` and `respondWithMove` and
     ForceMove:1543-1545 ("store the turnNum of the response state") are
     superseded by it. -/
-noncomputable def Adjudicator.checkpoint (apps : Apps) (s : Adjudicator) (c : FixedPart)
+def Adjudicator.checkpoint (apps : Apps) (s : Adjudicator) (c : FixedPart)
     (proof : SupportProof) (candidate : State) : Option Adjudicator :=
   if (s.statusOf c).IsOpen s.now ∧
-      (apps c.appDef).supports c proof candidate ∧ candidate.channel = c ∧
+      (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
       (s.statusOf c).turnNumRecord < candidate.turnNum then
     some (s.setStatus c (.open candidate.turnNum))
   else
@@ -182,7 +178,7 @@ noncomputable def Adjudicator.checkpoint (apps : Apps) (s : Adjudicator) (c : Fi
     Nitro:296-300; ForceMove:1495-1507. go-nitro also resets the stored turn
     to 0; no operation reads the turn of a finalized channel, so the model
     keeps the candidate's turn. -/
-noncomputable def Adjudicator.conclude (s : Adjudicator) (c : FixedPart) (ss : SignedState) :
+def Adjudicator.conclude (s : Adjudicator) (c : FixedPart) (ss : SignedState) :
     Option Adjudicator :=
   if (s.statusOf c).IsOpen s.now ∧ ConclusionProof c ss then
     some (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome))
@@ -223,7 +219,7 @@ def Op.isRedistribution : Op → Bool
   | _ => false
 
 /-- Apply one operation by one caller. -/
-noncomputable def Adjudicator.apply (apps : Apps) (caller : Participant) (op : Op) (s : Adjudicator) :
+def Adjudicator.apply (apps : Apps) (caller : Participant) (op : Op) (s : Adjudicator) :
     Option Adjudicator :=
   match op with
   | .deposit a x => s.deposit a x
@@ -246,7 +242,7 @@ inductive Reachable (apps : Apps) : Adjudicator → Prop
 
 /-- Apply a list of (caller, op) pairs. A failed operation changes nothing
     and the sequence continues. -/
-noncomputable def Adjudicator.applyAll (apps : Apps) : List (Participant × Op) → Adjudicator → Adjudicator
+def Adjudicator.applyAll (apps : Apps) : List (Participant × Op) → Adjudicator → Adjudicator
   | [], s => s
   | (caller, op) :: rest, s => Adjudicator.applyAll apps rest ((s.apply apps caller op).getD s)
 

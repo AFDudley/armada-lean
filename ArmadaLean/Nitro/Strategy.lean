@@ -61,7 +61,7 @@ def HonestMove.Feasible {p : Participant} (net : NetworkState p) : HonestMove â†
 
 /-- Apply an honest move. A failed on-chain operation changes nothing
     (ForceMove:685-686). -/
-noncomputable def NetworkState.applyHonest (apps : Apps) {p : Participant}
+def NetworkState.applyHonest (apps : Apps) {p : Participant}
     (m : HonestMove) (net : NetworkState p) : NetworkState p :=
   match m with
   | .chain op => { net with chain := (net.chain.apply apps p op).getD net.chain }
@@ -69,7 +69,7 @@ noncomputable def NetworkState.applyHonest (apps : Apps) {p : Participant}
   | .wait dt => { net with chain := net.chain.tick dt }
 
 /-- Apply an adversary move. -/
-noncomputable def NetworkState.applyAdv (apps : Apps) {p : Participant}
+def NetworkState.applyAdv (apps : Apps) {p : Participant}
     (m : AdvMove) (net : NetworkState p) : NetworkState p :=
   match m with
   | .chain caller op => { net with chain := (net.chain.apply apps caller op).getD net.chain }

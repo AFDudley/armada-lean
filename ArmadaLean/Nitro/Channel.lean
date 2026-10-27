@@ -46,9 +46,18 @@ structure SignedState where
 def SignedState.ByAll (ss : SignedState) : Prop :=
   ∀ p ∈ ss.state.channel.participants, p ∈ ss.signers
 
+instance (ss : SignedState) : Decidable ss.ByAll :=
+  inferInstanceAs (Decidable (∀ p ∈ ss.state.channel.participants, p ∈ ss.signers))
+
 /-- ForceMove:750 `toMove.state.mover == toMove.signer` (ForceMove only). -/
 def SignedState.ByMover (ss : SignedState) : Prop :=
   ∃ m, ss.state.mover = some m ∧ m ∈ ss.signers
+
+/-- `ByMover` as a decision. -/
+def SignedState.byMover (ss : SignedState) : Bool :=
+  match ss.state.mover with
+  | some m => decide (m ∈ ss.signers)
+  | none => false
 
 /-- A support proof. SATP:247-250 `SupportProof { consts, vars :
     ChannelVars[] }`; go-nitro ForceMove.sol `proof :
@@ -60,12 +69,14 @@ abbrev SupportProof := List SignedState
     peers in the channel, even if not explicitly signed by every peer".
     go-nitro IForceMoveApp.sol `stateIsSupported(fixedPart, proof,
     candidate)` returns a boolean; the model follows the code and keeps the
-    candidate separate from the proof. `supports c proof candidate` holds
-    when the proof supports `candidate` in channel `c`. ForceMove:963-966: the
-    rules are pure; go-nitro declares `stateIsSupported` `pure`. That holds
-    by construction: `Rules` has no access to chain state. -/
+    candidate separate from the proof. `supports c proof candidate = true`
+    when the proof supports `candidate` in channel `c`. Operator ruling
+    2026-10-27: the rules are a computable `Bool` function, as in the code.
+    ForceMove:963-966: the rules are pure; go-nitro declares
+    `stateIsSupported` `pure`. That holds by construction: `Rules` has no
+    access to chain state. -/
 structure Rules where
-  supports : FixedPart → SupportProof → State → Prop
+  supports : FixedPart → SupportProof → State → Bool
 
 /-- ForceMove:761-778 (ForceMove only): a valid transition keeps the channel
     and increments the turn number by exactly one. -/
@@ -88,22 +99,30 @@ def ValidMove (vt : State → State → Prop) (m1 m2 : SignedState) : Prop :=
   (m2.state.isFinal = false → vt m1.state m2.state) ∧
   m2.ByMover
 
+/-- `ValidMove` as a decision, for a `Bool` game library `vt`. -/
+def validMove (vt : State → State → Bool) (m1 m2 : SignedState) : Bool :=
+  decide (m2.state.channel = m1.state.channel) && decide (m2.state.turnNum = m1.state.turnNum + 1) &&
+  (!m2.state.isFinal || decide (m2.state.outcome = m1.state.outcome)) &&
+  (!m1.state.isFinal || m2.state.isFinal) &&
+  (m2.state.isFinal || vt m1.state m2.state) &&
+  m2.byMover
+
 /-- A run of valid moves. -/
-def ValidRun (vt : State → State → Prop) : SupportProof → Prop
-  | [] => True
-  | [_] => True
-  | m1 :: m2 :: rest => ValidMove vt m1 m2 ∧ ValidRun vt (m2 :: rest)
+def validRun (vt : State → State → Bool) : SupportProof → Bool
+  | [] => true
+  | [_] => true
+  | m1 :: m2 :: rest => validMove vt m1 m2 && validRun vt (m2 :: rest)
 
 /-- The ForceMove rules as an application. ForceMove:1340-1354 `forceMove`: a
     run of `n` valid moves, one per participant, whose last state is the
     candidate; ForceMove:724-727: "players must take turns in a cyclical
     order." go-nitro StrictTurnTaking.sol is the same rule. -/
-def forceMoveRules (vt : State → State → Prop) : Rules where
+def forceMoveRules (vt : State → State → Bool) : Rules where
   supports c proof candidate :=
-    proof.length = c.n ∧
-    ValidRun vt proof ∧
-    (∀ m ∈ proof, m.state.channel = c) ∧
-    (∃ m, proof.getLast? = some m ∧ m.state = candidate)
+    decide (proof.length = c.n) &&
+    validRun vt proof &&
+    proof.all (fun m => decide (m.state.channel = c)) &&
+    decide ((proof.getLast?.map SignedState.state) = some candidate)
 
 /-- The consensus app. SATP:262-266: exactly one state, signed by everyone.
     go-nitro Consensus.sol: `proof.length == 0` and the candidate is
@@ -111,7 +130,9 @@ def forceMoveRules (vt : State → State → Prop) : Rules where
     Nitro:660-688 calls it the consensus game. -/
 def consensusRules : Rules where
   supports c proof candidate :=
-    ∃ ss, proof = [ss] ∧ ss.state = candidate ∧ ss.state.channel = c ∧ ss.ByAll
+    match proof with
+    | [ss] => decide (ss.state = candidate) && decide (ss.state.channel = c) && decide ss.ByAll
+    | _ => false
 
 /-- A conclusion proof. go-nitro ForceMove.sol `_conclude`: `isFinal` and
     unanimous signatures, with no call to the application. SATP:286-289:
@@ -121,6 +142,9 @@ def consensusRules : Rules where
     ForceMove:1030-1058's `n` consecutive conclude moves are superseded. -/
 def ConclusionProof (c : FixedPart) (ss : SignedState) : Prop :=
   ss.state.channel = c ∧ ss.state.isFinal = true ∧ ss.ByAll
+
+instance (c : FixedPart) (ss : SignedState) : Decidable (ConclusionProof c ss) :=
+  inferInstanceAs (Decidable (ss.state.channel = c ∧ ss.state.isFinal = true ∧ ss.ByAll))
 
 /-- An on-chain challenge. SATP:234-238 stores `version`, `outcome`,
     `finalizationTime`; go-nitro stores the turn record, the finalization

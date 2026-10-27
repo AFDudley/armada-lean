@@ -8,8 +8,6 @@ import ArmadaLean.Nitro.Safety
 
 namespace ArmadaLean.Nitro
 
-open Classical
-
 /-- Nitro-31. Nitro:779-781: "We will restrict ourselves to looking at
     strategies and counter-strategies involving transfer operations only,
     ignoring deposits and withdrawals." An adversary that plays only
@@ -37,8 +35,8 @@ inductive UnbeatableNoWait (apps : Apps) {p : Participant} (T : Threat p)
 /-- ForceMove-A06, ForceMove-A07. ForceMove:1092-1125 and ForceMove:1150-1184: through the
     PreFundSetup and PostFundSetup phases (the first `2n` states) every
     transition keeps the resolution. -/
-def SetupPhaseKeepsOutcome (vt : State → State → Prop) (c : FixedPart) : Prop :=
-  ∀ s1 s2, vt s1 s2 → s1.channel = c → s1.turnNum + 1 < 2 * c.n → s2.outcome = s1.outcome
+def SetupPhaseKeepsOutcome (vt : State → State → Bool) (c : FixedPart) : Prop :=
+  ∀ s1 s2, vt s1 s2 = true → s1.channel = c → s1.turnNum + 1 < 2 * c.n → s2.outcome = s1.outcome
 
 /-- Nitro-16, Nitro-21, ForceMove-B01, ForceMove-C03, docs-0070-05, docs-0080-06. Nitro:395-398: "where
     the channel L itself has enough coins in the adjudicator to cover the
@@ -172,7 +170,7 @@ theorem finalizable_is_enabled (apps : Apps) {p : Participant} (T : Threat p)
     they need to launch a challenge on-chain to recover their funds". The
     setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184). -/
 theorem funding_point_universally_finalizable (apps : Apps) (Ts : Threats apps) (v : Views)
-    (hv : v.Consistent) (c : FixedPart) (Ω : Outcome) (vt : State → State → Prop)
+    (hv : v.Consistent) (c : FixedPart) (Ω : Outcome) (vt : State → State → Bool)
     (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
     (hn : 0 < c.n) (hdur : 0 < c.challengeDuration) (h : AtFundingPoint v c Ω)
     (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) :
@@ -403,7 +401,7 @@ theorem ledger_partial_withdrawal (apps : Apps) (Ts : Threats apps) (v : Views)
     start state. -/
 theorem satp_outcome_change_keeps_total (decode : Decode) (c : FixedPart) (alice bob : Participant)
     (proof : SupportProof) (candidate : State)
-    (h : ValidateOutcomeChange decode c alice bob proof candidate) (s0 : SignedState)
+    (h : validateOutcomeChange decode c alice bob proof candidate = true) (s0 : SignedState)
     (h0 : proof.head? = some s0) :
     candidate.outcome.fundedTotal = s0.state.outcome.fundedTotal ∧
     (candidate ≠ s0.state → ∃ a b, PairOutcome alice bob candidate.outcome a b ∧

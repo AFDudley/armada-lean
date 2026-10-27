@@ -9,8 +9,6 @@ import ArmadaLean.Nitro.SATP
 
 namespace ArmadaLean.Nitro
 
-open Classical
-
 /-- ForceMove-D02, Nitro-02, Nitro-03, SATP-05, docs-0010-02, ForceMove-F01.
     SATP:213-215: the id is computed from the constants and the nonce makes
     channels distinct; Nitro:158-160: impossible "to construct a channel
@@ -286,7 +284,7 @@ theorem challenge_requires (apps : Apps) (s : Adjudicator) (challenger : Partici
     (c : FixedPart) (proof : SupportProof) (candidate : State) (s' : Adjudicator)
     (h : s.challenge apps challenger c proof candidate = some s') :
     challenger ∈ c.participants ∧
-    (apps c.appDef).supports c proof candidate ∧ candidate.channel = c ∧
+    (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
     ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
      (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) := by
   sorry
@@ -314,7 +312,7 @@ theorem rechallenge_equal_turn_fails (apps : Apps) (s : Adjudicator) (challenger
 theorem challenge_can_happen (apps : Apps) (s : Adjudicator) (challenger : Participant)
     (c : FixedPart) (proof : SupportProof) (candidate : State)
     (hp : challenger ∈ c.participants)
-    (hs : (apps c.appDef).supports c proof candidate) (hc : candidate.channel = c)
+    (hs : (apps c.appDef).supports c proof candidate = true) (hc : candidate.channel = c)
     (ht : (s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
       (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) :
     s.challenge apps challenger c proof candidate = some
@@ -339,7 +337,7 @@ theorem challenge_effects (apps : Apps) (s : Adjudicator) (challenger : Particip
     turnNum") are superseded by it; SATP has no such operation. -/
 theorem checkpoint_requires (apps : Apps) (s : Adjudicator) (c : FixedPart) (proof : SupportProof)
     (candidate : State) (s' : Adjudicator) (h : s.checkpoint apps c proof candidate = some s') :
-    s.mode c ≠ .finalized ∧ (apps c.appDef).supports c proof candidate ∧
+    s.mode c ≠ .finalized ∧ (apps c.appDef).supports c proof candidate = true ∧
     candidate.channel = c ∧ (s.statusOf c).turnNumRecord < candidate.turnNum := by
   sorry
 
@@ -350,7 +348,7 @@ theorem checkpoint_requires (apps : Apps) (s : Adjudicator) (c : FixedPart) (pro
     to the Collaborative mode"; ForceMove:1765-1770 `cancelChallenge`. -/
 theorem checkpoint_can_happen (apps : Apps) (s : Adjudicator) (c : FixedPart)
     (proof : SupportProof) (candidate : State) (hm : s.mode c ≠ .finalized)
-    (hs : (apps c.appDef).supports c proof candidate) (hc : candidate.channel = c)
+    (hs : (apps c.appDef).supports c proof candidate = true) (hc : candidate.channel = c)
     (ht : (s.statusOf c).turnNumRecord < candidate.turnNum) :
     s.checkpoint apps c proof candidate = some (s.setStatus c (.open candidate.turnNum)) ∧
     (s.setStatus c (.open candidate.turnNum)).mode c = .open := by
@@ -457,13 +455,13 @@ theorem funding_decoupled_from_rules (apps : Apps) (caller : Participant) (s : A
     whose signer is the mover; ForceMove:761-778: the channel is fixed and
     the turn number increments by one. Under the ForceMove rules a supported
     candidate ends a run of `n` such moves. -/
-theorem forceMove_supports_valid_run (vt : State → State → Prop) (c : FixedPart)
+theorem forceMove_supports_valid_run (vt : State → State → Bool) (c : FixedPart)
     (proof : SupportProof) (candidate : State)
-    (h : (forceMoveRules vt).supports c proof candidate) :
+    (h : (forceMoveRules vt).supports c proof candidate = true) :
     proof.length = c.n ∧
     (∀ (i : Nat) m1 m2, proof[i]? = some m1 → proof[i + 1]? = some m2 →
       m2.state.channel = m1.state.channel ∧ m2.state.turnNum = m1.state.turnNum + 1 ∧
-      m2.ByMover ∧ (m2.state.isFinal = false → vt m1.state m2.state)) ∧
+      m2.ByMover ∧ (m2.state.isFinal = false → vt m1.state m2.state = true)) ∧
     (∃ m, proof.getLast? = some m ∧ m.state = candidate) := by
   sorry
 
@@ -471,9 +469,9 @@ theorem forceMove_supports_valid_run (vt : State → State → Prop) (c : FixedP
     ForceMove:976-980: GAME→CONCLUDE needs the resolution unchanged;
     ForceMove:1017-1022: from CONCLUDE only CONCLUDE with the same
     resolution; ForceMove:1203-1208: backing out keeps the resolution. -/
-theorem forceMove_conclude_keeps_outcome (vt : State → State → Prop) (c : FixedPart)
+theorem forceMove_conclude_keeps_outcome (vt : State → State → Bool) (c : FixedPart)
     (proof : SupportProof) (candidate : State)
-    (h : (forceMoveRules vt).supports c proof candidate) (i : Nat) (m1 m2 : SignedState)
+    (h : (forceMoveRules vt).supports c proof candidate = true) (i : Nat) (m1 m2 : SignedState)
     (h1 : proof[i]? = some m1) (h2 : proof[i + 1]? = some m2) :
     (m2.state.isFinal = true → m2.state.outcome = m1.state.outcome) ∧
     (m1.state.isFinal = true → m2.state.isFinal = true) := by

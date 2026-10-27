@@ -43,7 +43,7 @@ inductive VType
 structure VirtualAppData where
   type : VType
   voucher : Voucher
-  deriving Repr
+  deriving DecidableEq, Repr
 
 /-- The parse of `State.appData` (SATP:209). -/
 abbrev Decode := Nat → VirtualAppData
@@ -60,40 +60,47 @@ def Voucher.outcome (v : Voucher) (alice bob : Participant) : Outcome :=
 def Outcome.fundedTotal : Outcome → Coins
   | .allocation o => o.amountAt 0 + o.amountAt 1
 
+/-- SATP:682-690: the start state. -/
+def validStart (decode : Decode) (c : FixedPart) (s : SignedState) : Bool :=
+  decide ((decode s.state.appData).type = .none) && decide s.ByAll && decide (s.state.channel = c)
+
+/-- SATP:691-720: a challenge state after the start state. -/
+def validChallenge (decode : Decode) (c : FixedPart) (alice bob : Participant)
+    (s ch : SignedState) : Bool :=
+  let d := decode ch.state.appData
+  validStart decode c s && decide (s.state.turnNum = 1) && decide (ch.state.turnNum = 2) &&
+  decide (ch.state.channel = c) &&
+  ((decide (d.type = .A) && decide (alice ∈ ch.signers)) ||
+    (decide (d.type = .B) && decide (bob ∈ ch.signers))) &&
+  decide (alice ∈ d.voucher.signers) && decide (bob ∈ d.voucher.signers) &&
+  decide (d.voucher.alice + d.voucher.bob = s.state.outcome.fundedTotal) &&
+  decide (ch.state.outcome = d.voucher.outcome alice bob)
+
+/-- SATP:722-740: a response state after a challenge state. -/
+def validResponse (decode : Decode) (c : FixedPart) (alice bob : Participant)
+    (s ch re : SignedState) : Bool :=
+  let dc := decode ch.state.appData
+  let dr := decode re.state.appData
+  validChallenge decode c alice bob s ch && decide (re.state.turnNum = 3) &&
+  decide (re.state.channel = c) && decide (dr.type = .AB) &&
+  (!decide (dc.type = .A) || decide (bob ∈ re.signers)) &&
+  (!decide (dc.type = .B) || decide (alice ∈ re.signers)) &&
+  decide (alice ∈ dr.voucher.signers) && decide (bob ∈ dr.voucher.signers) &&
+  decide (dc.voucher.version < dr.voucher.version) &&
+  decide (dr.voucher.alice + dr.voucher.bob = s.state.outcome.fundedTotal) &&
+  decide (re.state.outcome = dr.voucher.outcome alice bob)
+
 /-- SATP:669-741 `validateOutcomeChange` (Listing 3). `alice = peers[0]`,
-    `bob = peers.at(-1)` (SATP:679-680). The relation holds when `proof` is
-    the start state, the start and a challenge, or the start, a challenge
-    and a response, and `candidate` is the last of them. -/
-inductive ValidateOutcomeChange (decode : Decode) (c : FixedPart) (alice bob : Participant) :
-    SupportProof → State → Prop
-  /-- SATP:682-690: only the start state. -/
-  | start (s : SignedState) :
-      (decode s.state.appData).type = .none → s.ByAll → s.state.channel = c →
-      ValidateOutcomeChange decode c alice bob [s] s.state
-  /-- SATP:691-720: start and challenge. -/
-  | challenge (s ch : SignedState) :
-      (decode s.state.appData).type = .none → s.ByAll → s.state.channel = c →
-      s.state.turnNum = 1 → ch.state.turnNum = 2 → ch.state.channel = c →
-      ((decode ch.state.appData).type = .A ∧ alice ∈ ch.signers ∨
-        (decode ch.state.appData).type = .B ∧ bob ∈ ch.signers) →
-      (decode ch.state.appData).voucher.SignedByBoth alice bob →
-      (decode ch.state.appData).voucher.alice + (decode ch.state.appData).voucher.bob =
-        s.state.outcome.fundedTotal →
-      ch.state.outcome = (decode ch.state.appData).voucher.outcome alice bob →
-      ValidateOutcomeChange decode c alice bob [s, ch] ch.state
-  /-- SATP:722-740: start, challenge and response. -/
-  | response (s ch re : SignedState) :
-      ValidateOutcomeChange decode c alice bob [s, ch] ch.state →
-      re.state.turnNum = 3 → re.state.channel = c →
-      (decode re.state.appData).type = .AB →
-      ((decode ch.state.appData).type = .A → bob ∈ re.signers) →
-      ((decode ch.state.appData).type = .B → alice ∈ re.signers) →
-      (decode re.state.appData).voucher.SignedByBoth alice bob →
-      (decode ch.state.appData).voucher.version < (decode re.state.appData).voucher.version →
-      (decode re.state.appData).voucher.alice + (decode re.state.appData).voucher.bob =
-        s.state.outcome.fundedTotal →
-      re.state.outcome = (decode re.state.appData).voucher.outcome alice bob →
-      ValidateOutcomeChange decode c alice bob [s, ch, re] re.state
+    `bob = peers.at(-1)` (SATP:679-680). `proof` is the start state, the
+    start and a challenge, or the start, a challenge and a response;
+    `candidate` is the last of them. -/
+def validateOutcomeChange (decode : Decode) (c : FixedPart) (alice bob : Participant) :
+    SupportProof → State → Bool
+  | [s], candidate => validStart decode c s && decide (s.state = candidate)
+  | [s, ch], candidate => validChallenge decode c alice bob s ch && decide (ch.state = candidate)
+  | [s, ch, re], candidate =>
+    validResponse decode c alice bob s ch re && decide (re.state = candidate)
+  | _, _ => false
 
 /-- SATP:644-667 `latestSupportedState` of the virtual channel app: version
     `≤ 1` needs consensus (pre-fund 0, post-fund 1); version `4` needs
@@ -101,12 +108,13 @@ inductive ValidateOutcomeChange (decode : Decode) (c : FixedPart) (alice bob : P
     the last state received. -/
 def satpVirtualRules (decode : Decode) : Rules where
   supports c proof candidate :=
-    ∃ alice bob, c.participants.head? = some alice ∧ c.participants.getLast? = some bob ∧
-    ((candidate.turnNum ≤ 1 ∧ consensusRules.supports c proof candidate) ∨
-     (candidate.turnNum = 4 ∧ consensusRules.supports c proof candidate ∧
-        candidate.isFinal = true) ∨
-     (1 < candidate.turnNum ∧ candidate.turnNum ≠ 4 ∧
-        ValidateOutcomeChange decode c alice bob proof candidate))
+    match c.participants.head?, c.participants.getLast? with
+    | some alice, some bob =>
+      if candidate.turnNum ≤ 1 then consensusRules.supports c proof candidate
+      else if candidate.turnNum = 4 then
+        consensusRules.supports c proof candidate && candidate.isFinal
+      else validateOutcomeChange decode c alice bob proof candidate
+    | _, _ => false
 
 /-- SATP:408-409: the pre-fund outcome `{A : A(a0), B : A(b0)}`. -/
 def originalOutcome (alice bob : Participant) (a0 b0 : Coins) : Outcome :=
