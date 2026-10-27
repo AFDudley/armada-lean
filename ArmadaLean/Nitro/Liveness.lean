@@ -262,9 +262,8 @@ theorem participant_can_prevent_cycles (apps : Apps) {p : Participant} (T : Thre
     Against a transfer-only adversary, on a DAG of outcomes. -/
 theorem turbo_value_upper_bound (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (order : List Address)
-    (ho : net.chain.IsTopologicalOrder order) (n : Address) (x : Coins)
-    (h : CanObtain apps T n x net) : x ≤ net.chain.turboValue order n := by
+    (hdag : net.chain.IsDAG) (n : Address) (v x : Coins) (hv : net.chain.TurboValue n v)
+    (h : CanObtain apps T n x net) : x ≤ v := by
   sorry
 
 /-- Nitro-33, Nitro-35, Nitro-18. Nitro:837-839: "It is also not hard to construct a
@@ -272,9 +271,8 @@ theorem turbo_value_upper_bound (apps : Apps) {p : Participant} (T : Threat p)
     necessary by actually implementing the algorithm up until that node." -/
 theorem turbo_value_achievable (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (order : List Address)
-    (ho : net.chain.IsTopologicalOrder order) (n : Address) :
-    CanObtain apps T n (net.chain.turboValue order n) net := by
+    (hdag : net.chain.IsDAG) (n : Address) (v : Coins) (hv : net.chain.TurboValue n v) :
+    CanObtain apps T n v net := by
   sorry
 
 /-- Nitro-18, Nitro-33, Nitro-34, Nitro-35. Nitro:482-484 with Nitro:835-839: on a Turbo DAG
@@ -282,9 +280,8 @@ theorem turbo_value_achievable (apps : Apps) {p : Participant} (T : Threat p)
     address. -/
 theorem turbo_value_is_value (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (order : List Address)
-    (ho : net.chain.IsTopologicalOrder order) :
-    Value apps T net (net.chain.turboValue order p.address) := by
+    (hdag : net.chain.IsDAG) (v : Coins) (hv : net.chain.TurboValue p.address v) :
+    Value apps T net v := by
   sorry
 
 /-- Nitro-36. Nitro:842-843: "calling transfers out of order does not affect the
@@ -297,11 +294,12 @@ theorem turbo_order_independent (apps : Apps) (s : Adjudicator) (hdag : s.IsDAG)
       (Adjudicator.applyAll apps ops2 s).balances.get a := by
   sorry
 
-/-- Nitro-33, Nitro-36. Nitro:819 "Choose a topological ordering": the algorithm's
-    value does not depend on which topological ordering is chosen. -/
-theorem turbo_value_order_choice_irrelevant (s : Adjudicator)
-    (o1 o2 : List Address) (h1 : s.IsTopologicalOrder o1) (h2 : s.IsTopologicalOrder o2)
-    (n : Address) : s.turboValue o1 n = s.turboValue o2 n := by
+/-- Nitro-33, Nitro-36, Nitro-32. Nitro:819 "Choose a topological ordering":
+    on a DAG a topological ordering exists (Nitro:798-799) and the
+    algorithm's value does not depend on which one is chosen, so
+    `TurboValue` is a function. -/
+theorem turbo_value_exists_unique (s : Adjudicator) (hdag : s.IsDAG) (n : Address) :
+    (∃ v, s.TurboValue n v) ∧ ∀ v w, s.TurboValue n v → s.TurboValue n w → v = w := by
   sorry
 
 /-- Nitro-37, Nitro-47, docs-0060-07, docs-0080-08. Nitro:859-865: "χ is funded with 6 coins by

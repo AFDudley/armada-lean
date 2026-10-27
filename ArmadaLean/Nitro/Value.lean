@@ -7,9 +7,12 @@
   SATP and go-nitro replaced by `reclaim`; it is not modelled (operator
   ruling 2026-10-27).
 
-  Modelling choice (DAG). Nitro:796-799 takes a topological ordering of the
-  outcome network and notes that every DAG has one. Here "the network is a
-  DAG" is "a topological ordering exists" (`Adjudicator.IsDAG`).
+  DAG (operator ruling 2026-10-27). "The network of outcomes is a DAG" means
+  "no channel can reach itself by following edges": `Acyclic s.Edge`, with
+  core Lean's `Relation.TransGen`. Nitro:796-799 chooses a topological
+  ordering; a proof that needs one derives it as a lemma. No theorem type
+  carries an ordering: the algorithm's result is the relation
+  `Adjudicator.TurboValue`.
 -/
 import ArmadaLean.Nitro.Strategy
 
@@ -24,9 +27,15 @@ def Adjudicator.allocationOf (s : Adjudicator) (n : Address) : Allocation :=
   | _ => []
 
 /-- Nitro:790-792: "the nodes are channels and the edges represent allocations
-    from one channel to the other." -/
+    from one channel to the other." `edge n d`: `n`'s outcome allocates to
+    channel `d`. -/
 def Adjudicator.Edge (s : Adjudicator) (n d : Address) : Prop :=
-  ∃ e ∈ s.allocationOf n, e.dest = d
+  d.isParticipant = false ∧ ∃ e ∈ s.allocationOf n, e.dest = d
+
+/-- A relation with no cycle: no node reaches itself by one or more steps.
+    Operator ruling 2026-10-27. -/
+def Acyclic {α : Type} (edge : α → α → Prop) : Prop :=
+  ∀ c, ¬ Relation.TransGen edge c c
 
 /-- Nitro:796-798: "A topological ordering is an ordering of nodes such that, if
     N1 ↦ N2 is an edge, then N1 < N2." Every node with a balance or an
@@ -39,7 +48,7 @@ def Adjudicator.IsTopologicalOrder (s : Adjudicator) (order : List Address) : Pr
 /-- Nitro:790-795: "We will only consider the case where the network of
     outcomes forms a directed acyclic graph (DAG)". -/
 def Adjudicator.IsDAG (s : Adjudicator) : Prop :=
-  ∃ order, s.IsTopologicalOrder order
+  Acyclic s.Edge
 
 /-- Nitro:824-834, step 3: pay `remaining` through one node's allocation in
     order; each destination's value rises by `min(payout, remaining)`. -/
@@ -56,8 +65,14 @@ def Adjudicator.turboValues (s : Adjudicator) : List Address → Balances → Ba
   | n :: rest, vals => s.turboValues rest (payoutValues vals (vals.get n) (s.allocationOf n))
 
 /-- Nitro:835 step 4: "Then Values[n] gives the value of node n." -/
-def Adjudicator.turboValue (s : Adjudicator) (order : List Address) (n : Address) : Coins :=
+def Adjudicator.turboValueAlong (s : Adjudicator) (order : List Address) (n : Address) : Coins :=
   (s.turboValues order s.balances).get n
+
+/-- Nitro:818-835: `x` is the Turbo Value Algorithm's value of `n` for some
+    topological ordering (step 1). The ordering is chosen here, not in a
+    theorem type. -/
+def Adjudicator.TurboValue (s : Adjudicator) (n : Address) (x : Coins) : Prop :=
+  ∃ order, s.IsTopologicalOrder order ∧ s.turboValueAlong order n = x
 
 /-- A transfer sequence is maximal when no further transfer moves coins.
     Nitro:840-842: "we have done every possible transfer on these

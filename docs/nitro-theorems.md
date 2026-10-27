@@ -50,11 +50,11 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 
 ## Modelling choices the papers and the code do not force
 
-- Single asset: one instance; a multi-asset adjudicator is a family of independent instances, because no operation in SATP, Nitro or go-nitro moves value between assets.
-- Symbolic hash and signatures: a channel address is the constructor `Address.channel` applied to the fixed part, so injectivity holds by construction; a signed state carries its signer list; forgery is the game rule `Assumptions.unforgeable`.
-- Applications: `Apps := AppId → Rules`; `Rules.supports` is a `Prop`; the operations that read it are `noncomputable` and decide it classically.
-- The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is a finite feasible adversary prefix, then one honest move; this is front-running (Nitro:540-542). `Assumptions.unimpeded` (SATP:166-167, Nitro:537-539) forbids the adversary to move the clock to a pending deadline of the honest participant; only the honest `wait` reaches a deadline. `Unbeatable` is an inductive strategy tree; `Prevents` is a safety property over `Run`s, used for enabled outcomes.
-- DAG: "the network is a DAG" is "a topological ordering exists" (`Adjudicator.IsDAG`), after Nitro:796-799.
+- Single asset: one instance; a multi-asset adjudicator is a family of independent instances, because no operation in SATP, Nitro or go-nitro moves value between assets. Approved by the operator, 2026-10-27.
+- Symbolic hash and signatures: a channel address is the constructor `Address.channel` applied to the fixed part, so injectivity holds by construction; a signed state carries its signer list; forgery is the game rule `Assumptions.unforgeable`, a named hypothesis. Approved by the operator, 2026-10-27.
+- Applications: `Apps := AppId → Rules`; `Rules.supports` is a computable `Bool` function, as go-nitro `stateIsSupported` returns `bool`. Operator ruling 2026-10-27 (this replaced a `Prop` with classical decisions; `challenge`, `checkpoint` and `conclude` are computable and `#eval` runs them). The ForceMove game library `vt` and the SATP `validateOutcomeChange` are `Bool` functions too.
+- The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is a finite feasible adversary prefix, then one honest move; this is front-running (Nitro:540-542). `Assumptions.unimpeded` (SATP:166-167, Nitro:537-539) forbids the adversary to move the clock to a pending deadline of the honest participant; only the honest `wait` reaches a deadline. `Unbeatable` is an inductive strategy tree; `Prevents` is a safety property over `Run`s, used for enabled outcomes. Approved by the operator, 2026-10-27.
+- DAG: operator ruling 2026-10-27. "The network of outcomes is a DAG" means no channel reaches itself by following edges: `Acyclic edge := ∀ c, ¬ Relation.TransGen edge c c` with `edge A B` = "A's outcome allocates to channel B" (`Adjudicator.Edge`, `Adjudicator.IsDAG`). No theorem type carries a topological ordering; the Turbo Value Algorithm's result is the relation `Adjudicator.TurboValue n x` (some topological ordering gives `x`), and `turbo_value_exists_unique` states that on a DAG it exists and is unique. A proof that needs an ordering derives it as a lemma (Nitro:798-799).
 - SATP app data: `Decode : Nat → VirtualAppData` is the parse of `appData` (SATP:209).
 - Every `theorem` has proof `sorry`, including the ones a one-line proof would close, so that the sorry count equals the theorem count.
 
@@ -158,11 +158,11 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-29 | theorem transfer_fails_otherwise, transfer_zero_moves_nothing |
 | Nitro-30 | theorem turbo_redistribution_unbeatable |
 | Nitro-31 | theorem deposit_bounds_value, payout_to_other_affects_only_owner (definition Threat.TransfersOnly) |
-| Nitro-32 | definition Adjudicator.IsDAG; theorem participant_can_prevent_cycles |
-| Nitro-33 | definition Adjudicator.turboValue |
+| Nitro-32 | definition Acyclic, Adjudicator.IsDAG; theorem participant_can_prevent_cycles, turbo_value_exists_unique |
+| Nitro-33 | definition Adjudicator.TurboValue, Adjudicator.turboValueAlong |
 | Nitro-34 | theorem turbo_value_upper_bound |
 | Nitro-35 | theorem turbo_value_achievable |
-| Nitro-36 | theorem turbo_order_independent, turbo_value_order_choice_irrelevant |
+| Nitro-36 | theorem turbo_order_independent, turbo_value_exists_unique |
 | Nitro-37 | theorem ledger_offload_funds_subchannel |
 | Nitro-38 | definition Outcome, Op (allocation and reclaim only; the guarantee outcome and claim are superseded-by SATP-15, ruling 2026-10-27) |
 | Nitro-39 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
@@ -193,7 +193,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | SATP-15 | theorem reclaim_requires, reclaim_effects, reclaim_can_happen, reclaim_fails_without_entries (go-nitro adds the left/right and amount checks) |
 | SATP-16 | theorem finalized_two_ways, conclude_can_happen, held_falls_only_by_payout |
 | SATP-17 | definition satpVirtualRules |
-| SATP-18 | definition ValidateOutcomeChange |
+| SATP-18 | definition validateOutcomeChange, validStart, validChallenge, validResponse (Bool, ruling 2026-10-27) |
 | SATP-19 | theorem satp_outcome_change_keeps_total |
 | SATP-20 | theorem satp_theorem_3_2, satp_intermediary_before_round2, satp_end_user_recovers, satp_reclaim_credits_intermediary |
 | SATP-21 | theorem satp_lemma_3_1, satp_peers_can_finalize |
@@ -348,11 +348,11 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `deposit_bounds_value` | `Liveness.lean` | A deposit of y changes a value by between 0 and y. | Nitro-31 | Nitro:785-787 |
 | `payout_to_other_affects_only_owner` | `Liveness.lean` | A payout to another participant leaves p's value unchanged. | Nitro-31 | Nitro:787-789 |
 | `participant_can_prevent_cycles` | `Liveness.lean` | A participant can keep the outcome network acyclic. | Nitro-32 | Nitro:792-794 |
-| `turbo_value_upper_bound` | `Liveness.lean` | No strategy obtains more than the Turbo Value Algorithm gives. | Nitro-32, Nitro-33, Nitro-34 | Nitro:836-837 |
-| `turbo_value_achievable` | `Liveness.lean` | The Turbo Value Algorithm value is obtainable. | Nitro-18, Nitro-33, Nitro-35 | Nitro:837-839 |
+| `turbo_value_upper_bound` | `Liveness.lean` | On a DAG no strategy obtains more than the Turbo value. | Nitro-32, Nitro-33, Nitro-34 | Nitro:836-837 |
+| `turbo_value_achievable` | `Liveness.lean` | On a DAG the Turbo value is obtainable. | Nitro-18, Nitro-33, Nitro-35 | Nitro:837-839 |
 | `turbo_value_is_value` | `Liveness.lean` | The Turbo Value Algorithm computes the value of a network state. | Nitro-18, Nitro-33, Nitro-34, Nitro-35 | Nitro:482-484 |
 | `turbo_order_independent` | `Liveness.lean` | Exhausted transfer sequences give the same balances. | Nitro-36 | Nitro:842-843 |
-| `turbo_value_order_choice_irrelevant` | `Liveness.lean` | The topological order chosen does not change the value. | Nitro-33, Nitro-36 | Nitro:819 |
+| `turbo_value_exists_unique` | `Liveness.lean` | On a DAG the Turbo value exists and is unique over all topological orders. | Nitro-32, Nitro-33, Nitro-36 | Nitro:819 |
 | `ledger_offload_funds_subchannel` | `Liveness.lean` | A ledger channel funds its sub-channel for both participants. | Nitro-37, Nitro-47, docs-0060-07, docs-0080-08 | Nitro:859-865 |
 | `subchannel_open_value_preserving` | `Liveness.lean` | Opening a sub-channel preserves value. | Nitro-49, docs-0060-07 | Nitro:891-922 |
 | `subchannel_close_value_preserving` | `Liveness.lean` | Closing a sub-channel preserves value. | Nitro-49, docs-0080-07 | Nitro:939-957 |
