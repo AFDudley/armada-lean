@@ -2,9 +2,9 @@
   Nitro protocol specification: the adjudicator and its on-chain operations.
   See `Address.lean` for the source list. The operation set is go-nitro's
   `NitroAdjudicator` (ForceMove.sol: `challenge`, `checkpoint`, `conclude`;
-  MultiAssetHolder.sol: `deposit`, `transfer`, `reclaim`) plus Nitro:1139
-  `claim`, which SATP and go-nitro replaced and which is kept for the Nitro
-  §6.2 value results only.
+  MultiAssetHolder.sol: `deposit`, `transfer`, `reclaim`). Nitro:1139 `claim`
+  is not modelled: SATP and go-nitro replaced it by `reclaim` (operator
+  ruling 2026-10-27).
 
   Every operation is a function to `Option Adjudicator`. `none` means the
   call reverts and the chain state is unchanged (go-nitro `require`;
@@ -112,28 +112,6 @@ def Adjudicator.transfer (s : Adjudicator) (a : FixedPart) (b : Address) : Optio
     | _ => none
   | _ => none
 
-/-- Nitro:1139-1145 `C(G, A, x)` (Nitro only; SATP:342-370 and go-nitro
-    replaced it with `reclaim`): "If G acts as guarantee for L and can afford
-    x for A, then C(G, A, x) has the following three effects: Reduces the
-    funds held in channel G by x. Increases the funds held in channel A by x.
-    Reduces the amount owed to A in the outcome of L by x. Otherwise, the
-    claim operation has no effect." Nitro:1072-1074: the target `L` must be
-    finalized. -/
-def Adjudicator.claim (s : Adjudicator) (g : FixedPart) (a : Address) (x : Coins) :
-    Option Adjudicator :=
-  match s.finalOutcome g.address with
-  | some (.guarantee (.channel l) priority) =>
-    match s.finalOutcome (.channel l) with
-    | some (.allocation target) =>
-      if GuaranteeAffords (s.balances.get g.address) priority target a x then
-        some (((s.setStatus l ((s.statusOf l).withOutcome
-            (.allocation (target.reduceOwed a x)))).payTo a x)
-          |> fun s' => { s' with balances := s'.balances.sub g.address x })
-      else
-        none
-    | _ => none
-  | _ => none
-
 /-- SATP:344-364 `reclaim(ledgerChannelId, targetChannelId)` (Listing 2) as
     corrected by go-nitro `reclaim` and `compute_reclaim_effects`
     (MultiAssetHolder.sol:233-370). Both channels are finalized. The ledger's
@@ -220,11 +198,10 @@ def Adjudicator.tick (s : Adjudicator) (dt : Time) : Adjudicator :=
 /-- An on-chain operation. go-nitro NitroAdjudicator: `deposit`,
     `transfer`, `reclaim`, `challenge`, `checkpoint`, `conclude` (the batch
     helpers `transferAllAssets` and `concludeAndTransferAllAssets` are
-    sequences of these). `claim` is Nitro:1139 only. -/
+    sequences of these). -/
 inductive Op
   | deposit (a : Address) (x : Coins)
   | transfer (a : FixedPart) (b : Address)
-  | claim (g : FixedPart) (a : Address) (x : Coins)
   | reclaim (l v : FixedPart)
   | challenge (c : FixedPart) (proof : SupportProof) (candidate : State)
   | checkpoint (c : FixedPart) (proof : SupportProof) (candidate : State)
@@ -242,7 +219,6 @@ def Op.proofStates : Op → SupportProof
     operations." go-nitro `transfer` and `reclaim` have no caller check. -/
 def Op.isRedistribution : Op → Bool
   | .transfer .. => true
-  | .claim .. => true
   | .reclaim .. => true
   | _ => false
 
@@ -252,7 +228,6 @@ noncomputable def Adjudicator.apply (apps : Apps) (caller : Participant) (op : O
   match op with
   | .deposit a x => s.deposit a x
   | .transfer a b => s.transfer a b
-  | .claim g a x => s.claim g a x
   | .reclaim l v => s.reclaim l v
   | .challenge c proof candidate => s.challenge apps caller c proof candidate
   | .checkpoint c proof candidate => s.checkpoint apps c proof candidate

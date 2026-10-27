@@ -2,14 +2,14 @@
   Nitro protocol specification: outcomes, allocations, guarantees, and the
   priority-order payout. See `Address.lean` for the source list.
 
-  Modelling choice (two guarantee forms). SATP:322-323 and go-nitro
-  (ExitFormat `AllocationType.guarantee`, MultiAssetHolder.sol:516-519) give a
-  guarantee as one item inside an allocation: `G(x, [left, right])`. Nitro
-  §6.1 (1070-1074) gives a guarantee as the outcome of a whole channel: a
-  target and a priority list. SATP replaced the Nitro form (SATP:367-370,
-  footnote 11). The SATP form is `Item.guarantee`, used by `reclaim`. The
-  Nitro form is `Outcome.guarantee`, used by `claim`; it is kept only because
-  the Nitro §6.2 value results have no SATP counterpart.
+  Guarantee form. SATP:322-323 and go-nitro (ExitFormat
+  `AllocationType.guarantee`, MultiAssetHolder.sol:516-519) give a guarantee
+  as one item inside an allocation: `G(x, [left, right])`, consumed by
+  `reclaim`. Nitro §6.1 (1070-1074) gave a guarantee as the outcome of a
+  whole channel, consumed by `claim`. SATP replaced that form (SATP:367-370,
+  footnote 11) and go-nitro has no `claim`. Operator ruling 2026-10-27: the
+  Nitro guarantee channel, `claim` and the reprioritization rule are not
+  modelled. Only the SATP item form is here.
 -/
 import ArmadaLean.Nitro.Address
 
@@ -144,43 +144,17 @@ def Allocation.remove (o : Allocation) (d : Address) : Allocation :=
 def Allocation.amountAt (o : Allocation) (i : Nat) : Coins :=
   ((o[i]?).map Entry.amount).getD 0
 
-/-- Nitro:1098-1101 (Nitro only; SATP and go-nitro have no guarantee
-    channel): "the guarantee provides a list of addresses, with the rule that
-    these addresses will be moved to the top of the priority order if they
-    appear in the outcome." Example: guarantee `(L|A, B, C)` and outcome
-    `(C:1, D:2, A:4)` pay as `(A:4, C:1, D:2)`. -/
-def Allocation.reprioritize (priority : List Address) (o : Allocation) : Allocation :=
-  priority.filterMap o.find ++ o.filter (fun e => decide (e.dest ∉ priority))
-
 /-- The outcome of a channel. SATP:334-335 and go-nitro: an allocation (the
-    guarantee form lives inside it). Nitro:1051-1052 (Nitro only): "the
-    outcome of a channel can be either an allocation or a guarantee";
-    Nitro:1071-1072: "A guarantee targets an allocation, while specifying a
-    different priority order". -/
+    guarantee form lives inside it as an item). Nitro:1051-1052's guarantee
+    outcome is not modelled (operator ruling 2026-10-27; see the module
+    comment). The single-constructor inductive keeps the `.allocation o`
+    pattern at every use. -/
 inductive Outcome
   | allocation (entries : Allocation)
-  | guarantee (target : Address) (priority : List Address)
   deriving DecidableEq, Repr
 
-/-- The allocation of an allocation outcome. -/
-def Outcome.allocation? : Outcome → Option Allocation
-  | .allocation o => some o
-  | .guarantee _ _ => none
-
-/-- Nitro:1109-1111 (Nitro only): "'G can afford x for B', if B would
-    receive at least x coins, were the coins currently held by G to be paid
-    out according to G's prioritization of its target." `target` is the
-    target's allocation. -/
-def GuaranteeAffords (held : Coins) (priority : List Address) (target : Allocation)
-    (d : Address) (x : Coins) : Prop :=
-  (target.reprioritize priority).Affords held d x
-
-instance (held : Coins) (priority : List Address) (target : Allocation) (d : Address)
-    (x : Coins) : Decidable (GuaranteeAffords held priority target d x) :=
-  inferInstanceAs (Decidable ((target.reprioritize priority).Affords held d x))
-
-/-- Nitro:1140 "G acts as guarantee for L". -/
-def Outcome.guarantees (g : Outcome) (l : Address) : Prop :=
-  ∃ priority, g = .guarantee l priority
+/-- The allocation of an outcome. -/
+def Outcome.entries : Outcome → Allocation
+  | .allocation o => o
 
 end ArmadaLean.Nitro

@@ -18,12 +18,6 @@ def Threat.TransfersOnly {p : Participant} (T : Threat p) : Prop :=
   ∀ net m, T.feasible net m →
     (∃ caller a b, m = .chain caller (.transfer a b)) ∨ (∃ dt, m = .tick dt)
 
-/-- An adversary that plays only transfers and claims. Nitro:1147-1151 reasons
-    about Nitro redistribution with these two operations. -/
-def Threat.RedistributionOnly {p : Participant} (T : Threat p) : Prop :=
-  ∀ net m, T.feasible net m →
-    (∃ caller op, m = .chain caller op ∧ op.isRedistribution = true) ∨ (∃ dt, m = .tick dt)
-
 /-- An honest move that does not let time pass. -/
 def HonestMove.NoWait : HonestMove → Prop
   | .wait _ => False
@@ -45,10 +39,6 @@ inductive UnbeatableNoWait (apps : Apps) {p : Participant} (T : Threat p)
     transition keeps the resolution. -/
 def SetupPhaseKeepsOutcome (vt : State → State → Prop) (c : FixedPart) : Prop :=
   ∀ s1 s2, vt s1 s2 → s1.channel = c → s1.turnNum + 1 < 2 * c.n → s2.outcome = s1.outcome
-
-/-- A list of claims only. -/
-def OnlyClaims (ops : List (Participant × Op)) : Prop :=
-  ∀ e ∈ ops, ∃ g a x, e.2 = Op.claim g a x
 
 /-- Nitro-16, Nitro-21, ForceMove-B01, ForceMove-C03, docs-0070-05, docs-0080-06. Nitro:395-398: "where
     the channel L itself has enough coins in the adjudicator to cover the
@@ -229,7 +219,7 @@ theorem consensus_enabled_outcomes (apps : Apps) {p : Participant} (T : Threat p
     (coins paid out, go-nitro `_executeSingleAssetExit`) or a channel. -/
 theorem turbo_redistribution_unbeatable (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (hturbo : net.chain.TurboOnly) (hdag : net.chain.IsDAG)
+    (hdag : net.chain.IsDAG)
     (ops : List (Participant × Op)) (hops : OnlyTransfers ops) (a : Address) (x : Coins)
     (hgoal : x ≤ (Adjudicator.applyAll apps ops net.chain).balances.get a) :
     CanObtain apps T a x net := by
@@ -271,10 +261,10 @@ theorem participant_can_prevent_cycles (apps : Apps) {p : Participant} (T : Thre
 
 /-- Nitro-33, Nitro-34, Nitro-32. Nitro:836-837: "it is impossible to find a strategy
     that gives any node a value higher than allocated by this algorithm."
-    Against a transfer-only adversary, on a DAG of allocation outcomes. -/
+    Against a transfer-only adversary, on a DAG of outcomes. -/
 theorem turbo_value_upper_bound (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (hturbo : net.chain.TurboOnly) (order : List Address)
+    (order : List Address)
     (ho : net.chain.IsTopologicalOrder order) (n : Address) (x : Coins)
     (h : CanObtain apps T n x net) : x ≤ net.chain.turboValue order n := by
   sorry
@@ -284,7 +274,7 @@ theorem turbo_value_upper_bound (apps : Apps) {p : Participant} (T : Threat p)
     necessary by actually implementing the algorithm up until that node." -/
 theorem turbo_value_achievable (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (hturbo : net.chain.TurboOnly) (order : List Address)
+    (order : List Address)
     (ho : net.chain.IsTopologicalOrder order) (n : Address) :
     CanObtain apps T n (net.chain.turboValue order n) net := by
   sorry
@@ -294,7 +284,7 @@ theorem turbo_value_achievable (apps : Apps) {p : Participant} (T : Threat p)
     address. -/
 theorem turbo_value_is_value (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (hT : T.TransfersOnly) (net : NetworkState p)
-    (hturbo : net.chain.TurboOnly) (order : List Address)
+    (order : List Address)
     (ho : net.chain.IsTopologicalOrder order) :
     Value apps T net (net.chain.turboValue order p.address) := by
   sorry
@@ -302,8 +292,7 @@ theorem turbo_value_is_value (apps : Apps) {p : Participant} (T : Threat p)
 /-- Nitro-36. Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result." Two exhausted transfer sequences from one Turbo state
     give the same balances. -/
-theorem turbo_order_independent (apps : Apps) (s : Adjudicator) (hturbo : s.TurboOnly)
-    (hdag : s.IsDAG) (ops1 ops2 : List (Participant × Op)) (h1 : OnlyTransfers ops1)
+theorem turbo_order_independent (apps : Apps) (s : Adjudicator) (hdag : s.IsDAG) (ops1 ops2 : List (Participant × Op)) (h1 : OnlyTransfers ops1)
     (h2 : OnlyTransfers ops2) (hx1 : (Adjudicator.applyAll apps ops1 s).TransferExhausted)
     (hx2 : (Adjudicator.applyAll apps ops2 s).TransferExhausted) (a : Address) :
     (Adjudicator.applyAll apps ops1 s).balances.get a =
@@ -312,12 +301,12 @@ theorem turbo_order_independent (apps : Apps) (s : Adjudicator) (hturbo : s.Turb
 
 /-- Nitro-33, Nitro-36. Nitro:819 "Choose a topological ordering": the algorithm's
     value does not depend on which topological ordering is chosen. -/
-theorem turbo_value_order_choice_irrelevant (s : Adjudicator) (hturbo : s.TurboOnly)
+theorem turbo_value_order_choice_irrelevant (s : Adjudicator)
     (o1 o2 : List Address) (h1 : s.IsTopologicalOrder o1) (h2 : s.IsTopologicalOrder o2)
     (n : Address) : s.turboValue o1 n = s.turboValue o2 n := by
   sorry
 
-/-- Nitro-37, docs-0060-07, docs-0080-08. Nitro:859-865: "χ is funded with 6 coins by
+/-- Nitro-37, Nitro-47, docs-0060-07, docs-0080-08. Nitro:859-865: "χ is funded with 6 coins by
     L for both A and B ... Once it is on-chain, the transfer operation
     T(L, χ, 6) is all that is required to make χ directly funded. From the
     Turbo redistribution result, we know that this redistribution strategy is
@@ -405,128 +394,6 @@ theorem ledger_partial_withdrawal (apps : Apps) (Ts : Threats apps) (v : Views)
       (fun net' => (v A).chain.balances.get A.address + a' ≤ net'.chain.balances.get A.address)
       (v A) ∧
     FundedFor apps (Ts.T A) L' (a + b + c) (v A) ∧ FundedFor apps (Ts.T B) L' (a + b + c) (v B) := by
-  sorry
-
-/-- Nitro-44. Nitro:1148-1151: "it is possible to construct situations where the
-    same outcome can lead to different values, depending on the order in
-    which guarantees are claimed." Figure 23: two guarantees `G1 = (J|I, A)`
-    and `G2 = (J|I, B)` of 5 coins each on `J ↦ (I : 5, A : 5, B : 5)`. -/
-theorem claim_order_dependent (apps : Apps) :
-    ∃ (s : Adjudicator) (ops1 ops2 : List (Participant × Op)) (a : Address),
-      OnlyClaims ops1 ∧ OnlyClaims ops2 ∧
-      (Adjudicator.applyAll apps ops1 s).balances.get a ≠
-        (Adjudicator.applyAll apps ops2 s).balances.get a := by
-  sorry
-
-/-- Nitro-45, Nitro-18. Nitro:1152-1154, Nitro:1178-1193: the Nitro Lower-bound Value
-    Algorithm gives a value every node can obtain against a redistribution
-    adversary. -/
-theorem nitro_lower_bound_achievable (apps : Apps) {p : Participant} (T : Threat p)
-    (A : Assumptions apps p T) (hT : T.RedistributionOnly) (net : NetworkState p)
-    (minPayout : GuaranteeGroup → Address → Coins) (hmp : MinPayoutCorrect minPayout)
-    (order : List Address) (ho : net.chain.IsTopologicalOrder order)
-    (hg : ∀ c pr, net.chain.finalOutcome (.channel c) = some (.guarantee (.channel c) pr) → False)
-    (n : Address) :
-    CanObtain apps T n (net.chain.nitroValue minPayout order n) net := by
-  sorry
-
-/-- Nitro-45. Nitro:1194-1196: "by taking the minimum independently on different
-    allocation/guarantee groupings, we end up with an algorithm that strictly
-    underestimates the actual value in some cases." -/
-theorem nitro_lower_bound_underestimates (apps : Apps) (p : Participant) :
-    ∃ (T : Threat p) (net : NetworkState p) (minPayout : GuaranteeGroup → Address → Coins)
-      (order : List Address) (n : Address) (x : Coins),
-      Assumptions apps p T ∧ MinPayoutCorrect minPayout ∧ net.chain.IsTopologicalOrder order ∧
-      CanObtain apps T n x net ∧ net.chain.nitroValue minPayout order n < x := by
-  sorry
-
-/-- Nitro-46. Nitro:1216-1218: "If Σ v_i > Σ a_j, then we say the system is
-    overfunded. In this case, we know that all destinations will receive
-    their allocations, so p_i = a_i regardless of the order of payout." -/
-theorem overfunded_min_payout (g : GuaranteeGroup) (h : g.Overfunded) (d : Address)
-    (hd : ∃ e ∈ g.target, e.dest = d) : g.IsMinPayout d (g.target.owed d) := by
-  sorry
-
-/-- Nitro-46. Nitro:1251-1253: "In the fully funded case, where Σ v_i = Σ a_j, it
-    is easy to see that p_i = a_i, just as in the overfunded case." -/
-theorem fully_funded_min_payout (g : GuaranteeGroup) (h : g.FullyFunded) (d : Address)
-    (hd : ∃ e ∈ g.target, e.dest = d) : g.IsMinPayout d (g.target.owed d) := by
-  sorry
-
-/-- Nitro-46. Nitro:1253-1255: "In the single guarantee case, the payouts are fully
-    determined." Every exhausted claim order pays each destination the same
-    amount. -/
-theorem single_guarantee_determined (g : GuaranteeGroup) (h : g.guarantees.length = 1)
-    (cs1 cs2 : List (Nat × Address × Coins)) (h1 : (g.applyClaims cs1).Exhausted)
-    (h2 : (g.applyClaims cs2).Exhausted) (d : Address) :
-    g.paidTo (g.applyClaims cs1) d = g.paidTo (g.applyClaims cs2) d := by
-  sorry
-
-/-- Nitro-45, Nitro-44. Nitro:1173-1176, Figure 23: "participant I will receive their
-    5 coins, even though we cannot say anything about how the remaining 5
-    coins will be distributed between A and B." -/
-theorem figure23_lower_bound (I A B : Address) (hIA : I ≠ A) (hIB : I ≠ B) (hAB : A ≠ B) :
-    GuaranteeGroup.IsMinPayout
-      { target := [alloc I 5, alloc A 5, alloc B 5], guarantees := [(5, [I, A]), (5, [I, B])] }
-      I 5 ∧
-    GuaranteeGroup.IsMinPayout
-      { target := [alloc I 5, alloc A 5, alloc B 5], guarantees := [(5, [I, A]), (5, [I, B])] }
-      A 0 ∧
-    GuaranteeGroup.IsMinPayout
-      { target := [alloc I 5, alloc A 5, alloc B 5], guarantees := [(5, [I, A]), (5, [I, B])] }
-      B 0 := by
-  sorry
-
-/-- Nitro-47, Nitro-37, docs-0060-08. Nitro:1299-1316: `A` finalizes `L`, `G` and `J`,
-    calls `T(L, G, x)` and `C(G, χ, x)`; "As G has χ as top priority, the
-    operation is successful. By symmetry, the previous case also covers the
-    case where B wants to offload." The virtual channel construction funds
-    `χ` with `x` for `A` and for `B`. -/
-theorem end_participant_offloads (apps : Apps) (Ts : Threats apps) (v : Views)
-    (hv : v.Consistent) (w : VirtualSetup) (hw : w.Holds apps Ts v) :
-    FundedFor apps (Ts.T w.A) w.χ w.x (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.x (v w.B) := by
-  sorry
-
-/-- Nitro-48. Nitro:1317-1343: "the case where I wants to offload the channel and
-    reclaim their funds. This is important to ensure that A and B cannot lock
-    I's funds indefinitely in the channel ... The virtual channel became a
-    direct channel and the intermediary was able to recover their
-    collateral." `I` can reach a state where `χ` holds `x` and `I`'s balance
-    rose by `x`. -/
-theorem intermediary_recovers_collateral (apps : Apps) (Ts : Threats apps) (v : Views)
-    (hv : v.Consistent) (w : VirtualSetup) (hw : w.Holds apps Ts v) :
-    Unbeatable apps (Ts.T w.I)
-      (fun net' => net'.chain.DirectlyFundedWith w.χ w.x ∧
-        (v w.I).chain.balances.get w.I.address + w.x ≤ net'.chain.balances.get w.I.address)
-      (v w.I) := by
-  sorry
-
-/-- Nitro-49 (Nitro:1364-1394, §6.5.1 Opening a Virtual Channel), docs-0060-08. The
-    construction is reached from equation 22 by single-channel updates that
-    preserve the value of `A`, `B` and `I`. -/
-theorem virtual_open_value_preserving (apps : Apps) (Ts : Threats apps) (v v' : Views)
-    (hv : v.Consistent) (hv' : v'.Consistent) (w : VirtualSetup) (a b : Coins)
-    (hstart : w.Start apps Ts v a b) (hend : w.Holds apps Ts v')
-    (hχ : v'.FinalizableBy apps Ts w.χ
-      (.allocation [alloc w.A.address a, alloc w.B.address b]) [w.A, w.B])
-    (hother : ∀ p, p = w.A ∨ p = w.B ∨ p = w.I → (v p).chain = (v' p).chain) :
-    SameValue apps (Ts.T w.A) (v w.A) (v' w.A) ∧ SameValue apps (Ts.T w.B) (v w.B) (v' w.B) ∧
-    SameValue apps (Ts.T w.I) (v w.I) (v' w.I) := by
-  sorry
-
-/-- Nitro-49 (Nitro:1412-1431, §6.5.2 Closing a Virtual Channel), docs-0080-07.
-    Nitro:1418-1420: "I will accept this update, provided that their allocation
-    of x coins remains the same." The reverse sequence preserves the value of
-    `A`, `B` and `I`, and `I` ends with `b' + a' = x` across the ledgers. -/
-theorem virtual_close_value_preserving (apps : Apps) (Ts : Threats apps) (v v' : Views)
-    (hv : v.Consistent) (hv' : v'.Consistent) (w : VirtualSetup) (a' b' : Coins)
-    (hx : a' + b' = w.x) (hstart : w.Holds apps Ts v)
-    (hχ : v.FinalizableBy apps Ts w.χ
-      (.allocation [alloc w.A.address a', alloc w.B.address b']) [w.A, w.B])
-    (hend : w.Closed apps Ts v' a' b')
-    (hother : ∀ p, p = w.A ∨ p = w.B ∨ p = w.I → (v p).chain = (v' p).chain) :
-    SameValue apps (Ts.T w.A) (v w.A) (v' w.A) ∧ SameValue apps (Ts.T w.B) (v w.B) (v' w.B) ∧
-    SameValue apps (Ts.T w.I) (v w.I) (v' w.I) := by
   sorry
 
 /-- SATP-19, SATP-18. SATP:707-709, SATP:734: "The following two requirements

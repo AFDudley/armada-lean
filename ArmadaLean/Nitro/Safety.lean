@@ -169,7 +169,7 @@ theorem transfer_effects (s : Adjudicator) (a : FixedPart) (b : Address) (s' : A
       s'.held + (if b.isParticipant then x else 0) = s.held ∧ s'.now = s.now := by
   sorry
 
-/-- Nitro-28, Nitro-43. The reduction of an owed amount is exact. -/
+/-- Nitro-28. The reduction of an owed amount is exact. -/
 theorem reduceOwed_owed (o : Allocation) (d : Address) (x : Coins) :
     (o.reduceOwed d x).owed d = o.owed d - x ∧
     ∀ d', d' ≠ d → (o.reduceOwed d x).owed d' = o.owed d' := by
@@ -231,8 +231,8 @@ theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (calle
   sorry
 
 /-- The outcomes a finalized outcome can become through redistribution:
-    Nitro:770 (transfer), Nitro:1144 (claim on the target), SATP:358-361
-    and go-nitro `compute_reclaim_effects` (reclaim on the ledger). -/
+    Nitro:770 (transfer), SATP:358-361 and go-nitro
+    `compute_reclaim_effects` (reclaim on the ledger). -/
 inductive Redistributed : Outcome → Outcome → Prop
   | refl (Ω : Outcome) : Redistributed Ω Ω
   | reduce {o : Allocation} (d : Address) (x : Coins) (Ω : Outcome) :
@@ -490,64 +490,6 @@ theorem mover_determined_by_turn (s t : State) (hc : s.channel = t.channel)
     turn `k`. -/
 theorem mover_cyclic (s : State) (k : Nat) :
     { s with turnNum := k + s.channel.n }.mover = { s with turnNum := k }.mover := by
-  sorry
-
-/-- Nitro-40, Nitro-42, Nitro-43 (Nitro only; SATP and go-nitro replaced
-    `claim` by `reclaim`). Nitro:1139-1141: a claim needs `G` finalized as a
-    guarantee for `L`, `L` finalized with an allocation, and `G` able to
-    afford `x` for `A` under its prioritization. Nitro:1072-1074: "The funds
-    held in a guarantee channel can only be paid out once the outcome of the
-    target channel is finalized." -/
-theorem claim_requires (s : Adjudicator) (g : FixedPart) (a : Address) (x : Coins)
-    (s' : Adjudicator) (h : s.claim g a x = some s') :
-    ∃ l priority target, s.finalOutcome g.address = some (.guarantee (.channel l) priority) ∧
-      s.finalOutcome (.channel l) = some (.allocation target) ∧
-      s.mode g = .finalized ∧ s.mode l = .finalized ∧
-      GuaranteeAffords (s.balances.get g.address) priority target a x := by
-  sorry
-
-/-- Nitro-43 (Nitro only). Nitro:1141-1144: the claim lowers `G`'s funds by
-    `x`, raises `A`'s funds by `x`, and lowers the amount owed to `A` in
-    `L`'s outcome by `x`. -/
-theorem claim_effects (s : Adjudicator) (g : FixedPart) (a : Address) (x : Coins)
-    (s' : Adjudicator) (h : s.claim g a x = some s') :
-    ∃ l priority target, s.finalOutcome g.address = some (.guarantee (.channel l) priority) ∧
-      s.finalOutcome (.channel l) = some (.allocation target) ∧
-      s'.balances.get g.address + x = s.balances.get g.address + (if a = g.address then x else 0) ∧
-      (a ≠ g.address → s'.balances.get a = s.balances.get a + x) ∧
-      s'.finalOutcome (.channel l) = some (.allocation (target.reduceOwed a x)) ∧
-      s'.finalOutcome g.address = s.finalOutcome g.address ∧
-      s'.held + (if a.isParticipant then x else 0) = s.held := by
-  sorry
-
-/-- Nitro-43, Nitro-40 (Nitro only). Nitro:1145: "Otherwise, the claim
-    operation has no effect." -/
-theorem claim_fails_otherwise (s : Adjudicator) (g : FixedPart) (a : Address) (x : Coins)
-    (h : ∀ l priority target, s.finalOutcome g.address = some (.guarantee (.channel l) priority) →
-      s.finalOutcome (.channel l) = some (.allocation target) →
-      ¬ GuaranteeAffords (s.balances.get g.address) priority target a x) :
-    s.claim g a x = none := by
-  sorry
-
-/-- Nitro-41 (Nitro only). Nitro:1099-1101: "if we have the guarantee
-    (L|A, B, C) and the outcome of L is (C : 1, D : 2, A : 4), then the
-    guarantee will pay out as though the outcome was (A : 4, C : 1, D : 2)." -/
-theorem reprioritize_example (A B C D : Address) (hAB : A ≠ B) (hAC : A ≠ C) (hAD : A ≠ D)
-    (hBC : B ≠ C) (hBD : B ≠ D) (hCD : C ≠ D) :
-    Allocation.reprioritize [A, B, C] [alloc C 1, alloc D 2, alloc A 4] =
-      [alloc A 4, alloc C 1, alloc D 2] := by
-  sorry
-
-/-- Nitro-39, Nitro-41 (Nitro only). Nitro:1098-1099: the listed addresses
-    "will be moved to the top of the priority order if they appear in the
-    outcome." The reprioritized allocation owes each destination the same
-    amount, and the listed destinations that appear come first, in list
-    order. -/
-theorem reprioritize_keeps_amounts (priority : List Address) (o : Allocation) (d : Address) :
-    (o.reprioritize priority).owed d = o.owed d ∧
-    (∀ e ∈ o.reprioritize priority, e ∈ o) ∧
-    (∀ (i j : Nat) a b, (o.reprioritize priority)[i]? = some a →
-      (o.reprioritize priority)[j]? = some b → a.dest ∈ priority → b.dest ∉ priority → i < j) := by
   sorry
 
 /-- SATP-15, docs-0030-04. SATP:348-352 and go-nitro

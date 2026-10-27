@@ -9,15 +9,15 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 | Module | Content | Primary source |
 |---|---|---|
 | `ArmadaLean/Nitro/Address.lean` | coins, time, participants, fixed part, addresses, balances | SATP §2.1; Nitro §3.1 for balances; go-nitro INitroTypes.sol, MultiAssetHolder.sol |
-| `ArmadaLean/Nitro/Outcome.lean` | items, allocations, priority payout, afford, reprioritize, outcomes | SATP §2.4; go-nitro MultiAssetHolder.sol; Nitro §5.1, §6.1 for afford and the guarantee channel |
+| `ArmadaLean/Nitro/Outcome.lean` | items, allocations, priority payout, afford, outcomes | SATP §2.4; go-nitro MultiAssetHolder.sol; Nitro §5.1 for afford |
 | `ArmadaLean/Nitro/Channel.lean` | states, signed states, application rules, ForceMove and consensus rules, channel status and modes | SATP §2.1-2.3; go-nitro ForceMove.sol, StatusManager.sol, Consensus.sol |
-| `ArmadaLean/Nitro/Adjudicator.lean` | the adjudicator state and the operations deposit, transfer, claim, reclaim, challenge, checkpoint, conclude, tick; `Step`, `Reachable` | go-nitro ForceMove.sol, MultiAssetHolder.sol; SATP Listings 1-2; Nitro §3.1, §5.1, §6.1 |
+| `ArmadaLean/Nitro/Adjudicator.lean` | the adjudicator state and the operations deposit, transfer, reclaim, challenge, checkpoint, conclude, tick; `Step`, `Reachable` | go-nitro ForceMove.sol, MultiAssetHolder.sol; SATP Listings 1-2; Nitro §3.1, §5.1 |
 | `ArmadaLean/Nitro/Strategy.lean` | network states, moves, threat model, `Assumptions`, `Unbeatable`, `Prevents`, finalizable, enabled, funded, value | Nitro §4 (SATP and go-nitro have no off-chain model); SATP:164-168 for the assumptions |
-| `ArmadaLean/Nitro/Value.lean` | outcome network, DAG, Turbo Value Algorithm, Minimum Payout Calculation, Nitro Lower-bound Value Algorithm | Nitro §5.2, §6.2 (Nitro only) |
-| `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels and the Nitro virtual channel construction | Nitro §5.3-5.4, §6.3-6.5 (Nitro only; the SATP form is in SATP.lean) |
+| `ArmadaLean/Nitro/Value.lean` | outcome network, DAG, Turbo Value Algorithm | Nitro §5.2 |
+| `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels | Nitro §5.3-5.4; the virtual channel is in SATP.lean |
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
-| `ArmadaLean/Nitro/Safety.lean` | 60 theorems: on-chain safety, conservation, data operations | go-nitro and SATP first |
-| `ArmadaLean/Nitro/Liveness.lean` | 46 theorems: unbeatable strategies, value algorithms, constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-6 |
+| `ArmadaLean/Nitro/Safety.lean` | 55 theorems: on-chain safety, conservation, data operations | go-nitro and SATP first |
+| `ArmadaLean/Nitro/Liveness.lean` | 35 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-5 |
 
 ## Paper vs code: where go-nitro is followed over the latest paper
 
@@ -31,6 +31,10 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 - **Challenger must be a participant.** SATP Listing 1 has no caller check. go-nitro `_requireChallengerIsParticipant` (ForceMove.sol:178-190) requires it; ForceMove:1545-1548 proposed it. The model follows the code.
 - **Channel id includes challengeDuration.** SATP:213 hashes `(peers, appDef, nonce)`; go-nitro NitroUtils.sol:122-133 hashes the four fixed fields. The model id is the whole fixed part, as in the code.
 
+## Operator ruling 2026-10-27: reclaim only
+
+The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHolder.reclaim`). Nitro 2019's `claim`, the guarantee-channel outcome, the reprioritization rule, the Minimum Payout Calculation, the Nitro Lower-bound Value Algorithm and the Nitro §6.3-6.5 guarantee-channel construction are dropped. The affected ids (Nitro-39 to Nitro-48, and the §6.5 part of Nitro-49) are `superseded-by SATP-15`. Removed theorems: `claim_requires`, `claim_effects`, `claim_fails_otherwise`, `reprioritize_example`, `reprioritize_keeps_amounts`, `claim_order_dependent`, `nitro_lower_bound_achievable`, `nitro_lower_bound_underestimates`, `overfunded_min_payout`, `fully_funded_min_payout`, `single_guarantee_determined`, `figure23_lower_bound`, `end_participant_offloads`, `intermediary_recovers_collateral`, `virtual_open_value_preserving`, `virtual_close_value_preserving`. Every guarantee-item theorem that `reclaim` uses is kept.
+
 ## Encoding differences noted, paper form kept
 
 - go-nitro stores a hash of the state and outcome and packs `turnNumRecord`, the finalization time and a fingerprint into one slot (StatusManager.sol); the model stores values (`ChannelStatus`).
@@ -43,7 +47,6 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 - go-nitro Consensus.sol takes an empty proof and a unanimous candidate; SATP:262-266 takes one unanimous state in `vars`. The model keeps SATP's shape (`consensusRules`): the one proof state is the candidate.
 - go-nitro `transfer` "Assumes no repeated entries" (MultiAssetHolder.sol:67); Nitro:744-746 ignores repeats after the first. The model keeps the paper rule (`Allocation.dedup`).
 - go-nitro VirtualPaymentApp.sol is the unidirectional special case (SATP:444-449) of SATP Appendix A; the model keeps the two-way rules of SATP Listing 3, which Lemma 3.1 and Theorem 3.2 rest on.
-- go-nitro has no `claim` and no guarantee channel. Nitro §6.1-6.2 `claim`, `Outcome.guarantee`, `GuaranteeAffords` and the lower-bound value results are kept as a Nitro-only section, marked "Nitro only" in every doc comment.
 
 ## Modelling choices the papers and the code do not force
 
@@ -52,7 +55,6 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 - Applications: `Apps := AppId → Rules`; `Rules.supports` is a `Prop`; the operations that read it are `noncomputable` and decide it classically.
 - The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is a finite feasible adversary prefix, then one honest move; this is front-running (Nitro:540-542). `Assumptions.unimpeded` (SATP:166-167, Nitro:537-539) forbids the adversary to move the clock to a pending deadline of the honest participant; only the honest `wait` reaches a deadline. `Unbeatable` is an inductive strategy tree; `Prevents` is a safety property over `Run`s, used for enabled outcomes.
 - DAG: "the network is a DAG" is "a topological ordering exists" (`Adjudicator.IsDAG`), after Nitro:796-799.
-- Minimum Payout Calculation: Nitro:1202-1244 gives a constrained optimization; the model defines the minimum semantically as the least amount a destination receives over all exhausted claim orders in the group (`GuaranteeGroup.IsMinPayout`); the lower-bound algorithm takes any `MinPayoutCorrect` function.
 - SATP app data: `Decode : Nat → VirtualAppData` is the parse of `appData` (SATP:209).
 - Every `theorem` has proof `sorry`, including the ones a one-line proof would close, so that the sorry count equals the theorem count.
 
@@ -162,18 +164,18 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-35 | theorem turbo_value_achievable |
 | Nitro-36 | theorem turbo_order_independent, turbo_value_order_choice_irrelevant |
 | Nitro-37 | theorem ledger_offload_funds_subchannel |
-| Nitro-38 | definition Outcome, Op (Nitro only: SATP and go-nitro replace the guarantee channel and claim by guarantee items and reclaim) |
-| Nitro-39 | definition Outcome (constructor guarantee); theorem reprioritize_keeps_amounts |
-| Nitro-40 | theorem claim_requires (Nitro only) |
-| Nitro-41 | definition Allocation.reprioritize; theorem reprioritize_example, reprioritize_keeps_amounts |
-| Nitro-42 | definition GuaranteeAffords |
-| Nitro-43 | theorem claim_effects, claim_fails_otherwise (Nitro only) |
-| Nitro-44 | theorem claim_order_dependent |
-| Nitro-45 | definition Adjudicator.nitroValue, GuaranteeGroup.IsMinPayout; theorem nitro_lower_bound_achievable, nitro_lower_bound_underestimates, figure23_lower_bound |
-| Nitro-46 | theorem overfunded_min_payout, fully_funded_min_payout, single_guarantee_determined |
-| Nitro-47 | theorem end_participant_offloads |
-| Nitro-48 | theorem intermediary_recovers_collateral |
-| Nitro-49 | theorem consensus_enabled_outcomes, subchannel_open_value_preserving, subchannel_close_value_preserving, ledger_topup_reorder_safe, ledger_topup_deposit_funds, ledger_partial_withdrawal, virtual_open_value_preserving, virtual_close_value_preserving |
+| Nitro-38 | definition Outcome, Op (allocation and reclaim only; the guarantee outcome and claim are superseded-by SATP-15, ruling 2026-10-27) |
+| Nitro-39 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
+| Nitro-40 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped); the reclaim form is theorem reclaim_requires |
+| Nitro-41 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
+| Nitro-42 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
+| Nitro-43 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped); the reclaim form is theorem reclaim_effects |
+| Nitro-44 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
+| Nitro-45 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
+| Nitro-46 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped) |
+| Nitro-47 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped); the ledger offload is theorem ledger_offload_funds_subchannel |
+| Nitro-48 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped); the SATP form of intermediary recovery is theorem satp_theorem_3_2 |
+| Nitro-49 | theorem consensus_enabled_outcomes, subchannel_open_value_preserving, subchannel_close_value_preserving, ledger_topup_reorder_safe, ledger_topup_deposit_funds, ledger_partial_withdrawal (the §6.5 virtual channel sequences are superseded-by SATP-15 Protocols 3.1-3.2, ruling 2026-10-27) |
 | SATP-01 | definition FixedPart |
 | SATP-02 | definition State |
 | SATP-03 | definition State (FixedPart plus the variable fields) |
@@ -253,24 +255,24 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | docs-0040-10 | superseded-by Nitro-23 (theorem funding_point_universally_finalizable) |
 | docs-0060-06 | theorem payout_earlier_paid_in_full (ForceMove-B07 supports it) |
 | docs-0060-07 | theorem ledger_offload_funds_subchannel, subchannel_open_value_preserving |
-| docs-0060-08 | theorem end_participant_offloads, satp_theorem_3_2 (Nitro-47 construction; SATP Protocol 3.1) |
+| docs-0060-08 | theorem satp_theorem_3_2, satp_reclaim_credits_intermediary (SATP Protocol 3.1) |
 | docs-0060-09 | out of scope: docs-only ETH/ERC20 chain mechanics (go-nitro MultiAssetHolder.sol:53-57) |
 | docs-0070-11 | theorem checkpoint_can_happen (go-nitro has checkpoint, no respond; the event-caching half is docs-only client infrastructure) |
 | docs-0070-12 | out of scope: docs-only client infrastructure; the model stores values, not hashes |
-| docs-0080-07 | theorem subchannel_close_value_preserving, virtual_close_value_preserving |
-| docs-0080-08 | theorem ledger_offload_funds_subchannel, end_participant_offloads |
+| docs-0080-07 | theorem subchannel_close_value_preserving, satp_reclaim_credits_intermediary |
+| docs-0080-08 | theorem ledger_offload_funds_subchannel, reclaim_can_happen |
 | docs-0080-09 | out of scope: docs-only client tracking of events |
 
 ### Counts per disposition
 
 - assumption: 5
-- definition: 50
+- definition: 46
 - out of scope: 25
-- superseded-by: 10
-- theorem: 99
+- superseded-by: 20
+- theorem: 93
 - total: 189
 
-## Theorems (106)
+## Theorems (90)
 
 | Theorem | Module | Meaning | Property ids | Source |
 |---|---|---|---|---|
@@ -291,7 +293,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `paidTo_first_entry_only` | `Safety.lean` | A destination is paid at most its first entry. | Nitro-25 | Nitro:744-746 |
 | `affords_when_fully_funded` | `Safety.lean` | A fully funded allocation affords every entry in full. | Nitro-16, Nitro-27 | Nitro:749-751 |
 | `transfer_effects` | `Safety.lean` | The transfer pays the affordable amount x: three effects (go-nitro, Nitro). | ForceMove-A15, Nitro-10, Nitro-28, docs-0030-03, docs-0080-03, docs-0080-04 | go-nitro MultiAssetHolder.sol:72-100 |
-| `reduceOwed_owed` | `Safety.lean` | Reducing an owed amount is exact and local. | Nitro-28, Nitro-43 | docs |
+| `reduceOwed_owed` | `Safety.lean` | Reducing an owed amount is exact and local. | Nitro-28 | docs |
 | `transfer_can_happen` | `Safety.lean` | A transfer on a finalized allocation entry succeeds and pays the affordable amount. | ForceMove-C03, Nitro-15, Nitro-28, docs-0080-06 | docs |
 | `transfer_fails_otherwise` | `Safety.lean` | A transfer with no allocation entry (or a guarantee entry) fails. | ForceMove-A20, Nitro-29, docs-0030-04 | Nitro:771-772 |
 | `transfer_zero_moves_nothing` | `Safety.lean` | A transfer that affords nothing moves no coins. | Nitro-29 | docs |
@@ -322,11 +324,6 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `forceMove_conclude_keeps_outcome` | `Safety.lean` | A ForceMove conclude transition keeps the outcome; conclude is absorbing. | ForceMove-A04, ForceMove-A05, ForceMove-A08 | ForceMove:976-980 |
 | `mover_determined_by_turn` | `Safety.lean` | The mover is a function of channel and turn number. | ForceMove-D05, ForceMove-D06 | ForceMove:724-727 |
 | `mover_cyclic` | `Safety.lean` | Turns cycle with period n. | ForceMove-D06 | ForceMove:725-727 |
-| `claim_requires` | `Safety.lean` | A claim needs a finalized guarantee, a finalized target and affordability. | Nitro-40, Nitro-42, Nitro-43 | Nitro:1139-1141 |
-| `claim_effects` | `Safety.lean` | The three effects of an affordable claim; no coin leaves. | Nitro-43 | Nitro:1141-1144 |
-| `claim_fails_otherwise` | `Safety.lean` | A claim that is not affordable has no effect. | Nitro-40, Nitro-43 | Nitro:1145 |
-| `reprioritize_example` | `Safety.lean` | The Nitro example (L|A,B,C) on (C:1,D:2,A:4) gives (A:4,C:1,D:2). | Nitro-41 | Nitro:1099-1101 |
-| `reprioritize_keeps_amounts` | `Safety.lean` | Reprioritization keeps amounts and puts listed addresses first. | Nitro-39, Nitro-41 | Nitro:1098-1099 |
 | `reclaim_requires` | `Safety.lean` | A reclaim needs both channels finalized, a guarantee entry, left/right entries, and matching amounts. | SATP-15, docs-0030-04 | SATP:348-352 |
 | `reclaim_effects` | `Safety.lean` | A reclaim credits left and right from the target and deletes the guarantee. | SATP-15, docs-0080-05 | SATP:358-363 |
 | `reclaim_can_happen` | `Safety.lean` | A reclaim with its preconditions succeeds; exact result. | SATP-15, docs-0080-05 | docs |
@@ -356,23 +353,12 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `turbo_value_is_value` | `Liveness.lean` | The Turbo Value Algorithm computes the value of a network state. | Nitro-18, Nitro-33, Nitro-34, Nitro-35 | Nitro:482-484 |
 | `turbo_order_independent` | `Liveness.lean` | Exhausted transfer sequences give the same balances. | Nitro-36 | Nitro:842-843 |
 | `turbo_value_order_choice_irrelevant` | `Liveness.lean` | The topological order chosen does not change the value. | Nitro-33, Nitro-36 | Nitro:819 |
-| `ledger_offload_funds_subchannel` | `Liveness.lean` | A ledger channel funds its sub-channel for both participants. | Nitro-37, docs-0060-07, docs-0080-08 | Nitro:859-865 |
+| `ledger_offload_funds_subchannel` | `Liveness.lean` | A ledger channel funds its sub-channel for both participants. | Nitro-37, Nitro-47, docs-0060-07, docs-0080-08 | Nitro:859-865 |
 | `subchannel_open_value_preserving` | `Liveness.lean` | Opening a sub-channel preserves value. | Nitro-49, docs-0060-07 | Nitro:891-922 |
 | `subchannel_close_value_preserving` | `Liveness.lean` | Closing a sub-channel preserves value. | Nitro-49, docs-0080-07 | Nitro:939-957 |
 | `ledger_topup_reorder_safe` | `Liveness.lean` | Moving A to the end of an underfunded ledger pays A the same. | Nitro-49, docs-0060-05 | Nitro:959-995 |
 | `ledger_topup_deposit_funds` | `Liveness.lean` | After the top-up deposit every entry is affordable in full. | Nitro-04, Nitro-49 | Nitro:989-995 |
 | `ledger_partial_withdrawal` | `Liveness.lean` | A partial withdrawal pays A with no wait and funds the new ledger. | Nitro-49 | Nitro:997-1047 |
-| `claim_order_dependent` | `Liveness.lean` | Claim order can change who is paid. | Nitro-44 | Nitro:1148-1151 |
-| `nitro_lower_bound_achievable` | `Liveness.lean` | The Nitro lower-bound value is obtainable. | Nitro-18, Nitro-45 | Nitro:1152-1154 |
-| `nitro_lower_bound_underestimates` | `Liveness.lean` | The lower-bound algorithm strictly underestimates in some case. | Nitro-45 | Nitro:1194-1196 |
-| `overfunded_min_payout` | `Liveness.lean` | An overfunded group pays every destination in full. | Nitro-46 | Nitro:1216-1218 |
-| `fully_funded_min_payout` | `Liveness.lean` | A fully funded group pays every destination in full. | Nitro-46 | Nitro:1251-1253 |
-| `single_guarantee_determined` | `Liveness.lean` | With one guarantee the payouts are fully determined. | Nitro-46 | Nitro:1253-1255 |
-| `figure23_lower_bound` | `Liveness.lean` | In Figure 23, I gets 5 and A, B have lower bound 0. | Nitro-44, Nitro-45 | Nitro:1173-1176 |
-| `end_participant_offloads` | `Liveness.lean` | A or B can offload the virtual channel. | Nitro-37, Nitro-47, docs-0060-08 | Nitro:1299-1316 |
-| `intermediary_recovers_collateral` | `Liveness.lean` | The intermediary can offload the virtual channel and recover x. | Nitro-48 | Nitro:1317-1343 |
-| `virtual_open_value_preserving` | `Liveness.lean` | Opening a virtual channel preserves value. | Nitro-49, docs-0060-08 | Nitro:1364-1394 |
-| `virtual_close_value_preserving` | `Liveness.lean` | Closing a virtual channel preserves value. | Nitro-49, docs-0080-07 | Nitro:1412-1431 |
 | `satp_outcome_change_keeps_total` | `Liveness.lean` | validateOutcomeChange keeps the funded total of the start state. | SATP-18, SATP-19 | SATP:707-709 |
 | `satp_lemma_3_1` | `Liveness.lean` | Lemma 3.1: V finalizes at version 0 with the original outcome or with the same total. | SATP-19, SATP-21 | SATP:511-513 |
 | `satp_peers_can_finalize` | `Liveness.lean` | Lemma A.1: a peer can force V to finalize with the same total. | SATP-21 | SATP:747-750 |

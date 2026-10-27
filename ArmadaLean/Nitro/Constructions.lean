@@ -1,11 +1,10 @@
 /-
-  Nitro protocol specification: ledger channels, sub-channels and virtual
-  channels as network-state constructions. Sources: Nitro §5.3-5.4 (lines
-  847-1047) and §6.3-6.5 (lines 1257-1455). SATP §3 (lines 373-485) gives
-  the virtual channel construction with guarantee items and `reclaim`; that
-  form is in `SATP.lean`. This file keeps Nitro's guarantee-channel form,
-  which SATP and go-nitro do not have, for the Nitro §6.4 offload results.
-  See `Address.lean` for the source list.
+  Nitro protocol specification: ledger channels and sub-channels as
+  network-state constructions. Source: Nitro §5.3-5.4 (lines 847-1047). The
+  virtual channel construction is SATP §3 (lines 373-485), with guarantee
+  items and `reclaim`, in `SATP.lean`. Nitro §6.3-6.5's guarantee-channel
+  construction is not modelled (operator ruling 2026-10-27). See
+  `Address.lean` for the source list.
 
   Nitro:694-709 ("Outcomes First"): a construction is written as a set of
   outcomes, each finalizable by the listed participants, plus the balances
@@ -59,80 +58,6 @@ def LedgerWithSub.Holds (apps : Apps) (Ts : Threats apps) (v : Views) (w : Ledge
   IsLedgerChannel apps w.L ∧ w.L.participants = [w.A, w.B] ∧
   v.HoldsBalance w.L.address (w.a + w.b + w.c) ∧
   v.FinalizableBy apps Ts w.L w.outcome [w.A, w.B]
-
-/-- Nitro:1261-1270 and Nitro:1273-1284 (Figure 24): the virtual channel
-    construction. Ledger channels `L` (A, I) and `L'` (B, I), joint channel
-    `J` (A, B, I), guarantor channels `G` and `G'` that target `J`, and the
-    virtual channel `χ` (A, B). `x = a + b`. -/
-structure VirtualSetup where
-  A : Participant
-  B : Participant
-  I : Participant
-  L : FixedPart
-  L' : FixedPart
-  J : FixedPart
-  G : FixedPart
-  G' : FixedPart
-  χ : FixedPart
-  x : Coins
-
-/-- Nitro:1275 `[L ↦ (G : x)]_{A,I}`. -/
-def VirtualSetup.ledgerOutcome (w : VirtualSetup) : Outcome :=
-  .allocation [alloc w.G.address w.x]
-
-/-- Nitro:1275 `[L' ↦ (G' : x)]_{B,I}`. -/
-def VirtualSetup.ledgerOutcome' (w : VirtualSetup) : Outcome :=
-  .allocation [alloc w.G'.address w.x]
-
-/-- Nitro:1278 `[G ↦ (J|χ, A, I)]_{A,I}`. -/
-def VirtualSetup.guaranteeOutcome (w : VirtualSetup) : Outcome :=
-  .guarantee w.J.address [w.χ.address, w.A.address, w.I.address]
-
-/-- Nitro:1278 `[G' ↦ (J|χ, B, I)]_{B,I}`. -/
-def VirtualSetup.guaranteeOutcome' (w : VirtualSetup) : Outcome :=
-  .guarantee w.J.address [w.χ.address, w.B.address, w.I.address]
-
-/-- Nitro:1280 `[J ↦ (χ : x, I : x)]_{A,B,I}`. -/
-def VirtualSetup.jointOutcome (w : VirtualSetup) : Outcome :=
-  .allocation [alloc w.χ.address w.x, alloc w.I.address w.x]
-
-/-- The channel participant lists of Figure 24. -/
-def VirtualSetup.WellFormed (w : VirtualSetup) : Prop :=
-  w.L.participants = [w.A, w.I] ∧ w.L'.participants = [w.B, w.I] ∧
-  w.J.participants = [w.A, w.B, w.I] ∧ w.G.participants = [w.A, w.I] ∧
-  w.G'.participants = [w.B, w.I] ∧ w.χ.participants = [w.A, w.B] ∧
-  w.A ≠ w.B ∧ w.A ≠ w.I ∧ w.B ≠ w.I ∧
-  w.L ≠ w.L' ∧ w.L ≠ w.J ∧ w.L ≠ w.G ∧ w.L ≠ w.G' ∧ w.L ≠ w.χ ∧
-  w.L' ≠ w.J ∧ w.L' ≠ w.G ∧ w.L' ≠ w.G' ∧ w.L' ≠ w.χ ∧
-  w.J ≠ w.G ∧ w.J ≠ w.G' ∧ w.J ≠ w.χ ∧ w.G ≠ w.G' ∧ w.G ≠ w.χ ∧ w.G' ≠ w.χ
-
-/-- Nitro:1273-1280 (Figure 24) holds in the views: `⟦L : x, L' : x⟧` and the
-    five finalizable outcomes. -/
-def VirtualSetup.Holds (apps : Apps) (Ts : Threats apps) (v : Views) (w : VirtualSetup) : Prop :=
-  w.WellFormed ∧
-  v.HoldsBalance w.L.address w.x ∧ v.HoldsBalance w.L'.address w.x ∧
-  v.FinalizableBy apps Ts w.L w.ledgerOutcome [w.A, w.I] ∧
-  v.FinalizableBy apps Ts w.L' w.ledgerOutcome' [w.B, w.I] ∧
-  v.FinalizableBy apps Ts w.G w.guaranteeOutcome [w.A, w.I] ∧
-  v.FinalizableBy apps Ts w.G' w.guaranteeOutcome' [w.B, w.I] ∧
-  v.FinalizableBy apps Ts w.J w.jointOutcome [w.A, w.B, w.I]
-
-/-- Nitro:1264 (equation 22): the starting point `⟦L : x, L' : x⟧,
-    [L ↦ (A : a, I : b)]_{A,I}, [L' ↦ (B : b, I : a)]_{B,I}` with
-    `x = a + b`. -/
-def VirtualSetup.Start (apps : Apps) (Ts : Threats apps) (v : Views) (w : VirtualSetup)
-    (a b : Coins) : Prop :=
-  w.WellFormed ∧ w.x = a + b ∧
-  v.HoldsBalance w.L.address w.x ∧ v.HoldsBalance w.L'.address w.x ∧
-  v.FinalizableBy apps Ts w.L (.allocation [alloc w.A.address a, alloc w.I.address b]) [w.A, w.I] ∧
-  v.FinalizableBy apps Ts w.L' (.allocation [alloc w.B.address b, alloc w.I.address a]) [w.B, w.I]
-
-/-- Nitro:1427-1429 (equations 42-43): the closed state
-    `[L ↦ (A : a', I : b')]_{A,I}, [L' ↦ (B : b', I : a')]_{B,I}`. -/
-def VirtualSetup.Closed (apps : Apps) (Ts : Threats apps) (v : Views) (w : VirtualSetup)
-    (a' b' : Coins) : Prop :=
-  v.FinalizableBy apps Ts w.L (.allocation [alloc w.A.address a', alloc w.I.address b']) [w.A, w.I] ∧
-  v.FinalizableBy apps Ts w.L' (.allocation [alloc w.B.address b', alloc w.I.address a']) [w.B, w.I]
 
 /-- Two network states have the same value for a participant. Nitro:505-509:
     "the sequence of state transitions is value preserving for each

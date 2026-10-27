@@ -59,7 +59,6 @@ def Voucher.outcome (v : Voucher) (alice bob : Participant) : Outcome :=
 /-- SATP:705 `x = start.outcome[0].amount + start.outcome[1].amount`. -/
 def Outcome.fundedTotal : Outcome → Coins
   | .allocation o => o.amountAt 0 + o.amountAt 1
-  | .guarantee _ _ => 0
 
 /-- SATP:669-741 `validateOutcomeChange` (Listing 3). `alice = peers[0]`,
     `bob = peers.at(-1)` (SATP:679-680). The relation holds when `proof` is
