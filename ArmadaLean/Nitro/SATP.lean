@@ -148,13 +148,15 @@ def Route.guarantee (r : Route E) (P Q : Participant) : Entry E :=
 def Route.debited (r : Route E) (i : Nat) : Coins :=
   (if i = 0 then 0 else r.b0) + (if i + 1 = r.peers.length then 0 else r.a0)
 
-/-- A ledger outcome after Round 2 of Protocol 3.1 (SATP:411-418): `P`'s entry
-    fell by `debit` from `bal`, both peers have entries (go-nitro `reclaim`
-    needs them, MultiAssetHolder.sol:363-364), and the guarantee
-    `G(a0 + b0, [P, Q])` for `V` is present. -/
-def Route.LedgerAfterRound2 (r : Route E) (o : Allocation E) (P Q : Participant)
+/-- A ledger outcome after Round 2 of Protocol 3.1 (SATP:411-418) for the
+    ledger between `P` (left) and `Q` (right): the entry of `D` fell by
+    `debit` from `bal`, both peers have entries (go-nitro `reclaim` needs
+    them, MultiAssetHolder.sol:363-364), and the guarantee `G(a0 + b0, [P, Q])`
+    for `V` is present. SATP:436-439: in `L_i` the left peer `P_i` pays `a0`
+    and the right peer `P_{i+1}` pays `b0`. -/
+def Route.LedgerAfterRound2 (r : Route E) (o : Allocation E) (P Q D : Participant)
     (bal debit : Coins) : Prop :=
-  o.owed (.external (r.dest P)) + debit = bal ∧ o.find (.external (r.dest P)) ≠ none ∧
+  o.owed (.external (r.dest D)) + debit = bal ∧ o.find (.external (r.dest P)) ≠ none ∧
   o.find (.external (r.dest Q)) ≠ none ∧ o.find r.V.address = some (r.guarantee P Q)
 
 /-- A ledger outcome before Round 2: `P` is owed `bal` and no entry targets

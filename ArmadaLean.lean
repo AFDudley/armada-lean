@@ -22,3 +22,4 @@ import ArmadaLean.Nitro.Constructions
 import ArmadaLean.Nitro.SATP
 import ArmadaLean.Nitro.Safety
 import ArmadaLean.Nitro.Liveness
+import ArmadaLean.Nitro.NonVacuity
