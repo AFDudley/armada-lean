@@ -142,5 +142,5 @@ No hand-written general lemma: every theorem statement names a project type. Mat
 
 - `lake build`: exit 0.
 - `grep -rnE 'holdings|bytes32|2 *\^ *160|finalizesAt|stateHash|outcomeHash|indices|configuredAssets' ArmadaLean/ArmadaNitro` prints one line, the comment in `State.lean` that explains the absence of a `holdings` table.
-- No `axiom` under `ArmadaLean/ArmadaNitro/`. Each file sets `autoImplicit false`.
+- No `axiom` under `ArmadaLean/ArmadaNitro/`. Each file sets `autoImplicit false`. `#print axioms` on `step_refines`, `pending_payout_not_blocked` and `satp_theorem_3_2_notes` lists `EdDSAVerify` (the pool's primitive, through `Step`), `propext` and `sorryAx`.
 - The `theorem` statements outside `ArmadaLean/ArmadaNitro/` are identical to `c5d87d2` (251 statements, empty diff). The only change outside `ArmadaNitro/` is 8 import lines in `ArmadaLean.lean`.
