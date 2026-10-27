@@ -804,7 +804,7 @@ theorem mode_eq (s : Adjudicator E) (c : FixedPart) : s.mode c = (s.statusOf c).
 
 theorem deposit_some {s : Adjudicator E} {a : Address E} {e x : Coins} {s' : Adjudicator E}
     (h : s.deposit a e x = some s') :
-    (∃ c, a = .channel c ∧ c.kind = .assetHolding) ∧ s.balances.get a = e ∧
+    (∃ c, a = .channel c ∧ c.kind = .ledger) ∧ s.balances.get a = e ∧
       s'.balances = s.balances.add a x ∧ s'.held = s.held + x ∧ s'.status = s.status ∧
       s'.now = s.now := by
   unfold deposit at h
@@ -825,7 +825,7 @@ theorem transfer_some {s : Adjudicator E} {a : FixedPart} {b : Address E} {s' : 
       s'.held = (if b.isExternal then s.held - x else s.held) ∧
       s'.status = (s.setStatus a ((s.statusOf a).withOutcome
         (.allocation (o.reduceOwed b x)))).status ∧
-      s'.now = s.now ∧ a.kind = .assetHolding ∧ b.fundable = true := by
+      s'.now = s.now ∧ a.kind = .ledger ∧ b.fundable = true := by
   unfold transfer at h
   split at h
   · rename_i hcond
@@ -851,7 +851,7 @@ theorem reclaim_some {s : Adjudicator E} {l v : FixedPart} {s' : Adjudicator E}
       oV.amountAt 0 + oV.amountAt 1 = x ∧
       s' = s.setStatus l ((s.statusOf l).withOutcome (.allocation
         (((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address))) ∧
-      l.kind = .assetHolding ∧ v.kind = .virtual := by
+      l.kind = .ledger ∧ v.kind = .virtual := by
   unfold reclaim at h
   split at h
   · rename_i hk
@@ -1022,6 +1022,20 @@ theorem finalizedWith_apply {apps : Apps E} {caller : Participant} {op : Op E} {
     split
     · rename_i hcc; subst hcc; exact absurd hmode ho
     · exact hf
+
+/-- The outcome of finalization is permanent over every reachable step, not
+    just one, by induction on `finalizedWith_apply`. Used by
+    `Adjudicator.reclaim`'s channel-types repair (operator ruling
+    2026-10-27): a virtual channel's outcome, once finalized, is exactly
+    what `reclaim` reads. -/
+theorem finalizedWith_stable {apps : Apps E} {s s' : Adjudicator E}
+    (h : Relation.ReflTransGen (Step apps) s s') {c : FixedPart} {f : Outcome E}
+    (hf : s.finalizedWith c.address = some f) : s'.finalizedWith c.address = some f := by
+  induction h with
+  | refl => exact hf
+  | tail _ hstep ih =>
+    obtain ⟨_, _, _, _, happ⟩ := hstep
+    exact finalizedWith_apply happ ih
 
 /-! ### The coins-held invariant -/
 

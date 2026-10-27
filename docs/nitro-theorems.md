@@ -1,6 +1,6 @@
 # Nitro theorems: property map
 
-This file maps the 189 prose properties of `armada-laconic/notes/statement-audit-2026-10-25/` to the Lean declarations under `ArmadaLean/Nitro/`. The 66 theorems of `Safety.lean` are proved; the 34 theorems of `Liveness.lean` have proof `sorry`, except the four that read no game definition. The statements are the deliverable.
+This file maps the 189 prose properties of `armada-laconic/notes/statement-audit-2026-10-25/` to the Lean declarations under `ArmadaLean/Nitro/`. The 63 theorems of `Safety.lean` are proved; the 34 theorems of `Liveness.lean` have proof `sorry`, except the four that read no game definition. The statements are the deliverable.
 
 Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the primary source of every declaration is the latest paper that covers it, SATP (2022), then Nitro (2019), then ForceMove (2018). Each definition was then checked against go-nitro at `64c4ee9a1` (`packages/nitro-protocol/contracts/`, last contract change `9d3a669e5`), fetched by a shallow clone under `.scratch/go-nitro`. Where the code corrects a paper, the code is followed and both are cited. Where the code differs only by encoding, the paper form is kept and the difference is noted.
 
@@ -17,9 +17,9 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 | `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels | Nitro §5.3-5.4; the virtual channel is in SATP.lean |
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
 | `ArmadaLean/Nitro/Lemmas.lean` | the `@[simp]` reading lemmas of balances, allocations, payouts, channel statuses and the operations; the coins-held invariant `Adjudicator.HeldInv` | no source: proof helpers for `Safety.lean` |
-| `ArmadaLean/Nitro/Safety.lean` | 66 theorems, all proved: on-chain safety, conservation, data operations | go-nitro and SATP first |
+| `ArmadaLean/Nitro/Safety.lean` | 63 theorems, all proved: on-chain safety, conservation, data operations | go-nitro and SATP first |
 | `ArmadaLean/Nitro/Liveness.lean` | 34 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-5 |
-| `ArmadaLean/Nitro/NonVacuity.lean` | one proved witness per theorem with hypotheses (verification.md §5a): 57 for `Safety.lean`, 34 for `Liveness.lean`; the strategies "conclude now" and "wait until the deadline" | no source: acceptance check |
+| `ArmadaLean/Nitro/NonVacuity.lean` | one proved witness per theorem with hypotheses (verification.md §5a): 54 for `Safety.lean`, 34 for `Liveness.lean`; the strategies "conclude now" and "wait until the deadline" | no source: acceptance check |
 
 ## Paper vs code: where go-nitro is followed over the latest paper
 
@@ -47,28 +47,32 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 
 ## Operator ruling 2026-10-27: channel types by construction
 
-SATP §1 (SATP:79-84) and SATP §3.1 give two channel constructions. An
-asset-holding channel is funded by deposits or by an allocation in another
-channel's outcome; a ledger channel is this type. A virtual channel is
-funded only by guarantees held in two or more ledger channels and holds no
-assets of its own. `FixedPart` carries a field `kind : ChannelKind`
-(`Address.lean`) fixed at construction, never changed after the channel
+SATP §1 (SATP:79-84): "ledger channels, which are typically funded by the
+underlying ledger, and virtual channels, which are funded by ledger
+channels." A ledger channel is funded by deposits or by an allocation in
+another channel's outcome. A virtual channel is funded only by guarantees
+held in two or more ledger channels and holds no assets of its own.
+`FixedPart` carries a field `kind : ChannelKind` (`ledger` or `virtual`,
+`Address.lean`) fixed at construction, never changed after the channel
 opens (the on-chain channel id is an untyped hash of the fixed part, so the
 type is an addition to the specification, not an encoding of the chain).
-`Adjudicator.deposit` and `Adjudicator.transfer` succeed only for an
-asset-holding channel (`transfer`'s paid destination too, when it names a
-channel); a guarantee names only a virtual channel as its `reclaim` target.
+`Adjudicator.deposit` and `Adjudicator.transfer` succeed only for a ledger
+channel (`transfer`'s paid destination too, when it names a channel); a
+guarantee names only a virtual channel as its `reclaim` target.
 `Adjudicator.reclaim` reads the target's outcome of finalization
 (`finalizedWith`, SATP §2.4 SATP:335-338), not its current stored outcome:
 this is the fix for the reclaim denial-of-service reproduced against
 go-nitro at `64c4ee9a1`
 (`armada-laconic/labbook/2026-10-27-gonitro-reclaim-dos.md`), where a
 griefer deposits into a finalized virtual channel, pays itself out by
-`transfer`, and every later `reclaim` reverts forever. New theorems:
-`transfer_pays_at_most_held`, `reclaim_moves_guarantee_amount`,
-`virtual_finalized_outcome_immutable`. `Route.WellFormed` (`SATP.lean`)
-requires each ledger asset-holding and `V` virtual; `satp_reclaim_credits_intermediary` carries the matching hypotheses and stays proved. Every theorem
-whose type changed, with its old and new text, is `docs/nitro-repair-2026-10-27.md` §4.
+`transfer`, and every later `reclaim` reverts forever. `Route.WellFormed`
+(`SATP.lean`) requires `kind = .ledger` for each ledger and `.virtual` for `V`;
+`satp_reclaim_credits_intermediary` carries the matching hypotheses and
+stays proved. Every theorem whose type changed, with its old and new text,
+is `docs/nitro-repair-2026-10-27.md` §6. Operator ruling 2026-10-27:
+`transfer_pays_at_most_held`, `reclaim_moves_guarantee_amount` and
+`virtual_finalized_outcome_immutable`, proposed for this ruling, are
+removed as not paper theorems; `docs/nitro-repair-2026-10-27.md` §6.3.
 
 ## Encoding differences noted, paper form kept
 
@@ -331,7 +335,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 - theorem: 94
 - total: 189
 
-## Theorems (100)
+## Theorems (97)
 
 | Theorem | Module | Meaning | Property ids | Source |
 |---|---|---|---|---|
@@ -393,9 +397,6 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `isOpen_iff` | `Safety.lean` | isOpen means open or challenge mode. | SATP-13, docs-0040-02 | SATP:294-298 |
 | `mode_of_absent` | `Safety.lean` | A channel with no record is open at turn 0. | ForceMove-D11, Nitro-11 | docs |
 | `held_changes_only_by_deposit_payout` | `Safety.lean` | Only a deposit or a redistribution changes the coins held. | Nitro-05, Nitro-08 | docs |
-| `transfer_pays_at_most_held` | `Safety.lean` | No channel pays out more than it holds. | SATP-15 | SATP §1 SATP:79-84 |
-| `reclaim_moves_guarantee_amount` | `Safety.lean` | A reclaim moves exactly the guarantee's amount. | SATP-15 | go-nitro MultiAssetHolder.sol:365 |
-| `virtual_finalized_outcome_immutable` | `Safety.lean` | A channel's outcome of finalization never changes after it finalizes, stated for a virtual channel. | SATP-15 | SATP §2.4 SATP:335-338 |
 | `directly_funded_pays` | `Liveness.lean` | A directly funded finalized allocation pays p its entry with no wait. | ForceMove-A06, ForceMove-A07, ForceMove-B01, ForceMove-C03, Nitro-16, Nitro-21, Nitro-31, docs-0070-05, docs-0080-06 | Nitro:779-781 |
 | `finalizable_funded_pays` | `Liveness.lean` | A finalizable allocation in a channel funded for p pays p its entry. | Nitro-16, Nitro-17, Nitro-21 | Nitro:480-481 |
 | `conclusion_proof_finalizable` | `Liveness.lean` | A held conclusion proof makes its outcome finalizable with no wait. | ForceMove-A14, Nitro-13, Nitro-21, Nitro-23, docs-0070-05 | SATP:286-289 |

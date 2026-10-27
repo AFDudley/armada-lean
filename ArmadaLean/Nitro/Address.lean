@@ -44,17 +44,18 @@ structure AppId where
   deriving DecidableEq, Repr
 
 /-- A channel's funding construction (operator ruling 2026-10-27). SATP §1
-    (SATP:79-84) and SATP §3.1: an asset-holding channel is funded by
-    deposits or by an allocation in another channel's outcome, and holds
-    its own assets; a ledger channel is this type. A virtual channel is
-    funded only by guarantees held in two or more ledger channels and
-    holds no assets of its own. The kind is fixed at the channel's
-    construction, not inferred from the operations a caller submits:
-    SATP:213 and Nitro:158-160 hash the fixed part to the channel id, so a
-    channel built a different way is a different channel, and `kind`
-    cannot change after the channel opens. -/
+    (SATP:79-84): "ledger channels, which are typically funded by the
+    underlying ledger, and virtual channels, which are funded by ledger
+    channels." A ledger channel is funded by deposits or by an allocation
+    in another channel's outcome, and holds its own assets. A virtual
+    channel is funded only by guarantees held in two or more ledger
+    channels and holds no assets of its own. The kind is fixed at the
+    channel's construction, not inferred from the operations a caller
+    submits: SATP:213 and Nitro:158-160 hash the fixed part to the channel
+    id, so a channel built a different way is a different channel, and
+    `kind` cannot change after the channel opens. -/
 inductive ChannelKind
-  | assetHolding
+  | ledger
   | virtual
   deriving DecidableEq, Repr
 
@@ -107,12 +108,12 @@ def Address.isExternal : Address E → Bool
   | .channel _ => false
 
 /-- A destination `transfer` may pay into on-chain: an external destination,
-    or an asset-holding channel (operator ruling 2026-10-27, `ChannelKind`).
-    A virtual channel holds no assets of its own and is never credited this
-    way (SATP §3.1). -/
+    or a ledger channel (operator ruling 2026-10-27, `ChannelKind`, SATP §1
+    SATP:79-84). A virtual channel holds no assets of its own and is never
+    credited this way (SATP §3.1). -/
 def Address.fundable : Address E → Bool
   | .external _ => true
-  | .channel c => decide (c.kind = .assetHolding)
+  | .channel c => decide (c.kind = .ledger)
 
 /-- A balance table. Nitro:161-163: "a simple mapping that stores the
     quantity of coins for an address. If an address does not appear in the

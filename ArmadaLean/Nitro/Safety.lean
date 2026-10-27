@@ -84,10 +84,10 @@ theorem deposit_effects (s : Adjudicator E) (c : FixedPart) (e x : Coins) (s' : 
     can deposit coins for an address". go-nitro MultiAssetHolder.sol:43: a
     deposit to an external destination reverts, so the address must be a
     channel; the code is followed. The deposit succeeds for every caller
-    and every asset-holding channel (operator ruling 2026-10-27,
-    `ChannelKind`: a virtual channel never accepts one). -/
+    and every ledger channel (operator ruling 2026-10-27, `ChannelKind`: a
+    virtual channel never accepts one). -/
 theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicator E) (c : FixedPart)
-    (hk : c.kind = .assetHolding) (x : Coins) :
+    (hk : c.kind = .ledger) (x : Coins) :
     s.apply apps caller (.deposit c.address (s.balances.get c.address) x) =
       some { s with balances := s.balances.add c.address x, held := s.held + x } := by
   simp [Adjudicator.deposit, hk]
@@ -151,7 +151,7 @@ theorem deposit_respects_funding_order (apps : Apps E) (s s' : Adjudicator E) (h
     ahead of it, all succeed from a channel that holds nothing, and leave
     the channel fully funded (ForceMove:1797-1808). -/
 theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (o : Allocation E)
-    (callers : List Participant) (hck : c.kind = .assetHolding) (h0 : s.balances.get c.address = 0) :
+    (callers : List Participant) (hck : c.kind = .ledger) (h0 : s.balances.get c.address = 0) :
     let op := fun k => ((callers[k]?).getD ⟨0⟩, Op.deposit c.address (o.aheadOf k) (o.amountAt k))
     let ops := (List.range o.length).map op
     (∀ k, k < o.length →
@@ -382,9 +382,9 @@ theorem reduceOwed_owed (o : Allocation E) (d : Address E) (x : Coins) :
     a finalized channel with an allocation entry for `b` succeeds, and pays
     the whole affordable amount (MultiAssetHolder.sol:66). The exact result
     is stated. Channel types (operator ruling 2026-10-27, `ChannelKind`):
-    `a` must be asset-holding and `b`, if a channel, must be too. -/
+    `a` must be a ledger channel and `b`, if a channel, must be too. -/
 theorem transfer_can_happen (s : Adjudicator E) (a : FixedPart) (b : Address E) (o : Allocation E)
-    (amt : Coins) (ha : a.kind = .assetHolding) (hbf : b.fundable = true)
+    (amt : Coins) (ha : a.kind = .ledger) (hbf : b.fundable = true)
     (hf : s.finalOutcome a.address = some (.allocation o))
     (hb : o.find b = some ⟨b, .alloc amt⟩) :
     ∃ s', s.transfer a b = some s' ∧
@@ -396,7 +396,7 @@ theorem transfer_can_happen (s : Adjudicator E) (a : FixedPart) (b : Address E) 
         (o.paidTo (s.balances.get a.address) b))) |> fun s' =>
         { s' with balances := s'.balances.sub a.address (o.paidTo (s.balances.get a.address) b) }) := by
     unfold Adjudicator.transfer
-    rw [if_pos (⟨ha, hbf⟩ : a.kind = .assetHolding ∧ b.fundable = true)]
+    rw [if_pos (⟨ha, hbf⟩ : a.kind = .ledger ∧ b.fundable = true)]
     simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hf, hb]
   refine ⟨_, ht, ?_⟩
   simp only [Balances.get_sub, Adjudicator.payTo_balances, Adjudicator.setStatus_balances,
@@ -1111,12 +1111,12 @@ theorem mover_cyclic (s : State E) (k : Nat) :
     and a guarantee entry for the target in the ledger's outcome. go-nitro
     adds: `left` and `right` have entries in the ledger (lines 363-364) and
     the target's first two amounts sum to the guarantee amount (line 365).
-    Channel types (operator ruling 2026-10-27, `ChannelKind`): `l` is
-    asset-holding and `v` is virtual. `v`'s outcome is read as the outcome
+    Channel types (operator ruling 2026-10-27, `ChannelKind`): `l` is a
+    ledger channel and `v` is virtual. `v`'s outcome is read as the outcome
     it finalized with (SATP §2.4 SATP:335-338). -/
 theorem reclaim_requires (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E)
     (h : s.reclaim l v = some s') :
-    s.mode l = .finalized ∧ s.mode v = .finalized ∧ l.kind = .assetHolding ∧ v.kind = .virtual ∧
+    s.mode l = .finalized ∧ s.mode v = .finalized ∧ l.kind = .ledger ∧ v.kind = .virtual ∧
     ∃ oL oV x left right, s.finalOutcome l.address = some (.allocation oL) ∧
       s.finalizedWith v.address = some (.allocation oV) ∧
       oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
@@ -1193,7 +1193,7 @@ theorem reclaim_effects (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator 
 /-- SATP-15, docs-0080-05. The reclaim succeeds whenever its preconditions
     hold. The exact result is stated. -/
 theorem reclaim_can_happen (s : Adjudicator E) (l v : FixedPart) (oL oV : Allocation E) (x : Coins)
-    (left right : Address E) (hkl : l.kind = .assetHolding) (hkv : v.kind = .virtual)
+    (left right : Address E) (hkl : l.kind = .ledger) (hkv : v.kind = .virtual)
     (hL : s.finalOutcome l.address = some (.allocation oL))
     (hV : s.finalizedWith v.address = some (.allocation oV))
     (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩)
@@ -1203,7 +1203,7 @@ theorem reclaim_can_happen (s : Adjudicator E) (l v : FixedPart) (oL oV : Alloca
       (.allocation ((((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1))).remove
         v.address)))) := by
   simp only [Adjudicator.reclaim, hL, hV, hg]
-  rw [if_pos (⟨hkl, hkv⟩ : l.kind = .assetHolding ∧ v.kind = .virtual), if_pos ⟨hl, hr, hx⟩]
+  rw [if_pos (⟨hkl, hkv⟩ : l.kind = .ledger ∧ v.kind = .virtual), if_pos ⟨hl, hr, hx⟩]
 
 /-- SATP-15. go-nitro MultiAssetHolder.sol:363-365: a reclaim whose `left`
     or `right` has no ledger entry, or whose target amounts do not sum to
@@ -1232,47 +1232,6 @@ theorem reclaim_fails_without_entries (s : Adjudicator E) (l v : FixedPart) (oL 
     · exact absurd h hl
     · exact absurd h hr
     · exact absurd hx h
-
-/-- Channel types, operator ruling 2026-10-27 (a): no channel pays out more
-    than it holds. A transfer from `a` pays `b` at most `a`'s own balance,
-    the same bound `Adjudicator.reclaim`'s amount check relies on through
-    `Allocation.paidTo_le_held`. -/
-theorem transfer_pays_at_most_held (s : Adjudicator E) (a : FixedPart) (b : Address E)
-    (s' : Adjudicator E) (h : s.transfer a b = some s') :
-    ∃ o x, s.finalOutcome a.address = some (.allocation o) ∧
-      x = o.paidTo (s.balances.get a.address) b ∧ x ≤ s.balances.get a.address := by
-  obtain ⟨o, _, x, hf, -, hx, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
-  exact ⟨o, x, hf, hx, hx ▸ Allocation.paidTo_le_held _ _ _⟩
-
-/-- Channel types, operator ruling 2026-10-27 (b): a reclaim moves exactly
-    the guarantee's amount. The two credited amounts, read from the virtual
-    channel's finalized outcome, sum to `x`, the guarantee's own amount
-    (go-nitro `compute_reclaim_effects`, MultiAssetHolder.sol:365). -/
-theorem reclaim_moves_guarantee_amount (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E)
-    (h : s.reclaim l v = some s') :
-    ∃ (oL : Allocation E) (x : Coins) (left right : Address E),
-      oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
-      ∃ oV, s.finalizedWith v.address = some (.allocation oV) ∧
-        oV.amountAt 0 + oV.amountAt 1 = x := by
-  obtain ⟨oL, oV, x, left, right, -, hV, hg, -, -, hx, -, -, -⟩ := Adjudicator.reclaim_some h
-  exact ⟨oL, x, left, right, hg, oV, hV, hx⟩
-
-/-- Channel types, operator ruling 2026-10-27 (c): a channel's outcome of
-    finalization never changes after it finalizes, over any number of
-    steps. Stated for a virtual channel because it is what
-    `Adjudicator.reclaim` reads (SATP §2.4); the fact holds for every
-    channel, by `Adjudicator.finalizedWith_apply`: `transfer` and `reclaim`
-    rewrite only the stored outcome, and `challenge`, `checkpoint` and
-    `conclude` all require the channel to still be open. -/
-theorem virtual_finalized_outcome_immutable (apps : Apps E) {s s' : Adjudicator E}
-    (h : Relation.ReflTransGen (Step apps) s s') {c : FixedPart} (_hk : c.kind = .virtual)
-    {f : Outcome E} (hf : s.finalizedWith c.address = some f) :
-    s'.finalizedWith c.address = some f := by
-  induction h with
-  | refl => exact hf
-  | tail _ hstep ih =>
-    obtain ⟨caller, op, _, _, happ⟩ := hstep
-    exact Adjudicator.finalizedWith_apply happ ih
 
 omit [DecidableEq E] in
 /-- SATP-13, docs-0040-02. SATP:294-298 `isOpen`: "the channel has no active

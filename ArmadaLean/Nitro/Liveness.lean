@@ -640,7 +640,7 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
     (alice bob P Pprev Pnext : Participant)
     (Lm Lp : FixedPart) (om op : Allocation E) (a b : Coins)
     (hdist : r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext)
-    (hkLm : Lm.kind = .assetHolding) (hkLp : Lp.kind = .assetHolding) (hkV : r.V.kind = .virtual)
+    (hkLm : Lm.kind = .ledger) (hkLp : Lp.kind = .ledger) (hkV : r.V.kind = .virtual)
     (hV : s.finalizedWith r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]))
     (hLm : s.finalOutcome Lm.address = some (.allocation om))
@@ -665,7 +665,7 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
   have hVb : oV.amountAt 1 = b := rfl
   have hx : oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 := hab
   have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by simp
-  -- `Lm ≠ V` and `Lp ≠ V`: an asset-holding channel is never a virtual one.
+  -- `Lm ≠ V` and `Lp ≠ V`: a ledger channel is never a virtual one.
   have hmV : Lm ≠ r.V := by rintro rfl; rw [hkV] at hkLm; cases hkLm
   have hpV : Lp ≠ r.V := by rintro rfl; rw [hkV] at hkLp; cases hkLp
   let om' := ((om.addTo dPp (oV.amountAt 0)).addTo dP (oV.amountAt 1)).remove r.V.address

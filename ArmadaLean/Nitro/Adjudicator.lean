@@ -98,14 +98,14 @@ def Adjudicator.genesis : Adjudicator E :=
     and no finality.
 
     Channel types (operator ruling 2026-10-27, `ChannelKind`, SATP §1
-    SATP:79-84, SATP §3.1): only an asset-holding channel accepts a
-    deposit. A virtual channel is funded only by guarantees in ledger
-    channels, never by a deposit of its own. -/
+    SATP:79-84, SATP §3.1): only a ledger channel accepts a deposit. A
+    virtual channel is funded only by guarantees in ledger channels, never
+    by a deposit of its own. -/
 def Adjudicator.deposit (s : Adjudicator E) (a : Address E) (expectedHeld x : Coins) :
     Option (Adjudicator E) :=
   match a with
   | .channel c =>
-    if c.kind = .assetHolding ∧ s.balances.get a = expectedHeld then
+    if c.kind = .ledger ∧ s.balances.get a = expectedHeld then
       some { s with balances := s.balances.add a x, held := s.held + x }
     else
       none
@@ -131,15 +131,15 @@ def Adjudicator.payTo (s : Adjudicator E) (b : Address E) (x : Coins) : Adjudica
     multi-index batch (`indices`) is an encoding and is not modelled.
 
     Channel types (operator ruling 2026-10-27, `ChannelKind`, SATP §1
-    SATP:79-84, SATP §3.1): only an asset-holding channel holds coins to
-    pay out, so `a` must be one; a virtual channel source is never
-    transferred from. The paid destination `b`, when it names a channel,
-    must itself be asset-holding (`Address.fundable`): a virtual channel
-    never receives a credit from another channel's payout, because it
-    holds no assets of its own. -/
+    SATP:79-84, SATP §3.1): only a ledger channel holds coins to pay out,
+    so `a` must be one; a virtual channel source is never transferred
+    from. The paid destination `b`, when it names a channel, must itself
+    be a ledger channel (`Address.fundable`): a virtual channel never
+    receives a credit from another channel's payout, because it holds no
+    assets of its own. -/
 def Adjudicator.transfer (s : Adjudicator E) (a : FixedPart) (b : Address E) :
     Option (Adjudicator E) :=
-  if a.kind = .assetHolding ∧ b.fundable = true then
+  if a.kind = .ledger ∧ b.fundable = true then
     match s.finalOutcome a.address with
     | some (.allocation o) =>
       match o.find b with
@@ -166,7 +166,7 @@ def Adjudicator.transfer (s : Adjudicator E) (a : FixedPart) (b : Address E) :
     SATP:79-84, SATP §3.1): a guarantee names only a virtual channel as its
     target, so `reclaim` requires `v` to be one. The credit lands in the
     ledger's own allocation entries, "credits from another channel's
-    payout" in the ruling's words, so `l` must be asset-holding, as
+    payout" in the ruling's words, so `l` must be a ledger channel, as
     `transfer`'s paid channel destination must be.
 
     The target's finalized outcome (operator ruling 2026-10-27, SATP §2.4
@@ -185,7 +185,7 @@ def Adjudicator.transfer (s : Adjudicator E) (a : FixedPart) (b : Address E) :
     fact directly, as SATP reads it, instead of leaving it to follow only
     from the deposit and transfer guards. -/
 def Adjudicator.reclaim (s : Adjudicator E) (l v : FixedPart) : Option (Adjudicator E) :=
-  if l.kind = .assetHolding ∧ v.kind = .virtual then
+  if l.kind = .ledger ∧ v.kind = .virtual then
     match s.finalOutcome l.address, s.finalizedWith v.address with
     | some (.allocation oLedger), some (.allocation oTarget) =>
       match oLedger.find v.address with

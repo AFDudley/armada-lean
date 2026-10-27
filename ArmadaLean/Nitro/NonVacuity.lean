@@ -21,11 +21,11 @@ open ArmadaLean.Nitro
 def p0 : Participant := ⟨0⟩
 def q0 : Participant := ⟨1⟩
 /-- A one-participant channel; challenge duration 2. -/
-def c1 : FixedPart := ⟨[p0], 0, ⟨0⟩, 2, .assetHolding⟩
+def c1 : FixedPart := ⟨[p0], 0, ⟨0⟩, 2, .ledger⟩
 /-- A second one-participant channel. -/
-def c3 : FixedPart := ⟨[p0], 3, ⟨0⟩, 2, .assetHolding⟩
+def c3 : FixedPart := ⟨[p0], 3, ⟨0⟩, 2, .ledger⟩
 /-- A two-participant channel. -/
-def c2 : FixedPart := ⟨[p0, q0], 1, ⟨0⟩, 2, .assetHolding⟩
+def c2 : FixedPart := ⟨[p0, q0], 1, ⟨0⟩, 2, .ledger⟩
 def apps0 : Apps Nat := fun _ => consensusRules
 def d0 : Address Nat := .external 0
 def d1 : Address Nat := .external 1
@@ -47,7 +47,7 @@ theorem sCon_reach : Reachable apps0 sCon := .tail sDep_reach (.mk _ _ _ _ sDep_
 
 /-! ## Reclaim values: ledger `cL` guarantees `cV` for `[d0, d1]`. -/
 
-def cL : FixedPart := ⟨[p0], 5, ⟨0⟩, 2, .assetHolding⟩
+def cL : FixedPart := ⟨[p0], 5, ⟨0⟩, 2, .ledger⟩
 def cV : FixedPart := ⟨[p0], 6, ⟨0⟩, 2, .virtual⟩
 def oL : Allocation Nat := [alloc d0 0, alloc d1 0, ⟨cV.address, .guarantee 1 [d0, d1]⟩]
 def oV : Allocation Nat := [alloc d0 1, alloc d1 0]
@@ -83,10 +83,10 @@ example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (c : FixedPart) (o
   ⟨g0, sDep, p0, c1, o1, 0, alloc d0 1, .refl, by decide, by decide, rfl⟩
 
 /-- `deposit_can_happen`. -/
-example : ∃ (c : FixedPart), c.kind = .assetHolding := ⟨c1, by decide⟩
+example : ∃ (c : FixedPart), c.kind = .ledger := ⟨c1, by decide⟩
 
 /-- `deposits_in_order_succeed`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart), c.kind = .assetHolding ∧
+example : ∃ (s : Adjudicator Nat) (c : FixedPart), c.kind = .ledger ∧
     s.balances.get c.address = 0 :=
   ⟨g0, c1, by decide, by decide⟩
 
@@ -123,7 +123,7 @@ example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adju
 
 /-- `transfer_can_happen`. -/
 example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (o : Allocation Nat) (amt : Coins),
-    a.kind = .assetHolding ∧ b.fundable = true ∧
+    a.kind = .ledger ∧ b.fundable = true ∧
     s.finalOutcome a.address = some (.allocation o) ∧ o.find b = some ⟨b, .alloc amt⟩ :=
   ⟨sCon, c1, d0, o1, 1, by decide, by decide, by decide, by decide⟩
 
@@ -317,7 +317,7 @@ example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat) (oL
 /-- `reclaim_can_happen`. -/
 example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
     (left right : Address Nat),
-    l.kind = .assetHolding ∧ v.kind = .virtual ∧
+    l.kind = .ledger ∧ v.kind = .virtual ∧
     s.finalOutcome l.address = some (.allocation oL) ∧
     s.finalizedWith v.address = some (.allocation oV) ∧
     oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
@@ -341,14 +341,6 @@ example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (
     ((oL.remove v.address).find left = none ∨ (oL.remove v.address).find right = none ∨
       oV.amountAt 0 + oV.amountAt 1 ≠ x) :=
   ⟨sR2, cL, cV, oL2, oV, 2, d0, d1, by decide, by decide, by decide, by decide⟩
-
-/-- `transfer_pays_at_most_held`. -/
-example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
-    s.transfer a b = some s' := ⟨sCon, c1, d0, _, rfl⟩
-
-/-- `reclaim_moves_guarantee_amount`. -/
-example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat),
-    s.reclaim l v = some s' := ⟨sR, cL, cV, _, rfl⟩
 
 /-- `mode_of_absent`. -/
 example : ∃ (s : Adjudicator Nat) (c : FixedPart), ∀ e ∈ s.status, e.1 ≠ c :=
@@ -1195,8 +1187,8 @@ example : ∃ s : Adjudicator Nat, s.IsDAG := ⟨g0, g0_dag⟩
 
 /-! ### Ledger constructions: `A = p0` at `0`, `B = q0` at `1`. -/
 
-def cLW : FixedPart := ⟨[p0, q0], 7, ⟨0⟩, 2, .assetHolding⟩
-def cχ : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 2, .assetHolding⟩
+def cLW : FixedPart := ⟨[p0, q0], 7, ⟨0⟩, 2, .ledger⟩
+def cχ : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 2, .ledger⟩
 def wLS : LedgerWithSub Nat := ⟨p0, q0, 0, 1, cLW, cχ, 0, 0, 0⟩
 def sLW : Adjudicator Nat := g0.setStatus cLW (.finalized 0 wLS.outcome wLS.outcome)
 
@@ -1319,7 +1311,7 @@ example : ∃ (s s' : Adjudicator Nat) (L : FixedPart) (A B χ : Address Nat) (a
 
 /-- `ledger_partial_withdrawal`: `cLW` is `L`, open; `cL2` is `L'`,
     challenged with its outcome until time 2. -/
-def cL2 : FixedPart := ⟨[p0, q0], 9, ⟨0⟩, 2, .assetHolding⟩
+def cL2 : FixedPart := ⟨[p0, q0], 9, ⟨0⟩, 2, .ledger⟩
 def ΩW : Outcome Nat := .allocation [alloc cL2.address (0 + 0 + 0), alloc (.external 0) 0]
 def ΩL' : Outcome Nat :=
   .allocation [alloc (.external 0) 0, alloc (.external 1) 0, alloc c3.address 0]
@@ -1396,7 +1388,7 @@ example : ∃ (v : Views Nat) (A B : Participant) (dA dB : Nat) (L L' χ : Fixed
 /-! ### SATP: a route of two peers (`p0` Alice, `q0` Bob) and of three. -/
 
 def apps2 : Apps Nat := fun id => if id = ⟨1⟩ then satpVirtualRules else consensusRules
-def Lr : FixedPart := ⟨[p0, q0], 10, ⟨0⟩, 2, .assetHolding⟩
+def Lr : FixedPart := ⟨[p0, q0], 10, ⟨0⟩, 2, .ledger⟩
 def Vr : FixedPart := ⟨[p0, q0], 11, ⟨1⟩, 2, .virtual⟩
 def r2 : Route Nat := ⟨[p0, q0], [Lr], Vr, 1, 0, fun p => p.key⟩
 def vch : Voucher := ⟨Vr, 0, 0, 0, []⟩
@@ -1466,8 +1458,8 @@ example : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat 
 
 /-- Three peers `p0`, `q0`, `w0`; `q0` is the intermediary. -/
 def w0 : Participant := ⟨2⟩
-def Lm3 : FixedPart := ⟨[p0, q0], 20, ⟨0⟩, 2, .assetHolding⟩
-def Lp3 : FixedPart := ⟨[q0, w0], 21, ⟨0⟩, 2, .assetHolding⟩
+def Lm3 : FixedPart := ⟨[p0, q0], 20, ⟨0⟩, 2, .ledger⟩
+def Lp3 : FixedPart := ⟨[q0, w0], 21, ⟨0⟩, 2, .ledger⟩
 def V3 : FixedPart := ⟨[p0, q0, w0], 22, ⟨1⟩, 2, .virtual⟩
 def r3 : Route Nat := ⟨[p0, q0, w0], [Lm3, Lp3], V3, 1, 1, fun p => p.key⟩
 
@@ -1590,7 +1582,7 @@ def sRC : Adjudicator Nat :=
 example : ∃ (s : Adjudicator Nat) (r : Route Nat) (alice bob P Pprev Pnext : Participant)
     (Lm Lp : FixedPart) (om op : Allocation Nat) (a b : Coins),
     (r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext) ∧
-    Lm.kind = .assetHolding ∧ Lp.kind = .assetHolding ∧ r.V.kind = .virtual ∧
+    Lm.kind = .ledger ∧ Lp.kind = .ledger ∧ r.V.kind = .virtual ∧
     s.finalizedWith r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
     s.finalOutcome Lm.address = some (.allocation om) ∧
@@ -1602,11 +1594,5 @@ example : ∃ (s : Adjudicator Nat) (r : Route Nat) (alice bob P Pprev Pnext : P
     a + b = r.a0 + r.b0 :=
   ⟨sRC, r3, p0, w0, q0, p0, w0, Lm3, Lp3, om3, op3, 1, 1, by decide, by decide, by decide, by decide,
     by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide, rfl⟩
-
-/-- `virtual_finalized_outcome_immutable`. -/
-example : ∃ (apps : Apps Nat) (s s' : Adjudicator Nat) (c : FixedPart) (f : Outcome Nat),
-    Relation.ReflTransGen (Step apps) s s' ∧ c.kind = .virtual ∧
-    s.finalizedWith c.address = some f :=
-  ⟨apps0, sR, sR, cV, .allocation oV, .refl, by decide, by decide⟩
 
 end ArmadaLean.Nitro.NonVacuity
