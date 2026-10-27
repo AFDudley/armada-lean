@@ -13,17 +13,56 @@ import ArmadaLean.Nitro.Outcome
 
 namespace ArmadaLean.Nitro
 
+/-- SATP:630-637 `Voucher { virtualChannelId, version, alice, bob,
+    signatures }`. -/
+structure Voucher where
+  virtualChannelId : FixedPart
+  version : Nat
+  alice : Coins
+  bob : Coins
+  signers : List Participant
+  deriving DecidableEq, Repr
+
+/-- SATP:616-620: "The setup states are given type None. Alice can move from a
+    state with type None to a state with type A, or a state with type B to a
+    state with type AB. Bob can move from ... None to ... B, or ... A to
+    AB." -/
+inductive VType
+  | none
+  | A
+  | B
+  | AB
+  deriving DecidableEq, Repr
+
+/-- The app data of a virtual channel state: its type and its voucher.
+    Operator ruling 2026-10-27: the state carries this value, not bytes;
+    ABI encoding, decoding and the round-trip theorem belong to the
+    refinement layer. -/
+structure VirtualAppData where
+  type : VType
+  voucher : Voucher
+  deriving DecidableEq, Repr
+
+/-- Application data in a state. SATP:209 `appData : bytes // parsed by
+    custom app logic`; go-nitro INitroTypes.sol:22. The SATP virtual channel
+    app reads `VirtualAppData`; every other app reads an opaque label. The
+    state carries the parsed value (operator ruling 2026-10-27). -/
+inductive AppData
+  | satpVirtual (d : VirtualAppData)
+  | opaque (label : Nat)
+  deriving DecidableEq, Repr
+
 /-- A channel state. SATP:205-211 `ChannelVars { version, isFinal, outcome,
     appData, signatures }` with the constants of SATP:218-221; go-nitro
     INitroTypes.sol:20-25 `VariablePart { outcome, appData, turnNum,
     isFinal }`. SATP calls the counter `version`; go-nitro and ForceMove:699-715
-    call it `turnNum`. The code name is used. `appData` is opaque. -/
+    call it `turnNum`. The code name is used. -/
 structure State where
   channel : FixedPart
   turnNum : Nat
   outcome : Outcome
   isFinal : Bool
-  appData : Nat
+  appData : AppData
   deriving DecidableEq, Repr
 
 /-- ForceMove:714 `State::mover: s ↦ s.channel.participants[s.turnNum % n]`

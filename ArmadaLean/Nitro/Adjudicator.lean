@@ -15,6 +15,7 @@
   through `c.appDef` (go-nitro ForceMove.sol
   `IForceMoveApp(fixedPart.appDefinition)`; SATP:304).
 -/
+import Mathlib.Logic.Relation
 import ArmadaLean.Nitro.Channel
 
 namespace ArmadaLean.Nitro
@@ -235,10 +236,10 @@ inductive Step (apps : Apps) : Adjudicator → Adjudicator → Prop
   | mk (caller : Participant) (op : Op) (s s' : Adjudicator)
       (h : s.apply apps caller op = some s') : Step apps s s'
 
-/-- The states reachable from genesis. -/
-inductive Reachable (apps : Apps) : Adjudicator → Prop
-  | genesis : Reachable apps Adjudicator.genesis
-  | step {s s'} : Reachable apps s → Step apps s s' → Reachable apps s'
+/-- The states reachable from genesis: the reflexive transitive closure of
+    `Step` (Mathlib `Relation.ReflTransGen`). -/
+def Reachable (apps : Apps) (s : Adjudicator) : Prop :=
+  Relation.ReflTransGen (Step apps) Adjudicator.genesis s
 
 /-- Apply a list of (caller, op) pairs. A failed operation changes nothing
     and the sequence continues. -/

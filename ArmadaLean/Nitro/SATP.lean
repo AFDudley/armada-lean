@@ -3,9 +3,12 @@
   A, lines 608-757) and Protocols 3.1-3.3 (SATP:407-485). See `Address.lean`
   for the source list.
 
-  Modelling choice (app data). SATP:209 says `appData` is "parsed by custom
-  app logic". The virtual channel rules read a state type and a voucher from
-  it. `Decode` is that parse, a parameter of the rules.
+  App data (operator ruling 2026-10-27, choice 5). SATP:209 says `appData` is
+  "parsed by custom app logic". Here the state carries the parsed value
+  `VirtualAppData` directly (`State.appData`, `Channel.lean`); there is no
+  byte string and no decoder. ABI encoding and decoding, and the round-trip
+  theorem `(encode v) = some v`, belong to the refinement layer, not
+  to this branch.
 
   go-nitro `VirtualPaymentApp.sol` is a different application: one-way
   vouchers from Alice to Bob, redeemed by Bob at turn 2 with the post-fund
@@ -17,36 +20,6 @@
 import ArmadaLean.Nitro.Constructions
 
 namespace ArmadaLean.Nitro
-
-/-- SATP:630-637 `Voucher { virtualChannelId, version, alice, bob,
-    signatures }`. -/
-structure Voucher where
-  virtualChannelId : FixedPart
-  version : Nat
-  alice : Coins
-  bob : Coins
-  signers : List Participant
-  deriving DecidableEq, Repr
-
-/-- SATP:616-620: "The setup states are given type None. Alice can move from a
-    state with type None to a state with type A, or a state with type B to a
-    state with type AB. Bob can move from ... None to ... B, or ... A to
-    AB." -/
-inductive VType
-  | none
-  | A
-  | B
-  | AB
-  deriving DecidableEq, Repr
-
-/-- The app data of a virtual channel state: its type and its voucher. -/
-structure VirtualAppData where
-  type : VType
-  voucher : Voucher
-  deriving DecidableEq, Repr
-
-/-- The parse of `State.appData` (SATP:209). -/
-abbrev Decode := Nat → VirtualAppData
 
 /-- SATP:703 `voucherSignedByAll(voucher, [alice, bob])`. -/
 def Voucher.SignedByBoth (v : Voucher) (alice bob : Participant) : Prop :=
@@ -61,59 +34,62 @@ def Outcome.fundedTotal : Outcome → Coins
   | .allocation o => o.amountAt 0 + o.amountAt 1
 
 /-- SATP:682-690: the start state. -/
-def validStart (decode : Decode) (c : FixedPart) (s : SignedState) : Bool :=
-  decide ((decode s.state.appData).type = .none) && decide s.ByAll && decide (s.state.channel = c)
+def validStart (c : FixedPart) (s : SignedState) : Bool :=
+  match s.state.appData with
+  | .satpVirtual d => decide (d.type = .none) && decide s.ByAll && decide (s.state.channel = c)
+  | .opaque _ => false
 
 /-- SATP:691-720: a challenge state after the start state. -/
-def validChallenge (decode : Decode) (c : FixedPart) (alice bob : Participant)
-    (s ch : SignedState) : Bool :=
-  let d := decode ch.state.appData
-  validStart decode c s && decide (s.state.turnNum = 1) && decide (ch.state.turnNum = 2) &&
-  decide (ch.state.channel = c) &&
-  ((decide (d.type = .A) && decide (alice ∈ ch.signers)) ||
-    (decide (d.type = .B) && decide (bob ∈ ch.signers))) &&
-  decide (alice ∈ d.voucher.signers) && decide (bob ∈ d.voucher.signers) &&
-  decide (d.voucher.alice + d.voucher.bob = s.state.outcome.fundedTotal) &&
-  decide (ch.state.outcome = d.voucher.outcome alice bob)
+def validChallenge (c : FixedPart) (alice bob : Participant) (s ch : SignedState) : Bool :=
+  match ch.state.appData with
+  | .satpVirtual d =>
+    validStart c s && decide (s.state.turnNum = 1) && decide (ch.state.turnNum = 2) &&
+    decide (ch.state.channel = c) &&
+    ((decide (d.type = .A) && decide (alice ∈ ch.signers)) ||
+      (decide (d.type = .B) && decide (bob ∈ ch.signers))) &&
+    decide (alice ∈ d.voucher.signers) && decide (bob ∈ d.voucher.signers) &&
+    decide (d.voucher.alice + d.voucher.bob = s.state.outcome.fundedTotal) &&
+    decide (ch.state.outcome = d.voucher.outcome alice bob)
+  | .opaque _ => false
 
 /-- SATP:722-740: a response state after a challenge state. -/
-def validResponse (decode : Decode) (c : FixedPart) (alice bob : Participant)
-    (s ch re : SignedState) : Bool :=
-  let dc := decode ch.state.appData
-  let dr := decode re.state.appData
-  validChallenge decode c alice bob s ch && decide (re.state.turnNum = 3) &&
-  decide (re.state.channel = c) && decide (dr.type = .AB) &&
-  (!decide (dc.type = .A) || decide (bob ∈ re.signers)) &&
-  (!decide (dc.type = .B) || decide (alice ∈ re.signers)) &&
-  decide (alice ∈ dr.voucher.signers) && decide (bob ∈ dr.voucher.signers) &&
-  decide (dc.voucher.version < dr.voucher.version) &&
-  decide (dr.voucher.alice + dr.voucher.bob = s.state.outcome.fundedTotal) &&
-  decide (re.state.outcome = dr.voucher.outcome alice bob)
+def validResponse (c : FixedPart) (alice bob : Participant) (s ch re : SignedState) : Bool :=
+  match ch.state.appData, re.state.appData with
+  | .satpVirtual dc, .satpVirtual dr =>
+    validChallenge c alice bob s ch && decide (re.state.turnNum = 3) &&
+    decide (re.state.channel = c) && decide (dr.type = .AB) &&
+    (!decide (dc.type = .A) || decide (bob ∈ re.signers)) &&
+    (!decide (dc.type = .B) || decide (alice ∈ re.signers)) &&
+    decide (alice ∈ dr.voucher.signers) && decide (bob ∈ dr.voucher.signers) &&
+    decide (dc.voucher.version < dr.voucher.version) &&
+    decide (dr.voucher.alice + dr.voucher.bob = s.state.outcome.fundedTotal) &&
+    decide (re.state.outcome = dr.voucher.outcome alice bob)
+  | _, _ => false
 
 /-- SATP:669-741 `validateOutcomeChange` (Listing 3). `alice = peers[0]`,
     `bob = peers.at(-1)` (SATP:679-680). `proof` is the start state, the
     start and a challenge, or the start, a challenge and a response;
     `candidate` is the last of them. -/
-def validateOutcomeChange (decode : Decode) (c : FixedPart) (alice bob : Participant) :
+def validateOutcomeChange (c : FixedPart) (alice bob : Participant) :
     SupportProof → State → Bool
-  | [s], candidate => validStart decode c s && decide (s.state = candidate)
-  | [s, ch], candidate => validChallenge decode c alice bob s ch && decide (ch.state = candidate)
+  | [s], candidate => validStart c s && decide (s.state = candidate)
+  | [s, ch], candidate => validChallenge c alice bob s ch && decide (ch.state = candidate)
   | [s, ch, re], candidate =>
-    validResponse decode c alice bob s ch re && decide (re.state = candidate)
+    validResponse c alice bob s ch re && decide (re.state = candidate)
   | _, _ => false
 
 /-- SATP:644-667 `latestSupportedState` of the virtual channel app: version
     `≤ 1` needs consensus (pre-fund 0, post-fund 1); version `4` needs
     consensus and `isFinal`; otherwise `validateOutcomeChange`. The result is
     the last state received. -/
-def satpVirtualRules (decode : Decode) : Rules where
+def satpVirtualRules : Rules where
   supports c proof candidate :=
     match c.participants.head?, c.participants.getLast? with
     | some alice, some bob =>
       if candidate.turnNum ≤ 1 then consensusRules.supports c proof candidate
       else if candidate.turnNum = 4 then
         consensusRules.supports c proof candidate && candidate.isFinal
-      else validateOutcomeChange decode c alice bob proof candidate
+      else validateOutcomeChange c alice bob proof candidate
     | _, _ => false
 
 /-- SATP:408-409: the pre-fund outcome `{A : A(a0), B : A(b0)}`. -/

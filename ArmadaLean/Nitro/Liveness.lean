@@ -397,9 +397,9 @@ theorem ledger_partial_withdrawal (apps : Apps) (Ts : Threats apps) (v : Views)
     `voucher1.alice + voucher1.bob == x`" and the same for `voucher2`. Every
     state that `validateOutcomeChange` supports keeps the funded total of the
     start state. -/
-theorem satp_outcome_change_keeps_total (decode : Decode) (c : FixedPart) (alice bob : Participant)
+theorem satp_outcome_change_keeps_total (c : FixedPart) (alice bob : Participant)
     (proof : SupportProof) (candidate : State)
-    (h : validateOutcomeChange decode c alice bob proof candidate = true) (s0 : SignedState)
+    (h : validateOutcomeChange c alice bob proof candidate = true) (s0 : SignedState)
     (h0 : proof.head? = some s0) :
     candidate.outcome.fundedTotal = s0.state.outcome.fundedTotal ∧
     (candidate ≠ s0.state → ∃ a b, PairOutcome alice bob candidate.outcome a b ∧
@@ -413,8 +413,8 @@ theorem satp_outcome_change_keeps_total (decode : Decode) (c : FixedPart) (alice
     what an honest signer controls: every all-signed setup state carries the
     original outcome, and every all-signed final state keeps the total
     (SATP:751-753). -/
-theorem satp_lemma_3_1 (apps : Apps) (decode : Decode) (r : Route) (alice bob : Participant)
-    (hr : r.WellFormed apps) (hV : apps r.V.appDef = satpVirtualRules decode)
+theorem satp_lemma_3_1 (apps : Apps) (r : Route) (alice bob : Participant)
+    (hr : r.WellFormed apps) (hV : apps r.V.appDef = satpVirtualRules)
     (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
     (hsetup : ∀ ss : SignedState, ss.ByAll → ss.state.channel = r.V → ss.state.turnNum ≤ 1 →
       ss.state.outcome = originalOutcome alice bob r.a0 r.b0)
@@ -432,9 +432,9 @@ theorem satp_lemma_3_1 (apps : Apps) (decode : Decode) (r : Route) (alice bob : 
     actions to ensure V finalized with an outcome {A : a, B : b}, where
     a0 + b0 = a + b." A peer who holds the all-signed post-fund state and
     signed no state that breaks the total can force such a finalization. -/
-theorem satp_peers_can_finalize (apps : Apps) (decode : Decode) {p : Participant} (T : Threat p)
+theorem satp_peers_can_finalize (apps : Apps) {p : Participant} (T : Threat p)
     (A : Assumptions apps p T) (r : Route) (alice bob : Participant) (hr : r.WellFormed apps)
-    (hV : apps r.V.appDef = satpVirtualRules decode) (hp : p ∈ r.peers)
+    (hV : apps r.V.appDef = satpVirtualRules) (hp : p ∈ r.peers)
     (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
     (hdur : 0 < r.V.challengeDuration) (net : NetworkState p) (s1 : SignedState)
     (hh : net.Holds s1) (hall : s1.ByAll) (hchan : s1.state.channel = r.V)
@@ -455,9 +455,9 @@ theorem satp_peers_can_finalize (apps : Apps) (decode : Decode) {p : Participant
     has an unbeatable strategy (Protocol 3.3, SATP:480-485) to finalize both
     ledgers with no guarantee for `V` and its pre-protocol balances
     restored. -/
-theorem satp_theorem_3_2 (apps : Apps) (decode : Decode) {P : Participant} (T : Threat P)
+theorem satp_theorem_3_2 (apps : Apps) {P : Participant} (T : Threat P)
     (A : Assumptions apps P T) (r : Route) (alice bob : Participant) (hr : r.WellFormed apps)
-    (hV : apps r.V.appDef = satpVirtualRules decode)
+    (hV : apps r.V.appDef = satpVirtualRules)
     (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
     (i : Nat) (hi : 1 ≤ i) (hin : i + 1 < r.peers.length) (hP : r.peers[i]? = some P)
     (Pprev Pnext : Participant) (hprev : r.peers[i - 1]? = some Pprev)
@@ -499,9 +499,9 @@ theorem satp_intermediary_before_round2 (apps : Apps) {P : Participant} (T : Thr
     `L0` with no guarantee for `V` and her entry raised by `a` from its
     Round 2 level, so she is owed her pre-protocol balance minus `a0` plus
     `a`. -/
-theorem satp_end_user_recovers (apps : Apps) (decode : Decode) {P : Participant} (T : Threat P)
+theorem satp_end_user_recovers (apps : Apps) {P : Participant} (T : Threat P)
     (A : Assumptions apps P T) (r : Route) (alice bob : Participant) (hr : r.WellFormed apps)
-    (hV : apps r.V.appDef = satpVirtualRules decode)
+    (hV : apps r.V.appDef = satpVirtualRules)
     (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
     (hPA : P = alice) (P1 : Participant) (hP1 : r.peers[1]? = some P1)
     (L0 : FixedPart) (hL0 : r.ledgers[0]? = some L0)

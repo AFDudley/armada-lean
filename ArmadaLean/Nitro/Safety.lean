@@ -228,16 +228,18 @@ theorem redistribution_conserves_total (apps : Apps) (s s' : Adjudicator) (calle
     s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal := by
   sorry
 
-/-- The outcomes a finalized outcome can become through redistribution:
-    Nitro:770 (transfer), SATP:358-361 and go-nitro
-    `compute_reclaim_effects` (reclaim on the ledger). -/
-inductive Redistributed : Outcome → Outcome → Prop
-  | refl (Ω : Outcome) : Redistributed Ω Ω
-  | reduce {o : Allocation} (d : Address) (x : Coins) (Ω : Outcome) :
-      Redistributed Ω (.allocation o) → Redistributed Ω (.allocation (o.reduceOwed d x))
-  | reclaim {o : Allocation} (left right v : Address) (x y : Coins) (Ω : Outcome) :
-      Redistributed Ω (.allocation o) →
-      Redistributed Ω (.allocation (((o.addTo left x).addTo right y).remove v))
+/-- One redistribution of a finalized outcome: Nitro:770 (transfer),
+    SATP:358-361 and go-nitro `compute_reclaim_effects` (reclaim on the
+    ledger). -/
+inductive RedistributeStep : Outcome → Outcome → Prop
+  | reduce (o : Allocation) (d : Address) (x : Coins) :
+      RedistributeStep (.allocation o) (.allocation (o.reduceOwed d x))
+  | reclaim (o : Allocation) (left right v : Address) (x y : Coins) :
+      RedistributeStep (.allocation o) (.allocation (((o.addTo left x).addTo right y).remove v))
+
+/-- Zero or more redistributions (Mathlib `Relation.ReflTransGen`). -/
+def Redistributed : Outcome → Outcome → Prop :=
+  Relation.ReflTransGen RedistributeStep
 
 /-- Nitro-11, ForceMove-B03, SATP-16, docs-0070-04, ForceMove-A14.
     SATP:284-292: assets are released on explicit consent (conclude) or

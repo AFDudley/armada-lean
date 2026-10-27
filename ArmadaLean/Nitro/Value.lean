@@ -14,6 +14,7 @@
   carries an ordering: the algorithm's result is the relation
   `Adjudicator.TurboValue`.
 -/
+import Mathlib.Logic.Relation
 import ArmadaLean.Nitro.Strategy
 
 namespace ArmadaLean.Nitro
@@ -32,10 +33,12 @@ def Adjudicator.allocationOf (s : Adjudicator) (n : Address) : Allocation :=
 def Adjudicator.Edge (s : Adjudicator) (n d : Address) : Prop :=
   d.isParticipant = false ∧ ∃ e ∈ s.allocationOf n, e.dest = d
 
-/-- A relation with no cycle: no node reaches itself by one or more steps.
-    Operator ruling 2026-10-27. -/
+/-- A relation with no cycle: no node reaches itself by one or more steps,
+    `∀ c, ¬ Relation.TransGen edge c c` (operator ruling 2026-10-27), stated
+    as `IsIrrefl` of the transitive closure (Mathlib `Relation.TransGen`,
+    core `IsIrrefl`; `IsIrrefl.irrefl` is the ruling's formula). -/
 def Acyclic {α : Type} (edge : α → α → Prop) : Prop :=
-  ∀ c, ¬ Relation.TransGen edge c c
+  IsIrrefl α (Relation.TransGen edge)
 
 /-- Nitro:796-798: "A topological ordering is an ordering of nodes such that, if
     N1 ↦ N2 is an edge, then N1 < N2." Every node with a balance or an

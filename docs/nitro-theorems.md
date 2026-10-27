@@ -31,6 +31,10 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 - **Challenger must be a participant.** SATP Listing 1 has no caller check. go-nitro `_requireChallengerIsParticipant` (ForceMove.sol:178-190) requires it; ForceMove:1545-1548 proposed it. The model follows the code.
 - **Channel id includes challengeDuration.** SATP:213 hashes `(peers, appDef, nonce)`; go-nitro NitroUtils.sol:122-133 hashes the four fixed fields. The model id is the whole fixed part, as in the code.
 
+## Mathlib (operator ruling 2026-10-27)
+
+Mathlib `v4.33.1` is a dependency. Hand-written definitions replaced by Mathlib ones, with the meaning unchanged: `Reachable` is `Relation.ReflTransGen (Step apps) genesis`; `Redistributed` is `Relation.ReflTransGen RedistributeStep` (the one-step inductive stays); `Acyclic edge` is `IsIrrefl α (Relation.TransGen edge)`, whose `irrefl` field is the ruling's `∀ c, ¬ TransGen edge c c`. Sums stay core `List.sum`; `List.lookup`, `List.Nodup`, `List.all` are core.
+
 ## Operator ruling 2026-10-27: reclaim only
 
 The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHolder.reclaim`). Nitro 2019's `claim`, the guarantee-channel outcome, the reprioritization rule, the Minimum Payout Calculation, the Nitro Lower-bound Value Algorithm and the Nitro §6.3-6.5 guarantee-channel construction are dropped. The affected ids (Nitro-39 to Nitro-48, and the §6.5 part of Nitro-49) are `superseded-by SATP-15`. Removed theorems: `claim_requires`, `claim_effects`, `claim_fails_otherwise`, `reprioritize_example`, `reprioritize_keeps_amounts`, `claim_order_dependent`, `nitro_lower_bound_achievable`, `nitro_lower_bound_underestimates`, `overfunded_min_payout`, `fully_funded_min_payout`, `single_guarantee_determined`, `figure23_lower_bound`, `end_participant_offloads`, `intermediary_recovers_collateral`, `virtual_open_value_preserving`, `virtual_close_value_preserving`. Every guarantee-item theorem that `reclaim` uses is kept.
@@ -55,7 +59,7 @@ The specification keeps only `reclaim` (SATP Listing 2, go-nitro `MultiAssetHold
 - Applications: `Apps := AppId → Rules`; `Rules.supports` is a computable `Bool` function, as go-nitro `stateIsSupported` returns `bool`. Operator ruling 2026-10-27 (this replaced a `Prop` with classical decisions; `challenge`, `checkpoint` and `conclude` are computable and `#eval` runs them). The ForceMove game library `vt` and the SATP `validateOutcomeChange` are `Bool` functions too.
 - The game (Nitro §4): one adversary controls every other participant (Nitro:460-461). One round of `Unbeatable` is a finite feasible adversary prefix, then one honest move; this is front-running (Nitro:540-542). `Assumptions.unimpeded` (SATP:166-167, Nitro:537-539) forbids the adversary to move the clock to a pending deadline of the honest participant; only the honest `wait` reaches a deadline. `Unbeatable` is an inductive strategy tree; `Prevents` is a safety property over `Run`s, used for enabled outcomes. Approved by the operator, 2026-10-27.
 - DAG: operator ruling 2026-10-27. "The network of outcomes is a DAG" means no channel reaches itself by following edges: `Acyclic edge := ∀ c, ¬ Relation.TransGen edge c c` with `edge A B` = "A's outcome allocates to channel B" (`Adjudicator.Edge`, `Adjudicator.IsDAG`). No theorem type carries a topological ordering; the Turbo Value Algorithm's result is the relation `Adjudicator.TurboValue n x` (some topological ordering gives `x`), and `turbo_value_exists_unique` states that on a DAG it exists and is unique. A proof that needs an ordering derives it as a lemma (Nitro:798-799).
-- SATP app data: `Decode : Nat → VirtualAppData` is the parse of `appData` (SATP:209).
+- SATP app data: operator ruling 2026-10-27 (choice 5, changed). The state carries the parsed value: `State.appData : AppData` with constructors `satpVirtual (d : VirtualAppData)` and `opaque label`. The earlier `Decode : Nat → VirtualAppData` parameter and every `decode` argument are removed. ABI encoding, decoding and the round-trip theorem `decode (encode v) = some v` belong to the refinement layer, not to this branch.
 - Every `theorem` has proof `sorry`, including the ones a one-line proof would close, so that the sorry count equals the theorem count.
 
 ## Property map (189 ids)
@@ -177,7 +181,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-48 | superseded-by SATP-15 (reclaim; operator ruling 2026-10-27: Nitro 2019 claim and the guarantee channel are dropped); the SATP form of intermediary recovery is theorem satp_theorem_3_2 |
 | Nitro-49 | theorem consensus_enabled_outcomes, subchannel_open_value_preserving, subchannel_close_value_preserving, ledger_topup_reorder_safe, ledger_topup_deposit_funds, ledger_partial_withdrawal (the §6.5 virtual channel sequences are superseded-by SATP-15 Protocols 3.1-3.2, ruling 2026-10-27) |
 | SATP-01 | definition FixedPart |
-| SATP-02 | definition State |
+| SATP-02 | definition State, AppData |
 | SATP-03 | definition State (FixedPart plus the variable fields) |
 | SATP-04 | definition ChannelStatus, Adjudicator.statusOf |
 | SATP-05 | definition FixedPart.address; theorem channel_address_inj |
@@ -193,7 +197,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | SATP-15 | theorem reclaim_requires, reclaim_effects, reclaim_can_happen, reclaim_fails_without_entries (go-nitro adds the left/right and amount checks) |
 | SATP-16 | theorem finalized_two_ways, conclude_can_happen, held_falls_only_by_payout |
 | SATP-17 | definition satpVirtualRules |
-| SATP-18 | definition validateOutcomeChange, validStart, validChallenge, validResponse (Bool, ruling 2026-10-27) |
+| SATP-18 | definition validateOutcomeChange, validStart, validChallenge, validResponse, VirtualAppData, Voucher, VType (Bool on the structured app data, ruling 2026-10-27) |
 | SATP-19 | theorem satp_outcome_change_keeps_total |
 | SATP-20 | theorem satp_theorem_3_2, satp_intermediary_before_round2, satp_end_user_recovers, satp_reclaim_credits_intermediary |
 | SATP-21 | theorem satp_lemma_3_1, satp_peers_can_finalize |
