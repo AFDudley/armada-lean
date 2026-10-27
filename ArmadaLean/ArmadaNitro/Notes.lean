@@ -23,6 +23,8 @@ import ArmadaLean.Nitro.Liveness
 
 namespace ArmadaLean.ArmadaNitro
 
+set_option autoImplicit false
+
 open ArmadaLean.Nitro (Coins Participant)
 
 /-- A pool note as the pool identifies it: its `(treeNumber, position)` key and

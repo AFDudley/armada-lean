@@ -19,6 +19,8 @@ import ArmadaLean.ArmadaNitro.Notes
 
 namespace ArmadaLean.ArmadaNitro
 
+set_option autoImplicit false
+
 open ArmadaLean.Nitro (Coins Time Participant FixedPart Address ChannelStatus Balances Adjudicator)
 
 /-- One channel of one token: its status and its notes. -/

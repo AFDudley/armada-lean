@@ -22,6 +22,8 @@ import ArmadaLean.ArmadaNitro.State
 
 namespace ArmadaLean.ArmadaNitro
 
+set_option autoImplicit false
+
 open ArmadaLean.Nitro (Coins Time Participant FixedPart Address Outcome Allocation Entry Item
   ChannelStatus Apps Adjudicator SignedState SupportProof)
 

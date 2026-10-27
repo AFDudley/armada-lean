@@ -28,3 +28,11 @@ import ArmadaLean.Nitro.Constructions
 import ArmadaLean.Nitro.SATP
 import ArmadaLean.Nitro.Safety
 import ArmadaLean.Nitro.Liveness
+-- Armada adjudicator: Nitro over Armada pool notes; see docs/armada-nitro-theorems.md
+import ArmadaLean.ArmadaNitro.Notes
+import ArmadaLean.ArmadaNitro.State
+import ArmadaLean.ArmadaNitro.Operations
+import ArmadaLean.ArmadaNitro.Refinement
+import ArmadaLean.ArmadaNitro.Safety
+import ArmadaLean.ArmadaNitro.Strategy
+import ArmadaLean.ArmadaNitro.Liveness
