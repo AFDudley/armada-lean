@@ -10,6 +10,9 @@ Toolchain: Lean v4.33.1, no Mathlib.
   proof `sorry`. The operator approves the type first.
 - A theorem whose type changed only because a definition moved (`Token` for `Nat`,
   `Term` for the bound-parameters hash) keeps a repaired proof.
+- Exception, by operator instruction (2026-10-27): the fee theorems, `leaf_stable`,
+  `shield_creates_exactly` and `shield_can_happen` have full proofs, because the old
+  proofs port.
 - A helper lemma that a kept proof needs is proved. So every kept statement stays
   free of `sorryAx` (checked with `#print axioms`, for example `core_invariant`,
   `pool_no_double_spend`, `pool_preimageOf_consistent`, `live_note_unspent`).
@@ -197,10 +200,31 @@ Changes:
 - `fee_bounded`, `fee_conservation`, `fee_monotone`: before `(feeBP : Nat)
   (h : feeBP ≤ BASIS)`; after `(r : FeeRatio)`. `fee_zero_below_threshold`: before
   `(h : amount < 200) : shieldFee 50 amount = 0`; after `(r : FeeRatio)
-  (h : amount * r.num < r.den) : shieldFee r amount = 0`. All `sorry`.
-- `Step.shield (token : Token) (value : Nat) (npk : Term) (hValue : 0 < value)
-  (hSpendable : Spendable value)`. `value` is the net amount. The fee leg never passes
-  through the pool, so the pool step does not compute it.
+  (h : amount * r.num < r.den) : shieldFee r amount = 0`. All four are proved (the old
+  proofs port; `fee_bounded` 5 lines, the others 1 to 2 lines). `#print axioms
+  fee_conservation` lists `propext, Quot.sound`.
+- Operator ruling, 2026-10-27: the shield fee is pool behaviour and belongs in the
+  shield step. The pool computes `(base, fee)` with `_getFee` (ShieldModule.sol:353-371),
+  gives the note `base`, and pays `fee` to the treasury. On the local path
+  `_transferTokenIn` (ShieldModule.sol:324-340) pulls `base` into the pool and the fee
+  from the caller to the treasury; on the cross-chain path `_applyShieldFee`
+  (ShieldModule.sol:209-218) pays the fee from the pool's balance. The first version of
+  this branch said the fee leg never passes through the pool and took the net amount;
+  that was wrong for the cross-chain path, and the ruling puts the fee in the step on
+  both paths.
+- `PoolState.feeRatio : FeeRatio` is set at genesis (`genesis r`) and no step changes
+  it (`step_feeRatio`, proved: `cases h <;> rfl`). `Reachable` starts from
+  `genesis r` for some `r`. `PoolState.treasuryFees : Token → Nat` is the ghost record
+  of fees paid to the treasury.
+- `Step.shield (token : Token) (x : Nat) (npk : Term) (hValue : 0 < x)
+  (hSpendable : Spendable (shieldBase s.feeRatio x))`. `x` is the gross amount. The note
+  is `⟨npk, token, shieldBase s.feeRatio x⟩`; `held` grows by `shieldBase s.feeRatio x`;
+  `treasuryFees token` grows by `shieldFee s.feeRatio x`. `hValue` is the contract's own
+  check on the gross request (`_validateCommitmentPreimage`, ShieldModule.sol:244, called
+  at :59 before the fee is taken). So with `num = den` the note value can be 0, as in
+  the contract.
+- The fee-module and privileged-caller branches of `_transferTokenIn`
+  (ShieldModule.sol:286-323) are not modeled.
 
 ### P-10. No `ownedRandomOf` map
 
@@ -224,7 +248,11 @@ Changes:
 ### P-11. Trees as a list of trees
 
 - `PoolState.trees : List TreeState` replaces `closedTrees`, `leaves`, `roots`. The last
-  tree is the one that receives leaves. `genesis.trees = [⟨[], [treeRoot TreeDepth []]⟩]`.
+  tree is the one that receives leaves. `genesisTrees = [⟨[], [treeRoot TreeDepth []]⟩]`
+  and `(genesis r).trees = genesisTrees`.
+- `transact_root_was_produced` and its helper `rootsAt_grounded`: `genesis.rootsAt' tn`
+  became `rootsAt genesisTrees tn`, because `genesis` now takes the fee rate (P-9).
+  Proofs repaired.
 - `insertLeaves trees newLeaves`, `insertTree trees count`, `insertStart trees count`
   replace `insertResult`, `insertTreeNumber`, `insertStartPos`. One equation,
   `insertLeaves_getElem?` ("an insertion changes only the target tree, and extends
@@ -237,14 +265,33 @@ Changes:
   `hNotPaused`, `grossAmount`, `feeBP`, `hFeeBP`, `hRange`; after, `∃ tn pos` with
   `(s.leavesAt' tn)[pos]? = none` (fresh), `(s'.leavesAt' tn)[pos]? = some
   (hashCommitment note)`, and the same `live`/`held` facts; hypotheses `hValue`,
-  `hSpendable`. `sorry`.
+  `hSpendable`. After the P-9 ruling (2026-10-27) the type is:
+
+  ```lean
+  theorem shield_creates_exactly {s : PoolState} (token : Token) (x : Nat) (npk : Term)
+      (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) :
+      ∃ s', Step s s' ∧ ∃ tn pos : Nat,
+        (s.leavesAt' tn)[pos]? = none ∧
+        (s'.leavesAt' tn)[pos]? = some (hashCommitment ⟨npk, token, shieldBase s.feeRatio x⟩) ∧
+        s'.live token =
+          ((tn, pos), (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)) :: s.live token ∧
+        s'.held token = s.held token + shieldBase s.feeRatio x ∧
+        s'.treasuryFees token = s.treasuryFees token + shieldFee s.feeRatio x ∧
+        shieldBase s.feeRatio x + shieldFee s.feeRatio x = x ∧
+        (∀ t, t ≠ token → s'.live t = s.live t ∧ s'.held t = s.held t ∧
+          s'.treasuryFees t = s.treasuryFees t)
+  ```
+
+  Proved (8 lines; `fee_conservation` gives the sum). `#print axioms` lists
+  `EdDSAVerify, propext, Quot.sound`.
 - Not changed: an empty batch still pushes one root (audit, "Other observations").
 
 ## Other changed types (can-happen theorems)
 
 - `shield_can_happen`: before `(token grossAmount feeBP : Nat) (hNotPaused) (hValue :
-  0 < grossAmount) (hFeeBP) (hRange)`; after `(token : Token) (value : Nat) (npk)
-  (hValue : 0 < value) (hSpendable : Spendable value)`. `sorry`.
+  0 < grossAmount) (hFeeBP) (hRange)`; after (P-9 ruling, 2026-10-27) `(token : Token)
+  (x : Nat) (npk : Term) (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio
+  x)) : ∃ s', Step s s'`, with `x` the gross amount. Proved (1 line).
 - `transact_can_happen`: added `(caller) (bp) (hAdapt) (hNoUnshield : bp.unshield =
   none)`; `treeNumber` → `bp.treeNumber`; `token : Token`; removed
   `boundParamsHash : Nat`. `sorry`.
@@ -351,11 +398,13 @@ Two findings from the type:
 
 ## Theorems whose type changed (for operator approval)
 
-`sorry` (type changed in hypotheses or conclusion):
+Type changed, proved (operator instruction 2026-10-27, old proofs port):
 `fee_bounded`, `fee_conservation`, `fee_monotone`, `fee_zero_below_threshold` (P-9);
+`shield_creates_exactly` (P-3, P-6, P-9, P-11); `shield_can_happen` (P-3, P-6, P-9).
+
+`sorry` (type changed in hypotheses or conclusion):
 `owned_spend_can_happen` (P-1, P-2, P-4); `transact_unshield_exact` (P-7);
-`shield_creates_exactly` (P-3, P-6, P-9, P-11); `transactOwned_records_all` (P-4);
-`shield_can_happen` (P-3, P-6, P-9); `transact_can_happen` (P-1, P-2, P-7);
+`transactOwned_records_all` (P-4); `transact_can_happen` (P-1, P-2, P-7);
 `unshield_can_happen` (P-1, P-2, P-7); `owned_transact_can_happen` (P-1, P-2, P-4);
 `leaf_has_merkle_witness` (P-8); `owned_spend_witness_exists` (P-1, P-2, P-8, P-10);
 `live_leaf_matches` (P-1, P-8); `live_values_spendable` (P-6, was
@@ -366,7 +415,7 @@ Two findings from the type:
 
 Proof repaired (type changed only by a moved definition): `commitment_owner_inj`,
 `commitment_mpk_inj`, `spend_live_exact`, `live_note_unspent`,
-`transact_spend_can_happen`.
+`transact_spend_can_happen`, `transact_root_was_produced` (`genesisTrees`, P-9).
 
 Restored with a changed type (P-8: `Option` lookup for `getD` with a default), proved
 by operator ruling: `leaf_stable`, `step_leavesAt_stable` (see P-5).
@@ -376,7 +425,9 @@ Helpers with a new or changed type, proved: `tokenId_inj`, `hashBoundParams_inj`
 `value_ofFn_eq`, `value_ofFn_pos_eq`, `transact_balance`, `unshieldRefines_length_le`,
 `unshieldRefines_mem`, `applyRecords_returns`, the `insertLeaves_*`/`insertTree_*`
 lemmas, `step_live_leaf_matches`, `reachable_live_leaf_matches`,
-`genesis_live_values_spendable`, `step_preserves_live_values_spendable`.
+`genesis_live_values_spendable`, `step_preserves_live_values_spendable`,
+`genesis_invariant`, `genesis_live_spent_invariant`, `rootsAt_grounded` (all now take or
+use the fee rate of `genesis r`), `step_feeRatio` (new).
 
 ## Removed theorems
 

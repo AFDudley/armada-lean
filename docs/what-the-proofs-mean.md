@@ -25,7 +25,7 @@ Lean and proved the properties that the internal security review
 | `transact_no_double_spend` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. |
 | `inflation_attack_profitable` | On the *current* yield vault share math, the first-depositor inflation attack (issue #365) is provably profitable — the vulnerability is real, not theoretical. |
 | `mitigated_attack_unprofitable` | With the standard virtual-shares fix, the same attack is provably *un*profitable — the fix is mathematically sufficient. |
-| `fee_*` | The shield fee, a ratio fixed at deployment with floor division, conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). On branch `pool-symbolic` these proofs are `sorry` until the operator approves the new types (`docs/pool-symbolic-changes.md`). |
+| `fee_*` | The shield fee, a ratio fixed at deployment with floor division, conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). |
 
 ## The trust base — what you are trusting when you trust these proofs
 

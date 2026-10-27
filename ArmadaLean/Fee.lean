@@ -14,12 +14,11 @@
   verifying keys and fees once at deployment"). The contract's rate is the case
   `den = 10000`.
 
-  The fee leg moves from the caller's wallet to the treasury and never passes through
-  the pool (`ArmadaLean.Pool`, module comment). So the pool's books see only `base`,
-  and `Step.shield` takes the value that enters the pool. This file is the separate
-  specification of how `base` follows from the gross amount. Audit finding P-9
-  (armada-laconic `labbook/2026-10-26-pool-layout-audit.md`) records the earlier
-  per-shield basis-point argument.
+  The pool applies the fee in the shield step (`ArmadaLean.Pool.Step.shield`, with the
+  deployment rate `PoolState.feeRatio`): the note gets `shieldBase`, the treasury gets
+  `shieldFee` (ShieldModule.sol:324-340 local path, :209-218 cross-chain path). Audit
+  finding P-9 (armada-laconic `labbook/2026-10-26-pool-layout-audit.md`) records the
+  earlier per-shield basis-point argument.
 -/
 
 /-- A fee rate fixed at deployment: the fraction `num / den`, with `den > 0` and
@@ -41,23 +40,27 @@ def shieldBase (r : FeeRatio) (amount : Nat) : Nat := amount - shieldFee r amoun
 /-- **The fee never exceeds the shielded amount.** `base` in `_getFee` is well defined
     and the subtraction cannot underflow. -/
 theorem fee_bounded (r : FeeRatio) (amount : Nat) : shieldFee r amount ≤ amount := by
-  sorry
+  unfold shieldFee
+  rw [Nat.div_le_iff_le_mul_add_pred r.den_pos]
+  have h2 : amount * r.num ≤ amount * r.den := Nat.mul_le_mul_left amount r.num_le_den
+  rw [Nat.mul_comm amount r.den] at h2
+  omega
 
 /-- **Conservation: `base + fee = amount`.** The fee split is exact: every unit of the
     shielded amount goes either to the pool (`base`) or to the fee recipient (`fee`). -/
 theorem fee_conservation (r : FeeRatio) (amount : Nat) :
-    shieldBase r amount + shieldFee r amount = amount := by
-  sorry
+    shieldBase r amount + shieldFee r amount = amount :=
+  Nat.sub_add_cancel (fee_bounded r amount)
 
 /-- **The fee is monotone in the shielded amount.** Shielding more never reduces the
     absolute fee. -/
 theorem fee_monotone (r : FeeRatio) {a b : Nat} (hab : a ≤ b) :
-    shieldFee r a ≤ shieldFee r b := by
-  sorry
+    shieldFee r a ≤ shieldFee r b :=
+  Nat.div_le_div_right (Nat.mul_le_mul_right r.num hab)
 
 /-- **Rounding threshold.** A shield whose `amount * num` is below `den` pays no fee:
     floor division rounds it down to zero. At the contract's 50 basis points
     (`num = 50`, `den = 10000`) this is every amount below 200. -/
 theorem fee_zero_below_threshold (r : FeeRatio) (amount : Nat) (h : amount * r.num < r.den) :
-    shieldFee r amount = 0 := by
-  sorry
+    shieldFee r amount = 0 :=
+  Nat.div_eq_of_lt h

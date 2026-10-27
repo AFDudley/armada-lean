@@ -63,12 +63,15 @@
   differ. Armada charges a shield-in fee only (`ArmadaLean.Fee`) and no withdrawal fee
   (TransactModule.sol:32, "Unshields are always free").
 
-  DEPARTURE (contract, confirmed by reading the source): no fee note. `_transferTokenIn`
-  pays the fee leg with `token.safeTransferFrom(msg.sender, treasury, ...)`
-  (ShieldModule.sol:295-340), straight from the caller's wallet, never through the pool
-  and never as a commitment. `Step.shield` creates one note, of the post-fee value.
-  Separately, `_recognizeFee` (PrivacyPoolStorage.sol:280-285) recognizes ANY output
-  whose `npk` equals the governance `feeRecipient`, against labbook T9.
+  The shield fee is pool behaviour (operator ruling, 2026-10-27, finding P-9). The pool
+  splits the gross amount with `_getFee` (ShieldModule.sol:353-371) and pays the fee to
+  the treasury: from the caller's wallet on the local path (`_transferTokenIn`,
+  ShieldModule.sol:324-340), from the pool's balance on the cross-chain path
+  (`_applyShieldFee`, ShieldModule.sol:209-218). `Step.shield` takes the gross amount,
+  creates one note of `shieldBase`, records `shieldFee` in `PoolState.treasuryFees`, and
+  grows custody by `shieldBase` only. No fee note is created. Separately, `_recognizeFee`
+  (PrivacyPoolStorage.sol:280-285) recognizes ANY output whose `npk` equals the
+  governance `feeRecipient`, against labbook T9.
 
   DEPARTURE (contract, `testingMode`): `PrivacyPool.verify`/`verifyOwned`
   (PrivacyPool.sol:506-601) return `true` with no witness when `testingMode` is on.
@@ -89,6 +92,7 @@
 import ArmadaLean.PoolOwned
 import ArmadaLean.Transact
 import ArmadaLean.BoundParams
+import ArmadaLean.Fee
 
 /-! ### Removing a sub-multiset of live notes, by key
 
@@ -860,7 +864,13 @@ structure Payout where
     * `preimageOf`: `PrivacyPoolStorage.preimageOf` (PrivacyPoolStorage.sol:248).
     * `published`: ghost record of the owned-note openings that transactions
       published (`ArmadaLean.PoolOwned.OwnedOpening`, decision 11).
-    * `payouts`: ghost record of unshield payouts (`Payout`). -/
+    * `payouts`: ghost record of unshield payouts (`Payout`).
+    * `feeRatio`: the shield fee rate, set once at deployment (decision 7 of labbook
+      `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`). No step changes it
+      (`step_feeRatio`).
+    * `treasuryFees t`: ghost record of the shield fees of token `t` paid to the
+      treasury (`_transferTokenIn`, ShieldModule.sol:324-340; `_applyShieldFee`,
+      ShieldModule.sol:209-218). -/
 structure PoolState where
   live : Token → List ((Nat × Nat) × CommitmentPreimage)
   spent : Nat → NullifierSet
@@ -869,6 +879,8 @@ structure PoolState where
   preimageOf : PreimageRegistry
   published : List (Term × OwnedOpening)
   payouts : List Payout
+  feeRatio : FeeRatio
+  treasuryFees : Token → Nat
 
 /-- The root history of tree `treeNumber`. -/
 def PoolState.rootsAt' (s : PoolState) (treeNumber : Nat) : List Term :=
@@ -878,15 +890,18 @@ def PoolState.rootsAt' (s : PoolState) (treeNumber : Nat) : List Term :=
 def PoolState.leavesAt' (s : PoolState) (treeNumber : Nat) : List Term :=
   leavesAt s.trees treeNumber
 
-/-- The state right after deployment (`PrivacyPool.initialize`, PrivacyPool.sol:81-127,
-    which calls `MerkleModule.initializeMerkle`, MerkleModule.sol:26-38): one empty
-    tree whose one root is the empty-tree root (`treeRoot TreeDepth []`, computed), no
-    spent nullifiers, no custody, an empty registry, no published openings and no
-    payouts. -/
-def genesis : PoolState :=
-  { live := fun _ => [], spent := fun _ => [],
-    trees := [⟨[], [treeRoot TreeDepth []]⟩],
-    held := fun _ => 0, preimageOf := fun _ => none, published := [], payouts := [] }
+/-- The trees right after deployment (`MerkleModule.initializeMerkle`,
+    MerkleModule.sol:26-38): one empty tree whose one root is the empty-tree root
+    (`treeRoot TreeDepth []`, computed). -/
+def genesisTrees : List TreeState := [⟨[], [treeRoot TreeDepth []]⟩]
+
+/-- The state right after deployment with fee rate `r` (`PrivacyPool.initialize`,
+    PrivacyPool.sol:81-127): the genesis trees, no spent nullifiers, no custody, an empty
+    registry, no published openings, no payouts and no fees paid. -/
+def genesis (r : FeeRatio) : PoolState :=
+  { live := fun _ => [], spent := fun _ => [], trees := genesisTrees,
+    held := fun _ => 0, preimageOf := fun _ => none, published := [], payouts := [],
+    feeRatio := r, treasuryFees := fun _ => 0 }
 
 /-! ### Deriving notes from a witness
 
@@ -953,32 +968,39 @@ does not appear, because no check reads it. -/
 
 /-- One valid transition of the pool. -/
 inductive Step : PoolState → PoolState → Prop where
-  /-- Local `ShieldModule.shield` (ShieldModule.sol:45-90). One `ShieldRequest` creates
-      exactly one note. `value` is the amount that enters the pool, after the fee
-      (`ArmadaLean.Fee.shieldBase`; the fee leg never passes through the pool, module
-      comment). `npk` is the note's public key, which the shielder names. The
+  /-- Local `ShieldModule.shield` (ShieldModule.sol:45-90). One `ShieldRequest` of the
+      gross amount `x` creates exactly one note. The pool splits `x` with the deployment
+      fee rate `s.feeRatio` (`_getFee`, ShieldModule.sol:353-371): the note gets
+      `shieldBase s.feeRatio x` and the treasury gets `shieldFee s.feeRatio x`
+      (`_transferTokenIn`, ShieldModule.sol:324-340, called at :62; the cross-chain
+      path `_applyShieldFee` does the same, ShieldModule.sol:209-218). The pool's
+      custody grows by the note value only; the fee is recorded in `treasuryFees`. The
+      fee-module and privileged-caller branches (ShieldModule.sol:286-323) are not
+      modeled. `npk` is the note's public key, which the shielder names. The
       commitment goes into the last tree, or a new tree if the last is full
       (`insertLeaves`). `hValue` is `_validateCommitmentPreimage`'s `value > 0` check
-      (ShieldModule.sol:243-244); for a fee ratio below one, a positive gross amount
-      gives a positive `value`. `hSpendable` says the note's value passes the circuit's
-      input range check (`Spendable`). The contract gets this from the ABI type
-      `uint120 value` (PoolTypes.sol:82). Safety does not need it; spendability of every
-      live note does (`ArmadaLean.PoolSafety.live_values_spendable`, finding P-6).
-      S-RG, "RAILGUN Core System & Protocol": "Then the smart contract transfers tokens
-      from the user wallet to itself, if a deposit amount is specified ... The hashes of
-      the output UTXOs are then added to the Merkle tree so they can be spent in the
-      future." -/
-  | shield {s : PoolState} (token : Token) (value : Nat) (npk : Term)
-      (hValue : 0 < value) (hSpendable : Spendable value) :
+      on the gross request (ShieldModule.sol:244, called at :59 before the fee is
+      taken). `hSpendable` says the note's value passes the circuit's input range check
+      (`Spendable`). The contract gets this from the ABI type `uint120 value`
+      (PoolTypes.sol:82), since `base ≤ x`. Safety does not need it; spendability of
+      every live note does (`ArmadaLean.PoolSafety.live_values_spendable`, finding
+      P-6). S-RG, "RAILGUN Core System & Protocol": "Then the smart contract transfers
+      tokens from the user wallet to itself, if a deposit amount is specified ... The
+      hashes of the output UTXOs are then added to the Merkle tree so they can be spent
+      in the future." -/
+  | shield {s : PoolState} (token : Token) (x : Nat) (npk : Term)
+      (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) :
       Step s
-        (let note : CommitmentPreimage := ⟨npk, token, value⟩
+        (let note : CommitmentPreimage := ⟨npk, token, shieldBase s.feeRatio x⟩
          let tn := insertTree s.trees 1
          let pos := insertStart s.trees 1
          { s with
              live := fun t => if t = token then ((tn, pos), note) :: s.live t else s.live t,
              held := fun t => if t = token then s.held t + note.value else s.held t,
              trees := insertLeaves s.trees [hashCommitment note],
-             preimageOf := recordStep s.preimageOf (hashCommitment note) note })
+             preimageOf := recordStep s.preimageOf (hashCommitment note) note,
+             treasuryFees := fun t => if t = token
+               then s.treasuryFees t + shieldFee s.feeRatio x else s.treasuryFees t })
   /-- Local `TransactModule.transact` (TransactModule.sol:43-96): a transfer, with an
       optional local unshield. `hC` is soundness ("an accepted proof means its circuit
       constraints hold"). `hBound` is the proof's binding of the bound parameters `bp`
@@ -1052,9 +1074,14 @@ inductive Step : PoolState → PoolState → Prop where
             preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub),
             published := s.published ++ openings })
 
-/-- Every state the pool can reach from deployment, by any sequence of calls from any
-    caller. -/
+/-- Every state the pool can reach from deployment with some fee rate `r`, by any
+    sequence of calls from any caller. -/
 inductive Reachable : PoolState → Prop where
-  | genesis : Reachable genesis
+  | genesis (r : FeeRatio) : Reachable (genesis r)
   | step {s s' : PoolState} (hs : Reachable s) (hstep : Step s s') :
       Reachable s'
+
+/-- **The fee rate never changes after deployment.** No step writes `feeRatio` (decision 7:
+    fees are set once at deployment). -/
+theorem step_feeRatio {s s' : PoolState} (h : Step s s') : s'.feeRatio = s.feeRatio := by
+  cases h <;> rfl

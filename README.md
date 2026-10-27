@@ -73,11 +73,11 @@ No dependencies (no mathlib) — a fresh clone builds in seconds.
 | `owned_merge_can_happen` | `PoolSafety` | an owner can merge `N ≤ 8` live notes into one note of their exact sum, value conserved — **`sorry`** (new) | `TransactModule.sol:488-519` | channel design, theorem 3 |
 | `spend_live_exact` | `PoolSafety` | a spend removes exactly the `(treeNumber, position)` pairs it names and adds exactly its new notes, tagged with the tree and positions they land at | `Step.transact`/`Step.transactOwned` | S-RG, "How Does RAILGUN Work?" |
 | `transact_unshield_exact` | `PoolSafety` | an unshield pays exactly the bound recipient exactly the spent value minus the new notes' value, and custody falls by that amount — **`sorry`** (type changed: P-7) | `TransactModule.sol:401-424` | S-RG, "RAILGUN Core System & Protocol" |
-| `shield_creates_exactly` | `PoolSafety` | a shield creates exactly one note, at a position that held no leaf before; no second note; no capacity hypothesis — **`sorry`** (type changed: P-3, P-6, P-9, P-11) | `ShieldModule.sol:45-90`, `MerkleModule.sol:62-70` | DEPARTURE, see module comment |
+| `shield_creates_exactly` | `PoolSafety` | a shield of the gross amount `x` creates exactly one note of `shieldBase r x`, at a position that held no leaf before, pays `shieldFee r x` to the treasury, and the two add up to `x`; no second note; no capacity hypothesis (type changed: P-3, P-6, P-9, P-11; proved) | `ShieldModule.sol:45-90,244,324-340,353-371`, `MerkleModule.sol:62-70` | operator ruling on P-9, 2026-10-27 |
 | `transact_root_was_produced` | `PoolSafety` | a transact names only a root the pool itself produced for that tree, or that tree's genesis root | `TransactModule.sol:538` | S-RG, "RAILGUN Core System & Protocol" |
 | `pool_preimageOf_consistent` | `PoolSafety` | every entry the pool has ever written to `preimageOf` hashes to the commitment it is recorded under | `TransactModule.sol:590-604`, `ShieldModule.sol:71,136` | lifts `PoolOwned.preimageOf_consistent` |
 | `transactOwned_records_all` | `PoolSafety` | after an owned transact, `preimageOf` returns the recorded preimage for each of its outputs — **`sorry`** (type changed: P-4) | `TransactModule.sol:630-634` | full disclosure, `requireAll = true` |
-| `shield_can_happen` | `PoolSafety` | a shield of a positive, spendable value succeeds — **`sorry`** (type changed: P-3, P-6, P-9) | `ShieldModule.sol:45-90` | shield can happen |
+| `shield_can_happen` | `PoolSafety` | a shield of a positive gross amount whose note value `shieldBase r x` is spendable succeeds (type changed: P-3, P-6, P-9; proved) | `ShieldModule.sol:45-90,244` | shield can happen |
 | `transact_spend_can_happen` | `PoolSafety` | a key holder's spend, with an accepted proof, satisfies the circuit and clears the nullifier check | `Transact.circom:57-186` | proof completeness |
 | `transact_can_happen` | `PoolSafety` | a private transfer by a real key holder, with an accepted proof, succeeds — **`sorry`** (type changed: P-1, P-2) | `TransactModule.sol:43-96` | transact can happen |
 | `unshield_can_happen` | `PoolSafety` | an unshield by a real key holder succeeds and pays its recipient — **`sorry`** (type changed: P-1, P-2, P-7) | `TransactModule.sol:43-96` | unshield can happen |
@@ -105,15 +105,16 @@ the admin step; `spend_not_blocked` replaces them); `live_values_lt_2pow120` (P-
 
 ### Shield fee (`armada-poc/contracts/privacy-pool/modules/ShieldModule.sol`, audit C-3)
 
-The fee is a ratio `num / den` fixed at deployment, with floor division (P-9). The
-contract's basis-point rate is the case `den = 10000`.
+The fee is a ratio `num / den` fixed at deployment (`PoolState.feeRatio`), with floor
+division (P-9). The contract's basis-point rate is the case `den = 10000`. The shield
+step applies it to the gross amount (operator ruling, 2026-10-27).
 
 | Lean theorem | Module | Property | Contract code |
 |---|---|---|---|
-| `fee_conservation` | `Fee` | `base + fee = amount` — **`sorry`** (type changed: P-9) | `_getFee`, `ShieldModule.sol:353-371` |
-| `fee_bounded` | `Fee` | `fee ≤ amount` — **`sorry`** (type changed: P-9) | same |
-| `fee_monotone` | `Fee` | larger amount ⇒ no smaller fee — **`sorry`** (type changed: P-9) | same |
-| `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) — **`sorry`** (type changed: P-9) | same |
+| `fee_conservation` | `Fee` | `base + fee = amount` (type changed: P-9; proved) | `_getFee`, `ShieldModule.sol:353-371` |
+| `fee_bounded` | `Fee` | `fee ≤ amount` (type changed: P-9; proved) | same |
+| `fee_monotone` | `Fee` | larger amount ⇒ no smaller fee (type changed: P-9; proved) | same |
+| `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) (type changed: P-9; proved) | same |
 
 ## Trust base & scope
 

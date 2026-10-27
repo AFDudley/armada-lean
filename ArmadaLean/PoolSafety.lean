@@ -10,7 +10,7 @@ import ArmadaLean.Pool
 def HeldInvariant (s : PoolState) : Prop :=
   ∀ t, s.held t = listSum ((s.live t).map (fun p => p.2.value))
 
-theorem genesis_invariant : HeldInvariant genesis := by
+theorem genesis_invariant (r : FeeRatio) : HeldInvariant (genesis r) := by
   intro t
   simp [genesis, listSum]
 
@@ -109,7 +109,7 @@ theorem transactOwned_balance {N M : Nat} {w : TransactOwnedWitness N M}
 theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     (hstep : Step s s') : HeldInvariant s' := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     intro t
     by_cases ht : t = token
     · simp only [ht, if_pos]
@@ -166,7 +166,7 @@ registered-shape bound `hN`/`hM`, not an assumed hypothesis) for
 theorem core_invariant {s : PoolState} (h : Reachable s) :
     HeldInvariant s := by
   induction h with
-  | genesis => exact genesis_invariant
+  | genesis r => exact genesis_invariant r
   | step _ hstep ih => exact step_preserves_invariant ih hstep
 
 /-! ### Ownership: a spend can only touch notes its spender derives keys for -/
@@ -262,7 +262,7 @@ theorem markSpent_superset {spent spent' : NullifierSet} {ns : List Term}
 theorem spent_monotone {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
     ∀ n ∈ s.spent tn, n ∈ s'.spent tn := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     exact fun n hn => hn
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
@@ -394,24 +394,39 @@ theorem transact_unshield_exact {s : PoolState} (caller : Term) {N M : Nat}
   sorry
 
 /--
-**A shield creates exactly one note, at a fresh position.** By `Step.shield`'s
-construction: some tree `tn` and position `pos` had no leaf before the step
-(`(s.leavesAt' tn)[pos]? = none`) and hold the new note's commitment after it; the live
-set of the shielded token gains exactly the entry `((tn, pos), ⟨npk, token, value⟩)`;
-the pool's custody of that token rises by exactly `value`; nothing changes for any
-other token; no second ("fee") note is created (module comment). No capacity hypothesis:
+**A shield of the gross amount `x` creates exactly one note of `shieldBase r x`, at a
+fresh position, and pays `shieldFee r x` to the treasury.** `r` is the deployment fee
+rate `s.feeRatio`. By `Step.shield`'s construction: some tree `tn` and position `pos`
+had no leaf before the step (`(s.leavesAt' tn)[pos]? = none`) and hold the new note's
+commitment after it; the live set of the shielded token gains exactly the entry
+`((tn, pos), ⟨npk, token, shieldBase r x⟩)`; the pool's custody of that token rises by
+exactly `shieldBase r x`; the treasury's fees of that token rise by exactly
+`shieldFee r x`; the two parts add up to `x` (`fee_conservation`); nothing changes for
+any other token; no second ("fee") note is created. Contract: `_validateCommitmentPreimage`
+(ShieldModule.sol:244), `_transferTokenIn` (ShieldModule.sol:324-340), `_getFee`
+(ShieldModule.sol:353-371), insertion (ShieldModule.sol:79-83). No capacity hypothesis:
 a full tree rolls over (`insertLeaves`). S-RG, "RAILGUN Core System & Protocol": "Then
 the smart contract transfers tokens from the user wallet to itself, if a deposit amount
 is specified ... The hashes of the output UTXOs are then added to the Merkle tree." -/
-theorem shield_creates_exactly {s : PoolState} (token : Token) (value : Nat) (npk : Term)
-    (hValue : 0 < value) (hSpendable : Spendable value) :
+theorem shield_creates_exactly {s : PoolState} (token : Token) (x : Nat) (npk : Term)
+    (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) :
     ∃ s', Step s s' ∧ ∃ tn pos : Nat,
       (s.leavesAt' tn)[pos]? = none ∧
-      (s'.leavesAt' tn)[pos]? = some (hashCommitment ⟨npk, token, value⟩) ∧
-      s'.live token = ((tn, pos), (⟨npk, token, value⟩ : CommitmentPreimage)) :: s.live token ∧
-      s'.held token = s.held token + value ∧
-      (∀ t, t ≠ token → s'.live t = s.live t ∧ s'.held t = s.held t) := by
-  sorry
+      (s'.leavesAt' tn)[pos]? = some (hashCommitment ⟨npk, token, shieldBase s.feeRatio x⟩) ∧
+      s'.live token =
+        ((tn, pos), (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)) :: s.live token ∧
+      s'.held token = s.held token + shieldBase s.feeRatio x ∧
+      s'.treasuryFees token = s.treasuryFees token + shieldFee s.feeRatio x ∧
+      shieldBase s.feeRatio x + shieldFee s.feeRatio x = x ∧
+      (∀ t, t ≠ token → s'.live t = s.live t ∧ s'.held t = s.held t ∧
+        s'.treasuryFees t = s.treasuryFees t) := by
+  refine ⟨_, Step.shield token x npk hValue hSpendable, insertTree s.trees 1,
+    insertStart s.trees 1, ?_, ?_, by simp, by simp, by simp, fee_conservation s.feeRatio x,
+    fun t ht => ⟨by simp [ht], by simp [ht], by simp [ht]⟩⟩
+  · simp [PoolState.leavesAt', insertStart_eq]
+  · show (leavesAt (insertLeaves s.trees [_]) (insertTree s.trees 1))[insertStart s.trees 1]? = _
+    rw [insertLeaves_leavesAt, if_pos (by rfl), insertStart_eq]
+    simp
 
 /-! ### A transact names only a root the pool actually produced -/
 
@@ -424,9 +439,9 @@ theorem shield_creates_exactly {s : PoolState} (token : Token) (value : Nat) (np
 theorem step_rootsAt_shape {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
     s'.rootsAt' tn = s.rootsAt' tn ∨ ∃ r, s'.rootsAt' tn = r :: s.rootsAt' tn := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     exact insertLeaves_rootsAt_shape s.trees
-      [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn
+      [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
     exact insertLeaves_rootsAt_shape s.trees (newNotes.map hashCommitment) tn
@@ -435,12 +450,12 @@ theorem step_rootsAt_shape {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
     exact insertLeaves_rootsAt_shape s.trees
       ((ownedNewNotes w).map hashCommitment) tn
 
-/-- Every reachable state's tree-`tn` root history is `genesis.rootsAt' tn` with zero
+/-- Every reachable state's tree-`tn` root history is `rootsAt genesisTrees tn` with zero
     or more roots the pool itself pushed to that tree, prepended. -/
 theorem rootsAt_grounded {s : PoolState} (h : Reachable s) (tn : Nat) :
-    ∃ pushed : List Term, s.rootsAt' tn = pushed ++ genesis.rootsAt' tn := by
+    ∃ pushed : List Term, s.rootsAt' tn = pushed ++ rootsAt genesisTrees tn := by
   induction h with
-  | genesis => exact ⟨[], rfl⟩
+  | genesis r => exact ⟨[], rfl⟩
   | step _ hstep ih =>
     obtain ⟨pushed, hpushed⟩ := ih
     rcases step_rootsAt_shape hstep tn with heq | ⟨r, heq⟩
@@ -450,7 +465,7 @@ theorem rootsAt_grounded {s : PoolState} (h : Reachable s) (tn : Nat) :
 /--
 **A transact names only a root the pool actually produced, for the tree it names.**
 `rootsAt_grounded` shows `s.rootsAt' tn`, for any reachable `s` and tree `tn`, is built
-from `genesis.rootsAt' tn` by prepending values the pool itself pushed to that tree at
+from `rootsAt genesisTrees tn` by prepending values the pool itself pushed to that tree at
 earlier `shield`/`transact`/`transactOwned` steps — never anything else. A
 `transact`/`transactOwned`/`shield` step's own `hRoot : pub.merkleRoot ∈ s.rootsAt'
 treeNumber` precondition then means the named root is one of those pushed values, or
@@ -459,8 +474,8 @@ the genesis root of that tree — never a caller's invention. S-RG, "RAILGUN Cor
 previous Merkle root, to prevent users from making up UTXOs." -/
 theorem transact_root_was_produced {s : PoolState}
     (h : Reachable s) (tn : Nat) {root : Term} (hRoot : root ∈ s.rootsAt' tn) :
-    root ∈ genesis.rootsAt' tn ∨
-      ∃ pushed : List Term, root ∈ pushed ∧ s.rootsAt' tn = pushed ++ genesis.rootsAt' tn := by
+    root ∈ rootsAt genesisTrees tn ∨
+      ∃ pushed : List Term, root ∈ pushed ∧ s.rootsAt' tn = pushed ++ rootsAt genesisTrees tn := by
   obtain ⟨pushed, hpushed⟩ := rootsAt_grounded h tn
   rw [hpushed] at hRoot
   rcases List.mem_append.mp hRoot with h1 | h2
@@ -478,10 +493,10 @@ lifting `ArmadaLean.PoolOwned.preimageOf_consistent` from one transaction's batc
 theorem pool_preimageOf_consistent {s : PoolState}
     (h : Reachable s) : RegistryConsistent s.preimageOf := by
   induction h with
-  | genesis => intro c pre hc; simp [genesis] at hc
+  | genesis r => intro c pre hc; simp [genesis] at hc
   | step _ hstep ih =>
     cases hstep with
-    | shield token value npk hValue hSpendable =>
+    | shield token x npk hValue hSpendable =>
       exact recordStep_preserves_consistency ih rfl
     | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
         openings hRoot hRemove hNullify hRecords =>
@@ -610,13 +625,15 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
     rw [← hi]
     exact hFresh i
 
-/-- **Can happen: a shield succeeds.** Any positive, spendable value creates a note
-    (`shield_creates_exactly`). No proof, no honest-prover assumption: shield carries no
+/-- **Can happen: a shield succeeds.** Any positive gross amount `x` whose note value
+    `shieldBase s.feeRatio x` is spendable creates a note (`shield_creates_exactly`). The
+    positivity check is on the gross amount (`_validateCommitmentPreimage`,
+    ShieldModule.sol:244). No proof, no honest-prover assumption: shield carries no
     SNARK. No pause and no capacity gate: a full tree rolls over to a new one. -/
-theorem shield_can_happen {s : PoolState} (token : Token) (value : Nat) (npk : Term)
-    (hValue : 0 < value) (hSpendable : Spendable value) :
-    ∃ s', Step s s' := by
-  sorry
+theorem shield_can_happen {s : PoolState} (token : Token) (x : Nat) (npk : Term)
+    (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) :
+    ∃ s', Step s s' :=
+  ⟨_, Step.shield token x npk hValue hSpendable⟩
 
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` live notes in tree `bp.treeNumber`, re-minting them into `M` new
@@ -739,9 +756,9 @@ theorem step_leavesAt_rootsAt_matches {s s' : PoolState} (hstep : Step s s') (tn
     (s'.leavesAt' tn = s.leavesAt' tn ∧ s'.rootsAt' tn = s.rootsAt' tn) ∨
       s'.rootsAt' tn = treeRoot TreeDepth (s'.leavesAt' tn) :: s.rootsAt' tn := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     exact insertLeaves_rootsAt_matches_leavesAt s.trees
-      [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn
+      [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
     exact insertLeaves_rootsAt_matches_leavesAt s.trees
@@ -762,8 +779,8 @@ theorem step_leavesAt_rootsAt_matches {s s' : PoolState} (hstep : Step s s') (tn
 theorem reachable_rootAt_matches_leavesAt {s : PoolState} (h : Reachable s) (tn : Nat) :
     s.leavesAt' tn = [] ∨ treeRoot TreeDepth (s.leavesAt' tn) ∈ s.rootsAt' tn := by
   induction h with
-  | genesis =>
-    left; cases tn <;> simp [genesis, PoolState.leavesAt', leavesAt]
+  | genesis r =>
+    left; cases tn <;> simp [genesis, genesisTrees, PoolState.leavesAt', leavesAt]
   | step _ hstep ih =>
     rcases step_leavesAt_rootsAt_matches hstep tn with ⟨hl, hr⟩ | hr
     · rw [hl, hr]; exact ih
@@ -778,9 +795,9 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
     (hOldCap : ∀ k, (s.leavesAt' k).length ≤ 2 ^ TreeDepth) (tn : Nat) :
     (s'.leavesAt' tn).length ≤ 2 ^ TreeDepth := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     exact insertLeaves_leavesAt_capacity s.trees
-      [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn
+      [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
       (by simp; unfold TreeDepth; omega) hOldCap
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
@@ -806,9 +823,9 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
 theorem reachable_leavesAt_capacity {s : PoolState} (h : Reachable s) :
     ∀ tn, (s.leavesAt' tn).length ≤ 2 ^ TreeDepth := by
   induction h with
-  | genesis =>
+  | genesis r =>
     intro tn
-    cases tn <;> simp [genesis, PoolState.leavesAt', leavesAt]
+    cases tn <;> simp [genesis, genesisTrees, PoolState.leavesAt', leavesAt]
   | step _ hstep ih =>
     exact step_leavesAt_capacity_preserved hstep ih
 
@@ -859,7 +876,7 @@ theorem step_leavesAt_stable {s s' : PoolState} (hstep : Step s s') (tn pos : Na
     · rw [if_pos h, List.getElem?_append_left hpos']
     · rw [if_neg h]
   cases hstep with
-  | shield token value npk hValue hSpendable => exact key _
+  | shield token x npk hValue hSpendable => exact key _
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords => exact key _
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
@@ -934,7 +951,7 @@ def LiveSpentInvariant (s : PoolState) : Prop :=
   (∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t → ∀ nk, nullifier nk pos ∉ s.spent tn) ∧
   (∀ t, (s.live t).Nodup)
 
-theorem genesis_live_spent_invariant : LiveSpentInvariant genesis := by
+theorem genesis_live_spent_invariant (r : FeeRatio) : LiveSpentInvariant (genesis r) := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> intro <;> simp [genesis]
 
 theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentInvariant s)
@@ -942,12 +959,12 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
   obtain ⟨ih1, ih2, ih3, ih4, ih5⟩ := ih
   simp only [PoolState.leavesAt'] at ih1 ih3
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     have hpos0eq := insertStart_eq s.trees 1
     have hlenge := fun tn => insertLeaves_leavesAt_length_ge s.trees
-      [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn
+      [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
     have htarget := insertLeaves_target_length s.trees
-      [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)]
+      [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)]
     refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> dsimp only [PoolState.leavesAt']
     · intro t tn pos pre hmem
       by_cases ht : t = token
@@ -1037,7 +1054,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
         refine ⟨?_, ih5 token⟩
         intro hmem
         have hlt := ih1 token (insertTree s.trees 1) (insertStart s.trees 1)
-          (⟨npk, token, value⟩ : CommitmentPreimage) hmem
+          (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage) hmem
         rw [← hpos0eq] at hlt
         omega
       · simp only [if_neg ht]
@@ -1500,7 +1517,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
 theorem reachable_live_spent_invariant {s : PoolState} (h : Reachable s) :
     LiveSpentInvariant s := by
   induction h with
-  | genesis => exact genesis_live_spent_invariant
+  | genesis r => exact genesis_live_spent_invariant r
   | step _ hstep ih => exact step_preserves_live_spent_invariant ih hstep
 
 /--
@@ -1537,13 +1554,13 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
     ∀ t tn pos pre, ((tn, pos), pre) ∈ s'.live t →
       (s'.leavesAt' tn).getD pos emptyLeaf = hashCommitment pre := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     intro t tn pos pre hmem
     by_cases ht : t = token
     · subst t
       simp only at hmem
       rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
-      · obtain ⟨base, hbaselen, hbase⟩ := insertLeaves_leavesAt_new_matches s.trees [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)]
+      · obtain ⟨base, hbaselen, hbase⟩ := insertLeaves_leavesAt_new_matches s.trees [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)]
             (insertTree s.trees 1) rfl
         injection heq with h1 h2
         injection h1 with h1a h1b
@@ -1556,7 +1573,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
         have hr := ihrange token tn pos pre hmem
         dsimp only [PoolState.leavesAt']
         rw [insertLeaves_leavesAt_stable s.trees
-          [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn pos
+          [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn pos
           emptyLeaf hr]
         exact hmatch
     · simp only [if_neg ht] at hmem
@@ -1564,7 +1581,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
       have hr := ihrange t tn pos pre hmem
       dsimp only [PoolState.leavesAt']
       rw [insertLeaves_leavesAt_stable s.trees
-        [hashCommitment (⟨npk, token, value⟩ : CommitmentPreimage)] tn pos
+        [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn pos
         emptyLeaf hr]
       exact hmatch
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
@@ -1651,7 +1668,7 @@ theorem reachable_live_leaf_matches {s : PoolState} (h : Reachable s) :
     ∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t →
       (s.leavesAt' tn).getD pos emptyLeaf = hashCommitment pre := by
   induction h with
-  | genesis => intro t tn pos pre hmem; simp [genesis] at hmem
+  | genesis r => intro t tn pos pre hmem; simp [genesis] at hmem
   | step hs hstep ih =>
     exact step_live_leaf_matches hstep ih (reachable_live_spent_invariant hs).1
 
@@ -1675,14 +1692,15 @@ theorem live_leaf_matches {s : PoolState} (h : Reachable s) (t : Token) (tn pos 
 def LiveValuesSpendable (s : PoolState) : Prop :=
   ∀ t p, p ∈ s.live t → Spendable p.2.value
 
-theorem genesis_live_values_spendable : LiveValuesSpendable genesis := by
+theorem genesis_live_values_spendable (r : FeeRatio) :
+    LiveValuesSpendable (genesis r) := by
   intro t p hp
   simp [genesis] at hp
 
 theorem step_preserves_live_values_spendable {s s' : PoolState} (ih : LiveValuesSpendable s)
     (hstep : Step s s') : LiveValuesSpendable s' := by
   cases hstep with
-  | shield token value npk hValue hSpendable =>
+  | shield token x npk hValue hSpendable =>
     intro t p hp
     by_cases ht : t = token
     · subst t
