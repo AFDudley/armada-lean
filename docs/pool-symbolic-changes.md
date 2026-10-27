@@ -225,8 +225,25 @@ Changes:
   is `⟨npk, token, shieldBase s.feeRatio x⟩`; `held` grows by `shieldBase s.feeRatio x`;
   `treasuryFees token` grows by `shieldFee s.feeRatio x`. `hValue` is the contract's own
   check on the gross request (`_validateCommitmentPreimage`, ShieldModule.sol:244, called
-  at :59 before the fee is taken). So with `num = den` the note value can be 0, as in
-  the contract.
+  at :59 before the fee is taken).
+- Operator ruling, 2026-10-27: the shield fee is never 100%; it has a hard cap, probably
+  1%. `Fee.lean` has one named constant `maxFeePercent : Nat := 1`, and `FeeRatio` has a
+  new field `fee_capped : num * 100 ≤ den * maxFeePercent`. To change the cap, change
+  `maxFeePercent` only. Every theorem that takes a `FeeRatio` keeps its text. The
+  contract has a looser cap: `setShieldFee` requires `_feeBps <= MAX_SHIELD_FEE_BPS`
+  (PrivacyPool.sol:391-395) with `MAX_SHIELD_FEE_BPS = 1000`, that is 10%
+  (PrivacyPool.sol:39). The model's 1% follows the ruling, not the contract.
+- New theorem, proved (14 lines):
+
+  ```lean
+  theorem shieldBase_pos (r : FeeRatio) {x : Nat} (hx : 0 < x) : 0 < shieldBase r x
+  ```
+
+  No minimum `x` beyond `0 < x` is needed: the fee is at most `x * maxFeePercent / 100`,
+  below `x` for every `x > 0` (floor division only lowers the fee). The proof needs
+  `maxFeePercent < 100` (checked by `decide`). `#print axioms shieldBase_pos` lists
+  `propext, Quot.sound`. So `Step.shield`'s `hValue : 0 < x` now gives a note of
+  positive value; the earlier case `num = den` (note value 0) is excluded.
 - The fee-module and privileged-caller branches of `_transferTokenIn`
   (ShieldModule.sol:286-323) are not modeled.
 

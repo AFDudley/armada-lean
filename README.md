@@ -115,6 +115,7 @@ step applies it to the gross amount (operator ruling, 2026-10-27).
 | `fee_bounded` | `Fee` | `fee ≤ amount` (type changed: P-9; proved) | same |
 | `fee_monotone` | `Fee` | larger amount ⇒ no smaller fee (type changed: P-9; proved) | same |
 | `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) (type changed: P-9; proved) | same |
+| `shieldBase_pos` | `Fee` | a shield of a positive gross amount creates a note of positive value, under the fee cap `maxFeePercent` (new; proved) | `_getFee`, `ShieldModule.sol:353-371`; operator ruling 2026-10-27 (fee cap) |
 
 ## Trust base & scope
 

@@ -21,13 +21,20 @@
   earlier per-shield basis-point argument.
 -/
 
-/-- A fee rate fixed at deployment: the fraction `num / den`, with `den > 0` and
-    `num ≤ den` (a fee never exceeds the amount). -/
+/-- The hard cap on the shield fee, in percent of the gross amount. Operator ruling,
+    2026-10-27: the shield fee is never 100%; it has a hard cap, probably 1%. This is the
+    one place that sets the cap's value. `shieldBase_pos` needs `maxFeePercent < 100`. -/
+def maxFeePercent : Nat := 1
+
+/-- A fee rate fixed at deployment: the fraction `num / den`, with `den > 0`,
+    `num ≤ den` (a fee never exceeds the amount) and the hard cap `fee_capped`:
+    `num / den ≤ maxFeePercent / 100` (operator ruling, 2026-10-27). -/
 structure FeeRatio where
   num : Nat
   den : Nat
   den_pos : 0 < den
   num_le_den : num ≤ den
+  fee_capped : num * 100 ≤ den * maxFeePercent
 
 /-- The inclusive fee charged on a shield of `amount` (ShieldModule.sol:353-371).
     Floor division, Solidity semantics. -/
@@ -64,3 +71,23 @@ theorem fee_monotone (r : FeeRatio) {a b : Nat} (hab : a ≤ b) :
 theorem fee_zero_below_threshold (r : FeeRatio) (amount : Nat) (h : amount * r.num < r.den) :
     shieldFee r amount = 0 :=
   Nat.div_eq_of_lt h
+
+/-- **A shield of a positive gross amount creates a note of positive value.** Because the
+    fee is capped below 100% (`FeeRatio.fee_capped`, `maxFeePercent < 100`), the floor of
+    `x * num / den` is at most `x * maxFeePercent / 100`, which is below `x` for every
+    `x > 0`. No larger minimum `x` is needed: floor division only lowers the fee. -/
+theorem shieldBase_pos (r : FeeRatio) {x : Nat} (hx : 0 < x) : 0 < shieldBase r x := by
+  have hcap : maxFeePercent < 100 := by decide
+  have hdiv : shieldFee r x * r.den ≤ x * r.num := Nat.div_mul_le_self (x * r.num) r.den
+  have h1 : shieldFee r x * r.den * 100 ≤ x * maxFeePercent * r.den := by
+    calc shieldFee r x * r.den * 100 ≤ x * r.num * 100 := Nat.mul_le_mul_right 100 hdiv
+      _ = x * (r.num * 100) := by rw [Nat.mul_assoc]
+      _ ≤ x * (r.den * maxFeePercent) := Nat.mul_le_mul_left x r.fee_capped
+      _ = x * maxFeePercent * r.den := by rw [Nat.mul_comm r.den, Nat.mul_assoc]
+  have h2 : shieldFee r x * 100 ≤ x * maxFeePercent := by
+    rw [Nat.mul_right_comm] at h1
+    exact Nat.le_of_mul_le_mul_right h1 r.den_pos
+  have h3 : x * maxFeePercent < x * 100 := Nat.mul_lt_mul_of_pos_left hcap hx
+  have h4 : shieldFee r x < x := by omega
+  unfold shieldBase
+  omega
