@@ -73,7 +73,7 @@ Status: **proved** (no `sorry`); **sound** (true by the argument given, not yet 
 | 7 | `channel_finalizability_cases` | unknown | Follows from 6 by a case split. |
 | 8 | `finalizable_or_two_enabled` | unknown | A determinacy argument; not checked. |
 | 9 | `single_enabled_is_finalizable` | unknown | As 8. |
-| 10 | `finalizable_is_enabled` | false | `c = [p]`, fresh: `p` finalizes by `send` then `conclude`; `p` also prevents every finalization by signing nothing. "Can force" and "cannot prevent" differ whenever the outcome needs `p`'s signature. Needs a ruling: drop it, or read Nitro:653-658 for the other participants. |
+| 10 | `finalizable_is_enabled` | removed | `c = [p]`, fresh: `p` finalizes by `send` then `conclude`; `p` also prevents every finalization by signing nothing. "Can force" and "cannot prevent" differ whenever the outcome needs `p`'s signature. Coordinator ruling 2026-10-27 (§6.1): Nitro 2019 §4.4's dichotomy (finalizable or two enabled) never claims finalizable implies enabled; the theorem is removed, not repaired. |
 | 11 | `funding_point_universally_finalizable` | false | New defect D9 below: with `n = 2` and a game library that accepts a move after the setup, the adversary challenges with a state at turn `n` that it never delivers; `p` cannot answer it. |
 | 12 | `concluded_universally_finalizable` | sound | `conclude_strategy` for each participant. |
 | 13 | `consensus_enabled_outcomes` | sound | `p`'s strategy answers every challenge below `ss` with `ss` within `2 * ε`; only `Ω1`, `Ω2` can finalize. |
@@ -100,7 +100,7 @@ Status: **proved** (no `sorry`); **sound** (true by the argument given, not yet 
 | 34 | `satp_end_user_recovers` | false | G17: the adversary deposits into `V` and transfers from `V`, which lowers `V`'s stored amounts; `reclaim` then reverts for ever (MultiAssetHolder.sol:365). |
 | 35 | `satp_reclaim_credits_intermediary` | proved | `reclaim_can_happen` twice and the `owed` lemmas. |
 
-Counts: proved 4, sound 11, unknown 14, false 6.
+Counts: proved 4, sound 11, unknown 14, false 5, removed 1 (§6.1).
 
 ### New defects found by the re-audit
 
@@ -725,4 +725,193 @@ Run in the worktree at the commit of this file:
 - `grep -c "^example" ArmadaLean/Nitro/NonVacuity.lean` is 88: the 63 theorems of `Safety.lean` minus the 10
   with no hypotheses beyond their binders' types (listed in the module comment of `NonVacuity.lean`), plus the
   35 theorems of `Liveness.lean`. The module builds with no `sorry`.
+- No `axiom` in `ArmadaLean/Nitro/`.
+
+## 6. Second revision, 2026-10-27: channel types, D9, G16, `finalizable_is_enabled` removed
+
+Four changes, approved by the operator and the coordinator on 2026-10-27, on top of the repair above.
+
+### 6.1 `finalizable_is_enabled` removed
+
+Coordinator ruling, replacing the brief's item 5 ("leave `finalizable_is_enabled` unchanged"). Nitro 2019 §4.4
+(Nitro:641-658) defines the enabled outcomes as those `p` has no strategy to prevent, and states that exactly
+one of "`p` has at least one finalizable outcome" and "`p` has at least two enabled outcomes" holds
+(`finalizable_or_two_enabled`, `single_enabled_is_finalizable`). It never claims finalizable implies enabled;
+the dichotomy rules it out when a channel has a unique finalizable outcome. `docs/nitro-theorems.md` now maps
+Nitro-21 and Nitro-24 to `finalizable_or_two_enabled` and `single_enabled_is_finalizable` only. The theorem
+and its `NonVacuity.lean` witness are deleted; no other declaration referenced it.
+
+### 6.2 D9: a successful on-chain operation adds its proof states to every participant's received states
+
+The defect (§3 above): an adversary that registers a challenge or a checkpoint and never delivers it gains a
+move the honest participant cannot answer, because `p` can use a state only if it is in `sent` or `received`.
+`NetworkState.applyAdv` (`Strategy.lean`) now adds `op.proofStates` to `received` when the chain call succeeds,
+matching go-nitro: a challenge emits `ChallengeRegistered` with the signed states, and a checkpoint call's
+calldata is public. A definition change; no theorem's type changed. The four proved `Liveness.lean` theorems do
+not mention `NetworkState` or `applyAdv` and are unaffected.
+
+### 6.3 Channel types by construction (operator ruling 2026-10-27, SATP §1 SATP:79-84, SATP §3.1)
+
+SATP §1 gives two channel constructions: an asset-holding channel, funded by deposits or by an allocation in
+another channel's outcome (a ledger channel is this type); a virtual channel, funded only by guarantees held in
+two or more ledger channels, holding no assets of its own. `FixedPart` (`Address.lean`) gets a field
+`kind : ChannelKind` (`assetHolding` or `virtual`), fixed at construction: the on-chain channel id is an
+untyped hash of the fixed part (SATP:213, Nitro:158-160), so the type is an addition the specification states,
+not an encoding of anything the chain already enforces. `Adjudicator.deposit` and `Adjudicator.transfer`
+(`Adjudicator.lean`) now succeed only for an asset-holding channel; `transfer`'s paid destination, when it
+names a channel, must be asset-holding too (`Address.fundable`). `Adjudicator.reclaim` succeeds only when its
+ledger is asset-holding and its target is virtual, matching "a guarantee may target only a virtual channel."
+`Route.WellFormed` (`SATP.lean`) requires each ledger asset-holding and `V` virtual.
+
+`Adjudicator.reclaim` also now reads the target's outcome of finalization, `finalizedWith` (SATP §2.4
+SATP:335-338: "x tokens to be reclaimed, using the 'finalized' outcome of V"), not its current stored outcome.
+go-nitro reads the current stored outcome, and `transfer` can rewrite it between finalization and a later
+`reclaim` call: the reclaim denial-of-service reproduced against go-nitro at `64c4ee9a1`
+(`armada-laconic/labbook/2026-10-27-gonitro-reclaim-dos.md`) deposits into a finalized virtual channel, pays
+the deposit out by `transfer`, and every later `reclaim` then reverts forever on the amount check
+(`totalReclaimed != guarantee.amount`, `MultiAssetHolder.sol:365`). With channel types a virtual channel
+accepts neither a deposit nor a transfer, so its stored outcome cannot move once finalized; reading
+`finalizedWith` states that fact directly, as SATP reads it, instead of leaving it to follow only from the
+deposit and transfer guards.
+
+Three new `Safety.lean` theorems, cited in `docs/nitro-theorems.md`:
+
+- `transfer_pays_at_most_held` (a): no channel pays out more than it holds.
+- `reclaim_moves_guarantee_amount` (b): a reclaim moves exactly the guarantee's amount.
+- `virtual_finalized_outcome_immutable` (c): a channel's outcome of finalization never changes after it
+  finalizes, over any number of steps, stated for a virtual channel because that is what `reclaim` reads. The
+  proof (`Adjudicator.finalizedWith_apply`, `Lemmas.lean`) holds for every channel kind: `transfer` and
+  `reclaim` rewrite only the stored outcome, through `ChannelStatus.withOutcome`, which keeps the outcome of
+  finalization; `challenge`, `checkpoint` and `conclude` all require the channel to still be open.
+
+#### `deposit_can_happen`
+
+New hypothesis `c.kind = .assetHolding`: the theorem claimed every channel accepts a deposit, which is no
+longer true of a virtual one.
+
+Old (`568b6fd`):
+
+```lean
+theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicator E) (c : FixedPart) (x : Coins) : s.apply apps caller (.deposit c.address (s.balances.get c.address) x) = some { s with balances := s.balances.add c.address x, held := s.held + x }
+```
+
+New:
+
+```lean
+theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicator E) (c : FixedPart) (hk : c.kind = .assetHolding) (x : Coins) : s.apply apps caller (.deposit c.address (s.balances.get c.address) x) = some { s with balances := s.balances.add c.address x, held := s.held + x }
+```
+
+#### `deposits_in_order_succeed`
+
+New hypothesis `c.kind = .assetHolding`, passed to `deposit_can_happen`.
+
+Old (`568b6fd`):
+
+```lean
+theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (o : Allocation E) (callers : List Participant) (h0 : s.balances.get c.address = 0) : let op := …
+```
+
+New:
+
+```lean
+theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (o : Allocation E) (callers : List Participant) (hck : c.kind = .assetHolding) (h0 : s.balances.get c.address = 0) : let op := …
+```
+
+#### `transfer_can_happen`
+
+New hypotheses `a.kind = .assetHolding` and `b.fundable = true`.
+
+Old (`568b6fd`):
+
+```lean
+theorem transfer_can_happen (s : Adjudicator E) (a : FixedPart) (b : Address E) (o : Allocation E) (amt : Coins) (hf : s.finalOutcome a.address = some (.allocation o)) (hb : o.find b = some ⟨b, .alloc amt⟩) : ∃ s', s.transfer a b = some s' ∧ s'.balances.get b = s.balances.get b + (if b = a.address then 0 else o.paidTo (s.balances.get a.address) b)
+```
+
+New:
+
+```lean
+theorem transfer_can_happen (s : Adjudicator E) (a : FixedPart) (b : Address E) (o : Allocation E) (amt : Coins) (ha : a.kind = .assetHolding) (hbf : b.fundable = true) (hf : s.finalOutcome a.address = some (.allocation o)) (hb : o.find b = some ⟨b, .alloc amt⟩) : ∃ s', s.transfer a b = some s' ∧ s'.balances.get b = s.balances.get b + (if b = a.address then 0 else o.paidTo (s.balances.get a.address) b)
+```
+
+#### `reclaim_requires`
+
+New conjuncts `l.kind = .assetHolding ∧ v.kind = .virtual` in the conclusion; `v`'s outcome is read as
+`finalizedWith` (SATP §2.4), not `finalOutcome`.
+
+Old (`568b6fd`):
+
+```lean
+theorem reclaim_requires (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E) (h : s.reclaim l v = some s') : s.mode l = .finalized ∧ s.mode v = .finalized ∧ ∃ oL oV x left right, s.finalOutcome l.address = some (.allocation oL) ∧ s.finalOutcome v.address = some (.allocation oV) ∧ oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧ (oL.remove v.address).find left ≠ none ∧ (oL.remove v.address).find right ≠ none ∧ oV.amountAt 0 + oV.amountAt 1 = x
+```
+
+New:
+
+```lean
+theorem reclaim_requires (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E) (h : s.reclaim l v = some s') : s.mode l = .finalized ∧ s.mode v = .finalized ∧ l.kind = .assetHolding ∧ v.kind = .virtual ∧ ∃ oL oV x left right, s.finalOutcome l.address = some (.allocation oL) ∧ s.finalizedWith v.address = some (.allocation oV) ∧ oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧ (oL.remove v.address).find left ≠ none ∧ (oL.remove v.address).find right ≠ none ∧ oV.amountAt 0 + oV.amountAt 1 = x
+```
+
+#### `reclaim_effects`, `reclaim_can_happen`, `reclaim_fails_without_entries`
+
+`hV` reads `v`'s outcome as `finalizedWith`, not `finalOutcome`. `reclaim_can_happen` also takes two new
+hypotheses `l.kind = .assetHolding` and `v.kind = .virtual`.
+
+Old `hV` (all three, `568b6fd`): `(hV : s.finalOutcome v.address = some (.allocation oV))`.
+
+New `hV` (all three): `(hV : s.finalizedWith v.address = some (.allocation oV))`.
+
+`reclaim_can_happen` old (`568b6fd`):
+
+```lean
+theorem reclaim_can_happen (s : Adjudicator E) (l v : FixedPart) (oL oV : Allocation E) (x : Coins) (left right : Address E) (hL : s.finalOutcome l.address = some (.allocation oL)) (hV : s.finalOutcome v.address = some (.allocation oV)) (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩) (hl : (oL.remove v.address).find left ≠ none) (hr : (oL.remove v.address).find right ≠ none) (hx : oV.amountAt 0 + oV.amountAt 1 = x) : s.reclaim l v = some (s.setStatus l ((s.statusOf l).withOutcome (.allocation ((((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1))).remove v.address))))
+```
+
+New:
+
+```lean
+theorem reclaim_can_happen (s : Adjudicator E) (l v : FixedPart) (oL oV : Allocation E) (x : Coins) (left right : Address E) (hkl : l.kind = .assetHolding) (hkv : v.kind = .virtual) (hL : s.finalOutcome l.address = some (.allocation oL)) (hV : s.finalizedWith v.address = some (.allocation oV)) (hg : oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩) (hl : (oL.remove v.address).find left ≠ none) (hr : (oL.remove v.address).find right ≠ none) (hx : oV.amountAt 0 + oV.amountAt 1 = x) : s.reclaim l v = some (s.setStatus l ((s.statusOf l).withOutcome (.allocation ((((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1))).remove v.address))))
+```
+
+#### `ledger_offload_funds_subchannel`
+
+G16 (defect 23 in §3 above, applied here as the brief required): `w.χ` must not finalize during the strategy,
+the hypothesis `ledger_partial_withdrawal` already carries for its receiving ledger.
+
+Old (`568b6fd`):
+
+```lean
+theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E) (hv : v.Consistent) (w : LedgerWithSub E) (hw : w.Holds apps Ts v) : FundedFor apps (Ts.T w.A) w.χ w.c (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.c (v w.B)
+```
+
+New:
+
+```lean
+theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E) (hv : v.Consistent) (w : LedgerWithSub E) (hw : w.Holds apps Ts v) (hχopen : ∀ p, (v p).chain.finalOutcome w.χ.address = none) (hχsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) : FundedFor apps (Ts.T w.A) w.χ w.c (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.c (v w.B)
+```
+
+#### `satp_reclaim_credits_intermediary` (one of the four proved Liveness theorems; stays proved)
+
+New hypotheses `Lm.kind = .assetHolding`, `Lp.kind = .assetHolding`, `r.V.kind = .virtual`; `hV` reads `V`'s
+outcome as `finalizedWith`. The new proof derives `Lm ≠ V` and `Lp ≠ V` directly from the kind mismatch
+(`rw [hkV] at hkLm; cases hkLm`), replacing the old argument through the guarantee's outcome structure.
+
+Old (`568b6fd`):
+
+```lean
+theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E) (alice bob P Pprev Pnext : Participant) (Lm Lp : FixedPart) (om op : Allocation E) (a b : Coins) (hdist : r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext) (hV : s.finalOutcome r.V.address = some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b])) (hLm : s.finalOutcome Lm.address = some (.allocation om)) (hLp : s.finalOutcome Lp.address = some (.allocation op)) (hgm : om.find r.V.address = some (r.guarantee Pprev P)) (hgp : op.find r.V.address = some (r.guarantee P Pnext)) (hne : Lm ≠ Lp) (hem : om.find (.external (r.dest Pprev)) ≠ none ∧ om.find (.external (r.dest P)) ≠ none) (hep : op.find (.external (r.dest P)) ≠ none ∧ op.find (.external (r.dest Pnext)) ≠ none) (hab : a + b = r.a0 + r.b0) : ∃ s1 s2 om' op', …
+```
+
+New:
+
+```lean
+theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E) (alice bob P Pprev Pnext : Participant) (Lm Lp : FixedPart) (om op : Allocation E) (a b : Coins) (hdist : r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext) (hkLm : Lm.kind = .assetHolding) (hkLp : Lp.kind = .assetHolding) (hkV : r.V.kind = .virtual) (hV : s.finalizedWith r.V.address = some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b])) (hLm : s.finalOutcome Lm.address = some (.allocation om)) (hLp : s.finalOutcome Lp.address = some (.allocation op)) (hgm : om.find r.V.address = some (r.guarantee Pprev P)) (hgp : op.find r.V.address = some (r.guarantee P Pnext)) (hne : Lm ≠ Lp) (hem : om.find (.external (r.dest Pprev)) ≠ none ∧ om.find (.external (r.dest P)) ≠ none) (hep : op.find (.external (r.dest P)) ≠ none ∧ op.find (.external (r.dest Pnext)) ≠ none) (hab : a + b = r.a0 + r.b0) : ∃ s1 s2 om' op', …
+```
+
+### 6.4 Acceptance evidence for the second revision
+
+- `~/.elan/bin/lake build`: exit 0; 30 `declaration uses 'sorry'` warnings, all in `Liveness.lean` (34
+  theorems, 4 proved).
+- `#print axioms` on the 66 theorems of `Safety.lean` and the 4 proved `Liveness.lean` theorems: each lists a
+  subset of `propext`, `Classical.choice`, `Quot.sound`. No `sorryAx`.
+- `grep -c "^example" ArmadaLean/Nitro/NonVacuity.lean` is 91: 66 `Safety.lean` theorems minus the 9 listed as
+  having no hypotheses, plus the 34 theorems of `Liveness.lean`. The module builds with no `sorry`.
 - No `axiom` in `ArmadaLean/Nitro/`.

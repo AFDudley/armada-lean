@@ -6,7 +6,7 @@
 
   The destination type is `Nat`. Theorems with no hypotheses beyond their
   binders' types (no witness needed): `channel_address_ne_external`,
-  `balances_total_split`, `deposit_can_happen`, `deposit_to_external_fails`,
+  `balances_total_split`, `deposit_to_external_fails`,
   `payout_bounded`, `paidTo_first_entry_only`, `reduceOwed_owed`,
   `tick_moves_only_time`, `mover_cyclic`, `isOpen_iff`.
 -/
@@ -82,9 +82,13 @@ example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (c : FixedPart) (o
     s.apply apps0 caller (.deposit c.address (o.aheadOf k) e.amount) = some s' :=
   ⟨g0, sDep, p0, c1, o1, 0, alloc d0 1, .refl, by decide, by decide, rfl⟩
 
+/-- `deposit_can_happen`. -/
+example : ∃ (c : FixedPart), c.kind = .assetHolding := ⟨c1, by decide⟩
+
 /-- `deposits_in_order_succeed`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart), s.balances.get c.address = 0 :=
-  ⟨g0, c1, by decide⟩
+example : ∃ (s : Adjudicator Nat) (c : FixedPart), c.kind = .assetHolding ∧
+    s.balances.get c.address = 0 :=
+  ⟨g0, c1, by decide, by decide⟩
 
 /-- `held_falls_only_by_payout`. -/
 example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
@@ -119,8 +123,9 @@ example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adju
 
 /-- `transfer_can_happen`. -/
 example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (o : Allocation Nat) (amt : Coins),
+    a.kind = .assetHolding ∧ b.fundable = true ∧
     s.finalOutcome a.address = some (.allocation o) ∧ o.find b = some ⟨b, .alloc amt⟩ :=
-  ⟨sCon, c1, d0, o1, 1, by decide, by decide⟩
+  ⟨sCon, c1, d0, o1, 1, by decide, by decide, by decide, by decide⟩
 
 /-- `transfer_fails_otherwise`. -/
 example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat),
@@ -302,7 +307,8 @@ example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat),
 /-- `reclaim_effects`. -/
 example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat) (oL oV : Allocation Nat)
     (x : Coins) (left right : Address Nat),
-    s.finalOutcome l.address = some (.allocation oL) ∧ s.finalOutcome v.address = some (.allocation oV) ∧
+    s.finalOutcome l.address = some (.allocation oL) ∧
+    s.finalizedWith v.address = some (.allocation oV) ∧
     oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧ left ≠ right ∧
     left ≠ v.address ∧ right ≠ v.address ∧ l ≠ v ∧ oL.dedup = oL ∧ s.reclaim l v = some s' :=
   ⟨sR, cL, cV, _, oL, oV, 1, d0, d1, by decide, by decide, by decide, by decide, by decide, by decide,
@@ -311,11 +317,14 @@ example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat) (oL
 /-- `reclaim_can_happen`. -/
 example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
     (left right : Address Nat),
-    s.finalOutcome l.address = some (.allocation oL) ∧ s.finalOutcome v.address = some (.allocation oV) ∧
+    l.kind = .assetHolding ∧ v.kind = .virtual ∧
+    s.finalOutcome l.address = some (.allocation oL) ∧
+    s.finalizedWith v.address = some (.allocation oV) ∧
     oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
     (oL.remove v.address).find left ≠ none ∧ (oL.remove v.address).find right ≠ none ∧
     oV.amountAt 0 + oV.amountAt 1 = x :=
-  ⟨sR, cL, cV, oL, oV, 1, d0, d1, by decide, by decide, by decide, by decide, by decide, by decide⟩
+  ⟨sR, cL, cV, oL, oV, 1, d0, d1, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide, by decide⟩
 
 /-- `reclaim_fails_without_entries`: the target's amounts sum to 1, the
     guarantee says 2. -/
@@ -326,11 +335,20 @@ def sR2 : Adjudicator Nat :=
 
 example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
     (left right : Address Nat),
-    s.finalOutcome l.address = some (.allocation oL) ∧ s.finalOutcome v.address = some (.allocation oV) ∧
+    s.finalOutcome l.address = some (.allocation oL) ∧
+    s.finalizedWith v.address = some (.allocation oV) ∧
     oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
     ((oL.remove v.address).find left = none ∨ (oL.remove v.address).find right = none ∨
       oV.amountAt 0 + oV.amountAt 1 ≠ x) :=
   ⟨sR2, cL, cV, oL2, oV, 2, d0, d1, by decide, by decide, by decide, by decide⟩
+
+/-- `transfer_pays_at_most_held`. -/
+example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
+    s.transfer a b = some s' := ⟨sCon, c1, d0, _, rfl⟩
+
+/-- `reclaim_moves_guarantee_amount`. -/
+example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat),
+    s.reclaim l v = some s' := ⟨sR, cL, cV, _, rfl⟩
 
 /-- `mode_of_absent`. -/
 example : ∃ (s : Adjudicator Nat) (c : FixedPart), ∀ e ∈ s.status, e.1 ≠ c :=
@@ -1572,7 +1590,8 @@ def sRC : Adjudicator Nat :=
 example : ∃ (s : Adjudicator Nat) (r : Route Nat) (alice bob P Pprev Pnext : Participant)
     (Lm Lp : FixedPart) (om op : Allocation Nat) (a b : Coins),
     (r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext) ∧
-    s.finalOutcome r.V.address =
+    Lm.kind = .assetHolding ∧ Lp.kind = .assetHolding ∧ r.V.kind = .virtual ∧
+    s.finalizedWith r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
     s.finalOutcome Lm.address = some (.allocation om) ∧
     s.finalOutcome Lp.address = some (.allocation op) ∧
@@ -1582,6 +1601,12 @@ example : ∃ (s : Adjudicator Nat) (r : Route Nat) (alice bob P Pprev Pnext : P
     (op.find (.external (r.dest P)) ≠ none ∧ op.find (.external (r.dest Pnext)) ≠ none) ∧
     a + b = r.a0 + r.b0 :=
   ⟨sRC, r3, p0, w0, q0, p0, w0, Lm3, Lp3, om3, op3, 1, 1, by decide, by decide, by decide, by decide,
-    by decide, by decide, by decide, by decide, by decide, rfl⟩
+    by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide, rfl⟩
+
+/-- `virtual_finalized_outcome_immutable`. -/
+example : ∃ (apps : Apps Nat) (s s' : Adjudicator Nat) (c : FixedPart) (f : Outcome Nat),
+    Relation.ReflTransGen (Step apps) s s' ∧ c.kind = .virtual ∧
+    s.finalizedWith c.address = some f :=
+  ⟨apps0, sR, sR, cV, .allocation oV, .refl, by decide, by decide⟩
 
 end ArmadaLean.Nitro.NonVacuity
