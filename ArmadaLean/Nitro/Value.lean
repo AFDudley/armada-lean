@@ -35,10 +35,10 @@ def Adjudicator.Edge (s : Adjudicator) (n d : Address) : Prop :=
 
 /-- A relation with no cycle: no node reaches itself by one or more steps,
     `∀ c, ¬ Relation.TransGen edge c c` (operator ruling 2026-10-27), stated
-    as `IsIrrefl` of the transitive closure (Mathlib `Relation.TransGen`,
-    core `IsIrrefl`; `IsIrrefl.irrefl` is the ruling's formula). -/
+    as `Std.Irrefl` of the transitive closure (Mathlib `Relation.TransGen`,
+    core `Std.Irrefl`; its `irrefl` field is the ruling's formula). -/
 def Acyclic {α : Type} (edge : α → α → Prop) : Prop :=
-  IsIrrefl α (Relation.TransGen edge)
+  Std.Irrefl (Relation.TransGen edge)
 
 /-- Nitro:796-798: "A topological ordering is an ordering of nodes such that, if
     N1 ↦ N2 is an edge, then N1 < N2." Every node with a balance or an
