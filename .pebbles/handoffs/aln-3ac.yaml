@@ -1,0 +1,43 @@
+status: completed
+pebble_id: aln-3ac
+summary: >
+  Proved transactOwned_records_all in ArmadaLean/PoolSafety.lean by
+  combining the two lemmas the theorem's own doc comment names:
+  applyRecords_returns (the fold over a batch settles on the first
+  matching record's preimage) applied with ownedOutputRecords_valid hC
+  (every record in ownedOutputRecords hashes correctly), needing only
+  membership of (pub.commitmentsOut j, <npkOut j, token, valueOut j>) in
+  ownedOutputRecords w pub -- a List.ofFn -- which List.mem_ofFn.mpr
+  discharges by instantiating the index at j with rfl. No lemma
+  statement, hypothesis, or signature was touched; only the sorry body
+  was filled in. Verified by installing an isolated, user-writable
+  elan/lake toolchain (ELAN_HOME=/pebble/agent-home/.elan, since the
+  default $HOME/.elan path and the shared /root/.elan were both
+  inaccessible to this worker's uid), fetching mathlib via `lake update`
+  with the mathlib4 build cache, then running `lake build` end to end
+  (595/595 jobs, no error beyond pre-existing sorry warnings elsewhere),
+  running `scripts/check.sh --json transactOwned_records_all` directly
+  (build_ok=true, theorem_in_sorry=false, sorry_count dropped from 40 to
+  39), and running the full `scripts/check.sh` gate (build, sorry-count
+  ceiling, no vacuous body, axioms, frozen signatures, NonVacuity.lean,
+  all PASS, exit 0).
+cost: "~40k tokens"
+commits:
+  - "cef56b2"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 20
+    - name: scripts/check.sh --json transactOwned_records_all
+      outcome: passed
+      duration_s: 3
+    - name: scripts/check.sh (full gate)
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-3ac.spec.json
+  command: scripts/check.sh --json transactOwned_records_all
+  result: passed
+  ran_at_sha: "cef56b2"
+  mocks_in_path: false
