@@ -60,8 +60,8 @@ intake_derivation:
 # (context_fit_gate.omp_route: a Claude backend's model is `anthropic/<id>`).
 worker_model:
   tiers:
-    default: "claude-sonnet-5"
-    frontier: "claude-opus-5"
+    default: "anthropic/claude-sonnet-5"
+    frontier: "anthropic/claude-opus-5"
   routing:
     default: default
 
