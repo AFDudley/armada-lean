@@ -1,0 +1,51 @@
+status: completed
+pebble_id: aln-f17
+summary: >
+  Proved owned_spend_can_happen in ArmadaLean/PoolOwned.lean, replacing its
+  sorry body. The proof constructs a TransactOwnedWitness/TransactOwnedPublic
+  pair from the theorem's owner-spend arguments (same construction shape as
+  the sibling owned_transact_can_happen in PoolSafety.lean), discharges
+  OwnedConstrained field-by-field (merkle/rangeIn/rangeOut/pathLen from the
+  theorem's own hypotheses, nullifiers/outputs by rfl against the witness's
+  definitional unfolding, balance via congrArg on hBalance), derives
+  VerifyOwnedAccepts from hComplete.complete applied to that OwnedConstrained
+  instance, discharges pub.boundParamsHash = boundParamsHash and
+  caller = pub.ownerField by rfl/hCaller, discharges the output-preimage
+  conjunct by rfl (hashCommitment unfolds to the same commitment the public
+  commitmentsOut field is built from), and discharges nullifier-marking
+  success via markSpent_succeeds, converting hDistinctLeaves into pairwise
+  nullifier distinctness via distinct_leaves_distinct_nullifiers and hFresh
+  into freshness against spent. Also authored the spec-named committed
+  oracle scripts/oracle_owned_spend_can_happen.py (shells out to the real
+  scripts/check.sh --json and emits {theorem_absent_from_sorry, build_ok}
+  as plain stdout_json facts). Verified by installing a local elan/lake
+  toolchain (ELAN_HOME was pre-set in the environment to an unwritable
+  /root/.elan; overrode it to a writable prefix under $HOME), running
+  `lake exe cache get` then `lake build` (595/595 jobs, no warning at
+  PoolOwned.lean:329, the only remaining warnings are the pre-existing
+  Nitro/Liveness.lean and other unrelated sorries), then running
+  `scripts/oracle_owned_spend_can_happen.py owned_spend_can_happen`
+  (reports theorem_absent_from_sorry=true, build_ok=true, exactly the
+  spec's two then-predicates) and the full `scripts/check.sh` (exit 0,
+  owned_spend_can_happen absent from SORRY, sorry count 35, down from the
+  prior 36 left by the previous worker on this file set).
+cost: "~70k tokens"
+commits:
+  - "2c4ed73"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 22
+    - name: scripts/oracle_owned_spend_can_happen.py owned_spend_can_happen
+      outcome: passed
+      duration_s: 4
+    - name: scripts/check.sh
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-f17.spec.json
+  command: "python3 scripts/oracle_owned_spend_can_happen.py owned_spend_can_happen"
+  result: passed
+  ran_at_sha: "2c4ed73"
+  mocks_in_path: false
