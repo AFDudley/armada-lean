@@ -8,5 +8,10 @@
 !.exophial/config.yaml
 !.exophial/gate/
 !.exophial/gate/Dockerfile
+# The Lean worker doctrine: exophial puts this one file into every worker prompt
+# (operator, 2026-10-28: track it; nothing else under .exophial/doctrine/).
+!.exophial/doctrine/
+.exophial/doctrine/*
+!.exophial/doctrine/worker_base.md
 .pebbles/reducer_ledger.jsonl
 __pycache__/
