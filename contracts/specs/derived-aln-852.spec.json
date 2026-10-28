@@ -1,0 +1,89 @@
+{
+  "id": "derived-aln-852",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `directly_funded_pays` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json directly_funded_pays` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `directly_funded_pays`'s proof body is `sorry`. `scripts/check.sh --json directly_funded_pays` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json directly_funded_pays` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem directly_funded_pays",
+  "restatement": "The theorem directly_funded_pays, declared in ArmadaLean/Nitro/Liveness.lean, must have a finished proof body with no sorry placeholder. The repo's own acceptance script, scripts/check.sh, run with --json and the theorem's name, must report theorem_in_sorry as false for it. Only the proof body changes. The theorem's stated claim, theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p), must stay exactly as it reads now, so the fix proves the SAME claim that was approved, not a weaker or different one.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof body of directly_funded_pays carries no sorry. Running scripts/check.sh --json directly_funded_pays from the repo root prints theorem_in_sorry as false in its JSON output."
+    },
+    {
+      "id": "c2",
+      "text": "The statement of directly_funded_pays, theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p), does not change from its current, approved form."
+    }
+  ],
+  "goal": "Close the open sorry in the proof of directly_funded_pays without altering what the theorem claims.",
+  "acceptance_criteria": [
+    "After the fix, running the project's one-theorem check for directly_funded_pays shows the proof no longer has an unfinished placeholder in it.",
+    "The same project check also confirms that no theorem's stated claim changed from the approved, frozen baseline, including this one."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, running the project's one-theorem check for directly_funded_pays shows the proof no longer has an unfinished placeholder in it."
+    },
+    {
+      "id": "c2",
+      "text": "The same project check also confirms that no theorem's stated claim changed from the approved, frozen baseline, including this one."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, running the project's one-theorem check for directly_funded_pays shows the proof no longer has an unfinished placeholder in it.",
+      "proves": "The theorem's proof body no longer carries a sorry, as stated in clause c1.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "directly_funded_pays"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The same project check also confirms that no theorem's stated claim changed from the approved, frozen baseline, including this one.",
+      "proves": "The theorem's statement text stays exactly as it was before the fix, as stated in clause c2.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "directly_funded_pays"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
