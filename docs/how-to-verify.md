@@ -22,7 +22,6 @@ downloads it automatically on first use.
 ```bash
 git clone https://github.com/AFDudley/armada-lean
 cd armada-lean
-git checkout pool-symbolic
 lake exe cache get   # downloads the prebuilt Mathlib
 lake build
 ```
@@ -46,9 +45,10 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result on branch `pool-symbolic`: only the theorems that still wait for a
-proof. Their types are approved (armada-laconic
-`labbook/2026-10-28-pool-symbolic-types-approval.md`).
+Expected result: only the pool theorems that still wait for a proof (their types
+are approved, armada-laconic `labbook/2026-10-28-pool-symbolic-types-approval.md`),
+and the `ArmadaLean/Nitro/Liveness.lean` theorems that still wait for a proof
+(their types are approved, tag `nitro-proofs-approved-2026-10-28`).
 
 ## 4. Audit the assumptions (the important part)
 
@@ -82,7 +82,8 @@ Compare against the recorded output in `docs/axioms-circuit.txt` and
 - **`no_wraparound_minting` and all vault/fee theorems** depend only on
   `propext` / `Quot.sound` — Lean's standard logical axioms, i.e. they are
   unconditional mathematics.
-- **`sorryAx` appears only for the theorems that still wait for a proof** —
+- **`sorryAx` appears only for the pool theorems and the `Liveness.lean` theorems
+  that still wait for a proof** —
   anywhere else it would indicate a hidden `sorry`.
 
 ## 5. Check the model matches the real code (the human part)

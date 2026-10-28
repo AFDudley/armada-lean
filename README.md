@@ -3,7 +3,8 @@
 Formal verification (Lean 4) of the core security properties of the **Armada
 shielded pool** — the `Transact` ZK circuit, its Merkle membership verifier,
 the `PrivacyPool` contract's bookkeeping (notes, nullifiers, roots, token
-custody), the yield-vault share math, and the shield fee formula.
+custody), the yield-vault share math, the shield fee formula — and of the
+**Nitro state-channel adjudicator** (ledger and virtual channels).
 
 **Status:** pre-audit assurance artifact. Companion to
 `armada-circuits/docs/SECURITY_REVIEW.md` and the shielded-pool launch track
@@ -29,6 +30,11 @@ grep -rn "sorry\|admit" ArmadaLean/   # → only the theorems marked `sorry` bel
 A theorem whose type is new or changed has the proof `sorry` until the operator
 approves the type. The tables mark each one. `docs/pool-symbolic-changes.md` lists
 every change and every changed type.
+
+**Branch `nitro-proofs`:** the state-channel model (`ArmadaLean/Nitro/`) covers
+ledger and virtual channels. `Safety.lean`'s 63 theorems are proved.
+`Liveness.lean`'s 34 theorems have proof `sorry`, except the four that read no
+game definition. `docs/nitro-theorems.md` maps every theorem to its source.
 
 Dependency: Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib where it makes sense). Run
 `lake exe cache get` before the first `lake build`.
@@ -119,6 +125,16 @@ step applies it to the gross amount (operator ruling, 2026-10-27).
 | `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) (type changed: P-9; proved) | same |
 | `shieldBase_pos` | `Fee` | a shield of a positive gross amount creates a note of positive value, under the fee cap `maxFeePercent` (new; proved) | `_getFee`, `ShieldModule.sol:353-371`; operator ruling 2026-10-27 (fee cap) |
 
+### State channels (`ArmadaLean/Nitro/`, go-nitro and the SATP/Nitro/ForceMove papers)
+
+The adjudicator model covers ledger and virtual channels: deposit, transfer,
+reclaim, challenge, checkpoint and conclude. `Safety.lean` proves 63 on-chain
+safety and conservation theorems. `Liveness.lean` states 34 theorems on
+unbeatable strategies and the Turbo Value Algorithm; all but four — which read
+no game definition — have proof `sorry`. `docs/nitro-theorems.md` maps every
+theorem to its source paper and to go-nitro. `docs/nitro-repair-2026-10-27.md`
+records the approved changes to the Safety statements.
+
 ## Trust base & scope
 
 Poseidon and Keccak are both modeled symbolically (Dolev-Yao style,
@@ -161,10 +177,25 @@ ArmadaLean/
   PoolSafety.lean         pool contract's safety theorems, over Pool.lean
   Vault.lean              #365 attack + mitigation proofs
   Fee.lean                shield-fee reference spec
+  Nitro/
+    Address.lean          coins, time, participants, fixed part, destinations, balances
+    Outcome.lean          items, allocations, priority payout, afford, outcomes
+    Channel.lean           states, signed states, ForceMove and consensus rules
+    Adjudicator.lean       adjudicator state, deposit/transfer/reclaim/challenge/checkpoint/conclude
+    Strategy.lean           network states, moves, threat model, unbeatable strategies
+    Value.lean              outcome network, DAG, Turbo Value Algorithm
+    Constructions.lean      ledger channels with sub-channels
+    SATP.lean               vouchers, virtual channel rules, routes
+    Lemmas.lean             reading lemmas and the coins-held invariant
+    Safety.lean             63 proved on-chain safety theorems
+    Liveness.lean           34 liveness theorems (mostly `sorry`)
+    NonVacuity.lean         one proved witness per theorem with hypotheses
 docs/
   what-the-proofs-mean.md one-page explainer
   how-to-verify.md      step-by-step independent verification guide
   axioms-circuit.txt    #print axioms audit output (circuit theorems)
   axioms-contracts.txt    #print axioms audit output (vault/fee theorems)
   pool-symbolic-changes.md  the P-1..P-11 changes, the new theorems, the changed types
+  nitro-theorems.md       the Nitro/SATP/ForceMove theorem-to-source map
+  nitro-repair-2026-10-27.md  the approved corrections to the Safety statements
 ```
