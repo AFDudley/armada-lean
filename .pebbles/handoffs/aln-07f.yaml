@@ -1,0 +1,46 @@
+status: completed
+pebble_id: aln-07f
+summary: >
+  Proved live_values_spendable in ArmadaLean/PoolSafety.lean by structural
+  induction on Reachable, delegating to the already-proved
+  genesis_live_values_spendable (genesis case) and
+  step_preserves_live_values_spendable (step case), mirroring the
+  established reachable-induction pattern used elsewhere in the file (e.g.
+  live_leaf_matches). The theorem's statement, hypotheses, and name were
+  left untouched; only the sorry proof body was filled in. Added the
+  spec-named acceptance probe scripts/acceptance_live_values_spendable.py
+  (a committed, judgment-free observer mirroring
+  scripts/acceptance_leaf_has_merkle_witness.py) since it did not yet
+  exist. Verified by installing a user-writable elan/lake toolchain
+  (the shared /root/.elan was inaccessible to this worker's uid),
+  running `lake build` end to end (15/15 jobs, no error), running
+  `scripts/check.sh --json live_values_spendable` directly (exit 0,
+  theorem_under_test absent from sorry, sorry_count dropped from 43 to
+  42), running the acceptance probe itself
+  (python3 scripts/acceptance_live_values_spendable.py
+  live_values_spendable -> {"theorem_in_sorry": false}, exit 0), and
+  running the full scripts/check.sh gate (build, sorry count, no vacuous
+  body, axioms, signatures, NonVacuity.lean all PASS, exit 0).
+cost: "~35k tokens"
+commits:
+  - "55cb26b"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 76
+    - name: scripts/check.sh --json live_values_spendable
+      outcome: passed
+      duration_s: 81
+    - name: scripts/acceptance_live_values_spendable.py live_values_spendable
+      outcome: passed
+      duration_s: 3
+    - name: scripts/check.sh (full gate)
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-07f.spec.json
+  command: python3 scripts/acceptance_live_values_spendable.py live_values_spendable
+  result: passed
+  ran_at_sha: "55cb26b"
+  mocks_in_path: false
