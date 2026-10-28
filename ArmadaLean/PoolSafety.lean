@@ -524,7 +524,8 @@ theorem transactOwned_records_all {reg : PreimageRegistry} {N M : Nat}
     (hC : OwnedConstrained w pub) (j : Fin M) :
     applyRecords reg (ownedOutputRecords w pub) (pub.commitmentsOut j) =
       some (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage) := by
-  sorry
+  apply applyRecords_returns (ownedOutputRecords_valid hC)
+  exact List.mem_ofFn.mpr ⟨j, rfl⟩
 
 /-! ### Can happen -/
 
