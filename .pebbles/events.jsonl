@@ -5,3 +5,9 @@
 {"type":"comment","timestamp":"2026-10-28T03:13:42.699825Z","issue_id":"aln-2bf","payload":{"body":"gate-verdict: c60b5567f1cc08bc53266822a8848cfb21696265 passed 0.2.1+de49443d","build":"0.2.1+de49443d","outcome":"passed","sha":"c60b5567f1cc08bc53266822a8848cfb21696265","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-10-28T03:13:42.700411Z","issue_id":"aln-2bf","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-10-28T03:13:42.700644Z","issue_id":"aln-2bf","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-10-28T03:29:38.809839Z","issue_id":"aln-70a","payload":{"description":"Operator-authored branch `aln-json-oracle`, landed via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: aln-json-oracle","type":"task"}}
+{"type":"comment","timestamp":"2026-10-28T03:29:38.810236Z","issue_id":"aln-70a","payload":{"body":"branch-identity: aln-json-oracle"}}
+{"type":"comment","timestamp":"2026-10-28T03:37:24.145371Z","issue_id":"aln-70a","payload":{"body":"exophial-integration-attempt-started: at 6bbb7063c9874f9277153cc4ea99a13da1cde08e"}}
+{"type":"comment","timestamp":"2026-10-28T03:37:26.203623Z","issue_id":"aln-70a","payload":{"body":"gate-verdict: b7710274b18009b876d1d5fe6ba277a8fec7f6bb passed 0.2.1+de49443d","build":"0.2.1+de49443d","outcome":"passed","sha":"b7710274b18009b876d1d5fe6ba277a8fec7f6bb","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-10-28T03:37:26.204248Z","issue_id":"aln-70a","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-10-28T03:37:26.204669Z","issue_id":"aln-70a","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
