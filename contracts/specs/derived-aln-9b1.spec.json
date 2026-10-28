@@ -1,27 +1,27 @@
 {
   "id": "derived-aln-9b1",
   "original_statement": "What must hold? State the invariant or expectation this concerns. `leaf_has_merkle_witness` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json leaf_has_merkle_witness` reports `leaf_has_merkle_witness` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `leaf_has_merkle_witness`'s proof body is `sorry`. `scripts/check.sh --json leaf_has_merkle_witness` reports `leaf_has_merkle_witness` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json leaf_has_merkle_witness` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem leaf_has_merkle_witness",
-  "restatement": "The pool-safety proof catalog in ArmadaLean/PoolSafety.lean names the theorem leaf_has_merkle_witness. For any reachable pool state and any leaf that sits at a given index in a given tree's leaf list, the theorem states two facts together: first, that hashing the leaf up its Merkle path reproduces that tree's root, and second, that this root is one of the roots the state actually records for that tree. In plain terms, this is the proof that every leaf the pool ever stores carries a valid Merkle inclusion proof into a root the pool recognizes. The theorem's proof body is currently a placeholder (sorry), so no real proof exists yet. The request asks that this proof be completed for real, with no sorry left in the theorem's own proof body. The theorem's statement itself (its name, its hypotheses, and its conclusion) is frozen and out of scope for this request; only the proof body changes. The repository already carries a deterministic check for this: scripts/check.sh --json <theorem-name> builds the project, lists every theorem whose own proof body still carries sorry, and echoes back the queried theorem name so a predicate can confirm that name is absent from that list. Completing the proof means that running this check for leaf_has_merkle_witness reports the theorem absent from the list of unfinished proofs.",
+  "restatement": "The theorem `leaf_has_merkle_witness` in `ArmadaLean/PoolSafety.lean` needs a real proof. Its proof body must not contain the placeholder `sorry`. The theorem states two facts about the pool. Every stored leaf has a valid Merkle path. That path rebuilds a root the pool state still recognizes. The proof body today is only `sorry`. The theorem's statement does not change. Only the proof body changes. The repository already has a check for this fact. `scripts/check.sh --json leaf_has_merkle_witness` builds the project. It lists every theorem whose proof body still carries `sorry`. It also prints the queried theorem name back under the key `theorem_under_test`. The fix is complete when this script no longer lists `leaf_has_merkle_witness` in its `sorry` list.",
   "restatement_clauses": [
     {
       "id": "c1",
-      "text": "The theorem leaf_has_merkle_witness in ArmadaLean/PoolSafety.lean is proved with no sorry in its own proof body, and scripts/check.sh --json leaf_has_merkle_witness reports leaf_has_merkle_witness absent from its sorry array, per the predicate {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}."
+      "text": "The theorem `leaf_has_merkle_witness` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json leaf_has_merkle_witness` reports `leaf_has_merkle_witness` absent from its `sorry` array. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}."
     }
   ],
-  "goal": "Finish the proof of the Lean theorem leaf_has_merkle_witness in ArmadaLean/PoolSafety.lean so its own proof body carries no sorry, confirmed by scripts/check.sh --json leaf_has_merkle_witness.",
+  "goal": "Finish the proof of the Lean theorem `leaf_has_merkle_witness` in `ArmadaLean/PoolSafety.lean` so its own proof body carries no `sorry`, confirmed by `scripts/check.sh --json leaf_has_merkle_witness`.",
   "acceptance_criteria": [
-    "After the project's check script runs for the theorem named leaf_has_merkle_witness, its report no longer lists leaf_has_merkle_witness among the theorems whose proof is still unfinished."
+    "A person runs the project's proof-check script and names this theorem. The script no longer lists this theorem as an unfinished proof."
   ],
   "request_clauses": [
     {
       "id": "c1",
-      "text": "After the project's check script runs for the theorem named leaf_has_merkle_witness, its report no longer lists leaf_has_merkle_witness among the theorems whose proof is still unfinished."
+      "text": "A person runs the project's proof-check script and names this theorem. The script no longer lists this theorem as an unfinished proof."
     }
   ],
   "acceptance_tests": [
     {
-      "description": "After the project's check script runs for the theorem named leaf_has_merkle_witness, its report no longer lists leaf_has_merkle_witness among the theorems whose proof is still unfinished.",
-      "proves": "Proves that leaf_has_merkle_witness's proof body is complete, with no sorry placeholder left, as confirmed by the project's own build-and-check script reading the theorem back out of its report.",
+      "description": "A person runs the project's proof-check script and names this theorem. The script no longer lists this theorem as an unfinished proof.",
+      "proves": "This proves the theorem's proof body no longer carries the `sorry` placeholder, as the project's own check script confirms by name.",
       "restatement_clause_id": "c1",
       "type": "behavior",
       "when": {
@@ -34,14 +34,14 @@
       },
       "then": [
         {
-          "observe": "exit_code",
           "field": "exit_code",
+          "observe": "exit_code",
           "op": "eq",
           "value": 0
         },
         {
-          "observe": "stdout_json",
           "field": "theorem_in_sorry",
+          "observe": "stdout_json",
           "op": "eq",
           "value": false
         }
