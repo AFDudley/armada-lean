@@ -1,0 +1,52 @@
+status: completed
+pebble_id: aln-9b1
+summary: >
+  Finished the proof of leaf_has_merkle_witness in ArmadaLean/PoolSafety.lean,
+  replacing its sorry body with a real proof. The proof derives i < 2^TreeDepth
+  from the Option-lookup hypothesis (List.getElem?_eq_some_iff) combined with
+  reachable_leavesAt_capacity, applies treePath_correct_of_getElem? (Merkle.lean)
+  for the Merkle-path correctness conjunct, and applies
+  reachable_rootAt_matches_leavesAt for the root-membership conjunct, ruling out
+  its "no leaves" disjunct with the leaf hypothesis itself. The theorem's
+  statement is unchanged. Also authored the declared new entrypoint
+  scripts/acceptance_leaf_has_merkle_witness.py (named by
+  contracts/specs/derived-aln-9b1.spec.json's acceptance test): it runs the real
+  scripts/check.sh --json THEOREM_NAME and emits one stdout_json observation
+  {theorem_in_sorry: bool}, judging nothing itself. Verified end-to-end: `lake
+  build` on the full project succeeds with no new sorries; `scripts/check.sh`
+  exits 0 with sorry_count 44 (baseline 46) and leaf_has_merkle_witness absent
+  from its SORRY list; the acceptance probe itself prints
+  {"theorem_in_sorry": false} with exit code 0, matching the spec's `then`
+  predicates. Red-before-green checked by hand with git stash: reverting the
+  proof body to sorry makes the probe report theorem_in_sorry=true (and
+  scripts/check.sh lists it in SORRY); restoring the proof reports false again.
+  No lake/elan toolchain was present in the worker environment at task start
+  (HOME=/pebble/agent-home, no existing elan install reachable); installed
+  elan+lake+mathlib under ELAN_HOME=/pebble/agent-home/.elan to build and run
+  the gate, matching scripts/check.sh's own `$HOME/.elan/bin/lake` lookup.
+  pre-commit itself was not installed as a git hook in this worktree (no
+  .git/hooks/pre-commit present, and the repo's custom exophial-* hook
+  binaries referenced by .pre-commit-config.yaml are not installed in this
+  sandbox); I did not attempt to fabricate their output. The commit message
+  carries a manually-verified Tested-Behavior: trailer per
+  scripts/git-hooks/tdd-trailer.sh's required format.
+cost: "~85k tokens"
+commits:
+  - "21ae5da9b1b8d2cf0c28c61308099becca326ef3"
+verify_transcript:
+  hooks:
+    - name: lake build (full project)
+      outcome: passed
+      duration_s: 24
+    - name: scripts/check.sh (full, non-JSON)
+      outcome: passed
+      duration_s: 4
+    - name: scripts/acceptance_leaf_has_merkle_witness.py leaf_has_merkle_witness
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: scripts/acceptance_leaf_has_merkle_witness.py
+  command: "python3 scripts/acceptance_leaf_has_merkle_witness.py leaf_has_merkle_witness"
+  result: passed
+  ran_at_sha: "21ae5da9b1b8d2cf0c28c61308099becca326ef3"
+  mocks_in_path: false
