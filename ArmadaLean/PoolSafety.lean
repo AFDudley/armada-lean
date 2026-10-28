@@ -1768,7 +1768,9 @@ an input. The number 120 stays in the circuit layer (finding P-6). Kept because
 `owned_merge_can_happen` needs it for its inputs (finding P-5). -/
 theorem live_values_spendable {s : PoolState} (h : Reachable s) :
     LiveValuesSpendable s := by
-  sorry
+  induction h with
+  | genesis r => exact genesis_live_values_spendable r
+  | step _ hstep ih => exact step_preserves_live_values_spendable ih hstep
 
 /-! ### No step blocks a pending spend (theorem 1 of the channel design)
 
