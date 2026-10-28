@@ -744,7 +744,44 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
               CommitmentPreimage)))
         = some rest) :
     ∃ s', Step s s' ∧ s'.payouts = s.payouts ++ [⟨token, recipient, value⟩] := by
-  sorry
+  let pub : TransactPublic N 1 :=
+    { merkleRoot := root, boundParamsHash := hashBoundParams bp,
+      nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
+      commitmentsOut := fun _ => commitment recipient token value }
+  let w : TransactWitness N 1 :=
+    { token := token, publicKey := publicKey,
+      signature := hSig.sign publicKey (msgHashOf pub), nullifyingKey := nullifyingKey,
+      randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := fun _ => recipient, valueOut := fun _ => value }
+  have hBalance' : listSum (List.ofFn valueIn) = listSum (List.ofFn w.valueOut) := by
+    show listSum (List.ofFn valueIn) = listSum (List.ofFn (fun _ : Fin 1 => value))
+    simp [List.ofFn_succ, List.ofFn_zero, listSum, hBalance]
+  have hConstrained : Constrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := fun _ => hRangeOut,
+      balance := congrArg (· % p) hBalance',
+      distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
+      sig := hSig.signSound publicKey (msgHashOf pub) }
+  obtain ⟨spent', hNullify⟩ :
+      ∃ spent', markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' := by
+    apply markSpent_succeeds
+    · have hmap := distinct_leaves_distinct_nullifiers (Term.val nullifyingKey)
+        (List.ofFn leavesIndices) hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier (Term.val nullifyingKey))
+          = List.ofFn pub.nullifiers := List.map_ofFn
+      rwa [heq] at hmap
+    · intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i
+  have hUnshieldRefines : UnshieldRefines w bp.unshield ([] : List CommitmentPreimage) := by
+    rw [hU]
+    show transactAllOutputs w = [] ++ [⟨recipient, w.token, value⟩]
+    simp [transactAllOutputs, List.ofFn_succ, List.ofFn_zero, w]
+  refine ⟨_, Step.transact caller w pub bp hN (by decide) hConstrained rfl hAdapt
+    [] hUnshieldRefines rest spent' (transactOutputRecords w pub) []
+    hRoot hLive hNullify (List.Sublist.refl _), ?_⟩
+  simp [hU, w]
 
 /-- **Can happen: an owned transact succeeds.** Wires an owned witness, built as
     `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one, into
