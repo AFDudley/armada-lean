@@ -1689,7 +1689,11 @@ Proved from `reachable_live_leaf_matches` and the range part of
 theorem live_leaf_matches {s : PoolState} (h : Reachable s) (t : Token) (tn pos : Nat)
     (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.live t) :
     (s.leavesAt' tn)[pos]? = some (hashCommitment pre) := by
-  sorry
+  have hmatch := reachable_live_leaf_matches h t tn pos pre hmem
+  have hrange := (reachable_live_spent_invariant h).1 t tn pos pre hmem
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hrange] at hmatch
+  rw [List.getElem?_eq_getElem hrange]
+  exact congrArg some hmatch
 
 /-! ### Every live note is spendable -/
 
