@@ -20,20 +20,23 @@ downloads it automatically on first use.
 ## 2. Clone and build
 
 ```bash
-git clone https://github.com/ship-armada/armada-lean
+git clone https://github.com/AFDudley/armada-lean
 cd armada-lean
+git checkout armada-nitro-spec
+lake exe cache get   # downloads the prebuilt Mathlib
 lake build
 ```
 
-Expected result: `Build completed successfully (12 jobs).` and exit code 0.
+Expected result: `lake build` ends with `Build completed successfully` and exit code 0.
 
 **What this means:** every `theorem` in `ArmadaLean/*.lean` was re-checked,
 proof step by proof step, by the Lean kernel. If any proof were wrong — or a
 theorem statement didn't say what we claim — the build would fail. There is no
 way to "force" a green build other than a correct proof.
 
-Note the project has **zero dependencies** (no mathlib), so the build takes
-seconds and cannot be affected by upstream package changes.
+The project depends on Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib
+where it makes sense). `lake exe cache get` downloads Mathlib's prebuilt files, so
+the build does not compile Mathlib. `lake-manifest.json` pins the Mathlib commit.
 
 ## 3. Check there are no unfinished proofs
 
@@ -43,9 +46,9 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result on branch `pool-symbolic`: only the theorems whose type is new or
-changed, each listed in `docs/pool-symbolic-changes.md`. Their proofs wait for the
-operator's approval of the types.
+Expected result on branch `armada-nitro-spec`: the pool theorems that still wait for
+a proof, and every theorem in `ArmadaLean/ArmadaNitro/`. The Armada layer's theorem
+types wait for the operator's approval.
 
 ## 4. Audit the assumptions (the important part)
 
@@ -71,14 +74,15 @@ lake env lean /tmp/check_axioms.lean
 Compare against the recorded output in `docs/axioms-circuit.txt` and
 `docs/axioms-contracts.txt`. What you should see:
 
-- **Circuit theorems** may list `poseidon2`, `poseidon2_inj`, `poseidon3`,
-  `EdDSAVerify`, `msgHashOf` — these are the declared cryptographic
-  assumptions (read their doc comments in `ArmadaLean/Poseidon.lean` and
-  `ArmadaLean/Transact.lean`).
+- **Theorems that use a proof check** may list `EdDSAVerify`, `VerifyAccepts`
+  and `VerifyOwnedAccepts`. These are the declared primitives: each declares a
+  verifier by its type only (read their doc comments in `ArmadaLean/Transact.lean`,
+  `ArmadaLean/PoolSafety.lean` and `ArmadaLean/PoolOwned.lean`). Poseidon is a
+  symbolic term, not an axiom (`ArmadaLean/Poseidon.lean`).
 - **`no_wraparound_minting` and all vault/fee theorems** depend only on
   `propext` / `Quot.sound` — Lean's standard logical axioms, i.e. they are
   unconditional mathematics.
-- **`sorryAx` appears only for the theorems listed in `docs/pool-symbolic-changes.md`** —
+- **`sorryAx` appears only for the theorems that still wait for a proof** —
   anywhere else it would indicate a hidden `sorry`.
 
 ## 5. Check the model matches the real code (the human part)

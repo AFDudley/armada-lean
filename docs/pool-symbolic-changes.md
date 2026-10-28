@@ -2,7 +2,8 @@
 
 Base: `pool-model` at `7f2d1ec`. Source of the findings: armada-laconic
 `labbook/2026-10-26-pool-layout-audit.md` (P-1 to P-11). Operator rulings: 2026-10-26.
-Toolchain: Lean v4.33.1, no Mathlib.
+Toolchain: Lean v4.33.1. Mathlib `v4.33.1` was added after this report, at `3128085`
+(operator ruling 2026-10-27).
 
 ## Proof policy on this branch
 
