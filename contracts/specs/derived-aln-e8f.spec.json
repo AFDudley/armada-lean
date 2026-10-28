@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-e8f",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `transact_can_happen` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json transact_can_happen` reports `transact_can_happen` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `transact_can_happen`'s proof body is `sorry`. `scripts/check.sh --json transact_can_happen` reports `transact_can_happen` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json transact_can_happen` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem transact_can_happen",
+  "restatement": "The Lean theorem transact_can_happen in ArmadaLean/PoolSafety.lean must have a complete proof body, with no sorry placeholder inside it. The project's own checker, run as scripts/check.sh --json transact_can_happen, is the authority for this fact. In the JSON that command prints, the theorem name stored in theorem_under_test must not appear inside the printed sorry list. The prior attempt at this spec split the request into two clauses: one about the proof body itself, and one about the check script's report. The second clause had no oracle, because the behavior oracle's then predicates only support scalar comparisons (ge/le/gt/lt/eq/ne), and cannot directly state list membership. Both clauses describe the same single observable fact, checked through the same single mechanism, so this restatement states it as one clause. The fix is to have a worker-created entrypoint script run scripts/check.sh --json transact_can_happen itself, read its printed sorry list and theorem_under_test name, and print one plain fact: whether that name is on that list. The runner then judges that plain fact with an ordinary equality check. This keeps the exact predicate from the report and needs no change to the oracle grammar.",
+  "restatement_clauses": [
+    {
+      "id": "sorry-closed",
+      "text": "The theorem transact_can_happen in ArmadaLean/PoolSafety.lean has a proof body with no sorry in it, such that running scripts/check.sh --json transact_can_happen prints theorem_under_test as absent from its sorry list."
+    }
+  ],
+  "goal": "Close the open sorry in the Lean theorem transact_can_happen in ArmadaLean/PoolSafety.lean, so the project's own proof checker no longer lists it as unfinished.",
+  "acceptance_criteria": [
+    "Running the project's own proof checker against the theorem transact_can_happen shows that theorem no longer on the list of theorems with an unfinished proof."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's own proof checker against the theorem transact_can_happen shows that theorem no longer on the list of theorems with an unfinished proof."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's own proof checker against the theorem transact_can_happen shows that theorem no longer on the list of theorems with an unfinished proof.",
+      "proves": "Proves the single requirement in the restatement: the project's checker confirms transact_can_happen is not on its list of theorems still containing sorry.",
+      "restatement_clause_id": "sorry-closed",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/verify_transact_can_happen_sorry_closed.py",
+        "args": [
+          "transact_can_happen"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_under_test_in_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "field": "check_exit_code",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/verify_transact_can_happen_sorry_closed.py"
+  ]
+}
