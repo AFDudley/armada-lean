@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-46f",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `unshield_can_happen` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json unshield_can_happen` reports `unshield_can_happen` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `unshield_can_happen`'s proof body is `sorry`. `scripts/check.sh --json unshield_can_happen` reports `unshield_can_happen` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json unshield_can_happen` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem unshield_can_happen",
+  "restatement": "The worker closes the open `sorry` on the theorem `unshield_can_happen` in `ArmadaLean/PoolSafety.lean`, lines 683-710 of that file. The worker writes a real Lean proof in place of the current `sorry` proof body. The worker does this without breaking the project build and without weakening the theorem's statement. The project's own check script, `scripts/check.sh --json unshield_can_happen`, confirms the fix: its printed JSON object no longer lists `unshield_can_happen` in its `sorry` array, and the project still builds.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem `unshield_can_happen` in `ArmadaLean/PoolSafety.lean` has a real proof, not `sorry`, in its own proof body, and the project still builds. Running `scripts/check.sh --json unshield_can_happen` from the repo root then reports `unshield_can_happen` absent from its `sorry` array, per the predicate {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}."
+    }
+  ],
+  "goal": "Prove the theorem `unshield_can_happen` in `ArmadaLean/PoolSafety.lean`, so the project's own check script no longer reports it as an unfinished proof.",
+  "acceptance_criteria": [
+    "After the fix, the project's own build-and-check tool no longer lists the theorem unshield_can_happen as an unfinished proof, and the project still builds without error."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, the project's own build-and-check tool no longer lists the theorem unshield_can_happen as an unfinished proof, and the project still builds without error."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, the project's own build-and-check tool no longer lists the theorem unshield_can_happen as an unfinished proof, and the project still builds without error.",
+      "proves": "Proves the theorem unshield_can_happen now has a complete proof that the project's own automated check accepts, with no build regression.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/no_sorry_check.py",
+        "args": [
+          "unshield_can_happen"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "target_in_sorry",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/no_sorry_check.py"
+  ]
+}
