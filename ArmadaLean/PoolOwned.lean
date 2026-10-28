@@ -347,5 +347,30 @@ theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
       pub.boundParamsHash = boundParamsHash ∧
       caller = pub.ownerField ∧
       (∀ j, hashCommitment ⟨npkOut j, token, valueOut j⟩ = pub.commitmentsOut j) ∧
+    ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
+  let pub : TransactOwnedPublic N M :=
+    { merkleRoot := root, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
+      ownerField := ownerField }
+  let w : TransactOwnedWitness N M :=
+    { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  have hConstrained : OwnedConstrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance }
+  obtain ⟨spent', hNullify⟩ :
       ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
-  sorry
+    apply markSpent_succeeds
+    · have hmap := distinct_leaves_distinct_nullifiers ownerField
+        (List.ofFn leavesIndices) hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
+          = List.ofFn pub.nullifiers := List.map_ofFn
+      rwa [heq] at hmap
+    · intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i
+  exact ⟨w, pub, hConstrained, hComplete.complete hConstrained, rfl, hCaller,
+    fun _ => rfl, spent', hNullify⟩
