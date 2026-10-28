@@ -940,7 +940,32 @@ theorem owned_spend_witness_exists {N M : Nat}
       pub.ownerField = ownerField ∧
       w.token = token ∧
       (∀ i, w.valueIn i = (preimages i).value) := by
-  sorry
+  let r : Fin N → Nat := fun i => (hOwned i).choose
+  let pub : TransactOwnedPublic N M :=
+    { merkleRoot := treeRoot TreeDepth leaves, boundParamsHash := boundParamsHash,
+      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
+      ownerField := ownerField }
+  let w : TransactOwnedWitness N M :=
+    { token := token, randomIn := r,
+      valueIn := fun i => (preimages i).value,
+      pathElements := fun i => treePath TreeDepth leaves (leavesIndices i),
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  have hConstrained : OwnedConstrained w pub :=
+    { pathLen := fun i => treePath_length TreeDepth leaves (leavesIndices i),
+      merkle := fun i => by
+        have hr := (hOwned i).choose_spec
+        have hge : leaves[leavesIndices i]? =
+            some (commitment (npk ownerField (r i)) token ((preimages i).value)) := by
+          rw [hr.2, ← hToken i]
+          exact hLeafValue i
+        exact treePath_correct_of_getElem? TreeDepth leaves (leavesIndices i) (hLeafIndex i) hge,
+      nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl,
+      rangeIn := hRangeIn,
+      rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance }
+  exact ⟨w, pub, hConstrained, rfl, rfl, rfl, rfl, fun _ => rfl⟩
 
 /-! ### A leaf's nullifier is unspent while it is live -/
 
