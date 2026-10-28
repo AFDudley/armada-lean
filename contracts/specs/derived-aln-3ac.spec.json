@@ -1,0 +1,89 @@
+{
+  "id": "derived-aln-3ac",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `transactOwned_records_all` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json transactOwned_records_all` reports `transactOwned_records_all` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `transactOwned_records_all`'s proof body is `sorry`. `scripts/check.sh --json transactOwned_records_all` reports `transactOwned_records_all` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json transactOwned_records_all` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem transactOwned_records_all",
+  "restatement": "The theorem transactOwned_records_all is in the file ArmadaLean/PoolSafety.lean. Its proof body now contains the placeholder sorry. The worker must write a real proof for this theorem. The real proof must not contain sorry. The real proof must also compile. The project script scripts/check.sh already reports both facts for one named theorem. Run the command scripts/check.sh --json transactOwned_records_all from the repo root. The command prints one JSON object. The field theorem_in_sorry in that object must be false. The field build_ok in that object must be true. These two facts together show the theorem is proved.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof body of transactOwned_records_all in ArmadaLean/PoolSafety.lean must not contain sorry. Running scripts/check.sh --json transactOwned_records_all from the repo root must print a JSON object. That object's theorem_in_sorry field must equal false."
+    },
+    {
+      "id": "c2",
+      "text": "The Lean project must compile after the proof is written. Running scripts/check.sh --json transactOwned_records_all from the repo root must print a JSON object. That object's build_ok field must equal true."
+    }
+  ],
+  "goal": "Prove the theorem transactOwned_records_all in ArmadaLean/PoolSafety.lean. Remove the sorry placeholder from its proof body.",
+  "acceptance_criteria": [
+    "After the proof is written, the project's own check command reports that this one theorem's proof body no longer contains the placeholder sorry.",
+    "After the proof is written, the project's own check command reports that the whole project still compiles without error."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the proof is written, the project's own check command reports that this one theorem's proof body no longer contains the placeholder sorry."
+    },
+    {
+      "id": "c2",
+      "text": "After the proof is written, the project's own check command reports that the whole project still compiles without error."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the proof is written, the project's own check command reports that this one theorem's proof body no longer contains the placeholder sorry.",
+      "proves": "Proves restatement clause c1: the proof body of transactOwned_records_all has no sorry left in it.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "transactOwned_records_all"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "After the proof is written, the project's own check command reports that the whole project still compiles without error.",
+      "proves": "Proves restatement clause c2: the written proof is a real, accepted proof, not just text with the word sorry removed from it.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "transactOwned_records_all"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
