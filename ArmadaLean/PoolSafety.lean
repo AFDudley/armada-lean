@@ -677,7 +677,38 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
               CommitmentPreimage)))
         = some rest) :
     ∃ s', Step s s' := by
-  sorry
+  let pub : TransactPublic N M :=
+    { merkleRoot := root, boundParamsHash := hashBoundParams bp,
+      nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j) }
+  let w : TransactWitness N M :=
+    { token := token, publicKey := publicKey,
+      signature := hSig.sign publicKey (msgHashOf pub), nullifyingKey := nullifyingKey,
+      randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  have hConstrained : Constrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance,
+      distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
+      sig := hSig.signSound publicKey (msgHashOf pub) }
+  obtain ⟨spent', hNullify⟩ :
+      ∃ spent', markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' := by
+    apply markSpent_succeeds
+    · have hmap := distinct_leaves_distinct_nullifiers (Term.val nullifyingKey)
+        (List.ofFn leavesIndices) hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier (Term.val nullifyingKey))
+          = List.ofFn pub.nullifiers := List.map_ofFn
+      rwa [heq] at hmap
+    · intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i
+  have hUnshieldRefines : UnshieldRefines w bp.unshield (transactAllOutputs w) := by
+    rw [hNoUnshield]; rfl
+  exact ⟨_, Step.transact caller w pub bp hN hM hConstrained rfl hAdapt
+    (transactAllOutputs w) hUnshieldRefines rest spent' (transactOutputRecords w pub) []
+    hRoot hLive hNullify (List.Sublist.refl _)⟩
 
 /-- **Can happen: an unshield succeeds and pays its recipient.** A real key holder spends
     `N` live notes in tree `bp.treeNumber`; the bound parameters carry the unshield
