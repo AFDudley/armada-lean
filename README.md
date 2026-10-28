@@ -20,21 +20,27 @@ toolchain (the exact version is pinned in `lean-toolchain`; elan installs it
 automatically):
 
 ```bash
-lake exe cache get                # downloads the prebuilt Mathlib
-lake build                        # checks every proof
-grep -rn "sorry\|admit" ArmadaLean/   # → only the theorems marked `sorry` below
+lake exe cache get                 # downloads the prebuilt Mathlib
+lake build                         # checks every proof
+scripts/check.sh                   # lists each open proof as a `SORRY <name>` line
 ```
 
-**Branch `pool-symbolic`:** the pool model has no contract layout or encoding
+**The pool model** (`ArmadaLean/*.lean`) has no contract layout or encoding
 (findings P-1 to P-11 of armada-laconic `labbook/2026-10-26-pool-layout-audit.md`).
-A theorem whose type is new or changed has the proof `sorry` until the operator
-approves the type. The tables mark each one. `docs/pool-symbolic-changes.md` lists
-every change and every changed type.
+Every theorem type is approved, tag `pool-symbolic-approved-2026-10-28`
+(armada-laconic `labbook/2026-10-28-pool-symbolic-types-approval.md`). A theorem
+whose type is new or changed still waits for a proof. `docs/pool-symbolic-changes.md`
+lists every change and every changed type.
 
-**Branch `nitro-proofs`:** the state-channel model (`ArmadaLean/Nitro/`) covers
-ledger and virtual channels. `Safety.lean`'s 63 theorems are proved.
-`Liveness.lean`'s 34 theorems have proof `sorry`, except the four that read no
-game definition. `docs/nitro-theorems.md` maps every theorem to its source.
+**The Nitro model** (`ArmadaLean/Nitro/`) covers ledger and virtual channels.
+Every theorem type is approved, tag `nitro-proofs-approved-2026-10-28`.
+`Safety.lean`'s 63 theorems are proved. `Liveness.lean`'s 34 theorems still
+wait for a proof, except the four that read no game definition.
+`docs/nitro-theorems.md` maps every theorem to its source.
+
+Both models came from the branches `pool-symbolic` and `nitro-proofs`, now
+merged into this trunk. The branches no longer exist; their content survives
+as the tags `archive/pool-symbolic` and `archive/nitro-proofs`.
 
 Dependency: Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib where it makes sense). Run
 `lake exe cache get` before the first `lake build`.

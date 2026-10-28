@@ -63,9 +63,12 @@ Lean and proved the properties that the internal security review
 ## Reproduce
 
 ```bash
-git clone https://github.com/ship-armada/armada-lean && cd armada-lean
-lake build        # needs an elan-managed Lean toolchain (see lean-toolchain)
-grep -rn sorry ArmadaLean/   # → only the theorems listed in docs/pool-symbolic-changes.md
+git clone https://github.com/AFDudley/armada-lean && cd armada-lean
+# ship-armada's own main is the older 2026-09-14 tree; AFDudley's fork is current.
+lake exe cache get   # downloads the prebuilt Mathlib
+lake build           # needs an elan-managed Lean toolchain (see lean-toolchain)
+scripts/check.sh     # PASS on every check; one `SORRY <name>` line per theorem
+                      # that still waits for a proof, then `SORRY_COUNT <n>`
 ```
 
 Full walkthrough, including how to audit the assumptions with `#print axioms`
