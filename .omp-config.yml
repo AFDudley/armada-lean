@@ -1,0 +1,10 @@
+modelRoles:
+  default: anthropic/claude-sonnet-5
+contextPromotion:
+  enabled: false
+bash:
+  autoBackground:
+    enabled: false
+async:
+  enabled: false
+includeWorkspaceTree: true
