@@ -1,0 +1,46 @@
+status: completed
+pebble_id: aln-e8f
+summary: >
+  Closed the open `sorry` in `transact_can_happen` (ArmadaLean/PoolSafety.lean).
+  The proof builds the TransactWitness/TransactPublic pair the same way
+  `transact_spend_can_happen` does (an honestly-signed, honestly-derived
+  witness over the real key holder's N input notes and M output notes), but
+  fixes `pub.boundParamsHash := hashBoundParams bp` so `Step.transact`'s
+  `hBound` closes by `rfl`, derives freshness of the nullifiers from `hFresh`
+  via `markSpent_succeeds`/`distinct_leaves_distinct_nullifiers` exactly as
+  the sibling proof does, and then instantiates `Step.transact` directly:
+  `newNotes := transactAllOutputs w` (so `UnshieldRefines` reduces to
+  reflexivity once `hNoUnshield` rewrites `bp.unshield` to `none`),
+  `records := transactOutputRecords w pub` (a sublist of itself via
+  `List.Sublist.refl`), and `hRemove` closed directly by the theorem's own
+  `hLive` hypothesis, since `transactSpentPositions bp.treeNumber w` is
+  definitionally equal to `hLive`'s list once `w`'s let-bound fields unfold.
+  No axiom added, no hypothesis weakened, no theorem statement changed.
+  Verified by installing elan/lean 4.33.1 + mathlib locally (no prior
+  toolchain in the sandbox), running `lake build` (full project builds, 0
+  errors), running `scripts/check.sh` (exit 0, build_ok=true, sorry_count=38,
+  down from the baseline 46, axioms_ok/signatures_ok/nonvacuity_ok all true),
+  and authoring + running the acceptance probe
+  `scripts/verify_transact_can_happen_sorry_closed.py transact_can_happen`,
+  which prints `{"theorem_under_test_in_sorry": false, "check_exit_code": 0}`
+  — exactly what the linked spec's `then` predicates require.
+cost: "~95k tokens"
+commits:
+  - "5b5ea9b"
+verify_transcript:
+  hooks:
+    - name: "lake build"
+      outcome: passed
+      duration_s: 21
+    - name: "scripts/check.sh"
+      outcome: passed
+      duration_s: 3
+    - name: "scripts/verify_transact_can_happen_sorry_closed.py transact_can_happen"
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-e8f.spec.json
+  command: "python3 scripts/verify_transact_can_happen_sorry_closed.py transact_can_happen"
+  result: passed
+  ran_at_sha: "5b5ea9b"
+  mocks_in_path: false
