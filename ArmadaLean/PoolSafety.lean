@@ -845,7 +845,13 @@ theorem leaf_has_merkle_witness {s : PoolState} (h : Reachable s) (tn : Nat)
     merkleRoot leaf (treePath TreeDepth (s.leavesAt' tn) i) =
         treeRoot TreeDepth (s.leavesAt' tn) ∧
       treeRoot TreeDepth (s.leavesAt' tn) ∈ s.rootsAt' tn := by
-  sorry
+  obtain ⟨hi, _⟩ := List.getElem?_eq_some_iff.mp hleaf
+  have hcap := reachable_leavesAt_capacity h tn
+  have hilt : i < 2 ^ TreeDepth := Nat.lt_of_lt_of_le hi hcap
+  refine ⟨treePath_correct_of_getElem? TreeDepth (s.leavesAt' tn) i hilt hleaf, ?_⟩
+  rcases reachable_rootAt_matches_leavesAt h tn with hnil | hmem
+  · rw [hnil] at hleaf; simp at hleaf
+  · exact hmem
 
 /-! ### A leaf, once inserted, never moves
 
