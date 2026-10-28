@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-a48",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `owned_spend_witness_exists` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json owned_spend_witness_exists` reports `owned_spend_witness_exists` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `owned_spend_witness_exists`'s proof body is `sorry`. `scripts/check.sh --json owned_spend_witness_exists` reports `owned_spend_witness_exists` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json owned_spend_witness_exists` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem owned_spend_witness_exists",
+  "restatement": "The Lean theorem `owned_spend_witness_exists` in `ArmadaLean/PoolSafety.lean` must have a complete proof body, with no `sorry` placeholder inside it. The project's own checker, run as `scripts/check.sh --json owned_spend_witness_exists`, is the authority for this fact. In the JSON that command prints, the theorem name stored in `theorem_under_test` must not appear inside the printed `sorry` list. This resolves the earlier escalation for aln-a48: the prior attempt could not state 'absent from a list' using the `behavior` oracle's scalar comparison ops (ge/le/gt/lt/eq/ne) alone. The fix is to have the worker-created entrypoint script itself run `scripts/check.sh --json owned_spend_witness_exists`, read its printed `sorry` list and `theorem_under_test` name, and print one plain fact: whether that name is on that list. The runner then judges that single plain fact with an ordinary equality check. This keeps the exact predicate from the report, needs no change to the oracle grammar, and does not fall back to the weaker 'count went down by one' substitute the earlier escalation rejected.",
+  "restatement_clauses": [
+    {
+      "id": "sorry-closed",
+      "text": "The theorem `owned_spend_witness_exists` in `ArmadaLean/PoolSafety.lean` has a proof body with no `sorry` in it, such that running `scripts/check.sh --json owned_spend_witness_exists` prints `theorem_under_test` as absent from its `sorry` list."
+    }
+  ],
+  "goal": "Close the open `sorry` in the Lean theorem `owned_spend_witness_exists` in `ArmadaLean/PoolSafety.lean`, so the project's own proof checker no longer lists it as unfinished.",
+  "acceptance_criteria": [
+    "Running the project's own proof checker against the theorem `owned_spend_witness_exists` shows that theorem no longer on the list of theorems with an unfinished proof."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's own proof checker against the theorem `owned_spend_witness_exists` shows that theorem no longer on the list of theorems with an unfinished proof."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's own proof checker against the theorem `owned_spend_witness_exists` shows that theorem no longer on the list of theorems with an unfinished proof.",
+      "proves": "Proves the single requirement in the restatement: the project's checker confirms `owned_spend_witness_exists` is not on its list of theorems still containing `sorry`.",
+      "restatement_clause_id": "sorry-closed",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/verify_owned_spend_witness_sorry_closed.py",
+        "args": [
+          "owned_spend_witness_exists"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_under_test_in_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "field": "check_exit_code",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/verify_owned_spend_witness_sorry_closed.py"
+  ]
+}
