@@ -1,0 +1,54 @@
+status: completed
+pebble_id: aln-a48
+summary: >
+  Filled the sorry proof body of owned_spend_witness_exists in
+  ArmadaLean/PoolSafety.lean with an explicit witness/public-pair
+  construction, mirroring the sibling transact_spend_can_happen pattern.
+  pub.merkleRoot is set to treeRoot TreeDepth leaves (computed, not
+  chosen); w's per-input randomness is extracted from hOwned's
+  existential via let r := fun i => (hOwned i).choose; w's Merkle path
+  is treePath TreeDepth leaves (leavesIndices i), closed by
+  treePath_correct_of_getElem? once the leaf is identified with
+  hashCommitment (preimages i) via hOwned's npk equation and hToken.
+  nullifiers/outputs close by rfl against the let-bound pub/w; balance
+  upgrades hBalance to fieldEq via congrArg (· % p), exactly as the
+  non-owned analog does. Also authored the committed acceptance probe
+  scripts/verify_owned_spend_witness_sorry_closed.py the linked spec
+  names as its behavior-oracle entrypoint (it runs the real
+  scripts/check.sh --json and emits one stdout_json fact pair,
+  judging nothing itself). Verified by running the full lake build
+  (exit 0, 595 jobs, no new sorry warnings beyond the pre-existing
+  41), running scripts/check.sh --json owned_spend_witness_exists
+  directly (theorem_under_test=owned_spend_witness_exists,
+  theorem_in_sorry=false, build_ok/axioms_ok/signatures_ok/
+  nonvacuity_ok all true, sorry_count dropped from baseline 46 to 41),
+  and running the committed probe itself
+  (theorem_under_test_in_sorry=false, check_exit_code=0). Confirmed
+  the probe discriminates by stashing the PoolSafety.lean change and
+  rerunning it: theorem_under_test_in_sorry flips to true against the
+  unfixed tree, then back to false after restoring the fix (git stash
+  pop), demonstrating genuine red-before-green. Full scripts/check.sh
+  (plain mode) also exits 0 at the committed HEAD.
+cost: "~95k tokens"
+commits:
+  - "a072f28209d8b6e936bc63d0be16f7dd6357ea02"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 18
+    - name: scripts/check.sh --json owned_spend_witness_exists
+      outcome: passed
+      duration_s: 3
+    - name: scripts/verify_owned_spend_witness_sorry_closed.py owned_spend_witness_exists
+      outcome: passed
+      duration_s: 3
+    - name: scripts/check.sh (full gate)
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-a48.spec.json
+  command: python3 scripts/verify_owned_spend_witness_sorry_closed.py owned_spend_witness_exists
+  result: passed
+  ran_at_sha: "a072f28209d8b6e936bc63d0be16f7dd6357ea02"
+  mocks_in_path: false
