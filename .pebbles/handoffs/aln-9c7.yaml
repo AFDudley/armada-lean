@@ -1,0 +1,44 @@
+status: completed
+pebble_id: aln-9c7
+summary: >
+  Replaced the `sorry` proof body of `owned_transact_can_happen` in
+  ArmadaLean/PoolSafety.lean (L794-843) with a real proof, mirroring the
+  already-proved `transact_can_happen`'s pattern for the plain Transact path.
+  The proof builds a `TransactOwnedWitness`/`TransactOwnedPublic` pair from
+  the theorem's owner-spend data, discharges `OwnedConstrained` field-by-field
+  by `rfl` against that witness's definitional unfolding, uses
+  `markSpent_succeeds` with `distinct_leaves_distinct_nullifiers` to turn
+  `hDistinctLeaves` into nullifier freshness, and applies `Step.transactOwned`
+  directly (`openings := []`, no published opening; `hLive` serves as
+  `Step.transactOwned`'s `hRemove` argument by definitional equality with
+  `ownedSpentPositions`). No axiom was added, no hypothesis weakened, no
+  theorem statement changed. Verified by installing elan/lake 4.33.1 locally
+  (ELAN_HOME overridden to a writable prefix, since the configured
+  ELAN_HOME=/root/.elan is not writable by this worker's uid) and running:
+  `lake build ArmadaLean.PoolSafety` (succeeds, 15/15 jobs, no warning at
+  line 794 any more — only the pre-existing unrelated sorries elsewhere);
+  `python3 scripts/no_sorry_check.py owned_transact_can_happen` (the spec's
+  own acceptance oracle) prints `{"target_in_sorry": false, "build_ok":
+  true}`, satisfying both `then` predicates; and the full `scripts/check.sh`
+  gate exits 0 with every check PASS and `owned_transact_can_happen` absent
+  from its printed SORRY list (sorry count dropped from 37 to 36).
+cost: ~55k tokens
+commits:
+  - "ca5aee6"
+verify_transcript:
+  hooks:
+    - name: lake build ArmadaLean.PoolSafety
+      outcome: passed
+      duration_s: 66
+    - name: scripts/no_sorry_check.py owned_transact_can_happen
+      outcome: passed
+      duration_s: 78
+    - name: scripts/check.sh
+      outcome: passed
+      duration_s: 5
+e2e_gate:
+  spec: contracts/specs/derived-aln-9c7.spec.json
+  command: python3 scripts/no_sorry_check.py owned_transact_can_happen
+  result: passed
+  ran_at_sha: "ca5aee6"
+  mocks_in_path: false
