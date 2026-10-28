@@ -18,11 +18,13 @@ toolchain (the exact version is pinned in `lean-toolchain`; elan installs it
 automatically):
 
 ```bash
+lake exe cache get                # downloads the prebuilt Mathlib
 lake build                        # checks every proof
-grep -rn "sorry\|admit" ArmadaLean/   # → no output: no unfinished proofs
+grep -rn "sorry\|admit" ArmadaLean/   # → only the Liveness theorems that still wait for a proof
 ```
 
-No dependencies (no mathlib) — a fresh clone builds in seconds.
+Dependency: Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib where it makes sense). Run
+`lake exe cache get` before the first `lake build`.
 
 ## What is proven, and where it maps to the code
 

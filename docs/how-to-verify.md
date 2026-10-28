@@ -20,20 +20,23 @@ downloads it automatically on first use.
 ## 2. Clone and build
 
 ```bash
-git clone https://github.com/ship-armada/armada-lean
+git clone https://github.com/AFDudley/armada-lean
 cd armada-lean
+git checkout nitro-proofs
+lake exe cache get   # downloads the prebuilt Mathlib
 lake build
 ```
 
-Expected result: `Build completed successfully (12 jobs).` and exit code 0.
+Expected result: `lake build` ends with `Build completed successfully` and exit code 0.
 
 **What this means:** every `theorem` in `ArmadaLean/*.lean` was re-checked,
 proof step by proof step, by the Lean kernel. If any proof were wrong — or a
 theorem statement didn't say what we claim — the build would fail. There is no
 way to "force" a green build other than a correct proof.
 
-Note the project has **zero dependencies** (no mathlib), so the build takes
-seconds and cannot be affected by upstream package changes.
+The project depends on Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib
+where it makes sense). `lake exe cache get` downloads Mathlib's prebuilt files, so
+the build does not compile Mathlib. `lake-manifest.json` pins the Mathlib commit.
 
 ## 3. Check there are no unfinished proofs
 
@@ -43,7 +46,8 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result: **no output**.
+Expected result on branch `nitro-proofs`: only theorems in `ArmadaLean/Nitro/Liveness.lean`
+that still wait for a proof. Their types are approved (tag `nitro-proofs-approved-2026-10-28`).
 
 ## 4. Audit the assumptions (the important part)
 
@@ -76,7 +80,8 @@ Compare against the recorded output in `docs/axioms-circuit.txt` and
 - **`no_wraparound_minting` and all vault/fee theorems** depend only on
   `propext` / `Quot.sound` — Lean's standard logical axioms, i.e. they are
   unconditional mathematics.
-- **`sorryAx` must never appear** — that would indicate a hidden `sorry`.
+- **`sorryAx` appears only for the Liveness theorems that still wait for a proof** —
+  anywhere else it would indicate a hidden `sorry`.
 
 ## 5. Check the model matches the real code (the human part)
 
