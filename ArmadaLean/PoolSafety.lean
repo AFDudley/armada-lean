@@ -815,7 +815,32 @@ theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofComplet
             (⟨npk ownerField (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
         = some rest) :
     ∃ s', Step s s' := by
-  sorry
+  let pub : TransactOwnedPublic N M :=
+    { merkleRoot := root, boundParamsHash := hashBoundParams bp,
+      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
+      ownerField := ownerField }
+  let w : TransactOwnedWitness N M :=
+    { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
+      leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
+  have hConstrained : OwnedConstrained w pub :=
+    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+      outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
+      balance := congrArg (· % p) hBalance }
+  obtain ⟨spent', hNullify⟩ :
+      ∃ spent', markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' := by
+    apply markSpent_succeeds
+    · have hmap := distinct_leaves_distinct_nullifiers ownerField
+        (List.ofFn leavesIndices) hDistinctLeaves
+      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
+          = List.ofFn pub.nullifiers := List.map_ofFn
+      rwa [heq] at hmap
+    · intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i
+  exact ⟨_, Step.transactOwned w pub bp hN hM hConstrained caller hCaller rfl hAdapt
+    hNoUnshield rest spent' [] hRoot hLive hNullify⟩
 
 /-! ### Every inserted leaf has a Merkle witness to a root the pool produced -/
 
