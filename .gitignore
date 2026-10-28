@@ -2,3 +2,11 @@
 *.olean
 *.trace
 .scratch/
+
+# exophial runtime: keep only the committed per-repo config
+.exophial/*
+!.exophial/config.yaml
+!.exophial/gate/
+!.exophial/gate/Dockerfile
+.pebbles/reducer_ledger.jsonl
+__pycache__/

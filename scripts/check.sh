@@ -34,6 +34,11 @@
 #      `python3 scripts/sigs.py $(find ArmadaLean -name '*.lean' | sort) > scripts/sigs-baseline.tsv`.
 #   6. The Nitro non-vacuity witness module (ArmadaLean/Nitro/NonVacuity.lean)
 #      builds with no sorry (verification.md section 5a).
+#   7. Prints `SORRY <fully.qualified.name>` for every theorem whose own
+#      proof body still carries a literal `sorry`, then `SORRY_COUNT <n>`.
+#      "the gate passes" alone is a vacuous acceptance predicate (any
+#      no-op program returns exit 0); this line is what a pebble names
+#      instead: "the output has no line `SORRY <name>`".
 set -u
 ALLOW="${1:-/dev/null}"
 LAKE="$HOME/.elan/bin/lake"
@@ -126,7 +131,11 @@ if [ -f ArmadaLean/Nitro/NonVacuity.lean ]; then
   say "NonVacuity examples: $nv"
 fi
 
-# 7. Line counts (report only; current tree — the gate container carries no
+# 7. SORRY report: one observable line per theorem that still carries
+#    sorry, plus a count. See the file header note above.
+python3 scripts/sorry_report.py $LEAN_FILES
+
+# 8. Line counts (report only; current tree — the gate container carries no
 #    .git to diff a baseline against, see section 5's note).
 for f in ArmadaLean/PoolSafety.lean ArmadaLean/PoolOwned.lean ArmadaLean/Nitro/Liveness.lean; do
   n=$(wc -l < "$f"); say "LINES $f now=$n"
