@@ -1,0 +1,53 @@
+{
+  "id": "derived-aln-c57",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `transact_unshield_exact` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json transact_unshield_exact` reports `transact_unshield_exact` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `transact_unshield_exact`'s proof body is `sorry`. `scripts/check.sh --json transact_unshield_exact` reports `transact_unshield_exact` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json transact_unshield_exact` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem transact_unshield_exact",
+  "restatement": "The pool-safety proof catalog in ArmadaLean/PoolSafety.lean names the theorem transact_unshield_exact, which states that a transact step bound to an unshield pays exactly one recipient the exact owed value, lowers the pool's custody of the token by that same value, and that the owed value equals the spent notes' value minus the new notes' value. The theorem's proof body is currently a placeholder (`sorry`), so the proof does not yet exist. The request asks that this proof be completed for real, with no `sorry` left in the theorem's own proof body. The repository already carries a deterministic check for this: `scripts/check.sh --json <theorem-name>` builds the project, lists every theorem whose own proof body still carries `sorry`, and echoes back the queried theorem name so a predicate can confirm that name is absent from that list. Completing the proof means that running this check for transact_unshield_exact reports the theorem absent from the list of unfinished proofs.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`transact_unshield_exact` in `ArmadaLean/PoolSafety.lean` must be proved with no `sorry` in its own proof body. `scripts/check.sh --json transact_unshield_exact` must then report `transact_unshield_exact` absent from its `sorry` array, per the predicate {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}."
+    }
+  ],
+  "goal": "Complete the Lean proof of the theorem transact_unshield_exact in ArmadaLean/PoolSafety.lean, removing its `sorry` placeholder.",
+  "acceptance_criteria": [
+    "After the project's proof-completeness check runs for the unshield-payout theorem, that theorem no longer appears on the list of theorems still missing their proofs."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the project's proof-completeness check runs for the unshield-payout theorem, that theorem no longer appears on the list of theorems still missing their proofs."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the project's proof-completeness check runs for the unshield-payout theorem, that theorem no longer appears on the list of theorems still missing their proofs.",
+      "proves": "Proves clause c1: transact_unshield_exact has a real, complete proof, because the project's own check reports the theorem absent from the list of theorems whose proof is still a placeholder.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_theorem_sorry_absent.py",
+        "args": [
+          "transact_unshield_exact"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "contains_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_theorem_sorry_absent.py"
+  ]
+}
