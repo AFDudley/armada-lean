@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-07f",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `live_values_spendable` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json live_values_spendable` reports `live_values_spendable` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `live_values_spendable`'s proof body is `sorry`. `scripts/check.sh --json live_values_spendable` reports `live_values_spendable` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json live_values_spendable` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem live_values_spendable",
+  "restatement": "This request asks that the Lean theorem `live_values_spendable`, declared in `ArmadaLean/PoolSafety.lean`, have a finished proof: a proof body that contains no `sorry` placeholder. Right now that proof body is literally `sorry`, so the theorem is stated but not actually proved. The theorem's statement itself (its name, its hypotheses, and its conclusion) is frozen and out of scope for this request; only the proof body changes. The fix counts as done when running `scripts/check.sh --json live_values_spendable` from the repository root prints a JSON object whose `sorry` array no longer lists `live_values_spendable`, while the same object still echoes `live_values_spendable` back as `theorem_under_test`. This is the exact predicate the request states: `{\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}`.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem `live_values_spendable` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body, and `scripts/check.sh --json live_values_spendable` reports `live_values_spendable` absent from its `sorry` array."
+    }
+  ],
+  "goal": "Finish the proof of the Lean theorem `live_values_spendable` in `ArmadaLean/PoolSafety.lean` so its own proof body carries no `sorry`, confirmed by `scripts/check.sh --json live_values_spendable`.",
+  "acceptance_criteria": [
+    "After the project's check script runs for the theorem named live_values_spendable, its report no longer lists live_values_spendable among the theorems whose proof is still unfinished."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the project's check script runs for the theorem named live_values_spendable, its report no longer lists live_values_spendable among the theorems whose proof is still unfinished."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the project's check script runs for the theorem named live_values_spendable, its report no longer lists live_values_spendable among the theorems whose proof is still unfinished.",
+      "proves": "Proves that live_values_spendable's proof body is complete, with no sorry placeholder left, as confirmed by the project's own build-and-check script reading the theorem back out of its report.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/acceptance_live_values_spendable.py",
+        "args": [
+          "live_values_spendable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/acceptance_live_values_spendable.py"
+  ]
+}
