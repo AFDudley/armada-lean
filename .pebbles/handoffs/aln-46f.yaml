@@ -1,0 +1,48 @@
+status: completed
+pebble_id: aln-46f
+summary: >
+  Proved ArmadaLean.PoolSafety.unshield_can_happen with no sorry. The proof
+  mirrors transact_can_happen: builds a TransactWitness/TransactPublic with
+  M := 1 whose single circuit output is the unshield note (npkOut :=
+  recipient, valueOut := value), discharges Constrained via the same
+  field-by-field construction as transact_can_happen (balance upgraded from
+  the theorem's hBalance : listSum valueIn = value via the listSum-singleton
+  identity for Fin 1), reuses markSpent_succeeds/distinct_leaves_distinct_nullifiers
+  the same way, proves UnshieldRefines w (some <recipient,value>) [] by
+  unfolding transactAllOutputs, instantiates Step.transact with newNotes :=
+  [], and closes the added payout-record conjunct
+  s'.payouts = s.payouts ++ [<token,recipient,value>] by simp on hU and the
+  witness. No theorem statement changed. Also authored
+  scripts/no_sorry_check.py, the acceptance-oracle entrypoint the derived
+  spec names (declared_new_entrypoints), which shells out to the real
+  scripts/check.sh --json unshield_can_happen and relays target_in_sorry and
+  build_ok as plain observations with no verdict computed in the probe
+  itself (mirrors the existing verify_transact_can_happen_sorry_closed.py /
+  check_theorem_sorry_absent.py probes in the same directory). Verified by
+  installing elan/lake (absent from the worker image) into an isolated
+  prefix under $HOME/.elan, running lake build to completion (15/15 jobs,
+  no errors), running python3 scripts/no_sorry_check.py unshield_can_happen
+  which printed {"target_in_sorry": false, "build_ok": true}, and running
+  the full scripts/check.sh, which reports PASS on every check (build,
+  sorry count 37 vs baseline 46, no vacuous body, axioms, signatures,
+  NonVacuity) with unshield_can_happen absent from the SORRY list.
+cost: ~95k tokens
+commits:
+  - "778ade7"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 67
+    - name: scripts/no_sorry_check.py unshield_can_happen
+      outcome: passed
+      duration_s: 81
+    - name: scripts/check.sh
+      outcome: passed
+      duration_s: 2
+e2e_gate:
+  spec: contracts/specs/derived-aln-46f.spec.json
+  command: python3 scripts/no_sorry_check.py unshield_can_happen
+  result: passed
+  ran_at_sha: "778ade7"
+  mocks_in_path: false
