@@ -1,0 +1,48 @@
+status: completed
+pebble_id: aln-c57
+summary: >
+  Completed the proof of transact_unshield_exact in ArmadaLean/PoolSafety.lean,
+  replacing its sorry placeholder. The witness state s' comes directly from the
+  Step.transact constructor applied to the theorem's own hypotheses; the payouts
+  and held equalities fall out of Step.transact's let-built state once bp.unshield
+  is rewritten through hU : bp.unshield = some u (simp closes both via
+  Option.map/toList and the if_pos/withdrawn unfolding); the balance equality
+  (u.value = spent value - new-notes value) comes from the existing
+  transact_balance lemma instantiated at bp.treeNumber and closed by omega.
+  Also authored scripts/check_theorem_sorry_absent.py, the committed acceptance
+  probe the linked spec (contracts/specs/derived-aln-c57.spec.json) names as its
+  behavior-oracle entrypoint: it runs the real scripts/check.sh --json and relays
+  check.sh's own theorem_in_sorry fact as a single stdout_json field
+  (contains_sorry), judging nothing itself. Verified by installing elan/lake into
+  a writable prefix (the repo's default $HOME/.elan was unwritable in this
+  sandbox; used ELAN_HOME=/home/worker/.elan), running `lake build` (exits 0,
+  142s), `bash scripts/check.sh --json transact_unshield_exact` (build_ok=true,
+  theorem absent from sorry array, sorry_count 40 down from baseline 46), and
+  `python3 scripts/check_theorem_sorry_absent.py transact_unshield_exact`
+  (contains_sorry=false). Confirmed the probe discriminates: stashing the
+  PoolSafety.lean change and rerunning the same probe reports
+  contains_sorry=true (red before the fix), restored and reran green after.
+  Full scripts/check.sh (non-JSON) gate also passes with exit 0.
+cost: "~70k tokens"
+commits:
+  - "1ea36b5"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 144
+    - name: scripts/check.sh --json transact_unshield_exact
+      outcome: passed
+      duration_s: 84
+    - name: scripts/check_theorem_sorry_absent.py transact_unshield_exact
+      outcome: passed
+      duration_s: 3
+    - name: scripts/check.sh (full, non-JSON)
+      outcome: passed
+      duration_s: 2
+e2e_gate:
+  spec: contracts/specs/derived-aln-c57.spec.json
+  command: python3 scripts/check_theorem_sorry_absent.py transact_unshield_exact
+  result: passed
+  ran_at_sha: "1ea36b5"
+  mocks_in_path: false
