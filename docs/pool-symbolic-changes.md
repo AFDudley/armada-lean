@@ -2,12 +2,14 @@
 
 Base: `pool-model` at `7f2d1ec`. Source of the findings: armada-laconic
 `labbook/2026-10-26-pool-layout-audit.md` (P-1 to P-11). Operator rulings: 2026-10-26.
-Toolchain: Lean v4.33.1, no Mathlib.
+Toolchain: Lean v4.33.1. Mathlib `v4.33.1` was added after this report, at `3128085`
+(operator ruling 2026-10-27).
 
 ## Proof policy on this branch
 
 - A theorem whose type is new, or whose hypotheses or conclusion changed, has the
-  proof `sorry`. The operator approves the type first.
+  proof `sorry` until the operator approves the type. The operator approved every
+  such type (armada-laconic `labbook/2026-10-28-pool-symbolic-types-approval.md`).
 - A theorem whose type changed only because a definition moved (`Token` for `Nat`,
   `Term` for the bound-parameters hash) keeps a repaired proof.
 - Exception, by operator instruction (2026-10-27): the fee theorems, `leaf_stable`,

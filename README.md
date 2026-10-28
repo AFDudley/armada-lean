@@ -19,6 +19,7 @@ toolchain (the exact version is pinned in `lean-toolchain`; elan installs it
 automatically):
 
 ```bash
+lake exe cache get                # downloads the prebuilt Mathlib
 lake build                        # checks every proof
 grep -rn "sorry\|admit" ArmadaLean/   # → only the theorems marked `sorry` below
 ```
@@ -29,7 +30,8 @@ A theorem whose type is new or changed has the proof `sorry` until the operator
 approves the type. The tables mark each one. `docs/pool-symbolic-changes.md` lists
 every change and every changed type.
 
-No dependencies (no mathlib) — a fresh clone builds in seconds.
+Dependency: Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib where it makes sense). Run
+`lake exe cache get` before the first `lake build`.
 
 ## What is proven, and where it maps to the code
 
