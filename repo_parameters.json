@@ -1,0 +1,43 @@
+{
+  "git_remote": "AFDudley.github.com",
+  "subtrees": [],
+  "pebble_tracker_prefixes": {
+    "root": "aln-"
+  },
+  "commit_trailer_categories": ["hygiene", "refactor", "docs", "infrastructure", "pebble-filing"],
+  "environment_command": ["lake", "exe", "cache", "get"],
+  "oracle_toolchain": [
+    {
+      "name": "lake",
+      "check": "lake --version",
+      "version_cmd": "lake --version",
+      "purpose": "Builds ArmadaLean and runs scripts/check.sh; the elan proxy selects the toolchain in lean-toolchain.",
+      "install": "Install elan (https://github.com/leanprover/elan); elan installs the pinned toolchain on first use.",
+      "required": true,
+      "group": "core"
+    },
+    {
+      "name": "lean",
+      "check": "lean --version",
+      "version_cmd": "lean --version",
+      "purpose": "Elaborates the Lean sources scripts/check.sh inspects.",
+      "install": "Install elan (https://github.com/leanprover/elan).",
+      "required": true,
+      "group": "core"
+    },
+    {
+      "name": "elan",
+      "check": "elan --version",
+      "version_cmd": "elan --version",
+      "purpose": "Resolves the pinned toolchain leanprover/lean4:v4.33.1.",
+      "install": "https://github.com/leanprover/elan",
+      "required": true,
+      "group": "core"
+    }
+  ],
+  "oracle_data_dirs": [".elan"],
+  "gate_commands": {
+    "root": "lake build && scripts/check.sh"
+  },
+  "deploy_surfaces": {}
+}
