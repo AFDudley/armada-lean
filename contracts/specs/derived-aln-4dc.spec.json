@@ -1,0 +1,52 @@
+{
+  "id": "derived-aln-4dc",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `live_leaf_matches` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json live_leaf_matches` reports `live_leaf_matches` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `live_leaf_matches`'s proof body is `sorry`. `scripts/check.sh --json live_leaf_matches` reports `live_leaf_matches` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json live_leaf_matches` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem live_leaf_matches",
+  "restatement": "The theorem live_leaf_matches, declared in ArmadaLean/PoolSafety.lean, must carry a complete Lean proof in its own proof body, with no sorry placeholder left inside it. The project's own verification script, scripts/check.sh, must confirm this: when run as scripts/check.sh --json live_leaf_matches from the repo root, the JSON object it prints must not list live_leaf_matches among the theorems whose proof body still contains sorry. Today the theorem's proof body is literally the single word sorry, so the script currently lists live_leaf_matches in that array. Closing this request means replacing the sorry with a real proof, after which the same script run reports the theorem as no longer carrying sorry.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "live_leaf_matches's proof body is proved with no sorry in its own proof body, and scripts/check.sh --json live_leaf_matches, run from the repo root, reports live_leaf_matches absent from its sorry array."
+    }
+  ],
+  "goal": "Replace the sorry placeholder in theorem live_leaf_matches (ArmadaLean/PoolSafety.lean) with a complete proof, so the project's check script no longer lists it among unproved theorems.",
+  "acceptance_criteria": [
+    "After the fix, running the project's verification script and asking it about the theorem live_leaf_matches shows that theorem is no longer on the list of proofs still missing their final step."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, running the project's verification script and asking it about the theorem live_leaf_matches shows that theorem is no longer on the list of proofs still missing their final step."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, running the project's verification script and asking it about the theorem live_leaf_matches shows that theorem is no longer on the list of proofs still missing their final step.",
+      "proves": "Confirms the theorem live_leaf_matches now has a complete proof body with no sorry left in it, as judged by the project's own check script.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "live_leaf_matches"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "contains(sorry, 'live_leaf_matches')",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
