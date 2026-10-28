@@ -18,7 +18,11 @@
 # theorem_under_test (the optional THEOREM_NAME argument, echoed back
 # unconditionally — not a lookup — so a `then` predicate can pair it with
 # `sorry` via `{"op": "not_member", "elem": "theorem_under_test",
-# "collection": "sorry"}`, exophial `then_ops.py`'s member-family shape).
+# "collection": "sorry"}`, exophial `then_ops.py`'s member-family shape),
+# and theorem_in_sorry (true when THEOREM_NAME, or a fully-qualified name
+# that ends in ".THEOREM_NAME", is in `sorry`). A spec derivation offers only
+# `{field, op, value}` predicates, so a pebble states
+# `{"field": "theorem_in_sorry", "op": "eq", "value": false}` with no probe script.
 # No ALLOWLIST_FILE support in --json mode (verification.md section 4's
 # allowlist is a coordinator-only mechanism; a one-theorem worker pebble
 # does not need it).
@@ -202,6 +206,9 @@ obj = {
     "signatures_ok": signatures_ok == "true",
     "nonvacuity_ok": nonvacuity_ok == "true",
     "theorem_under_test": theorem,
+    "theorem_in_sorry": bool(theorem) and any(
+        n == theorem or n.endswith("." + theorem) for n in names
+    ),
 }
 print(json.dumps(obj))
 PY
