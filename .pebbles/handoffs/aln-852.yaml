@@ -1,0 +1,98 @@
+status: blocked
+pebble_id: aln-852
+summary: >
+  directly_funded_pays (ArmadaLean/Nitro/Liveness.lean:45-52) is false as
+  currently stated, so it cannot be proved with no sorry without changing its
+  signature, which this pebble forbids ("the theorem statement does not
+  change") and which scripts/check.sh's signatures_ok check enforces against
+  the frozen scripts/sigs-baseline.tsv. The theorem quantifies over an
+  arbitrary c : FixedPart with no constraint on c.kind, but its only possible
+  proof strategy (documented in docs/nitro-repair-2026-10-27.md line 67: "p
+  transfers to d") requires Adjudicator.transfer, which since the 2026-10-27
+  channel-types revision (docs/nitro-repair-2026-10-27.md section 6.3) only
+  succeeds when the source channel's kind is .ledger
+  (ArmadaLean/Nitro/Adjudicator.lean:140-152, and transfer_can_happen's
+  a.kind = .ledger hypothesis in ArmadaLean/Nitro/Safety.lean:386-390). When
+  c.kind = .virtual, DirectlyFunded c can still hold (its definition,
+  ArmadaLean/Nitro/Adjudicator.lean:71-72, has no kind constraint either, and
+  NetworkState/Adjudicator carry no Reachable invariant forcing one), yet no
+  honest move can ever pay the entry out, so UnbeatableNoWait's goal is
+  unreachable. I verified this is a genuine gap, not a misreading, by writing
+  and compiling (lake env lean, Lean 4.33.1, zero errors/sorry) a full machine
+  -checked disproof in .scratch/Counter.lean (gitignored, not committed, a
+  throwaway investigation artifact): a concrete instantiation of every one of
+  directly_funded_pays's hypotheses (apps0, canon p0, a one-participant
+  *virtual* channel cV holding 1 coin and already finalized with an
+  allocation entry of 1 coin for external destination 0, witnesses
+  hf_ex/hfund_ex/hd_ex proved by native_decide) together with a general
+  lemma (no_unbeatable_of_invariant) proving UnbeatableIn is unprovable
+  whenever an invariant J survives every allowed honest move under the
+  always-available idle adversary round (advs := [], valid via
+  Threat.ε_pos). The invariant used is "the whole balances table never
+  moves off its start, because every honest move that could touch it either
+  fails outright (Op.deposit is infeasible for p; Op.transfer from any
+  ledger-kind channel other than cV pays 0 since that channel never
+  deposited into; Op.transfer from cV itself always returns none since
+  cV.kind = .virtual) or only touches status/now (challenge/checkpoint/
+  conclude/reclaim/tick)". This proves directly_funded_pays's hypotheses are
+  jointly satisfiable with its conclusion false, i.e. the theorem is false
+  as stated. git blame / docs/nitro-repair-2026-10-27.md section 6 confirm
+  this is a repair gap: when ChannelKind was added (section 6.3), the
+  already-proved lemmas transfer_can_happen/deposit_can_happen/
+  reclaim_can_happen/reclaim_requires were all updated with new kind
+  hypotheses, but directly_funded_pays (and its sibling
+  finalizable_funded_pays, turbo_redistribution_unbeatable,
+  turbo_value_achievable, turbo_value_is_value, all still sorry) were never
+  revisited, because they were sorry at the time and out of scope for that
+  revision. scripts/sigs-baseline.tsv:108 has the current (pre-ChannelKind)
+  signature frozen as the approved baseline, so I left Liveness.lean
+  untouched (sorry stays) rather than add the missing c.kind = .ledger
+  hypothesis myself; scripts/check.sh's own comment says a worker never
+  edits the signature allowlist. scripts/check.sh --json directly_funded_pays
+  confirms the current, unmodified state: build_ok=true, signatures_ok=true,
+  theorem_in_sorry=true (so c1 of this pebble's spec fails; c2 passes
+  because nothing changed).
+cost: "~230k tokens"
+blocker: >
+  directly_funded_pays's statement (ArmadaLean/Nitro/Liveness.lean:45-52) is
+  mathematically false for an arbitrary FixedPart c (in particular when
+  c.kind = .virtual), because Adjudicator.transfer — the only operation that
+  can ever move a coin to an external destination — requires the source
+  channel's kind to be .ledger (added in the 2026-10-27 channel-types
+  revision, docs/nitro-repair-2026-10-27.md section 6.3), and the theorem
+  carries no hypothesis constraining c.kind. A machine-checked disproof is
+  in .scratch/Counter.lean (not committed; gitignored throwaway, reproduce
+  with: unset ELAN_HOME; export PATH="$HOME/.elan/bin:$PATH"; lake env lean
+  .scratch/Counter.lean — compiles with zero errors and no sorry). This
+  pebble's own acceptance contract forbids changing the theorem statement,
+  and scripts/sigs-baseline.tsv:108 freezes the current (missing-hypothesis)
+  signature as the approved text, so no sorry-free proof of the stated claim
+  exists for a worker to write. The fix is a one-conjunct signature change
+  (add (hck : c.kind = .ledger) as a new hypothesis, mirroring
+  transfer_can_happen's own post-repair signature in
+  ArmadaLean/Nitro/Safety.lean:386-390), which is an operator/coordinator
+  decision under this repo's own process (scripts/check.sh's docstring:
+  "An ALLOWLIST_FILE names declarations a brief is permitted to change ...
+  a worker never adds a name to it"), not something this worker is permitted
+  to do unilaterally.
+next_action: >
+  Operator/coordinator: approve a signature change for directly_funded_pays
+  adding (hck : c.kind = .ledger) (or the Route.WellFormed-style equivalent
+  used elsewhere for a channel that gets transferred from), re-baseline
+  scripts/sigs-baseline.tsv for that one declaration, and re-dispatch. With
+  that hypothesis the repair's own recipe (docs/nitro-repair-2026-10-27.md
+  line 67, "p transfers to d") goes through: hfund gives o.total ≤ held,
+  affords_when_fully_funded + paidTo_first_entry_only
+  (ArmadaLean/Nitro/Safety.lean:325-337) give paidTo = owed, and
+  transfer_can_happen (ArmadaLean/Nitro/Safety.lean:386-401) gives the
+  single .move step; the remaining work is an invariant-through-the-round
+  argument bounding what the adversary's FeasibleSeq can do to c's stored
+  outcome before p's transfer lands (same shape as
+  NonVacuity.conclude_strategy's ConcludeInv, NonVacuity.lean:564-612),
+  which I did not need to complete once c.kind = .virtual was shown to
+  falsify the un-hypothesised statement. Alternatively, if the operator
+  judges amt := 0 (vacuous payout) or a kind-unconstrained reading was never
+  intended and the whole family of sibling theorems needs the same repair,
+  this is the same gap affecting finalizable_funded_pays
+  (ArmadaLean/Nitro/Liveness.lean:59-66), which likely needs an analogous
+  fix.
