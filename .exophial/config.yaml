@@ -19,6 +19,12 @@ gate:
   command: ["bash", "-c", "lake build && scripts/check.sh"]
   timeout: 1800
 
+# The omp worker in a container takes its Anthropic token only from this command
+# (DispatcherConfig.credential_command). Without it no /credential is mounted and
+# the worker exits with "No API key found for anthropic" (aln-9b1, 2026-10-28).
+credential:
+  command: ["omp", "token", "anthropic"]
+
 # Where `exophial spec generate` writes unified spec instances (repo-relative).
 spec_dir: "contracts/specs"
 
