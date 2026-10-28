@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-f17",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `owned_spend_can_happen` in `ArmadaLean/PoolOwned.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json owned_spend_can_happen` reports `owned_spend_can_happen` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `owned_spend_can_happen`'s proof body is `sorry`. `scripts/check.sh --json owned_spend_can_happen` reports `owned_spend_can_happen` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json owned_spend_can_happen` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolOwned.lean, theorem owned_spend_can_happen",
+  "restatement": "This request asks for a complete, sorry-free Lean proof of the theorem owned_spend_can_happen in ArmadaLean/PoolOwned.lean. The proof body currently reads sorry, so the theorem is unproved. A worker must replace that sorry with a real proof that discharges the theorem's full statement: that an owner's spend transaction satisfies the pool's circuit constraints, passes verifyOwned, is authorized, has preimage-consistent outputs, and succeeds at marking its nullifiers spent. Completion is confirmed by running the repository's own gate script, scripts/check.sh --json owned_spend_can_happen, from the repo root, and observing that owned_spend_can_happen no longer appears in the list of unproved theorems the script prints, while the Lean project still builds without error.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "owned_spend_can_happen in ArmadaLean/PoolOwned.lean is proved with no sorry in its own proof body, confirmed by scripts/check.sh --json owned_spend_can_happen reporting owned_spend_can_happen absent from its sorry array."
+    }
+  ],
+  "goal": "Prove owned_spend_can_happen in ArmadaLean/PoolOwned.lean with no sorry in its own proof body, confirmed by scripts/check.sh --json owned_spend_can_happen.",
+  "acceptance_criteria": [
+    "After the fix, the project still builds, and asking the project's check script about this one proof shows the proof is finished: the script no longer lists owned_spend_can_happen among the proofs that still carry a placeholder."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, the project still builds, and asking the project's check script about this one proof shows the proof is finished: the script no longer lists owned_spend_can_happen among the proofs that still carry a placeholder."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, the project still builds, and asking the project's check script about this one proof shows the proof is finished: the script no longer lists owned_spend_can_happen among the proofs that still carry a placeholder.",
+      "proves": "Proves clause c1: owned_spend_can_happen is proved with no sorry in its own proof body, as reported by scripts/check.sh --json owned_spend_can_happen.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracle_owned_spend_can_happen.py",
+        "args": [
+          "owned_spend_can_happen"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_absent_from_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "build_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/oracle_owned_spend_can_happen.py"
+  ]
+}
