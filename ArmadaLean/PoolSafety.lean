@@ -391,7 +391,12 @@ theorem transact_unshield_exact {s : PoolState} (caller : Term) {N M : Nat}
       s'.held w.token = s.held w.token - u.value ∧
       u.value = listSum ((transactSpentPositions bp.treeNumber w).map (fun p => p.2.value)) -
         listSum (newNotes.map CommitmentPreimage.value) := by
-  sorry
+  have hbal := transact_balance bp.treeNumber hN hM hC hOutputs
+  rw [hU] at hbal
+  simp only [withdrawn] at hbal
+  refine ⟨_, Step.transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent'
+    records openings hRoot hRemove hNullify hRecords, by simp [hU], by simp [hU, withdrawn], ?_⟩
+  omega
 
 /--
 **A shield of the gross amount `x` creates exactly one note of `shieldBase r x`, at a
