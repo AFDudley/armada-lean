@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-91b",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `transact_not_blocked` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json transact_not_blocked` reports `transact_not_blocked` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `transact_not_blocked`'s proof body is `sorry`. `scripts/check.sh --json transact_not_blocked` reports `transact_not_blocked` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json transact_not_blocked` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem transact_not_blocked",
+  "restatement": "The Lean theorem transact_not_blocked, in ArmadaLean/PoolSafety.lean, must carry a genuine proof in its own proof body, with no sorry placeholder left inside it. Today that proof body is exactly the single tactic sorry, so the theorem is not actually proved. The deliverable is a real proof that replaces that sorry. The project's own check script, run as scripts/check.sh --json transact_not_blocked from the repository root, must then report transact_not_blocked absent from the sorry array it prints, instead of present as it is today.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "transact_not_blocked in ArmadaLean/PoolSafety.lean is proved with no sorry in its own proof body, and scripts/check.sh --json transact_not_blocked reports transact_not_blocked absent from its sorry array."
+    }
+  ],
+  "goal": "Replace the sorry placeholder in transact_not_blocked's proof body with a real proof, so the project's own check script no longer lists this theorem as unproved.",
+  "acceptance_criteria": [
+    "Run the project's own proof-check script and ask it about the theorem named transact_not_blocked. The script reports, by name, every theorem that still has no real proof. The theorem transact_not_blocked must not be one of the names it reports, and the overall check must still build cleanly."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Run the project's own proof-check script and ask it about the theorem named transact_not_blocked. The script reports, by name, every theorem that still has no real proof. The theorem transact_not_blocked must not be one of the names it reports, and the overall check must still build cleanly."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "type": "behavior",
+      "description": "Run the project's own proof-check script and ask it about the theorem named transact_not_blocked. The script reports, by name, every theorem that still has no real proof. The theorem transact_not_blocked must not be one of the names it reports, and the overall check must still build cleanly.",
+      "proves": "Proves that transact_not_blocked now has a complete, real proof, because the project's own checker no longer lists its name among the unproved theorems.",
+      "restatement_clause_id": "c1",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_theorem_sorry_free.py",
+        "args": [
+          "transact_not_blocked"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "sorry_free",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_theorem_sorry_free.py"
+  ]
+}
