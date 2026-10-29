@@ -479,6 +479,63 @@ theorem owed_reduceOwed (o : Allocation E) (d d' : Address E) (x : Coins) :
       · subst hd; simp [he]
       · simp [owed_cons, hd]
 
+/-- Reducing the amount owed to `d` by `x` leaves every other destination's
+    first entry untouched, and rewrites `d`'s own first entry (if any) to an
+    `.alloc` of its old amount minus `x` (`reduceOwed_cons`): only the FIRST
+    match for `d` is ever rewritten, and always into that shape, whatever
+    its own item used to be. -/
+theorem find_reduceOwed (o : Allocation E) (d d' : Address E) (x : Coins) :
+    (o.reduceOwed d x).find d' =
+      if d' = d then (o.find d).map (fun e => (⟨d, .alloc (e.amount - x)⟩ : Entry E))
+      else o.find d' := by
+  induction o with
+  | nil => simp [Allocation.reduceOwed]
+  | cons e t ih =>
+    rw [reduceOwed_cons]
+    by_cases he : e.dest = d
+    · subst he
+      by_cases hd : d' = e.dest
+      · subst hd; simp [find_cons]
+      · simp [find_cons, hd, Ne.symm hd]
+    · by_cases hd : d' = d
+      · subst hd; simp [find_cons, he, ih]
+      · simp only [if_neg he, find_cons, ih, if_neg hd]
+
+/-- The amount owed to one destination never exceeds the allocation's whole
+    total: `d`'s own entry (if any) is one summand of a sum of
+    non-negatives. -/
+theorem owed_le_total (o : Allocation E) (d : Address E) : o.owed d ≤ o.total := by
+  induction o with
+  | nil => simp [Allocation.owed]
+  | cons e t ih =>
+    rw [owed_cons, total_cons]
+    by_cases h : e.dest = d
+    · rw [if_pos h]; grind
+    · rw [if_neg h]; grind
+
+/-- Reducing the amount owed to `d` by `x` (at most what `d` is owed) drops
+    the total by exactly `x`: only `d`'s own first entry changes, by exactly
+    `x` (`reduceOwed_cons`). Stated additively (`+ x = `) to avoid `Coins`
+    truncated subtraction on either side. -/
+theorem total_reduceOwed (o : Allocation E) (d : Address E) {x : Coins} (hx : x ≤ o.owed d) :
+    (o.reduceOwed d x).total + x = o.total := by
+  induction o with
+  | nil => simp [Allocation.owed] at hx; simp [hx]
+  | cons e t ih =>
+    rw [owed_cons] at hx
+    rw [reduceOwed_cons]
+    by_cases he : e.dest = d
+    · subst he
+      rw [if_pos rfl] at hx ⊢
+      have hv : Entry.amount ({ e with item := .alloc (e.amount - x) } : Entry E) = e.amount - x :=
+        rfl
+      rw [total_cons, hv, total_cons]
+      grind
+    · rw [if_neg he] at hx ⊢
+      rw [total_cons, total_cons]
+      have := ih hx
+      grind
+
 /-! ### `addTo` and `remove` -/
 
 theorem addTo_cons (e : Entry E) (o : Allocation E) (d : Address E) (x : Coins) :
@@ -501,6 +558,20 @@ theorem find_addTo_of_ne (o : Allocation E) {d d' : Address E} (x : Coins) (h : 
     split
     · rename_i he; subst he; simp [find_cons, Ne.symm h]
     · rw [find_cons, find_cons, ih]
+
+/-- Raising the amount owed to `d` by `x` rewrites `d`'s own first entry (if
+    any) to an `.alloc` of its old amount plus `x` (`addTo_cons`): only the
+    FIRST match for `d` is ever rewritten, and always into that shape,
+    whatever its own item used to be. -/
+theorem find_addTo_self (o : Allocation E) (d : Address E) (x : Coins) :
+    (o.addTo d x).find d = (o.find d).map (fun e => (⟨d, .alloc (e.amount + x)⟩ : Entry E)) := by
+  induction o with
+  | nil => rfl
+  | cons e t ih =>
+    rw [addTo_cons]
+    by_cases he : e.dest = d
+    · subst he; simp [find_cons]
+    · simp [find_cons, he, ih]
 
 theorem owed_addTo_self {o : Allocation E} {d : Address E} (x : Coins) (h : o.find d ≠ none) :
     (o.addTo d x).owed d = o.owed d + x := by
@@ -527,6 +598,31 @@ theorem total_addTo {o : Allocation E} {d : Address E} (x : Coins) (h : o.find d
     · simp only [he, if_true, total_cons, Entry.amount]; simp only [Item.amount_alloc]; grind
     · rw [find_cons, if_neg he] at h
       rw [if_neg he, total_cons, total_cons, ih h]; grind
+
+/-- `addTo` never raises the total by more than `x`, whether or not `d` is
+    found (if not found it is a no-op, by the same recursion as
+    `total_addTo`). -/
+theorem total_addTo_le (o : Allocation E) (d : Address E) (x : Coins) :
+    (o.addTo d x).total ≤ o.total + x := by
+  induction o with
+  | nil => simp [Allocation.addTo]
+  | cons e t ih =>
+    rw [addTo_cons]
+    by_cases he : e.dest = d
+    · simp only [he, if_true, total_cons, Entry.amount]; simp only [Item.amount_alloc]; grind
+    · simp only [he, if_false, total_cons]; grind
+
+/-- `addTo` never lowers the amount owed anywhere: at `d` itself it only
+    raises it (`owed_addTo_self`, or leaves it at `0` when `d` has no entry
+    to raise); everywhere else it is unchanged (`owed_addTo_of_ne`). -/
+theorem owed_addTo_ge (o : Allocation E) (d d' : Address E) (x : Coins) :
+    o.owed d' ≤ (o.addTo d x).owed d' := by
+  by_cases h : d' = d
+  · subst h
+    by_cases hf : o.find d' = none
+    · simp [Allocation.owed, hf]
+    · rw [owed_addTo_self x hf]; grind
+  · rw [owed_addTo_of_ne o x h]
 
 theorem find_remove (o : Allocation E) (d d' : Address E) :
     (o.remove d).find d' = if d' = d then none else o.find d' := by
@@ -561,6 +657,24 @@ theorem total_remove {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) (d : Ad
       have hno : Allocation.find t e.dest = none :=
         find_eq_none.2 (List.nodup_cons.1 hnd).1
       have hown : Allocation.owed t e.dest = 0 := by simp [Allocation.owed, hno]
+      simp only [ne_eq, not_true_eq_false, decide_false, Bool.false_eq_true, if_false, if_true,
+        total_cons]
+      grind
+    · simp only [ne_eq, he, not_false_eq_true, decide_true, if_true, if_false, total_cons]
+      grind
+
+/-- Without distinctness, removing `d` still lowers the total by at least
+    its (first-entry) owed amount: every duplicate entry for `d` only
+    removes more. -/
+theorem total_remove_le (o : Allocation E) (d : Address E) :
+    (o.remove d).total + o.owed d ≤ o.total := by
+  induction o with
+  | nil => simp [Allocation.remove, Allocation.owed]
+  | cons e t ih =>
+    simp only [Allocation.remove, List.filter_cons] at ih ⊢
+    rw [owed_cons]
+    by_cases he : e.dest = d
+    · subst he
       simp only [ne_eq, not_true_eq_false, decide_false, Bool.false_eq_true, if_false, if_true,
         total_cons]
       grind
