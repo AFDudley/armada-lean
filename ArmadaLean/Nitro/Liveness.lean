@@ -4349,61 +4349,159 @@ theorem ConsensusSafe0.toConsensusSafe {p : Participant} {c : FixedPart} {ss : S
   · exact Or.inr (Or.inr ⟨hfz, Or.inr ⟨t, ch, hst, Or.inl h1⟩⟩)
   · exact Or.inr (Or.inr ⟨hfz, Or.inr ⟨t, ch, hst, Or.inr (Or.inl h2)⟩⟩)
 
-/-- `p`'s own checkpoint with `ss` always lands in `ConsensusSafe0`, from any
-    `ConsensusSafe` (even the risky stale-challenge sub-case): checkpoint
-    either fails, state unchanged, or succeeds and clears to `.open` (safe
-    unconditionally). It cannot fail on the risky sub-case: there
-    `finalizedWith = none` gives `IsOpen`, `consensusRules.supports` holds
-    unconditionally for proof `[ss]` under `hc`, `hchan`, `hall`, and the
-    stale candidate's own turn is strictly below `ss.state.turnNum`, meeting
-    checkpoint's turn requirement (`checkpoint_can_happen`) — so a `none`
-    outcome there is impossible, and `ConsensusSafe0` holds by the `.open`
-    case instead regardless. -/
-theorem consensus_checkpoint_resolves {apps : Apps E} {p : Participant} {c : FixedPart}
-    {ss : SignedState E} {Ω1 Ω2 : Outcome E} (hc : apps c.appDef = consensusRules)
-    (hchan : ss.state.channel = c) (hall : ss.ByAll)
-    {n n' : NetworkState E p} (hbase : ConsensusSafe c ss Ω1 Ω2 n n') :
-    ConsensusSafe0 c Ω1 Ω2 (n.applyHonest apps (.chain (.checkpoint c [ss] ss.state))) := by
-  cases hcc : n.chain.apply apps p (.checkpoint c [ss] ss.state) with
-  | some s' =>
-    obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some hcc
-    have hne : n.applyHonest apps (.chain (.checkpoint c [ss] ss.state)) =
-        { n with chain := n.chain.setStatus c (.open ss.state.turnNum) } := by
-      simp [NetworkState.applyHonest, hcc]
-    rw [hne]
-    refine Or.inr (Or.inr ⟨?_, Or.inl ⟨ss.state.turnNum, ?_⟩⟩)
-    · simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel, Adjudicator.statusOf_setStatus]
-    · simp [Adjudicator.statusOf_setStatus]
-  | none =>
-    have hne : n.applyHonest apps (.chain (.checkpoint c [ss] ss.state)) = n := by
-      simp [NetworkState.applyHonest, hcc]
-    rw [hne]
-    rcases hbase with h1 | h2 | ⟨hfz, hopen | ⟨t, ch, hst, hsafe1 | hsafe2 | ⟨hlt, -⟩⟩⟩
-    · exact Or.inl h1
-    · exact Or.inr (Or.inl h2)
-    · exact Or.inr (Or.inr ⟨hfz, Or.inl hopen⟩)
-    · exact Or.inr (Or.inr ⟨hfz, Or.inr ⟨t, ch, hst, Or.inl hsafe1⟩⟩)
-    · exact Or.inr (Or.inr ⟨hfz, Or.inr ⟨t, ch, hst, Or.inr hsafe2⟩⟩)
-    · exfalso
-      have hfz' : (n.chain.statusOf c).finalizedWith n.chain.now = none := by
-        rw [← Adjudicator.finalizedWith_channel, ← FixedPart.address_eq]; exact hfz
-      have hndl : n.chain.now < ch.deadline := by
-        rw [hst, ChannelStatus.finalizedWith_challenged] at hfz'
-        by_contra hge
-        push Not at hge
-        rw [if_pos hge] at hfz'
-        exact absurd hfz' (by simp)
-      have hmode : n.chain.mode c ≠ .finalized := by
-        rw [Adjudicator.mode_eq, hst, ChannelStatus.mode_challenged, if_neg (not_le.mpr hndl)]
-        decide
-      have ht : (n.chain.statusOf c).turnNumRecord < ss.state.turnNum := by
-        rw [hst, ChannelStatus.turnNumRecord_challenged]; exact hlt
-      have hs : (apps c.appDef).supports c [ss] ss.state = true := by
-        rw [hc]; simp [consensusRules, hchan, hall]
-      obtain ⟨heqSome, -⟩ := checkpoint_can_happen apps n.chain c [ss] ss.state hmode hs hchan ht
-      simp only [Adjudicator.apply_checkpoint] at hcc
-      rw [heqSome] at hcc
-      simp at hcc
+/-- Over a round's play with nothing of `p`'s own still pending, the turn
+    record never drops: `turnNumRecord_monotone` bounds every single
+    on-chain step, and a `tick` never touches `status` at all. The one
+    exception `turnNumRecord_monotone` carries (a `conclude` that finalizes
+    `c`) is absorbed into the `finalizedWith` disjunct here. Used by
+    `consensus_checkpoint_resolves`. -/
+theorem consensus_checkpoint_resolves_nil {apps : Apps E} {p : Participant} {T : Threat E p}
+    {c : FixedPart} {ss : SignedState E} :
+    ∀ {net net' : NetworkState E p} {t : Time}, Threat.RoundSeq apps T t [] net net' →
+      (ss.state.turnNum ≤ (net.chain.statusOf c).turnNumRecord ∨
+        ∃ Ω, net.chain.finalizedWith c.address = some Ω) →
+      ss.state.turnNum ≤ (net'.chain.statusOf c).turnNumRecord ∨
+        ∃ Ω, net'.chain.finalizedWith c.address = some Ω := by
+  intro net net' t hseq
+  generalize hpnil : ([] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => intro hbase; exact hbase
+  | land hsplit _ _ => rw [← hpnil] at hsplit; simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hbase
+    apply ih hpnil
+    rcases hbase with hle | ⟨Ω, hΩ⟩
+    · exact Or.inl (by simpa [NetworkState.applyAdv, Adjudicator.tick_statusOf] using hle)
+    · exact Or.inr ⟨Ω, by
+        simpa [NetworkState.applyAdv, FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+          Adjudicator.tick_statusOf, Adjudicator.tick_now] using
+          ChannelStatus.finalizedWith_mono (by simpa [FixedPart.address_eq] using hΩ)
+            (Nat.le_add_right net1.chain.now dt)⟩
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hbase
+    apply ih hpnil
+    cases m with
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
+    | deliver ss' =>
+      rcases hbase with hle | ⟨Ω, hΩ⟩
+      · exact Or.inl (by simpa [NetworkState.applyAdv] using hle)
+      · exact Or.inr ⟨Ω, by simpa [NetworkState.applyAdv] using hΩ⟩
+    | chain caller op =>
+      simp only [NetworkState.applyAdv]
+      cases h : net1.chain.apply apps caller op with
+      | none =>
+        rcases hbase with hle | ⟨Ω, hΩ⟩
+        · exact Or.inl (by simpa [h] using hle)
+        · exact Or.inr ⟨Ω, by simpa [h] using hΩ⟩
+      | some s' =>
+        rcases hbase with hle | ⟨Ω, hΩ⟩
+        · rcases turnNumRecord_monotone apps net1.chain s' c ⟨caller, op, net1.chain, s', h⟩
+            with hmono | hconc
+          · exact Or.inl (le_trans hle hmono)
+          · obtain ⟨caller', ss', -, hfin⟩ := hconc
+            have hsome : (s'.finalizedWith c.address).isSome := by
+              rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+                ChannelStatus.finalizedWith_isSome_iff, ← ChannelStatus.mode_eq_finalized_iff,
+                ← Adjudicator.mode_eq]
+              exact hfin
+            obtain ⟨Ω', hΩ'⟩ := Option.isSome_iff_exists.mp hsome
+            exact Or.inr ⟨Ω', hΩ'⟩
+        · exact Or.inr ⟨Ω, Adjudicator.finalizedWith_apply h hΩ⟩
+
+/-- `p`'s own checkpoint with `ss` always lands with the turn record at
+    least `ss.state.turnNum`, or `c` finalized. Within the round, the
+    `land` step shows it directly: `checkpoint` either fails because `c`
+    is already finalized (`ChannelStatus.mode_eq_finalized_iff`), or fails
+    because the turn record was already at or above `ss.state.turnNum`
+    (the only other way `checkpoint`'s preconditions can fail, since
+    `hall`/`hchan` make `consensusRules.supports` hold unconditionally for
+    `[ss] ss.state`), or succeeds and sets the record to exactly
+    `ss.state.turnNum`. `consensus_checkpoint_resolves_nil` then carries
+    this forward (never backward: `turnNumRecord_monotone`) through the
+    rest of the round. Combined with `consensus_round_safe`'s own
+    `ConsensusSafe c ss Ω1 Ω2 net' net'`, the risky stale-challenge
+    sub-case (`t < ss.state.turnNum`, read at the SAME `net'`) is
+    impossible: either `net'` is finalized (contradicting that sub-case's
+    own `finalizedWith = none`), or `ss.state.turnNum ≤
+    (net'.chain.statusOf c).turnNumRecord`, and that reads the SAME
+    `.challenged t ch` status, so `t = (net'.chain.statusOf
+    c).turnNumRecord ≥ ss.state.turnNum`, contradicting `t <
+    ss.state.turnNum`. Used by `consensus_enabled_outcomes` to fold
+    `ConsensusSafe` back to `ConsensusSafe0`, the loop invariant, every
+    round. -/
+theorem consensus_checkpoint_resolves {apps : Apps E} {p : Participant} {T : Threat E p}
+    {c : FixedPart} {ss : SignedState E} (hc : apps c.appDef = consensusRules)
+    (hp : p ∈ c.participants) (hchan : ss.state.channel = c) (hall : ss.ByAll)
+    {net net' : NetworkState E p} (t : Time) (ht : t = net.chain.now)
+    (hseq : Threat.RoundSeq apps T t [Op.checkpoint c [ss] ss.state] net net') :
+    ss.state.turnNum ≤ (net'.chain.statusOf c).turnNumRecord ∨
+      ∃ Ω, net'.chain.finalizedWith c.address = some Ω := by
+  clear ht
+  generalize heq : ([Op.checkpoint c [ss] ss.state] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => cases heq
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    cases heq
+    rcases l1 with _ | ⟨a, l1⟩
+    · rcases l2 with _ | ⟨b, l2⟩
+      · simp only [List.nil_append, List.cons.injEq] at hsplit
+        obtain ⟨hopeq, -⟩ := hsplit
+        subst hopeq
+        have hbase_land : ss.state.turnNum ≤
+            ((net1.applyAdv apps (AdvMove.land (Op.checkpoint c [ss] ss.state))).chain.statusOf
+              c).turnNumRecord ∨
+            ∃ Ω, (net1.applyAdv apps (AdvMove.land (Op.checkpoint c [ss] ss.state))).chain.finalizedWith
+              c.address = some Ω := by
+          by_cases hlt0 : (net1.chain.statusOf c).turnNumRecord < ss.state.turnNum
+          · by_cases hmode : net1.chain.mode c = .finalized
+            · have hop : net1.chain.apply apps p (Op.checkpoint c [ss] ss.state) = none := by
+                rw [Adjudicator.apply_checkpoint]; unfold Adjudicator.checkpoint
+                rw [if_neg]
+                rintro ⟨hio, -, -, -⟩
+                rw [ChannelStatus.IsOpen, ← Adjudicator.mode_eq] at hio
+                exact hio hmode
+              right
+              have hsome : (net1.chain.finalizedWith c.address).isSome := by
+                rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+                  ChannelStatus.finalizedWith_isSome_iff, ← ChannelStatus.mode_eq_finalized_iff,
+                  ← Adjudicator.mode_eq]
+                exact hmode
+              obtain ⟨Ω, hΩ⟩ := Option.isSome_iff_exists.mp hsome
+              exact ⟨Ω, by simp only [NetworkState.applyAdv, hop]; exact hΩ⟩
+            · have hcond : (net1.chain.statusOf c).IsOpen net1.chain.now ∧
+                  (apps c.appDef).supports c [ss] ss.state = true ∧ ss.state.channel = c ∧
+                  (net1.chain.statusOf c).turnNumRecord < ss.state.turnNum :=
+                ⟨by rw [ChannelStatus.IsOpen, ← Adjudicator.mode_eq]; exact hmode,
+                  by rw [hc]; simp [consensusRules, hchan, hall], hchan, hlt0⟩
+              have hop : net1.chain.apply apps p (Op.checkpoint c [ss] ss.state) =
+                  some (net1.chain.setStatus c (.open ss.state.turnNum)) := by
+                rw [Adjudicator.apply_checkpoint]; unfold Adjudicator.checkpoint
+                rw [if_pos hcond]
+              left
+              simp [NetworkState.applyAdv, hop, Adjudicator.statusOf_setStatus]
+          · cases hcc : net1.chain.apply apps p (Op.checkpoint c [ss] ss.state) with
+            | none => left; simpa [NetworkState.applyAdv, hcc] using not_lt.mp hlt0
+            | some s' =>
+              rcases turnNumRecord_monotone apps net1.chain s' c
+                ⟨p, Op.checkpoint c [ss] ss.state, net1.chain, s', hcc⟩ with hmono | hconc
+              · left
+                simp only [NetworkState.applyAdv, hcc]
+                exact le_trans (not_lt.mp hlt0) hmono
+              · right
+                obtain ⟨caller', ss', -, hfin⟩ := hconc
+                have hsome : (s'.finalizedWith c.address).isSome := by
+                  rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+                    ChannelStatus.finalizedWith_isSome_iff, ← ChannelStatus.mode_eq_finalized_iff,
+                    ← Adjudicator.mode_eq]
+                  exact hfin
+                obtain ⟨Ω, hΩ⟩ := Option.isSome_iff_exists.mp hsome
+                exact ⟨Ω, by simp only [NetworkState.applyAdv, hcc]; exact hΩ⟩
+        exact consensus_checkpoint_resolves_nil hrest hbase_land
+      · simp at hsplit
+    · simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih => exact ih heq
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih => exact ih heq
 
 /-- Nitro-49 (consensus game, Nitro:660-688), SATP-08, docs-0020-01. Nitro:684-688:
     "Throughout the only enabled outcomes for any participant are Ω1 and Ω2.
@@ -4448,7 +4546,8 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
   have hfeas : ∀ n, (σ n).Feasible n := by
     intro n
     by_cases hn : n.Holds ss
-    · rw [hσdef]; simp only [if_pos hn, HonestMove.Feasible, Op.proofStates, List.mem_singleton]
+    · rw [hσdef]; simp only [if_pos hn, HonestMove.Feasible_chain, Op.HonestFeasible,
+        Op.proofStates, List.mem_singleton]
       intro ss' hss'; rw [hss']; exact hn
     · rw [hσdef]; simp [if_neg hn, HonestMove.Feasible]
   have hbase_net : ∀ {n2' : NetworkState E p}, n2'.chain.now < net.chain.now + T.ε →
@@ -4473,9 +4572,13 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
     intro n1 hr
     induction hr with
     | refl => exact ⟨rfl, hh, Or.inl rfl⟩
-    | @round n1' n2 advs hrun hround ih =>
+    | @round n1' n2 hrun hround ih =>
       obtain ⟨hsentEq, hholds, hsafe0⟩ := ih
+      have hσeq : σ n1' = .chain (.checkpoint c [ss] ss.state) := by
+        rw [hσdef]; simp only [if_pos hholds]
+      rw [hσeq] at hround
       obtain ⟨hseq, hεbound⟩ := hround
+      simp only [HonestMove.calls_chain] at hseq
       have hsafeStart : ConsensusSafe c ss Ω1 Ω2 n1' n2 := by
         rcases hsafe0 with rfl | hsafe0'
         · exact hbase_net hεbound
@@ -4485,32 +4588,36 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
           (t.state.isFinal = true → t.state.outcome = Ω1 ∨ t.state.outcome = Ω2) := by
         rw [hsentEq]; exact hsent
       have hsafe2 : ConsensusSafe c ss Ω1 Ω2 n2 n2 :=
-        consensus_round_safe A.toBounds hc hp hΩ1 hdur hseq hεbound hsentNow hsafeStart
-      have hsafe0' : ConsensusSafe0 c Ω1 Ω2
-          (n2.applyHonest apps (.chain (.checkpoint c [ss] ss.state))) :=
-        consensus_checkpoint_resolves hc hchan hall hsafe2
-      have hσeq : σ n1' = .chain (.checkpoint c [ss] ss.state) := by
-        rw [hσdef]; simp only [if_pos hholds]
+        consensus_round_safe A.toBounds hc hp hΩ1 hdur n1'.chain.now rfl hseq hεbound hsentNow
+          hsafeStart
+      have hturn : ss.state.turnNum ≤ (n2.chain.statusOf c).turnNumRecord ∨
+          ∃ Ω, n2.chain.finalizedWith c.address = some Ω :=
+        consensus_checkpoint_resolves hc hp hchan hall n1'.chain.now rfl hseq
+      have hsafe0' : ConsensusSafe0 c Ω1 Ω2 n2 := by
+        rcases hsafe2 with h1 | h2 | ⟨hfz, hopen | ⟨t, ch, hst, hsafe1 | hsafeΩ2 | ⟨hlt, -⟩⟩⟩
+        · exact Or.inl h1
+        · exact Or.inr (Or.inl h2)
+        · exact Or.inr (Or.inr ⟨hfz, Or.inl hopen⟩)
+        · exact Or.inr (Or.inr ⟨hfz, Or.inr ⟨t, ch, hst, Or.inl hsafe1⟩⟩)
+        · exact Or.inr (Or.inr ⟨hfz, Or.inr ⟨t, ch, hst, Or.inr hsafeΩ2⟩⟩)
+        · exfalso
+          rcases hturn with hge | ⟨Ω', hΩ'⟩
+          · rw [hst, ChannelStatus.turnNumRecord_challenged] at hge
+            exact absurd hge (not_le.mpr hlt)
+          · rw [hΩ'] at hfz; exact absurd hfz (by simp)
       have hsent2 : n2.sent = n1'.sent := hseq.sent_eq
-      have hsentFinal : (n2.applyHonest apps (.chain (.checkpoint c [ss] ss.state))).sent =
-          net.sent := by
-        simp only [NetworkState.applyHonest]; rw [hsent2, hsentEq]
-      have hrecv : ∀ r ∈ n1'.received,
-          r ∈ (n2.applyHonest apps (.chain (.checkpoint c [ss] ss.state))).received := by
-        intro r hr
-        have h2 := hseq.received_subset r hr
-        simpa [NetworkState.applyHonest] using h2
-      have hholds' : (n2.applyHonest apps (.chain (.checkpoint c [ss] ss.state))).Holds ss := by
-        have hsentEq2 : n1'.sent =
-            (n2.applyHonest apps (.chain (.checkpoint c [ss] ss.state))).sent := by
-          rw [hsentFinal, hsentEq]
-        exact NetworkState.Holds.mono hsentEq2 hrecv hholds
-      rw [hσeq]
-      exact ⟨hsentFinal, hholds', Or.inr hsafe0'⟩
+      have hholds' : n2.Holds ss :=
+        NetworkState.Holds.mono hsent2.symm hseq.received_subset hholds
+      rw [hσeq, NetworkState.applyHonest_chain]
+      exact ⟨by rw [hsent2]; exact hsentEq, hholds', Or.inr hsafe0'⟩
   refine ⟨σ, hfeas, ?_⟩
-  intro n1 advs n2 hrun hround hfin
-  obtain ⟨hsentEq, -, hsafe0⟩ := hinv hrun
+  intro n1 n2 hrun hround hfin
+  obtain ⟨hsentEq, hholds1, hsafe0⟩ := hinv hrun
+  have hσeq1 : σ n1 = .chain (.checkpoint c [ss] ss.state) := by
+    rw [hσdef]; simp only [if_pos hholds1]
+  rw [hσeq1] at hround
   obtain ⟨hseq, hεbound⟩ := hround
+  simp only [HonestMove.calls_chain] at hseq
   have hsafeStart : ConsensusSafe c ss Ω1 Ω2 n1 n2 := by
     rcases hsafe0 with rfl | hsafe0'
     · exact hbase_net hεbound
@@ -4520,7 +4627,8 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
       (t.state.isFinal = true → t.state.outcome = Ω1 ∨ t.state.outcome = Ω2) := by
     rw [hsentEq]; exact hsent
   have hsafe2 : ConsensusSafe c ss Ω1 Ω2 n2 n2 :=
-    consensus_round_safe A.toBounds hc hp hΩ1 hdur hseq hεbound hsentNow hsafeStart
+    consensus_round_safe A.toBounds hc hp hΩ1 hdur n1.chain.now rfl hseq hεbound hsentNow
+      hsafeStart
   have hfin' : n2.chain.finalizedWith c.address = some Ω := hfin
   rcases hsafe2 with h1 | h2 | ⟨hfz, -⟩
   · exact hΩne1 (Option.some_inj.mp (hfin'.symm.trans h1))
@@ -4574,25 +4682,40 @@ theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T 
     `p ∈ c.participants` it needs `p`'s genuine signature; `Bounds.unforgeable`
     then needs a witness in `p`'s `sent`, which starts and stays empty.
     `deposit` and `tick` never touch `status`; `transfer` and `reclaim` on
-    `c` need `c` already finalized, which it never is. Used by
-    `participant_can_prevent_cycles`. -/
+    `c` need `c` already finalized, which it never is. Restated against the
+    explicit-time game's `Threat.RoundSeq` (operator ruling 2026-10-29): the
+    old `T.FeasibleSeq`/`advs : List (AdvMove E)` shape is gone; `p` never
+    issues a call here (`participant_can_prevent_cycles`'s strategy is
+    always `.wait 0`), so `pending` is always `[]` and the `land` case of
+    `Threat.RoundSeq` never fires. Used by `participant_can_prevent_cycles`.
+    -/
 theorem consensus_channel_stays_open {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} (hc : apps c.appDef = consensusRules)
     (hp : p ∈ c.participants) :
-    ∀ {net net' : NetworkState E p} {advs : List (AdvMove E)} {t0 : Nat},
-      T.FeasibleSeq apps net advs net' → net.sent = [] → net.chain.statusOf c = .open t0 →
+    ∀ {net net' : NetworkState E p} {t : Time} {t0 : Nat}, Threat.RoundSeq apps T t [] net net' →
+      net.sent = [] → net.chain.statusOf c = .open t0 →
       net'.chain.statusOf c = .open t0 := by
-  intro net net' advs t0 hseq
+  intro net net' t t0 hseq
+  generalize hpnil : ([] : List (Op E)) = pending at hseq
   induction hseq with
   | nil => intro _ hbase; exact hbase
-  | @cons net1 net2 m rest hfeas hrest ih =>
+  | land hsplit _ _ => rw [← hpnil] at hsplit; simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hsent1 hbase1
+    have hsent1' : (net1.applyAdv apps (AdvMove.tick dt)).sent = [] := by
+      rw [NetworkState.applyAdv_sent]; exact hsent1
+    have step : (net1.applyAdv apps (AdvMove.tick dt)).chain.statusOf c = .open t0 := by
+      simpa [NetworkState.applyAdv] using hbase1
+    exact ih hpnil hsent1' step
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     intro hsent1 hbase1
     have hsent1' : (net1.applyAdv apps m).sent = [] := by
       rw [NetworkState.applyAdv_sent]; exact hsent1
     have step : (net1.applyAdv apps m).chain.statusOf c = .open t0 := by
       cases m with
       | deliver ss' => exact hbase1
-      | tick dt => simpa [NetworkState.applyAdv] using hbase1
+      | tick dt => exact absurd rfl (hnotick dt)
+      | land op => exact absurd rfl (hnoland op)
       | chain caller op =>
         simp only [NetworkState.applyAdv]
         cases h : net1.chain.apply apps caller op with
@@ -4667,7 +4790,7 @@ theorem consensus_channel_stays_open {apps : Apps E} {p : Participant} {T : Thre
             · obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
               rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
               exact hbase1
-    exact ih hsent1' step
+    exact ih hpnil hsent1' step
 
 /-- Nitro-32. Nitro:792-794: "While it is technically possible to create outcomes
     with cycles, it is also possible for any participant in the channel to
@@ -4687,7 +4810,7 @@ theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Th
     intro m hm
     induction hm with
     | refl => exact ⟨hsent, fun c' _ t ht => ht⟩
-    | @round n1 n2 advs hrun hround ih =>
+    | @round n1 n2 hrun hround ih =>
       obtain ⟨ihsent, ihopen⟩ := ih
       obtain ⟨hseq, -⟩ := hround
       have hsent2 : n2.sent = [] := hseq.sent_eq.trans ihsent
@@ -4695,7 +4818,7 @@ theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Th
       have hopen2 := consensus_channel_stays_open A.toBounds (hc c' hpc') hpc' hseq ihsent
         (ihopen c' hpc' t ht)
       simpa [NetworkState.applyHonest, Adjudicator.tick_statusOf] using hopen2
-  refine ⟨fun _ => .wait 0, fun _ => trivial, fun n1 advs n2 hrun hround hcyc => ?_⟩
+  refine ⟨fun _ => .wait 0, fun _ => trivial, fun n1 n2 hrun hround hcyc => ?_⟩
   obtain ⟨c, hpc, hcyc⟩ := hcyc
   obtain ⟨t, ht⟩ := hopen c hpc
   obtain ⟨hsent1, hopen1⟩ := hinv hrun
