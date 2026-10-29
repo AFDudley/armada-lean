@@ -1,0 +1,46 @@
+status: completed
+pebble_id: aln-852
+summary: >
+  Closed the sorry in directly_funded_pays (ArmadaLean/Nitro/Liveness.lean)
+  without touching its statement. Added a channel-kind case split: the
+  virtual-channel branch uses Reachable.balances_virtual_zero (the channel's
+  balance is 0, forcing DirectlyFunded's total, and d's owed amount, to 0,
+  so the goal holds trivially at net via UnbeatableIn.done); the
+  ledger-channel branch introduces a new directly_funded_step lemma (full
+  case analysis over every Op, tracking d's own first allocation entry as an
+  explicit alloc amount that is never removed and always stays alloc-shaped
+  across reduceOwed/addTo) chained over a whole adversary round by a new
+  directly_funded_round induction on Threat.FeasibleSeq, then closes with
+  the one on-chain transfer the theorem's own doc comment already named,
+  using the existing transfer_can_happen plus a paidTo>=owed argument valid
+  because the channel stays fully funded. Added seven small Allocation
+  lemmas to Lemmas.lean (owed_le_total, total_reduceOwed, find_reduceOwed,
+  total_addTo_le, owed_addTo_ge, find_addTo_self, total_remove_le) that the
+  new step lemma needs for its total- and entry-shape tracking; all are
+  exercised by directly_funded_pays's own proof. Verified with `lake build`
+  (full project, 598 jobs, no new sorry, no errors) and with
+  `scripts/check.sh --json directly_funded_pays`, which prints
+  theorem_in_sorry=false and signatures_ok=true (the theorem's statement
+  text is byte-identical to scripts/sigs-baseline.tsv). The plain
+  `scripts/check.sh` gate also still passes in full (sorry count 22, down
+  from 23 before this change; baseline ceiling is 46).
+cost: "~950k tokens"
+commits:
+  - "dab70f4"
+verify_transcript:
+  hooks:
+    - name: "lake build (full project)"
+      outcome: passed
+      duration_s: 7
+    - name: "scripts/check.sh --json directly_funded_pays"
+      outcome: passed
+      duration_s: 5
+    - name: "scripts/check.sh (full gate)"
+      outcome: passed
+      duration_s: 4
+e2e_gate:
+  spec: contracts/specs/derived-aln-852.spec.json
+  command: "scripts/check.sh --json directly_funded_pays"
+  result: "passed"
+  ran_at_sha: "dab70f4"
+  mocks_in_path: false
