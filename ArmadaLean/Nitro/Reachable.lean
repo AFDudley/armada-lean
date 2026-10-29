@@ -148,9 +148,15 @@ variable {E : Type} [DecidableEq E]
     moves (`NetworkState.applyHonest`, `HonestMove.Feasible`), `p` landing
     one of its own currently-feasible calls directly (`land`, the
     explicit-time game's two-phase issue/land split collapsed back to one
-    step, sound for bare reachability — this file's header), or one
+    step, sound for bare reachability — this file's header), one
     feasible move of the adversary `T` (`NetworkState.applyAdv`,
-    `Threat.feasible`). Declared at the root, not inside `ArmadaLean.Nitro`
+    `Threat.feasible`), or `p` landing a deposit (D10 ruling,
+    `Network.deposit`'s own doc comment): `NetworkState` carries no
+    wallet, so `p`'s own machine admits ANY amount, a sound
+    over-approximation of the wallet-bounded `Nitro.network` step (this
+    file's header: bare reachability over-approximates) — exactly what
+    `Nitro.network_views_participant_reachable` needs at `q = p₀`.
+    Declared at the root, not inside `ArmadaLean.Nitro`
     (which already holds `NetworkState`, `Threat`, ...), so its name is
     `Nitro.participant`, not `ArmadaLean.Nitro.Nitro.participant`; this
     mirrors `Pool.machine` (`PoolMachine.lean`), itself declared outside
@@ -161,7 +167,8 @@ def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
   step := fun net net' =>
     (∃ m : HonestMove E, m.Feasible net ∧ net' = net.applyHonest m) ∨
     (∃ op : Op E, op.HonestFeasible net ∧ net' = net.applyAdv apps (.land op)) ∨
-    (∃ m : AdvMove E, T.feasible net m ∧ net' = net.applyAdv apps m)
+    (∃ m : AdvMove E, T.feasible net m ∧ net' = net.applyAdv apps m) ∨
+    (∃ a : Address E, ∃ e x : Coins, net' = net.applyAdv apps (.land (.deposit a e x)))
 
 /-- `Nitro.chain apps`: the chain alone as a `Machine`, from
     `Adjudicator.genesis` by one `Step` at a time. -/
@@ -195,10 +202,11 @@ theorem Nitro.participant_chain_reachable {apps : Apps E} {p : Participant} {T :
     rw [hinit]
     exact Relation.ReflTransGen.refl
   · intro net net' hP hstep
-    rcases hstep with ⟨m, -, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, rfl⟩
+    rcases hstep with ⟨m, -, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, rfl⟩ | ⟨a, e, x, rfl⟩
     · exact NetworkState.applyHonest_chain_reachable net m hP
     · exact NetworkState.applyAdv_chain_reachable net (.land op) hP
     · exact NetworkState.applyAdv_chain_reachable net m hP
+    · exact NetworkState.applyAdv_chain_reachable net (.land (.deposit a e x)) hP
 
 /-- A full network state: ONE shared chain, and each participant's own
     `sent`/`received`. Coordinator finding 2026-10-29: `Machine.interleave`
@@ -215,6 +223,16 @@ structure Network (E : Type) where
   chain : Adjudicator E
   sent : Participant → List (SignedState E)
   received : Participant → List (SignedState E)
+  /-- Each participant's own coins, outside the chain (operator ruling
+      2026-10-29, "D10: no deposits in network histories; wallets":
+      "participants cannot create coins, but they bring their own
+      balances of arbitrary size"). `Nitro.network.init` leaves `wallet`
+      unconstrained; `Network.deposit` is the only step that reads or
+      writes it, moving `x` from `wallet p` to a ledger channel
+      (Nitro:395-398: "where the channel ... has enough coins in the
+      adjudicator ... In this case, we say the channel is directly
+      funded", funding by deposit before any strategy runs). -/
+  wallet : Participant → Coins
 
 /-- `p`'s view of a `Network`: exactly `Strategy.lean`'s `NetworkState`,
     read off the shared chain and `p`'s own lists. -/
@@ -317,8 +335,43 @@ theorem Network.applyHonest_react_received_self (n : Network E) (p : Participant
     either). A failed call changes nothing (ForceMove:685-686). -/
 def Network.land (apps : Apps E) (n : Network E) (p : Participant) (op : Op E) : Network E :=
   match n.chain.apply apps p op with
-  | some s' => { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q }
+  | some s' =>
+    { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q,
+      wallet := n.wallet }
   | none => n
+
+/-- `p` deposits `x` of its own wallet into address `a` (operator ruling
+    2026-10-29, "D10: no deposits in network histories; wallets":
+    "participants cannot create coins, but they bring their own balances
+    of arbitrary size... a deposit (into a ledger channel only) debits
+    the depositor's wallet"). Nitro:395-398 funds a channel by deposit
+    before any strategy runs; a deposit is `Op.HonestFeasible`-excluded
+    (D3, `Strategy.lean:120`), so it is a machine step here, not a
+    reaction a strategy issues (`Nitro.network`'s own step, below).
+    `Adjudicator.deposit` already refuses a non-ledger address and a
+    mismatched `expectedHeld`; a refusal leaves `n` entirely unchanged,
+    the depositor's wallet included, the same "changes nothing" shape as
+    `Network.land`'s own failed call. -/
+def Network.deposit (n : Network E) (p : Participant) (a : Address E) (expectedHeld x : Coins) :
+    Network E :=
+  match n.chain.deposit a expectedHeld x with
+  | some s' =>
+    { n with
+      chain := s'
+      wallet := fun q => if q = p then n.wallet p - x else n.wallet q }
+  | none => n
+
+@[simp] theorem Network.deposit_sent (n : Network E) (p : Participant) (a : Address E)
+    (expectedHeld x : Coins) (q : Participant) :
+    (Network.deposit n p a expectedHeld x).sent q = n.sent q := by
+  simp only [Network.deposit]
+  cases n.chain.deposit a expectedHeld x <;> rfl
+
+@[simp] theorem Network.deposit_received (n : Network E) (p : Participant) (a : Address E)
+    (expectedHeld x : Coins) (q : Participant) :
+    (Network.deposit n p a expectedHeld x).received q = n.received q := by
+  simp only [Network.deposit]
+  cases n.chain.deposit a expectedHeld x <;> rfl
 
 /-- One adversary move against `p`, applied to the whole `Network`
     (`NetworkState.applyAdv`, read from `p`'s view). `.deliver ss` reaches
@@ -345,7 +398,9 @@ def Network.applyAdv (apps : Apps E) (n : Network E) (p : Participant) (m : AdvM
   match m with
   | .chain caller op =>
     match n.chain.apply apps caller op with
-    | some s' => { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q }
+    | some s' =>
+      { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q,
+        wallet := n.wallet }
     | none => n
   | .deliver ss => { n with received := fun q => if q = p then ss :: n.received q else n.received q }
   | .tick dt => { n with chain := n.chain.tick dt }
@@ -368,6 +423,14 @@ theorem Network.land_chain_reachable {apps : Apps E} (n : Network E) (p : Partic
   | none => exact hr
   | some s' => exact hr.tail (Step.mk p op n.chain s' h)
 
+theorem Network.deposit_chain_reachable {apps : Apps E} (n : Network E) (p : Participant)
+    (a : Address E) (expectedHeld x : Coins) (hr : Reachable apps n.chain) :
+    Reachable apps (Network.deposit n p a expectedHeld x).chain := by
+  simp only [Network.deposit]
+  cases h : n.chain.deposit a expectedHeld x with
+  | none => exact hr
+  | some s' => exact hr.tail (Step.mk p (.deposit a expectedHeld x) n.chain s' h)
+
 theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Participant)
     (m : AdvMove E) (hr : Reachable apps n.chain) :
     Reachable apps (Network.applyAdv apps n p m).chain := by
@@ -388,16 +451,17 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     own feasible honest moves (a reaction's sends only, calls land
     separately below), `p` lands one of its own currently-feasible calls
     (`Network.land`, gated by `Network.Sendable` on its proof states, the
-    same public-broadcast fact the old `.chain` gate stated), or `p`'s own
+    same public-broadcast fact the old `.chain` gate stated), `p`'s own
     adversary `Ts.T p` makes one feasible `.deliver`/`.tick` move against
-    `p`. `Network.Sendable` gates a `.deliver` and every landed call's
-    proof states: SATP:168 "forging cryptographic signatures is
-    infeasible" is a system-wide fact, already encoded on the chain side
-    by `ReachableSigned`'s own hypothesis (`Adjudicator.lean`, `SignedStep`'s
-    `hsig`); this is the same fact for the network's own `sent` record, so
-    every signature a proof state carries is genuine, not only the acting
-    view's own. The caller rule (operator ruling 2026-10-29, "Caller
-    rule",
+    `p`, or `p` deposits some of its own wallet into a ledger channel
+    (`Network.deposit`, D10 ruling). `Network.Sendable` gates a `.deliver`
+    and every landed call's proof states: SATP:168 "forging cryptographic
+    signatures is infeasible" is a system-wide fact, already encoded on
+    the chain side by `ReachableSigned`'s own hypothesis
+    (`Adjudicator.lean`, `SignedStep`'s `hsig`); this is the same fact for
+    the network's own `sent` record, so every signature a proof state
+    carries is genuine, not only the acting view's own. The caller rule
+    (operator ruling 2026-10-29, "Caller rule",
     `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`
     §"Result" item 3, read literally): "only q's own honest moves may
     submit an on-chain call with caller q" — for every participant, not
@@ -408,9 +472,19 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     `ReachableViews` is `(Nitro.network apps Ts).Reachable`, not a separate
     predicate. A second gate, `Network.VoucherSendable`, covers the one
     part of `Network.Sendable` a first send cannot satisfy of itself (that
-    definition's doc comment). -/
+    definition's doc comment). D10 ruling (2026-10-29, "D10: no deposits
+    in network histories; wallets"): "participants cannot create coins,
+    but they bring their own balances of arbitrary size. Each participant
+    has a wallet. The machines' initial state gives each wallet an
+    arbitrary amount, and a deposit ... debits the depositor's wallet.
+    Histories admit deposits; honest strategies keep D3." `init` leaves
+    `wallet` unconstrained (any initial amount); `wallet` moves only
+    through a deposit (`Network.deposit`), never through an honest
+    strategy move (`Op.HonestFeasible` still rejects `.deposit`, D3,
+    `Strategy.lean:120`) and never through any other adversary move (only
+    this disjunct reads or writes `wallet`). -/
 def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) where
-  init := fun n => n = ⟨Adjudicator.genesis, fun _ => [], fun _ => []⟩
+  init := fun n => n.chain = Adjudicator.genesis ∧ n.sent = (fun _ => []) ∧ n.received = (fun _ => [])
   step := fun n n' => ∃ p : Participant,
     (∃ m : HonestMove E, m.Feasible (n.view p) ∧
       (∀ r : Reaction E, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) ∧
@@ -421,7 +495,8 @@ def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) wh
     (∃ m : AdvMove E, (Ts.T p).feasible (n.view p) m ∧
       (∀ ss, m = .deliver ss → n.Sendable ss) ∧
       (∀ caller op, m ≠ .chain caller op) ∧ (∀ op, m ≠ .land op) ∧
-      n' = Network.applyAdv apps n p m)
+      n' = Network.applyAdv apps n p m) ∨
+    (∃ c : FixedPart, ∃ e x : Coins, x ≤ n.wallet p ∧ n' = Network.deposit n p (.channel c) e x)
 
 /-- **The chain of a reachable `Network` is reachable.** By
     `Machine.invariant`, using `Network.applyHonest_chain_reachable` /
@@ -431,13 +506,15 @@ theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n :
     (h : (Nitro.network apps Ts).Reachable n) : Reachable apps n.chain := by
   refine Machine.invariant (Nitro.network apps Ts) (P := fun n => Reachable apps n.chain) ?_ ?_ n h
   · intro n hinit
-    rw [hinit]
+    obtain ⟨hc, -, -⟩ := hinit
+    rw [hc]
     exact Relation.ReflTransGen.refl
   · intro n n' hP hstep
-    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, -, -, -, rfl⟩⟩ := hstep
+    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, -, -, -, rfl⟩ | ⟨c, e, x, -, rfl⟩⟩ := hstep
     · exact Network.applyHonest_chain_reachable n p m hP
     · exact Network.land_chain_reachable n p op hP
     · exact Network.applyAdv_chain_reachable n p m hP
+    · exact Network.deposit_chain_reachable n p (.channel c) e x hP
 
 /-- **`Views.Consistent`'s third conjunct holds for every reachable
     `Network`.** A state `p` received that names `q` as a signer is a
@@ -457,10 +534,12 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
     (P := fun n => ∀ p q : Participant, p ≠ q → ∀ r ∈ n.received p, q ∈ r.signers →
       ∃ s ∈ n.sent q, s.state = r.state) ?_ ?_ n h
   · intro n hinit p q hpq r hr
-    rw [hinit] at hr
+    obtain ⟨-, -, hrecv⟩ := hinit
+    rw [hrecv] at hr
     simp at hr
   · intro n n' hP hstep p q hpq r hr hqr
-    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩⟩ :=
+    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ |
+        ⟨c, e, x, -, rfl⟩⟩ :=
       hstep
     · cases m with
       | react rr =>
@@ -533,6 +612,9 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
         rw [hsent]
         exact hP p q hpq r hr hqr
       | land op => exact absurd rfl (hnoland op)
+    · rw [Network.deposit_received] at hr
+      rw [Network.deposit_sent]
+      exact hP p q hpq r hr hqr
 
 /-- Bigger `signed` lists only reach more: `SignedState.SignedIn` is
     monotone in `signed`, so a `SignedStep` for `signed` is also one for
@@ -571,12 +653,14 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
       ReachableSigned apps signed n.chain ∧
       ∀ q st, (q, st) ∈ signed ↔ ∃ s ∈ n.sent q, s.state = st) ?_ ?_ n h
   · intro n hinit
+    obtain ⟨hc, hs, -⟩ := hinit
     refine ⟨[], ?_, ?_⟩
-    · rw [hinit]; exact Relation.ReflTransGen.refl
-    · intro q st; rw [hinit]; simp
+    · rw [hc]; exact Relation.ReflTransGen.refl
+    · intro q st; rw [hs]; simp
   · intro n n' hP hstep
     obtain ⟨signed, hreach, hmirror⟩ := hP
-    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, -, hnochain, hnoland, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, -, hnochain, hnoland, rfl⟩ |
+        ⟨c, e, x, -, rfl⟩⟩ := hstep
     · cases m with
       | react rr =>
         refine ⟨rr.sends.map (fun st => (p₀, st)) ++ signed, ?_, ?_⟩
@@ -650,6 +734,21 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
         refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
         simp [Op.proofStates]
       | land op => exact absurd rfl (hnoland op)
+    · cases hop : n.chain.deposit (.channel c) e x with
+      | none =>
+        refine ⟨signed, ?_, ?_⟩
+        · have hceq : (Network.deposit n p₀ (.channel c) e x).chain = n.chain := by
+            simp [Network.deposit, hop]
+          rw [hceq]; exact hreach
+        · simp only [Network.deposit_sent]; exact hmirror
+      | some s' =>
+        have hceq : (Network.deposit n p₀ (.channel c) e x).chain = s' := by
+          simp [Network.deposit, hop]
+        refine ⟨signed, ?_, by simp only [Network.deposit_sent]; exact hmirror⟩
+        rw [hceq]
+        refine hreach.tail ⟨p₀, .deposit (.channel c) e x, _, _, ?_, hop⟩
+        intro ss hss
+        simp [Op.proofStates] at hss
 
 /-- **`Views.Consistent`'s second conjunct holds for every reachable
     `Network`.** Operator ruling 2026-10-29: the network is synchronous by
@@ -668,10 +767,12 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
     (P := fun n => ∀ p, ∀ ss ∈ n.sent p, ∀ q ∈ ss.state.recipients p, ss ∈ n.received q)
     ?_ ?_ n h
   · intro n hinit p ss hss
-    rw [hinit] at hss
+    obtain ⟨-, hs, -⟩ := hinit
+    rw [hs] at hss
     simp at hss
   · intro n n' hP hstep p ss hss q hq
-    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ |
+        ⟨c, e, x, -, rfl⟩⟩ := hstep
     · cases m with
       | react rr =>
         rw [Network.applyHonest_react_sent] at hss
@@ -737,6 +838,9 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
         rw [hrecv]
         exact hP p ss hss q hq
       | land op => exact absurd rfl (hnoland op)
+    · rw [Network.deposit_sent] at hss
+      rw [Network.deposit_received]
+      exact hP p ss hss q hq
 
 /-- **Every reachable `Network`'s views are `Views.Consistent`**, all
     three conjuncts, no further hypothesis. The first holds
@@ -786,8 +890,8 @@ theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats 
           exact absurd hqsg hqp0
         · exact hvg st List.mem_cons_self v hv hqv
       obtain ⟨s₀, hinit, hsteps⟩ := ihrest
-      refine ⟨s₀, hinit, hsteps.tail (Or.inr (Or.inr
-        ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged, ?_⟩))⟩
+      refine ⟨s₀, hinit, hsteps.tail (Or.inr (Or.inr (Or.inl
+        ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged, ?_⟩)))⟩
       simp [NetworkState.recvBatch, NetworkState.applyAdv, hqr]
     · simpa [NetworkState.recvBatch, List.filter_cons, hqr] using ihrest
 
@@ -821,10 +925,12 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
   refine Machine.invariant (Nitro.network apps Ts)
     (P := fun n => (Nitro.participant apps (Ts.T q)).Reachable (n.view q)) ?_ ?_ n h
   · intro n hinit
-    rw [hinit]
-    exact ⟨_, rfl, Relation.ReflTransGen.refl⟩
+    obtain ⟨hc, hs, hrv⟩ := hinit
+    refine ⟨_, ?_, Relation.ReflTransGen.refl⟩
+    simp [Network.view, Nitro.participant, hc, hs, hrv]
   · intro n n' hP hstep
-    obtain ⟨p₀, ⟨m, hfeas, hvgate, rfl⟩ | ⟨op, hfeas, hsgate, rfl⟩ | ⟨m, hfeas, -, hnochain, hnoland, rfl⟩⟩ :=
+    obtain ⟨p₀, ⟨m, hfeas, hvgate, rfl⟩ | ⟨op, hfeas, hsgate, rfl⟩ |
+        ⟨m, hfeas, -, hnochain, hnoland, rfl⟩ | ⟨c, e, x, hxle, rfl⟩⟩ :=
       hstep
     · by_cases hqp0 : q = p₀
       · subst hqp0
@@ -851,7 +957,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
               (n.view q).applyAdv apps (.tick dt) := by
             simp [Network.applyHonest, Network.view, NetworkState.applyAdv]
           rw [heq]
-          exact hP.tail (Or.inr (Or.inr ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩))
+          exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
     · by_cases hqp0 : q = p₀
       · subst hqp0
         have heq : (Network.land apps n q op).view q = (n.view q).applyAdv apps (.land op) := by
@@ -870,7 +976,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
           exact ⟨fun hqsg => hsg q hqsg, fun v hv hqv => hvoucher v hv q hqv⟩
         have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ op) :=
           (Ts.ok q).toCapable.capable (n.view q) p₀ op (Ne.symm hqp0) hUnforged
-        exact hP.tail (Or.inr (Or.inr ⟨.chain p₀ op, hcap, rfl⟩))
+        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.chain p₀ op, hcap, rfl⟩)))
     · by_cases hqp0 : q = p₀
       · subst hqp0
         have heq : (Network.applyAdv apps n q m).view q = (n.view q).applyAdv apps m := by
@@ -880,7 +986,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
           | tick dt => simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
           | land op => exact absurd rfl (hnoland op)
         rw [heq]
-        exact hP.tail (Or.inr (Or.inr ⟨m, hfeas, rfl⟩))
+        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨m, hfeas, rfl⟩)))
       · cases m with
         | chain caller op => exact absurd rfl (hnochain caller op)
         | deliver ss =>
@@ -893,5 +999,137 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
               (n.view q).applyAdv apps (.tick dt) := by
             simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
           rw [heq]
-          exact hP.tail (Or.inr (Or.inr ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩))
+          exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
         | land op => exact absurd rfl (hnoland op)
+    · by_cases hqp0 : q = p₀
+      · subst hqp0
+        have heq : (Network.deposit n q (.channel c) e x).view q =
+            (n.view q).applyAdv apps (.land (.deposit (.channel c) e x)) := by
+          simp only [Network.deposit, Network.view, NetworkState.applyAdv, Adjudicator.apply]
+          cases n.chain.deposit (.channel c) e x <;> rfl
+        rw [heq]
+        exact hP.tail (Or.inr (Or.inr (Or.inr ⟨.channel c, e, x, rfl⟩)))
+      · have heq : (Network.deposit n p₀ (.channel c) e x).view q =
+            (n.view q).applyAdv apps (.chain p₀ (.deposit (.channel c) e x)) := by
+          simp only [Network.deposit, Network.view, NetworkState.applyAdv, Adjudicator.apply]
+          cases n.chain.deposit (.channel c) e x <;> rfl
+        rw [heq]
+        have hUnforged : ∀ ss ∈ (Op.deposit (.channel c) e x : Op E).proofStates,
+            (n.view q).Unforged ss := by
+          intro ss hss
+          simp [Op.proofStates] at hss
+        have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ (.deposit (.channel c) e x)) :=
+          (Ts.ok q).toCapable.capable (n.view q) p₀ (.deposit (.channel c) e x) (Ne.symm hqp0)
+            hUnforged
+        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.chain p₀ (.deposit (.channel c) e x), hcap, rfl⟩)))
+
+/-- **Wallet conservation (D10 ruling).** No coin is created: the chain's
+    `held` plus every coin it ever paid to an external destination is
+    exactly the sum of every successful deposit along the history
+    (`deposits`, an existential witness built by the same induction as
+    `Nitro.network_chain_reachableSigned`'s `signed`), and each
+    participant's wallet only ever falls by its own deposits — `n0`'s
+    wallet at `p` is the sum of what `p` deposited plus what is left in
+    `n`'s wallet at `p`. `Participant` is infinite (`Address.lean`, a bare
+    `Nat` wrapper), so no sum "over every wallet" type-checks; `deposits`,
+    a finite list (any derivation of `Relation.ReflTransGen` is finite),
+    is the exact finite record the ruling's "initial total wallets" reads
+    against. -/
+theorem Nitro.network_conservation {apps : Apps E} {Ts : Threats E apps} {n0 n : Network E}
+    (hinit : (Nitro.network apps Ts).init n0)
+    (hsteps : Relation.ReflTransGen (Nitro.network apps Ts).step n0 n) :
+    ∃ deposits : List (Participant × Coins),
+      n.chain.held + n.chain.balances.paidOutTotal = (deposits.map Prod.snd).sum ∧
+      ∀ p, n0.wallet p =
+        n.wallet p + ((deposits.filter (fun d => decide (d.1 = p))).map Prod.snd).sum := by
+  induction hsteps with
+  | refl =>
+    obtain ⟨hc0, -, -⟩ := hinit
+    exact ⟨[], by rw [hc0]; rfl, by intro p; simp⟩
+  | @tail n1 n2 hs1 hstep ih =>
+    obtain ⟨deposits, hheld, hwallet⟩ := ih
+    have hr1 : (Nitro.network apps Ts).Reachable n1 := ⟨n0, hinit, hs1⟩
+    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨op, hopfeas, -, rfl⟩ | ⟨m, -, -, hnochain, hnoland, rfl⟩ |
+        ⟨c, e, x, hxle, rfl⟩⟩ := hstep
+    · cases m with
+      | react r =>
+        exact ⟨deposits, by simpa using hheld, by simpa [Network.applyHonest] using hwallet⟩
+      | wait dt =>
+        exact ⟨deposits, by simpa [Network.applyHonest, Adjudicator.tick] using hheld,
+          by simpa [Network.applyHonest] using hwallet⟩
+    · have hnodep : ∀ a e x, op ≠ Op.deposit a e x := by
+        intro a e x heq
+        rw [heq] at hopfeas
+        simp [Op.HonestFeasible] at hopfeas
+      cases hop : n1.chain.apply apps p op with
+      | none =>
+        have hnc : Network.land apps n1 p op = n1 := by simp [Network.land, hop]
+        exact ⟨deposits, by rw [hnc]; exact hheld, by rw [hnc]; exact hwallet⟩
+      | some s' =>
+        have hnc1 : (Network.land apps n1 p op).chain = s' := by simp [Network.land, hop]
+        have hnc2 : (Network.land apps n1 p op).wallet = n1.wallet := by simp [Network.land, hop]
+        have hhi : n1.chain.HeldInv :=
+          Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
+        have hstep' := Adjudicator.held_paidOut_step_no_deposit hhi hnodep hop
+        exact ⟨deposits, by rw [hnc1, hstep']; exact hheld, by rw [hnc2]; exact hwallet⟩
+    · cases m with
+      | chain caller op => exact absurd rfl (hnochain caller op)
+      | deliver ss =>
+        exact ⟨deposits, by simpa [Network.applyAdv] using hheld,
+          by simpa [Network.applyAdv] using hwallet⟩
+      | tick dt =>
+        exact ⟨deposits, by simpa [Network.applyAdv, Adjudicator.tick] using hheld,
+          by simpa [Network.applyAdv] using hwallet⟩
+      | land op => exact absurd rfl (hnoland op)
+    · cases hdep : n1.chain.deposit (.channel c) e x with
+      | none =>
+        have hnc : Network.deposit n1 p (.channel c) e x = n1 := by simp [Network.deposit, hdep]
+        exact ⟨deposits, by rw [hnc]; exact hheld, by rw [hnc]; exact hwallet⟩
+      | some s' =>
+        have hnc1 : (Network.deposit n1 p (.channel c) e x).chain = s' := by
+          simp [Network.deposit, hdep]
+        have hnc2 : (Network.deposit n1 p (.channel c) e x).wallet =
+            fun q => if q = p then n1.wallet p - x else n1.wallet q := by
+          simp [Network.deposit, hdep]
+        have hhi : n1.chain.HeldInv :=
+          Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
+        have hopEq : n1.chain.apply apps p (.deposit (.channel c) e x) = some s' := hdep
+        have hstep' := Adjudicator.held_paidOut_step_deposit hhi hopEq
+        refine ⟨(p, x) :: deposits, ?_, ?_⟩
+        · rw [hnc1]
+          simp only [List.map_cons, List.sum_cons]
+          rw [hstep', hheld, Nat.add_comm]
+        · intro q
+          rw [hnc2]
+          by_cases hqp : q = p
+          · subst hqp
+            rw [hwallet q]
+            simp
+            rw [← Nat.add_assoc, Nat.sub_add_cancel hxle]
+          · have hw := hwallet q
+            simp [hqp, Ne.symm hqp]
+            exact hw
+
+/-- **D10 fix: a reachable network can hold a positive balance in a ledger
+    channel.** One deposit from genesis closes the gap the ruling found
+    (scratch lemma `network_balances_zero`,
+    `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`,
+    "D10"): a `Nitro.network`-reachable chain is no longer always
+    zero-balance everywhere. -/
+theorem Nitro.network_positive_balance_reachable {apps : Apps E} (Ts : Threats E apps)
+    (p : Participant) (c : FixedPart) (hck : c.kind = .ledger) (x : Coins) (hx : 0 < x) :
+    ∃ n : Network E, (Nitro.network apps Ts).Reachable n ∧
+      0 < n.chain.balances.get (.channel c) := by
+  set n0 : Network E :=
+    { chain := Adjudicator.genesis, sent := fun _ => [], received := fun _ => [],
+      wallet := fun q => if q = p then x else 0 } with hn0def
+  have hinit : (Nitro.network apps Ts).init n0 := ⟨rfl, rfl, rfl⟩
+  have hr0 : (Nitro.network apps Ts).Reachable n0 := ⟨n0, hinit, Relation.ReflTransGen.refl⟩
+  have hwle : x ≤ n0.wallet p := by simp [hn0def]
+  have hstep : (Nitro.network apps Ts).step n0 (Network.deposit n0 p (.channel c) 0 x) :=
+    ⟨p, Or.inr (Or.inr (Or.inr ⟨c, 0, x, hwle, rfl⟩))⟩
+  refine ⟨Network.deposit n0 p (.channel c) 0 x, hr0.tail hstep, ?_⟩
+  have hbal : (Network.deposit n0 p (.channel c) 0 x).chain.balances.get (.channel c) = x := by
+    simp [Network.deposit, Adjudicator.deposit, hck, hn0def, Adjudicator.genesis,
+      Balances.add, Balances.set, Balances.get]
+  rw [hbal]; exact hx
