@@ -1,0 +1,80 @@
+{
+  "id": "derived-aln-4d7",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `conclusion_proof_finalizable` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json conclusion_proof_finalizable` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `conclusion_proof_finalizable`'s proof body is `sorry`. `scripts/check.sh --json conclusion_proof_finalizable` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json conclusion_proof_finalizable` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem conclusion_proof_finalizable",
+  "restatement": "The theorem conclusion_proof_finalizable in ArmadaLean/Nitro/Liveness.lean must have a complete proof, with no use of sorry anywhere in its own proof body. Today the proof body is the single tactic sorry, so the theorem is unproved. The fix must replace that sorry with a real Lean proof. The fix must not change the theorem's statement: its name, its arguments, and the proposition it asserts must stay exactly as they are now. The observable way to check the proof is complete is to run scripts/check.sh --json conclusion_proof_finalizable from the repo root and read the theorem_in_sorry field of the printed JSON object. That field must read false after the fix. Today it reads true.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem conclusion_proof_finalizable in ArmadaLean/Nitro/Liveness.lean must be proved with no sorry in its own proof body, as checked by scripts/check.sh --json conclusion_proof_finalizable printing theorem_in_sorry false."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement (its name, its full argument list, and its conclusion UnbeatableNoWait apps T (fun net' => net'.Finalized c \u03a9) net) must not change."
+    }
+  ],
+  "goal": "Prove the theorem conclusion_proof_finalizable in ArmadaLean/Nitro/Liveness.lean with a real proof body, so it no longer depends on sorry, while its statement stays unchanged.",
+  "acceptance_criteria": [
+    "Running the project's own check script against the theorem conclusion_proof_finalizable reports that the theorem's proof no longer depends on an unfinished placeholder.",
+    "The theorem's declared name, its argument list, and the outcome it concludes still read exactly as they do today, in the file where the theorem lives."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's own check script against the theorem conclusion_proof_finalizable reports that the theorem's proof no longer depends on an unfinished placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's declared name, its argument list, and the outcome it concludes still read exactly as they do today, in the file where the theorem lives."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's own check script against the theorem conclusion_proof_finalizable reports that the theorem's proof no longer depends on an unfinished placeholder.",
+      "proves": "Proves clause c1: the theorem is proved with no sorry, observed through the check script's printed result.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "args": [
+          "--json",
+          "conclusion_proof_finalizable"
+        ],
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The theorem's declared name, its argument list, and the outcome it concludes still read exactly as they do today, in the file where the theorem lives.",
+      "proves": "Proves clause c2: the theorem's statement is unchanged by the fix.",
+      "restatement_clause_id": "c2",
+      "type": "grep",
+      "pattern": "theorem conclusion_proof_finalizable \\(apps : Apps E\\) \\{p : Participant\\} \\(T : Threat E p\\)",
+      "additional_patterns": [
+        "UnbeatableNoWait apps T \\(fun net' => net'\\.Finalized c \u03a9\\) net := by"
+      ],
+      "files": [
+        "ArmadaLean/Nitro/Liveness.lean"
+      ],
+      "count": {
+        "unit": "patterns",
+        "op": "eq",
+        "value": 2
+      },
+      "clause_id": "c2"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
