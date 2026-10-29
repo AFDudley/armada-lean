@@ -1749,18 +1749,28 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
         rw [this] at ht
         exact absurd ht List.not_mem_nil
 
+/-- The unfunded base every zero-balance witness in this file reads:
+    chain `g0`, no sent/received history, `noDeposits` wallet. -/
+def n0G : Network Nat := ⟨g0, fun _ => [], fun _ => [], noDeposits⟩
+
+theorem n0G_reach : (Nitro.network apps0 (Ts apps0)).Reachable n0G :=
+  network_reachable_init apps0 (Ts apps0) noDeposits
+
+theorem n0G_chain : n0G.chain = g0 := rfl
+
 /-- `p0` and `q0` each send `st`, synchronously delivered to the other
     (a two-participant channel), giving each the other's signature with
-    no adversary move. -/
-def nOneCh (st : State Nat) : Network Nat :=
-  Network.applyHonest
-    (Network.applyHonest (⟨g0, fun _ => [], fun _ => [], noDeposits⟩ : Network Nat) p0 (.send st))
-    q0 (.send st)
+    no adversary move. Built on an arbitrary reachable base `n0`
+    (`n0G`'s zero-balance chain for every call site below except the
+    funded witnesses, which build on a deposit-funded base instead). -/
+def nOneCh (n0 : Network Nat) (st : State Nat) : Network Nat :=
+  Network.applyHonest (Network.applyHonest n0 p0 (.send st)) q0 (.send st)
 
-theorem nOneCh_reach {st : State Nat} (hv : st.voucher? = none) :
-    (Nitro.network apps0 (Ts apps0)).Reachable (nOneCh st) :=
+theorem nOneCh_reach {n0 : Network Nat} {st : State Nat}
+    (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0) (hv : st.voucher? = none) :
+    (Nitro.network apps0 (Ts apps0)).Reachable (nOneCh n0 st) :=
   network_reachable_honest
-    (network_reachable_honest (network_reachable_init apps0 (Ts apps0) noDeposits) p0 (.send st) (by simp)
+    (network_reachable_honest hr0 p0 (.send st) (by simp)
       (fun r hr st' hst => by
         injection hr with hr; subst hr
         simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -1771,76 +1781,86 @@ theorem nOneCh_reach {st : State Nat} (hv : st.voucher? = none) :
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
       intro v hv'; rw [hv] at hv'; cases hv')
 
-theorem nOneCh_chain (st : State Nat) : (nOneCh st).chain = g0 := rfl
+theorem nOneCh_chain (n0 : Network Nat) (st : State Nat) : (nOneCh n0 st).chain = n0.chain := rfl
 
-theorem nOneCh_views_p0 {st : State Nat} (hst : st.channel.participants = [p0, q0]) :
-    (nOneCh st).views p0 = ⟨g0, [⟨st, [q0]⟩], [⟨st, [p0]⟩]⟩ := by
+theorem nOneCh_views_p0 {n0 : Network Nat} {st : State Nat}
+    (hst : st.channel.participants = [p0, q0]) (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = []) :
+    (nOneCh n0 st).views p0 = ⟨n0.chain, [⟨st, [q0]⟩], [⟨st, [p0]⟩]⟩ := by
   simp [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
-    show p0 ≠ q0 from by decide]
+    show p0 ≠ q0 from by decide, hsp0, hrp0]
 
-theorem nOneCh_views_q0 {st : State Nat} (hst : st.channel.participants = [p0, q0]) :
-    (nOneCh st).views q0 = ⟨g0, [⟨st, [p0]⟩], [⟨st, [q0]⟩]⟩ := by
+theorem nOneCh_views_q0 {n0 : Network Nat} {st : State Nat}
+    (hst : st.channel.participants = [p0, q0]) (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
+    (nOneCh n0 st).views q0 = ⟨n0.chain, [⟨st, [p0]⟩], [⟨st, [q0]⟩]⟩ := by
   simp [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
-    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide]
+    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide, hsq0, hrq0]
 
 theorem g0_open (c : FixedPart) : g0.statusOf c = .open 0 := rfl
 theorem g0_finalizedWith (c : FixedPart) : g0.finalizedWith c.address = none := rfl
 
-theorem nOneCh_views_chain (st : State Nat) (r : Participant) : ((nOneCh st).views r).chain = g0 :=
-  rfl
+theorem nOneCh_views_chain (n0 : Network Nat) (st : State Nat) (r : Participant) :
+    ((nOneCh n0 st).views r).chain = n0.chain := rfl
 
-/-- `FinalizableBy` for the channel `c` of `nOneCh`'s one held state. -/
-theorem nOneCh_finalizable {c : FixedPart} {Ω : Outcome Nat} (hcp : c.participants = [p0, q0])
-    (hdur : c.challengeDuration = 2) :
-    (nOneCh (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0 (Ts apps0) c Ω
+/-- `FinalizableBy` for the channel `c` of `nOneCh`'s one held state, on
+    any base `n0` whose chain has `c` open and unfinalized, and whose
+    `p0`/`q0` sent/received histories are empty (true by `rfl` for `n0G`
+    and for a deposit-only funded base, `Network.deposit_sent`/
+    `Network.deposit_received`). -/
+theorem nOneCh_finalizable {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat}
+    (hcp : c.participants = [p0, q0]) (hdur : c.challengeDuration = 2)
+    (hopen : n0.chain.statusOf c = .open 0) (hnone : n0.chain.finalizedWith c.address = none)
+    (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
+    (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
+    (nOneCh n0 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0 (Ts apps0) c Ω
       [p0, q0] := by
   intro r hr
   have hr' : r = p0 ∨ r = q0 := by simpa using hr
-  have hnone := g0_finalizedWith c
-  have hopen := g0_open c
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
       (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
       (.inl (by rw [nOneCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nOneCh_views_chain]; exact hopen) _)
-    · rw [nOneCh_views_p0 hcp]
+    · rw [nOneCh_views_p0 hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
-    · rw [nOneCh_views_p0 hcp]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nOneCh_views_p0 hcp hsp0 hrp0]; intro t ht _ _; simp at ht; subst ht; rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
       (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
       (.inl (by rw [nOneCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nOneCh_views_chain]; exact hopen) _)
-    · rw [nOneCh_views_q0 hcp]
+    · rw [nOneCh_views_q0 hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
-    · rw [nOneCh_views_q0 hcp]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nOneCh_views_q0 hcp hsq0 hrq0]; intro t ht _ _; simp at ht; subst ht; rfl
 
 /-- Two rounds of `nOneCh`: `p0` and `q0` each send `st1`, then each
-    send `st2`, both synchronously delivered to the other. -/
-def nTwoCh (st1 st2 : State Nat) : Network Nat :=
+    send `st2`, both synchronously delivered to the other. Built on an
+    arbitrary reachable base `n0`, the same way `nOneCh` is. -/
+def nTwoCh (n0 : Network Nat) (st1 st2 : State Nat) : Network Nat :=
   Network.applyHonest
     (Network.applyHonest
       (Network.applyHonest
-        (Network.applyHonest (⟨g0, fun _ => [], fun _ => [], noDeposits⟩ : Network Nat) p0 (.send st1))
+        (Network.applyHonest n0 p0 (.send st1))
         q0 (.send st1))
       p0 (.send st2))
     q0 (.send st2)
 
-theorem nTwoCh_reach {st1 st2 : State Nat} (hv1 : st1.voucher? = none) (hv2 : st2.voucher? = none) :
-    (Nitro.network apps0 (Ts apps0)).Reachable (nTwoCh st1 st2) :=
+theorem nTwoCh_reach {n0 : Network Nat} {st1 st2 : State Nat}
+    (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0)
+    (hv1 : st1.voucher? = none) (hv2 : st2.voucher? = none) :
+    (Nitro.network apps0 (Ts apps0)).Reachable (nTwoCh n0 st1 st2) :=
   network_reachable_honest
     (network_reachable_honest
       (network_reachable_honest
-        (network_reachable_honest (network_reachable_init apps0 (Ts apps0) noDeposits) p0 (.send st1) (by simp)
+        (network_reachable_honest hr0 p0 (.send st1) (by simp)
           (fun r hr st' hst => by
             injection hr with hr; subst hr
             simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -1861,50 +1881,57 @@ theorem nTwoCh_reach {st1 st2 : State Nat} (hv1 : st1.voucher? = none) (hv2 : st
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
       intro v hv'; rw [hv2] at hv'; cases hv')
 
-theorem nTwoCh_chain (st1 st2 : State Nat) : (nTwoCh st1 st2).chain = g0 := rfl
+theorem nTwoCh_chain (n0 : Network Nat) (st1 st2 : State Nat) :
+    (nTwoCh n0 st1 st2).chain = n0.chain := rfl
 
-theorem nTwoCh_views_p0 {st1 st2 : State Nat} (hst1 : st1.channel.participants = [p0, q0])
-    (hst2 : st2.channel.participants = [p0, q0]) :
-    (nTwoCh st1 st2).views p0 = ⟨g0, [⟨st2, [q0]⟩, ⟨st1, [q0]⟩], [⟨st2, [p0]⟩, ⟨st1, [p0]⟩]⟩ := by
+theorem nTwoCh_views_p0 {n0 : Network Nat} {st1 st2 : State Nat}
+    (hst1 : st1.channel.participants = [p0, q0]) (hst2 : st2.channel.participants = [p0, q0])
+    (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = []) :
+    (nTwoCh n0 st1 st2).views p0 =
+      ⟨n0.chain, [⟨st2, [q0]⟩, ⟨st1, [q0]⟩], [⟨st2, [p0]⟩, ⟨st1, [p0]⟩]⟩ := by
   simp [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
-    show p0 ≠ q0 from by decide]
+    show p0 ≠ q0 from by decide, hsp0, hrp0]
 
-theorem nTwoCh_views_q0 {st1 st2 : State Nat} (hst1 : st1.channel.participants = [p0, q0])
-    (hst2 : st2.channel.participants = [p0, q0]) :
-    (nTwoCh st1 st2).views q0 = ⟨g0, [⟨st2, [p0]⟩, ⟨st1, [p0]⟩], [⟨st2, [q0]⟩, ⟨st1, [q0]⟩]⟩ := by
+theorem nTwoCh_views_q0 {n0 : Network Nat} {st1 st2 : State Nat}
+    (hst1 : st1.channel.participants = [p0, q0]) (hst2 : st2.channel.participants = [p0, q0])
+    (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
+    (nTwoCh n0 st1 st2).views q0 =
+      ⟨n0.chain, [⟨st2, [p0]⟩, ⟨st1, [p0]⟩], [⟨st2, [q0]⟩, ⟨st1, [q0]⟩]⟩ := by
   simp [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
-    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide]
+    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide, hsq0, hrq0]
 
 
-theorem nTwoCh_views_chain (st1 st2 : State Nat) (r : Participant) :
-    ((nTwoCh st1 st2).views r).chain = g0 := rfl
+theorem nTwoCh_views_chain (n0 : Network Nat) (st1 st2 : State Nat) (r : Participant) :
+    ((nTwoCh n0 st1 st2).views r).chain = n0.chain := rfl
 
 /-- `FinalizableBy` for the channel `c` of `nTwoCh`'s first-sent state
     (sent first, so found second — via `List.mem_cons_of_mem` — in each
-    participant's accumulated `sent`/`received`). -/
-theorem nTwoCh_finalizable_fst {c : FixedPart} {Ω : Outcome Nat} {st2 : State Nat}
+    participant's accumulated `sent`/`received`), on any base `n0` with
+    `c` open and unfinalized (see `nOneCh_finalizable`). -/
+theorem nTwoCh_finalizable_fst {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat} {st2 : State Nat}
     (hcp : c.participants = [p0, q0]) (hst2p : st2.channel.participants = [p0, q0])
-    (hne : st2.channel ≠ c) (hdur : c.challengeDuration = 2) :
-    (nTwoCh (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat) st2).views.FinalizableBy apps0
+    (hne : st2.channel ≠ c) (hdur : c.challengeDuration = 2)
+    (hopen : n0.chain.statusOf c = .open 0) (hnone : n0.chain.finalizedWith c.address = none)
+    (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
+    (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
+    (nTwoCh n0 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat) st2).views.FinalizableBy apps0
       (Ts apps0) c Ω [p0, q0] := by
   intro r hr
   have hr' : r = p0 ∨ r = q0 := by simpa using hr
-  have hnone := g0_finalizedWith c
-  have hopen := g0_open c
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
       (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
-    · rw [nTwoCh_views_p0 hcp hst2p]
+    · rw [nTwoCh_views_p0 hcp hst2p hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
           List.mem_cons_self ..⟩
-    · rw [nTwoCh_views_p0 hcp hst2p]
+    · rw [nTwoCh_views_p0 hcp hst2p hsp0 hrp0]
       intro t ht hcc _
       simp at ht
       rcases ht with rfl | rfl
@@ -1915,14 +1942,14 @@ theorem nTwoCh_finalizable_fst {c : FixedPart} {Ω : Outcome Nat} {st2 : State N
       (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
-    · rw [nTwoCh_views_q0 hcp hst2p]
+    · rw [nTwoCh_views_q0 hcp hst2p hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
           List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
-    · rw [nTwoCh_views_q0 hcp hst2p]
+    · rw [nTwoCh_views_q0 hcp hst2p hsq0 hrq0]
       intro t ht hcc _
       simp at ht
       rcases ht with rfl | rfl
@@ -1931,29 +1958,31 @@ theorem nTwoCh_finalizable_fst {c : FixedPart} {Ω : Outcome Nat} {st2 : State N
 
 /-- `FinalizableBy` for the channel `c` of `nTwoCh`'s second-sent state
     (sent last, so found first — via `List.mem_cons_self` — in each
-    participant's accumulated `sent`/`received`). -/
-theorem nTwoCh_finalizable_snd {c : FixedPart} {Ω : Outcome Nat} {st1 : State Nat}
+    participant's accumulated `sent`/`received`), on any base `n0` with
+    `c` open and unfinalized. -/
+theorem nTwoCh_finalizable_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat} {st1 : State Nat}
     (hcp : c.participants = [p0, q0]) (hst1p : st1.channel.participants = [p0, q0])
-    (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 2) :
-    (nTwoCh st1 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0
+    (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 2)
+    (hopen : n0.chain.statusOf c = .open 0) (hnone : n0.chain.finalizedWith c.address = none)
+    (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
+    (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
+    (nTwoCh n0 st1 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0
       (Ts apps0) c Ω [p0, q0] := by
   intro r hr
   have hr' : r = p0 ∨ r = q0 := by simpa using hr
-  have hnone := g0_finalizedWith c
-  have hopen := g0_open c
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
       (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
-    · rw [nTwoCh_views_p0 hst1p hcp]
+    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
       · exact .inr ⟨_, List.mem_cons_self .., rfl, List.mem_cons_self ..⟩
-    · rw [nTwoCh_views_p0 hst1p hcp]
+    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       intro t ht hcc _
       simp at ht
       rcases ht with rfl | rfl
@@ -1964,13 +1993,13 @@ theorem nTwoCh_finalizable_snd {c : FixedPart} {Ω : Outcome Nat} {st1 : State N
       (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
-    · rw [nTwoCh_views_q0 hst1p hcp]
+    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_self .., rfl, List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
-    · rw [nTwoCh_views_q0 hst1p hcp]
+    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       intro t ht hcc _
       simp at ht
       rcases ht with rfl | rfl
@@ -1981,63 +2010,65 @@ theorem nTwoCh_finalizable_snd {c : FixedPart} {Ω : Outcome Nat} {st1 : State N
     when that state is NOT final (`isFinal = false`): via
     `latest_state_finalizable` (Liveness.lean) on the open channel, not
     `conclude_strategy`, so no participant's `sent` ever carries an
-    `isFinal = true` state of `c`. -/
-theorem nTwoCh_finalizable_latest_snd {c : FixedPart} {Ω : Outcome Nat} {st1 : State Nat}
+    `isFinal = true` state of `c`. On any base `n0` with `c` open. -/
+theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat} {st1 : State Nat}
     (hcp : c.participants = [p0, q0]) (hst1p : st1.channel.participants = [p0, q0])
     (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 2)
+    (hopen : n0.chain.statusOf c = .open 0)
+    (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
+    (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = [])
     (hreach : (Nitro.network apps0 (Ts apps0)).Reachable
-      (nTwoCh st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat))) :
-    (nTwoCh st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0
+      (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat))) :
+    (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0
       (Ts apps0) c Ω [p0, q0] := by
   intro r hr
   have hr' : r = p0 ∨ r = q0 := by simpa using hr
-  have hopen := g0_open c
   rcases hr' with rfl | rfl
   · refine latest_state_finalizable apps0 ((Ts apps0).T p0) (canon_ok apps0 p0)
-      (net := (nTwoCh st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views p0)
+      (net := (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views p0)
       (Nitro.network_views_participant_reachable hreach p0) c
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
       (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_ (by rw [hdur]; decide)
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
-    · rw [nTwoCh_views_p0 hst1p hcp]
+    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
       · exact .inr ⟨_, List.mem_cons_self .., rfl,
           List.mem_cons_self ..⟩
-    · rw [nTwoCh_views_p0 hst1p hcp]
+    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       intro t ht hcc
       simp at ht
       rcases ht with rfl | rfl
       · right; rfl
       · exact absurd hcc hne
-    · rw [nTwoCh_views_p0 hst1p hcp]
+    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       intro t ht hcc hfin
       simp at ht
       rcases ht with rfl | rfl
       · cases hfin
       · exact absurd hcc hne
   · refine latest_state_finalizable apps0 ((Ts apps0).T q0) (canon_ok apps0 q0)
-      (net := (nTwoCh st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views q0)
+      (net := (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views q0)
       (Nitro.network_views_participant_reachable hreach q0) c
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
       (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_ (by rw [hdur]; decide)
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
-    · rw [nTwoCh_views_q0 hst1p hcp]
+    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_self .., rfl,
           List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
-    · rw [nTwoCh_views_q0 hst1p hcp]
+    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       intro t ht hcc
       simp at ht
       rcases ht with rfl | rfl
       · right; rfl
       · exact absurd hcc hne
-    · rw [nTwoCh_views_q0 hst1p hcp]
+    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       intro t ht hcc hfin
       simp at ht
       rcases ht with rfl | rfl
@@ -2054,13 +2085,13 @@ theorem stL1_voucher : stL1.voucher? = none := rfl
 theorem stX1_voucher : stX1.voucher? = none := rfl
 theorem cLW_ne_cχ : cLW ≠ cχ := by decide
 
-def nOpen : Network Nat := nTwoCh stL1 stX1
+def nOpen : Network Nat := nTwoCh n0G stL1 stX1
 theorem nOpen_reach : (Nitro.network apps0 (Ts apps0)).Reachable nOpen :=
-  nTwoCh_reach stL1_voucher stX1_voucher
+  nTwoCh_reach n0G_reach stL1_voucher stX1_voucher
 
-def nOpen' : Network Nat := nTwoCh stLW stX1
+def nOpen' : Network Nat := nTwoCh n0G stLW stX1
 theorem nOpen'_reach : (Nitro.network apps0 (Ts apps0)).Reachable nOpen' :=
-  nTwoCh_reach stLW_voucher stX1_voucher
+  nTwoCh_reach n0G_reach stLW_voucher stX1_voucher
 
 example : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB : Nat)
     (L χ : FixedPart) (a b a' b' : Coins),
@@ -2081,18 +2112,20 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB
     (∀ p, p = A ∨ p = B → (v p).chain = (v' p).chain) := by
   refine ⟨nOpen.views, nOpen'.views, nOpen, nOpen', p0, q0, 0, 1, cLW, cχ, 0, 0, 0, 0,
     nOpen_reach, rfl, nOpen'_reach, rfl, le_rfl, le_rfl, ⟨rfl, rfl⟩, rfl, rfl, ?_, ?_,
-    nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl, nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl,
-    nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl, nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl,
+    nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl rfl rfl rfl rfl rfl rfl,
+    nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl rfl rfl rfl rfl rfl rfl,
+    nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl rfl rfl rfl rfl rfl rfl,
+    nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl rfl rfl rfl rfl rfl rfl,
     fun r _ => by simp only [nOpen, nOpen', nTwoCh_views_chain]⟩
-  · intro r; simp only [nOpen, nTwoCh_views_chain]; exact zero_g0 _
-  · intro r; simp only [nOpen', nTwoCh_views_chain]; exact zero_g0 _
+  · intro r; simp only [nOpen, nTwoCh_views_chain, n0G_chain]; exact zero_g0 _
+  · intro r; simp only [nOpen', nTwoCh_views_chain, n0G_chain]; exact zero_g0 _
 
 /-- `subchannel_close_value_preserving`: `v` reuses `nOpen'` (`cLW` holds
     `wLS.outcome`, `cχ` holds the zero outcome); `v'` holds `cLW` with the
     zero outcome by itself, from a separate genesis start. -/
-def nClose' : Network Nat := nOneCh stL1
+def nClose' : Network Nat := nOneCh n0G stL1
 theorem nClose'_reach : (Nitro.network apps0 (Ts apps0)).Reachable nClose' :=
-  nOneCh_reach stL1_voucher
+  nOneCh_reach n0G_reach stL1_voucher
 
 example : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a' b' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
@@ -2107,11 +2140,12 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a
     (∀ p, p = w.A ∨ p = w.B → (v p).chain = (v' p).chain) := by
   refine ⟨nOpen'.views, nClose'.views, nOpen', nClose', wLS, 0, 0,
     nOpen'_reach, rfl, nClose'_reach, rfl, rfl,
-    ⟨⟨rfl, rfl⟩, rfl, ?_, nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl⟩,
-    nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl, nOneCh_finalizable rfl rfl, ?_,
+    ⟨⟨rfl, rfl⟩, rfl, ?_, nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl rfl rfl rfl rfl rfl rfl⟩,
+    nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl rfl rfl rfl rfl rfl rfl,
+    nOneCh_finalizable rfl rfl rfl rfl rfl rfl rfl rfl, ?_,
     fun r _ => by simp only [nOpen', nClose', nTwoCh_views_chain, nOneCh_views_chain]⟩
-  · intro r; simp only [nOpen', nTwoCh_views_chain]; exact zero_g0 _
-  · intro r; simp only [nClose', nOneCh_views_chain]; exact zero_g0 _
+  · intro r; simp only [nOpen', nTwoCh_views_chain, n0G_chain]; exact zero_g0 _
+  · intro r; simp only [nClose', nOneCh_views_chain, n0G_chain]; exact zero_g0 _
 
 /-- `ledger_topup_reorder_safe`. -/
 example : ∃ A B χ : Address Nat, A ≠ B ∧ A ≠ χ ∧ B ≠ χ :=
@@ -2138,9 +2172,9 @@ theorem stPWL'_voucher : stPWL'.voucher? = none := rfl
 theorem cLW_ne_cL2 : cLW ≠ cL2 := by decide
 theorem g0_finalOutcome (c : FixedPart) : g0.finalOutcome c.address = none := rfl
 
-def nPW : Network Nat := nTwoCh stPWL stPWL'
+def nPW : Network Nat := nTwoCh n0G stPWL stPWL'
 theorem nPW_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPW :=
-  nTwoCh_reach stPWL_voucher stPWL'_voucher
+  nTwoCh_reach n0G_reach stPWL_voucher stPWL'_voucher
 
 example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
     (L L' χ : FixedPart) (a b c a' : Coins),
@@ -2161,16 +2195,16 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
       (.allocation [alloc (.external dA) a, alloc (.external dB) b, alloc χ.address c]) [A, B] := by
   refine ⟨nPW.views, nPW, p0, q0, 0, 1, cLW, cL2, c3, 0, 0, 0, 0, nPW_reach, rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl,
     rfl, cLW_ne_cL2, ?_, ?_, ?_,
-    fun r => by simp only [nPW, nTwoCh_views_chain]; exact g0_finalizedWith _,
+    fun r => by simp only [nPW, nTwoCh_views_chain, n0G_chain]; exact g0_finalizedWith _,
     fun _ => ⟨(by decide : 2 * 1 ≤ 2), (by decide : 2 * 1 ≤ 2)⟩, ?_,
-    fun r => by simp only [nPW, nTwoCh_views_chain]; exact g0_finalOutcome _, ?_,
-    nTwoCh_finalizable_latest_snd rfl rfl cLW_ne_cL2 rfl nPW_reach⟩
-  · intro r; simp only [nPW, nTwoCh_views_chain]; exact zero_g0 _
+    fun r => by simp only [nPW, nTwoCh_views_chain, n0G_chain]; exact g0_finalOutcome _, ?_,
+    nTwoCh_finalizable_latest_snd rfl rfl cLW_ne_cL2 rfl rfl rfl rfl rfl rfl nPW_reach⟩
+  · intro r; simp only [nPW, nTwoCh_views_chain, n0G_chain]; exact zero_g0 _
   · intro r hr
     have hr' : r = p0 ∨ r = q0 := by simp only [cLW] at hr; simpa using hr
     rcases hr' with rfl | rfl
     · refine ⟨⟨stPWL, [p0, q0]⟩, ?_, by decide, rfl⟩
-      simp only [nPW]; rw [nTwoCh_views_p0 rfl rfl]
+      simp only [nPW]; rw [nTwoCh_views_p0 rfl rfl rfl rfl]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
@@ -2178,7 +2212,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
           List.mem_cons_self ..⟩
     · refine ⟨⟨stPWL, [p0, q0]⟩, ?_, by decide, rfl⟩
-      simp only [nPW]; rw [nTwoCh_views_q0 rfl rfl]
+      simp only [nPW]; rw [nTwoCh_views_q0 rfl rfl rfl rfl]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
@@ -2187,38 +2221,38 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
   · intro r t ht hcc _
     by_cases hrp0 : r = p0
-    · subst hrp0; simp only [nPW] at ht; rw [nTwoCh_views_p0 rfl rfl] at ht; simp at ht
+    · subst hrp0; simp only [nPW] at ht; rw [nTwoCh_views_p0 rfl rfl rfl rfl] at ht; simp at ht
       rcases ht with rfl | rfl
       · exact absurd hcc cLW_ne_cL2.symm
       · rfl
     · by_cases hrq0 : r = q0
-      · subst hrq0; simp only [nPW] at ht; rw [nTwoCh_views_q0 rfl rfl] at ht; simp at ht
+      · subst hrq0; simp only [nPW] at ht; rw [nTwoCh_views_q0 rfl rfl rfl rfl] at ht; simp at ht
         rcases ht with rfl | rfl
         · exact absurd hcc cLW_ne_cL2.symm
         · rfl
       · exfalso
         have : (nPW.views r).sent = [] := by
           rw [Network.views, Network.view]
-          simp only [nPW, nTwoCh, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
+          simp only [nPW, nTwoCh, n0G, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
         rw [this] at ht; exact absurd ht List.not_mem_nil
   · intro r; simp only [nPW]
-    refine ⟨deadlineAfter_open (by rw [nTwoCh_views_chain]; exact g0_open cLW) _,
-      deadlineAfter_open (by rw [nTwoCh_views_chain]; exact g0_open cL2) _⟩
+    refine ⟨deadlineAfter_open (by rw [nTwoCh_views_chain, n0G_chain]; exact g0_open cLW) _,
+      deadlineAfter_open (by rw [nTwoCh_views_chain, n0G_chain]; exact g0_open cL2) _⟩
   · intro r t ht hcc
     by_cases hrp0 : r = p0
-    · subst hrp0; simp only [nPW] at ht; rw [nTwoCh_views_p0 rfl rfl] at ht; simp at ht
+    · subst hrp0; simp only [nPW] at ht; rw [nTwoCh_views_p0 rfl rfl rfl rfl] at ht; simp at ht
       rcases ht with rfl | rfl
       · rfl
       · exact absurd hcc cLW_ne_cL2
     · by_cases hrq0 : r = q0
-      · subst hrq0; simp only [nPW] at ht; rw [nTwoCh_views_q0 rfl rfl] at ht; simp at ht
+      · subst hrq0; simp only [nPW] at ht; rw [nTwoCh_views_q0 rfl rfl rfl rfl] at ht; simp at ht
         rcases ht with rfl | rfl
         · rfl
         · exact absurd hcc cLW_ne_cL2
       · exfalso
         have : (nPW.views r).sent = [] := by
           rw [Network.views, Network.view]
-          simp only [nPW, nTwoCh, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
+          simp only [nPW, nTwoCh, n0G, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
         rw [this] at ht; exact absurd ht List.not_mem_nil
 /-! ### SATP: a route of two peers (`p0` Alice, `q0` Bob) and of three. -/
 
