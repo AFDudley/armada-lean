@@ -404,7 +404,6 @@ theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
   induction hU with
   | done hG => exact .done hG
   | move m hm hfeas _ ih => exact .move m (hsub m hm) hfeas ih
-
 /-- An adversary move changes only the chain and what `p` has received; the
     states `p` has itself sent are untouched (`NetworkState.applyAdv`). -/
 @[simp] theorem NetworkState.applyAdv_sent (apps : Apps E) {p : Participant}
@@ -500,6 +499,165 @@ theorem Threat.RoundSeq.balances_external_mono {apps : Apps E} {p : Participant}
     | deliver ss => simp [NetworkState.applyAdv]
     | tick dt => exact absurd rfl (hnotick dt)
     | land op => exact absurd rfl (hnoland op)
+
+/-- Over a round that lands `p`'s one pending call, the transfer to `d`
+    (`Threat.RoundSeq`, `pending = [Op.transfer c d]`): `c`'s fully-funded
+    slack at `d` (`directly_funded_step`) only grows up to the moment the
+    transfer lands — `other` (an adversary `.chain`/`.deliver`) follows
+    `directly_funded_step`, or leaves everything unchanged on failure;
+    `tick` only advances the clock (`ChannelStatus.finalOutcome_mono`).
+    `land` is forced, exactly once (`pending` is a singleton): at that
+    point the slack invariant, carried this far, is exactly
+    `transfer_can_happen`'s own hypothesis, so the transfer itself
+    succeeds and pays `d` at least `amt`; after that, `d`'s raw balance
+    (not the slack) only grows for the rest of the round
+    (`Threat.RoundSeq.balances_external_mono`). Used by
+    `directly_funded_pays`. -/
+theorem directly_funded_round {apps : Apps E} {p : Participant} {T : Threat E p} (c : FixedPart)
+    (d : E) (hk : c.kind = .ledger) (net net' : NetworkState E p) (t : Time)
+    (ht : t = net.chain.now)
+    (hseq : Threat.RoundSeq apps T t [Op.transfer c (.external d)] net net') :
+    ∀ {o : Allocation E} {amt : Coins},
+      net.chain.finalOutcome c.address = some (.allocation o) →
+      o.total ≤ net.chain.balances.get c.address →
+      o.find (.external d) = some ⟨.external d, .alloc amt⟩ →
+      net.chain.balances.get (.external d) + amt ≤ net'.chain.balances.get (.external d) := by
+  clear ht
+  generalize hp : ([Op.transfer c (.external d)] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => intro o amt hf ht hd; cases hp
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    intro o amt hf ht hd
+    cases hp
+    rcases l1 with _ | ⟨a, l1⟩
+    · rcases l2 with _ | ⟨b, l2⟩
+      · cases hsplit
+        have hbf : (Address.external d : Address E).fundable = true := rfl
+        obtain ⟨s', hs', hbal⟩ := transfer_can_happen net1.chain c (.external d) o amt hk hbf hf hd
+        have happly : net1.chain.apply apps p (.transfer c (.external d)) = some s' := by
+          rw [Adjudicator.apply_transfer]; exact hs'
+        have hchain : (net1.applyAdv apps (.land (Op.transfer c (.external d)))).chain = s' := by
+          simp [NetworkState.applyAdv, happly]
+        have hmono := hrest.balances_external_mono d
+        rw [hchain] at hmono
+        have hcne : (Address.external d : Address E) ≠ c.address := by
+          rw [FixedPart.address_eq]; intro hh; cases hh
+        rw [hbal, if_neg hcne] at hmono
+        have hpaid : amt ≤ o.paidTo (net1.chain.balances.get c.address) (Address.external d) := by
+          have hsub : o.dedup.total ≤ o.total :=
+            Allocation.total_le_of_sublist (Allocation.dedupFrom_sublist [] o)
+          have hdedup_le : o.dedup.total ≤ net1.chain.balances.get c.address := le_trans hsub ht
+          have howed1 : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
+          have hdedup_owed : o.dedup.owed (Address.external d) = amt := by
+            rw [Allocation.owed_dedup]; exact howed1
+          have hle := Allocation.owed_le_payout_get hdedup_le (Address.external d)
+          rw [hdedup_owed] at hle
+          rwa [Allocation.paidTo_eq_get]
+        grind
+      · simp at hsplit
+    · simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro o amt hf ht hd
+    refine ih hp ?_ ?_ hd
+    · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
+        ChannelStatus.finalOutcome_mono
+          (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
+            simpa [FixedPart.address_eq] using hf)
+          (Nat.le_add_right net1.chain.now dt)
+    · simpa [NetworkState.applyAdv] using ht
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro o amt hf ht hd
+    cases m with
+    | chain caller op =>
+      cases hm : net1.chain.apply apps caller op with
+      | none =>
+        have := ih hp (by simp only [NetworkState.applyAdv, hm]; exact hf)
+          (by simp only [NetworkState.applyAdv, hm]; exact ht) hd
+        simpa [NetworkState.applyAdv, hm] using this
+      | some s' =>
+        obtain ⟨o1, amt1, hf1, ht1, hd1, hle1⟩ := directly_funded_step hf ht hd hm
+        have := ih hp (by simp only [NetworkState.applyAdv, hm]; exact hf1)
+          (by simp only [NetworkState.applyAdv, hm]; exact ht1) hd1
+        have heq : (NetworkState.applyAdv apps (AdvMove.chain caller op) net1).chain.balances.get
+            (Address.external d) = s'.balances.get (Address.external d) := by
+          simp [NetworkState.applyAdv, hm]
+        rw [heq] at this
+        exact le_trans hle1 this
+    | deliver ss =>
+      have := ih hp (by simp only [NetworkState.applyAdv]; exact hf)
+        (by simp only [NetworkState.applyAdv]; exact ht) hd
+      simpa [NetworkState.applyAdv] using this
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
+
+/-- Nitro-16, Nitro-21, ForceMove-B01, ForceMove-C03, docs-0070-05, docs-0080-06. Nitro:395-398: "where
+    the channel L itself has enough coins in the adjudicator to cover the
+    entire allocation ... A will receive all x coins allocated to them in ω."
+    The strategy is one transfer. The entry of `d` is an allocation item:
+    go-nitro refuses to transfer a guarantee (MultiAssetHolder.sol:169-170).
+
+    Operator ruling 2026-10-29: `net` is a reachable network state
+    (`Nitro.participant_chain_reachable`); a reachable chain never pays a
+    virtual-kind channel's own balance out through `d` (the unreachable
+    counterexample put coins in a virtual-kind channel,
+    `Reachable.balances_virtual_zero`). -/
+theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
+    (A : Assumptions apps p T) (net : NetworkState E p)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
+    (hf : net.chain.finalOutcome c.address = some (.allocation o))
+    (hfund : net.chain.DirectlyFunded c) (amt : Coins)
+    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
+    UnbeatableNoWait apps T
+      (fun net' => net.chain.balances.get (.external d) + o.owed (.external d) ≤
+        net'.chain.balances.get (.external d)) net := by
+  have hrc : Reachable apps net.chain := Nitro.participant_chain_reachable hr
+  obtain ⟨o', hfo', htot'⟩ := hfund
+  rw [hf] at hfo'
+  simp only [Option.some.injEq, Outcome.allocation.injEq] at hfo'
+  subst hfo'
+  have howed : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
+  rw [howed]
+  cases hk : c.kind with
+  | virtual =>
+    have hzero : net.chain.balances.get (Address.channel c) = 0 :=
+      Reachable.balances_virtual_zero hrc c hk
+    have htot0 : o.total = 0 := by
+      have := htot'
+      rw [FixedPart.address_eq, hzero] at this
+      exact Nat.le_zero.mp this
+    have hamt0 : amt = 0 := by
+      have hle := Allocation.owed_le_total o (Address.external d)
+      rw [howed, htot0] at hle
+      exact Nat.le_zero.mp hle
+    exact UnbeatableIn.done (by rw [hamt0]; exact Nat.le_refl _)
+  | ledger =>
+    refine UnbeatableIn.move (.chain (.transfer c (.external d))) trivial
+      (by simp [Op.HonestFeasible, Op.proofStates]) ?_
+    intro net' hround
+    obtain ⟨hseq, -⟩ := hround
+    simp only [HonestMove.calls_chain] at hseq
+    have hle := directly_funded_round c d hk net net' _ rfl hseq hf htot' hd
+    apply UnbeatableIn.done
+    simpa using hle
+
+/-- Nitro-17, Nitro-21, Nitro-16. Nitro:480-481 and Nitro:590-593: a finalized allocation
+    in a channel funded for `p` pays `d` its allocation. The channel is
+    finalized already: a strategy to finalize and a strategy to fund do not
+    compose, because the second one starts from `net`.
+
+    Operator ruling 2026-10-29: `net` is a reachable network state, for the
+    same reason as `directly_funded_pays`. -/
+theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
+    (A : Assumptions apps p T) (net : NetworkState E p)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
+    (hf : net.chain.finalOutcome c.address = some (.allocation o))
+    (hfund : FundedFor apps T c o.total net) (amt : Coins)
+    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
+    CanObtain apps T (.external d) (net.chain.balances.get (.external d) + o.owed (.external d))
+      net := by
+  sorry
+
+
 
 /-- Within one round, channel `c` stays either finalized with `Ω` or open
     at the round's eventual end `net'`, given it starts that way. Once
