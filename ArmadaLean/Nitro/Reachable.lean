@@ -17,6 +17,23 @@ namespace ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
 
+/-- The channel(s) an on-chain operation touches: `deposit` the one
+    channel address it names (none for an external address, which
+    `Adjudicator.deposit` refuses anyway); `transfer` its source;
+    `reclaim` its ledger and its virtual target; `challenge`,
+    `checkpoint` and `conclude` their channel; `tick` none. Used by the
+    caller rule below (operator ruling 2026-10-29, "Caller rule",
+    `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`
+    §"Result" item 3). -/
+def Op.channels : Op E → List FixedPart
+  | .deposit a _ _ => match a with | .channel c => [c] | .external _ => []
+  | .transfer a _ => [a]
+  | .reclaim l v => [l, v]
+  | .challenge c _ _ => [c]
+  | .checkpoint c _ _ => [c]
+  | .conclude c _ => [c]
+  | .tick _ => []
+
 /-- An honest move (`NetworkState.applyHonest`) never changes the chain
     except through a successful `Adjudicator.apply`, so it keeps `Reachable
     apps`: either the operation fails and the chain is unchanged
@@ -306,7 +323,14 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     `ReachableSigned`'s own hypothesis (`Adjudicator.lean:331`,
     `SignedStep`'s `hsig`); this is the same fact for the network's own
     `sent` record, so every signature a proof state carries is genuine,
-    not only the acting view's own. Operator ruling 2026-10-29:
+    not only the acting view's own. The caller rule (operator ruling
+    2026-10-29, "Caller rule",
+    `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`
+    §"Result" item 3): "only q's own honest moves may submit an on-chain
+    call with caller q; an adversary call has a caller outside the
+    participants of the channel it touches." An adversary move's
+    `.chain caller op` is gated by `Op.channels`: the caller is never a
+    participant of a channel `op` touches. Operator ruling 2026-10-29:
     `ReachableViews` is `(Nitro.network apps Ts).Reachable`, not a
     separate predicate. -/
 def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) where
@@ -318,6 +342,7 @@ def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) wh
     (∃ m : AdvMove E, (Ts.T p).feasible (n.view p) m ∧
       (∀ ss, m = .deliver ss → n.Sendable ss) ∧
       (∀ caller op, m = .chain caller op → ∀ ss ∈ op.proofStates, n.Sendable ss) ∧
+      (∀ caller op, m = .chain caller op → ∀ c ∈ op.channels, caller ∉ c.participants) ∧
       n' = Network.applyAdv apps n p m)
 
 /-- **The chain of a reachable `Network` is reachable.** By
@@ -330,7 +355,7 @@ theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n :
     rw [hinit]
     exact Relation.ReflTransGen.refl
   · intro n n' hP hstep
-    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨m, -, -, -, rfl⟩⟩ := hstep
+    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨m, -, -, -, -, rfl⟩⟩ := hstep
     · exact Network.applyHonest_chain_reachable n p m hP
     · exact Network.applyAdv_chain_reachable n p m hP
 
@@ -354,7 +379,7 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
     rw [hinit] at hr
     simp at hr
   · intro n n' hP hstep p q hpq r hr hqr
-    obtain ⟨p₀, ⟨m, -, hgate, rfl⟩ | ⟨m, -, hdgate, hcgate, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, hgate, rfl⟩ | ⟨m, -, hdgate, hcgate, -, rfl⟩⟩ := hstep
     · cases m with
       | chain op =>
         cases hop : n.chain.apply apps p₀ op with
@@ -490,7 +515,7 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
     · intro q st; rw [hinit]; simp
   · intro n n' hP hstep
     obtain ⟨signed, hreach, hmirror⟩ := hP
-    obtain ⟨p₀, ⟨m, -, hgate, rfl⟩ | ⟨m, -, -, hcgate, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, hgate, rfl⟩ | ⟨m, -, -, hcgate, -, rfl⟩⟩ := hstep
     · cases m with
       | chain op =>
         cases hop : n.chain.apply apps p₀ op with
@@ -614,32 +639,43 @@ theorem Nitro.network_views_consistent_iff {apps : Apps E} {Ts : Threats E apps}
       ∀ p q : Participant, p ≠ q → ∀ ss ∈ (n.views p).sent, ss ∈ (n.views q).received :=
   ⟨fun hc => hc.2.1, fun hdeliv => ⟨Network.views_chain_eq n, hdeliv, Nitro.network_views_signers h⟩⟩
 
-/- **Finding (not proved, and not provable with `Capable`/`Bounds` as they
-    stand): not every view of a reachable `Network` is
-    `Nitro.participant`-reachable.** The mover `p₀`'s own view always is
+/- **Finding, after the caller rule (operator ruling 2026-10-29, "Caller
+    rule"): not every view of a reachable `Network` is
+    `Nitro.participant`-reachable, in general — the caller rule narrows
+    the gap, it does not close it.** The mover `p₀`'s own view always is
     (the same move, with the same feasibility witness the `Network` step
     already carries). A quiet participant `q ≠ p₀`'s view, when it only
     changes through a `.chain caller op` broadcast (honest or adversary),
     is `(n.view q).applyAdv apps (.chain caller op)` — the same value the
     `Ts.T q`-adversary would produce — and `Capable.capable`
-    (`Strategy.lean:153`) now grants `(Ts.T q).feasible (n.view q) (.chain
+    (`Strategy.lean:153`) grants `(Ts.T q).feasible (n.view q) (.chain
     caller op)` whenever `caller ≠ q`, because `Network.Sendable`
-    (required of every `.chain` operation's proof states, by the gate
-    above) is exactly `Unforged` for every signer, not only `q`'s.
+    (required of every `.chain` operation's proof states) is exactly
+    `Unforged` for every signer, not only `q`'s.
 
-    It is exactly `caller ≠ q` that is not provable in general: an
-    honest move always has `caller = p₀ ≠ q` (fine), but `Nitro.network`'s
-    adversary branch (`Ts.T p₀`'s own adversary, against `p₀`) bounds only
-    `caller ≠ p₀` (`Bounds.notHonest`, `Strategy.lean:146`, read for
-    `Ts.T p₀`); it never bounds `caller` away from any OTHER participant.
-    If that adversary submits `.chain q op` (`q ≠ p₀`, a real possibility:
-    nothing on-chain authenticates `caller`, Nitro:312-313 "There is no
-    restriction on who can trigger the operations"), `q`'s own `Ts.T q`
-    cannot supply this step: `Bounds.notHonest` read for `Ts.T q` forces
-    `(Ts.T q).feasible (n.view q) (.chain q op)` false outright (a valid
-    `Ts.T q` never claims `caller = q`), and `q`'s own `HonestMove.Feasible`
-    needs `(n.view q).Holds` on every proof state, which this step does
-    not establish for `q`. The blocking field is `Bounds.notHonest` itself:
-    it is an assumption about `Ts.T q`, not a gate `Nitro.network`'s step
-    places on `caller`, so nothing stops `caller = q` from occurring under
-    `Ts.T p₀`. -/
+    An honest move always has `caller = p₀ ≠ q` (fine). For an adversary
+    move, the caller rule (`Op.channels`, the gate above) gives
+    `caller ≠ q` whenever `q` is a participant of some channel `op`
+    touches: the rule says `caller` is never a participant of such a
+    channel, so `caller = q` would put `q` there too, contradicting it.
+    **This is the case that matters in practice**: every Liveness theorem
+    that names `q` as a channel participant (`hp : q ∈ c.participants`,
+    the common shape) gets `caller ≠ q` from the rule directly.
+
+    The rule does **not** cover a `q` who participates in none of `op`'s
+    channels — a bystander. `Nitro.network`'s broadcast still reaches
+    every participant's `received`, bystanders included (`Network.applyHonest`,
+    `Network.applyAdv`, the `.chain` cases), so the theorem still needs
+    `(Ts.T q).feasible (n.view q) (.chain q op)` for that `q` too, and the
+    rule, read for a bystander `q`, gives the opposite of what is needed:
+    `hcallergate` with `caller = q` states `q ∉ c.participants` for every
+    `c ∈ op.channels` — exactly "`q` is a bystander" — not a contradiction.
+    `(Ts.T q).feasible (n.view q) (.chain q op)` is still false outright:
+    `Bounds.notHonest` (`Strategy.lean:146`, read for `Ts.T q`) forces
+    `caller ≠ q` for any call `Ts.T q` itself could feasibly make, and a
+    bystander `q`'s own `HonestMove.Feasible` needs `(n.view q).Holds` on
+    every proof state, which this step does not establish either. The
+    blocking field for a bystander `q` is still `Bounds.notHonest`: the
+    caller rule bounds `caller` away from a channel's participants, never
+    away from an unrelated `q`, so a bystander-attributed call is not
+    itself ruled out by anything in `Nitro.network`'s step. -/

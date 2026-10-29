@@ -2,6 +2,7 @@
   ArmadaLean.PoolSafety — the pool contract's safety theorems, over ArmadaLean.Pool.
 -/
 import ArmadaLean.Pool
+import ArmadaLean.PoolMachine
 
 /-! ### The core invariant: tokens held equal the value of unspent notes -/
 
@@ -636,7 +637,8 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
     positivity check is on the gross amount (`_validateCommitmentPreimage`,
     ShieldModule.sol:244). No proof, no honest-prover assumption: shield carries no
     SNARK. No pause and no capacity gate: a full tree rolls over to a new one. -/
-theorem shield_can_happen {s : PoolState} (token : Token) (x : Nat) (npk : Term)
+theorem shield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s) (token : Token)
+    (x : Nat) (npk : Term)
     (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) :
     ∃ s', Step s s' :=
   ⟨_, Step.shield token x npk hValue hSpendable⟩
@@ -650,7 +652,8 @@ theorem shield_can_happen {s : PoolState} (token : Token) (x : Nat) (npk : Term)
     transaction's bound parameters, with no unshield (`hNoUnshield`) and an adapt
     contract, if any, equal to `caller` (`hAdapt`). `hLive` is the ghost liveness
     precondition, keyed by the `(treeNumber, leaf position)` pairs of the notes. -/
-theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompleteness)
+theorem transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
+    (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N M : Nat} (caller : Term) (bp : BoundParams)
     (hAdapt : AdaptAllows bp caller) (hNoUnshield : bp.unshield = none)
     (publicKey : Nat × Nat) (nullifyingKey : Nat) (token : Token) (root : Term)
@@ -717,7 +720,8 @@ theorem transact_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     exactly `⟨token, recipient, value⟩`. `_validateTransaction`'s unshield checks
     (TransactModule.sol:295-331; Zokyo 2022-12-21 finding #1) bind the payout to the
     proof. -/
-theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompleteness)
+theorem unshield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
+    (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N : Nat} (caller : Term) (bp : BoundParams)
     (hAdapt : AdaptAllows bp caller) (recipient : Term) (value : Nat)
     (hU : bp.unshield = some ⟨recipient, value⟩)
@@ -791,7 +795,8 @@ theorem unshield_can_happen {s : PoolState} (hComplete : TransactProofCompletene
     bound parameters (no unshield, adapt contract `caller` or none). An owned transact
     can pay out to any recipient's note key; the step publishes no opening
     (`openings := []`). -/
-theorem owned_transact_can_happen {s : PoolState} (hComplete : OwnedProofCompleteness)
+theorem owned_transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
+    (hComplete : OwnedProofCompleteness)
     {N M : Nat} (ownerField : Term) (token : Token) (bp : BoundParams)
     (hNoUnshield : bp.unshield = none) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
