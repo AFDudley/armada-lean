@@ -1,0 +1,72 @@
+{
+  "id": "derived-aln-d1a",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `ledger_partial_withdrawal` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json ledger_partial_withdrawal` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `ledger_partial_withdrawal`'s proof body is `sorry`. `scripts/check.sh --json ledger_partial_withdrawal` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json ledger_partial_withdrawal` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem ledger_partial_withdrawal",
+  "restatement": "Complete the proof of the theorem `ledger_partial_withdrawal` in `ArmadaLean/Nitro/Liveness.lean` so that its proof body contains no `sorry` placeholder, while keeping the theorem's stated signature exactly as it is now. The completion is observed by running `scripts/check.sh --json ledger_partial_withdrawal` from the repository root and reading the `theorem_in_sorry` field of its printed JSON output, which must read `false` instead of its current `true`.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem `ledger_partial_withdrawal` in `ArmadaLean/Nitro/Liveness.lean` has a complete proof body with no `sorry`, shown by `scripts/check.sh --json ledger_partial_withdrawal` printing `theorem_in_sorry` as `false`."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's stated signature, `theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)`, in `ArmadaLean/Nitro/Liveness.lean`, does not change."
+    }
+  ],
+  "goal": "Make `scripts/check.sh --json ledger_partial_withdrawal` report `theorem_in_sorry` as `false`, by replacing the `sorry` proof body of `ledger_partial_withdrawal` with a complete proof, without changing the theorem's stated signature.",
+  "acceptance_criteria": [
+    "Running the project's check command for this theorem, from the repository root, shows that the theorem no longer has an incomplete proof.",
+    "The theorem's declared name and parameters in the file still read exactly as they do today."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check command for this theorem, from the repository root, shows that the theorem no longer has an incomplete proof."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's declared name and parameters in the file still read exactly as they do today."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check command for this theorem, from the repository root, shows that the theorem no longer has an incomplete proof.",
+      "proves": "The theorem `ledger_partial_withdrawal` now has a complete proof body with no `sorry`, as required by clause c1.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_partial_withdrawal"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The theorem's declared name and parameters in the file still read exactly as they do today.",
+      "proves": "The theorem's stated signature did not change, as required by clause c2.",
+      "restatement_clause_id": "c2",
+      "type": "grep",
+      "pattern": "theorem ledger_partial_withdrawal \\(apps : Apps E\\) \\(Ts : Threats E apps\\) \\(v : Views E\\)",
+      "files": [
+        "ArmadaLean/Nitro/Liveness.lean"
+      ],
+      "clause_id": "c2"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
