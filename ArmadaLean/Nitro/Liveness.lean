@@ -1292,6 +1292,18 @@ theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E ap
     UniversallyFinalizable apps Ts v c Ω := by
   sorry
 
+/-- `UnbeatableIn` is monotone in its allowed-move set: a strategy built from
+    a more restrictive `allowed1` is still a strategy under any looser
+    `allowed2` that contains it. Used to widen `UnbeatableNoWait` (moves
+    excluding `.wait`) into `Unbeatable` (every move). -/
+theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed1 allowed2 : HonestMove E → Prop} (hsub : ∀ m, allowed1 m → allowed2 m)
+    {G : NetworkState E p → Prop} {net : NetworkState E p}
+    (hU : UnbeatableIn apps T allowed1 G net) : UnbeatableIn apps T allowed2 G net := by
+  induction hU with
+  | done hG => exact .done hG
+  | move m hm hfeas _ ih => exact .move m (hsub m hm) hfeas ih
+
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
@@ -1304,7 +1316,11 @@ theorem concluded_universally_finalizable (apps : Apps E) (Ts : Threats E apps) 
     (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration)
     (hpend : ∀ p, (v p).DeadlineAfter c (Ts.T p).ε) :
     UniversallyFinalizable apps Ts v c Ω := by
-  sorry
+  intro p hp
+  obtain ⟨ss, hh, hproof, hΩ⟩ := h p hp
+  exact UnbeatableIn.mono (fun _ _ => trivial)
+    (conclusion_proof_finalizable apps (Ts.T p) (Ts.ok p) (v p) c ss Ω hc hp hh hproof hΩ
+      (hsent p) (hchain p) (hdur p) (hpend p))
 
 /-- Nitro-49 (consensus game, Nitro:660-688), SATP-08, docs-0020-01. Nitro:684-688:
     "Throughout the only enabled outcomes for any participant are Ω1 and Ω2.
