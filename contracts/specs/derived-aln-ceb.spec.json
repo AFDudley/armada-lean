@@ -1,0 +1,89 @@
+{
+  "id": "derived-aln-ceb",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `finalizable_funded_pays` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json finalizable_funded_pays` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `finalizable_funded_pays`'s proof body is `sorry`. `scripts/check.sh --json finalizable_funded_pays` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json finalizable_funded_pays` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem finalizable_funded_pays",
+  "restatement": "ArmadaLean/Nitro/Liveness.lean states the theorem finalizable_funded_pays. The theorem's proof body is currently the placeholder word sorry. The repository requires every approved theorem to carry a real proof in its own body, with no sorry. The repository has a deterministic check for this fact. scripts/check.sh --json finalizable_funded_pays builds the project and prints one JSON object. The object's theorem_in_sorry field is true while the placeholder remains. This request asks the worker to write a real, complete proof for finalizable_funded_pays. After the fix, scripts/check.sh --json finalizable_funded_pays must print theorem_in_sorry as false. The fix must not change the theorem's stated claim. The same check's signatures_ok field confirms the theorem's statement text still matches the frozen, approved baseline.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "finalizable_funded_pays in ArmadaLean/Nitro/Liveness.lean must be proved with no sorry in its own proof body. scripts/check.sh --json finalizable_funded_pays must then print theorem_in_sorry as false. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement of finalizable_funded_pays must not change from the approved, frozen baseline. scripts/check.sh --json finalizable_funded_pays must report signatures_ok as true."
+    }
+  ],
+  "goal": "Complete the Lean proof of the theorem finalizable_funded_pays in ArmadaLean/Nitro/Liveness.lean, removing its sorry placeholder, without changing the theorem's stated claim.",
+  "acceptance_criteria": [
+    "A person runs the project's own proof-check command and asks it about finalizable_funded_pays. The command reports that the proof no longer carries an unfinished placeholder.",
+    "The same project check also confirms the theorem's stated claim did not change while the proof was being completed."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "A person runs the project's own proof-check command and asks it about finalizable_funded_pays. The command reports that the proof no longer carries an unfinished placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "The same project check also confirms the theorem's stated claim did not change while the proof was being completed."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "A person runs the project's own proof-check command and asks it about finalizable_funded_pays. The command reports that the proof no longer carries an unfinished placeholder.",
+      "proves": "Proves clause c1: the theorem's proof body no longer contains the sorry placeholder, using the repository's own check command and its theorem_in_sorry field.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_funded_pays"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The same project check also confirms the theorem's stated claim did not change while the proof was being completed.",
+      "proves": "Proves clause c2: the theorem's statement text stays exactly as it was before the fix, as reported by the project's own check command.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_funded_pays"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
