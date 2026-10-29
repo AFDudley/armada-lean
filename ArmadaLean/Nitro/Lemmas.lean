@@ -203,6 +203,33 @@ theorem sumIf_add_sub (q : Address E → Bool) {b : Balances E} (hb : b.KeysNodu
   simp only [Balances.sub, Balances.add] at h1 h2 hge ⊢
   split <;> split <;> grind
 
+
+omit [DecidableEq E] in
+/-- Every entry is either a channel entry or an external entry: `total` is
+    the sum of `channelTotal` and `paidOutTotal`. No `KeysNodup` hypothesis
+    needed: the split holds entry by entry. Used by `total_step` (below,
+    `namespace Adjudicator`) to connect `held` (the `Adjudicator.held`
+    field) to the balances sum, for the wallet conservation theorem
+    (`Reachable.lean`, D10 ruling). -/
+theorem total_eq_channelTotal_add_paidOutTotal (b : Balances E) :
+    Balances.total b = Balances.channelTotal b + Balances.paidOutTotal b := by
+  induction b with
+  | nil => rfl
+  | cons e t ih =>
+    obtain ⟨k, w⟩ := e
+    have h3 : Balances.total ((k, w) :: t) = w + Balances.total t := by
+      simp [Balances.total]
+    rcases hk : k.isExternal with _ | _
+    · have h1 : Balances.channelTotal ((k, w) :: t) = w + Balances.channelTotal t := by
+        simp [Balances.channelTotal, hk]
+      have h2 : Balances.paidOutTotal ((k, w) :: t) = Balances.paidOutTotal t := by
+        simp [Balances.paidOutTotal, hk]
+      grind
+    · have h1 : Balances.channelTotal ((k, w) :: t) = Balances.channelTotal t := by
+        simp [Balances.channelTotal, hk]
+      have h2 : Balances.paidOutTotal ((k, w) :: t) = w + Balances.paidOutTotal t := by
+        simp [Balances.paidOutTotal, hk]
+      grind
 end Balances
 
 /-! ## Outcomes (`Outcome.lean`) -/
@@ -1216,6 +1243,88 @@ theorem heldInv_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable ap
   | tail _ hstep ih =>
     cases hstep with
     | mk caller op _ _ h => exact heldInv_step ih h
+
+/-- **The balances sum moves only by a deposit's own amount.** `deposit`
+    raises it by `x` (`sumIf_set`, the indicator always true); `transfer`
+    moves `x` from the source to the destination, net zero (`sumIf_add_sub`,
+    the indicator always true, so both correction terms are `x`); every
+    other operation leaves `balances` untouched (`reclaim_some`,
+    `challenge_some`, `checkpoint_some`, `conclude_some`, `tick`'s own
+    definition). D10 ruling, used by `held_paidOut_step` and the wallet
+    conservation theorem (`Reachable.lean`). -/
+theorem total_step_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {a : Address E} {e x : Coins} (hnd : s.balances.KeysNodup)
+    (h : s.apply apps caller (Op.deposit a e x) = some s') :
+    s'.balances.total = s.balances.total + x := by
+  obtain ⟨-, -, hb, -, -, -⟩ := deposit_some h
+  have hs := Balances.sumIf_set (fun _ => true) hnd a (s.balances.get a + x)
+  rw [hb]
+  simp only [Balances.add, Balances.total_eq_sumIf]
+  grind
+
+/-- **The balances sum is unchanged by every on-chain operation except
+    `deposit`.** `transfer` moves `x` from the source to the destination,
+    net zero (`sumIf_add_sub`, the indicator always true, so both
+    correction terms are `x`); `reclaim`, `challenge`, `checkpoint`,
+    `conclude` and `tick` never write `balances` (`reclaim_some`,
+    `challenge_some`, `checkpoint_some`, `conclude_some`, `tick`'s own
+    definition). D10 ruling, used by `held_paidOut_step_no_deposit` and
+    the wallet conservation theorem (`Reachable.lean`). -/
+theorem total_step_no_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {op : Op E} (hnd : s.balances.KeysNodup) (hop : ∀ a e x, op ≠ Op.deposit a e x)
+    (h : s.apply apps caller op = some s') :
+    s'.balances.total = s.balances.total := by
+  cases op with
+  | deposit a e x => exact absurd rfl (hop a e x)
+  | transfer a b =>
+    obtain ⟨o, amt, x, -, -, hx, hb, -, -, -, -, -⟩ := transfer_some h
+    have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
+    have hs := Balances.sumIf_add_sub (fun _ => true) hnd a.address b hxa
+    simp at hs
+    rw [hb]
+    simp [Balances.total_eq_sumIf]
+    omega
+  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; simp
+  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; simp
+  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; simp
+  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; simp
+  | tick dt => simp at h; subst h; simp
+
+/-- **A deposit's `held` plus everything ever paid out rises by exactly its
+    own amount.** `HeldInv` (`held = channelTotal`) at both `s` and `s'`
+    (`heldInv_step`), joined with `total_step_deposit` through
+    `total_eq_channelTotal_add_paidOutTotal`. The D10 ruling's own
+    conservation fact, chain side: `Reachable.lean`'s
+    `Nitro.network_conservation` restates this for a `Network`'s wallets. -/
+theorem held_paidOut_step_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {a : Address E} {e x : Coins} (hi : s.HeldInv)
+    (h : s.apply apps caller (Op.deposit a e x) = some s') :
+    s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal + x := by
+  have hi' : s'.HeldInv := heldInv_step hi h
+  have e1 : s.held + s.balances.paidOutTotal = s.balances.total := by
+    rw [hi.2, Balances.total_eq_channelTotal_add_paidOutTotal]
+  have e2 : s'.held + s'.balances.paidOutTotal = s'.balances.total := by
+    rw [hi'.2, Balances.total_eq_channelTotal_add_paidOutTotal]
+  have ht := total_step_deposit hi.1 h
+  rw [e2, ht, e1]
+
+/-- **Every non-deposit operation leaves `held` plus everything ever paid
+    out unchanged.** Same proof shape as `held_paidOut_step_deposit`. -/
+theorem held_paidOut_step_no_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {op : Op E} (hi : s.HeldInv) (hop : ∀ a e x, op ≠ Op.deposit a e x)
+    (h : s.apply apps caller op = some s') :
+    s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal := by
+  have hi' : s'.HeldInv := heldInv_step hi h
+  have e1 : s.held + s.balances.paidOutTotal = s.balances.total := by
+    rw [hi.2, Balances.total_eq_channelTotal_add_paidOutTotal]
+  have e2 : s'.held + s'.balances.paidOutTotal = s'.balances.total := by
+    rw [hi'.2, Balances.total_eq_channelTotal_add_paidOutTotal]
+  have ht := total_step_no_deposit hi.1 hop h
+  rw [e2, ht, e1]
+
+theorem held_paidOut_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s) :
+    s.held + s.balances.paidOutTotal = s.balances.total := by
+  rw [(heldInv_reachable hr).2, Balances.total_eq_channelTotal_add_paidOutTotal]
 
 end Adjudicator
 
