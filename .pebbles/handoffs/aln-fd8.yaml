@@ -1,0 +1,48 @@
+status: completed
+pebble_id: aln-fd8
+summary: >
+  Completed the proof of consensus_enabled_outcomes (Nitro-49, the consensus
+  game) in ArmadaLean/Nitro/Liveness.lean, replacing its sorry body with a
+  full proof while leaving the theorem's stated signature untouched. The
+  proof exhibits p's strategy (checkpoint with the held all-signed state ss
+  whenever p still holds it, else wait) and shows it Prevents any outcome Ω
+  outside {Ω1, Ω2} from ever finalizing. It introduces ConsensusSafe0 (the
+  loop invariant actually maintained between rounds: ConsensusSafe minus its
+  one clock-dependent "stale but not-yet-expired challenge" sub-case, which
+  p's own checkpoint always resolves within the same round it appears),
+  ConsensusSafe0.toConsensusSafe (the invariant holds at any clock since it
+  excludes the only clock-dependent case), and consensus_checkpoint_resolves
+  (p's checkpoint always lands back in ConsensusSafe0, proved via
+  checkpoint_can_happen since checkpoint cannot fail on the risky sub-case).
+  This replaces an unused consensus_checkpoint_keeps_safe left over from a
+  prior partial/killed worker attempt, which only produced the tight,
+  clock-bound ConsensusSafe and could not be fed into the next round without
+  margin tracking. Built on the prior worker's consensus_round_safe and
+  NetworkState.Holds.mono (kept as-is). Fixed two pre-existing build errors
+  in that partial work's consensus_checkpoint_keeps_safe (an ambiguous
+  anonymous-constructor at a 3-way Or). Verified by running `lake build`
+  (full project, 595 jobs, success) and `scripts/check.sh` /
+  `scripts/check.sh --json consensus_enabled_outcomes`, both exit 0 with
+  theorem_in_sorry=false, build_ok=true, signatures_ok=true, axioms_ok=true.
+cost: ~95k tokens
+commits:
+  - "0287ec9"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 4
+    - name: scripts/check.sh
+      outcome: passed
+      duration_s: 3
+    - name: "scripts/check.sh --json consensus_enabled_outcomes"
+      outcome: passed
+      duration_s: 3
+e2e_exempt:
+  category: outer-loop-undrivable
+  reason: >
+    Lean proof completion for a pure-math theorem; the acceptance oracle IS
+    the proof checker (lake build / scripts/check.sh's theorem_in_sorry
+    field), already run as the verify_transcript hooks above. There is no
+    separate behavioral surface to drive outside-in; the type-checked proof
+    itself is the only evidence a proof assistant accepts.
