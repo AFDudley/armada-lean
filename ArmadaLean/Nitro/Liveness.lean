@@ -65,6 +65,171 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
       net := by
   sorry
 
+
+/-- An adversary move changes only the chain and what `p` has received; the
+    states `p` has itself sent are untouched (`NetworkState.applyAdv`). -/
+@[simp] theorem NetworkState.applyAdv_sent (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (m : AdvMove E) : (net.applyAdv apps m).sent = net.sent := by
+  cases m with
+  | chain caller op =>
+    simp only [NetworkState.applyAdv]
+    cases net.chain.apply apps caller op <;> rfl
+  | deliver ss => rfl
+  | tick dt => rfl
+
+/-- An adversary move never moves the chain's clock backward: only `tick`
+    touches it, and only forward (`Adjudicator.apply_now_le`). -/
+theorem NetworkState.applyAdv_now_le (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (m : AdvMove E) :
+    net.chain.now ≤ (net.applyAdv apps m).chain.now := by
+  cases m with
+  | chain caller op =>
+    simp only [NetworkState.applyAdv]
+    cases h : net.chain.apply apps caller op with
+    | none => exact le_refl _
+    | some s' => simpa using Adjudicator.apply_now_le h
+  | deliver ss => exact le_refl _
+  | tick dt => simp only [NetworkState.applyAdv, Adjudicator.tick_now]; exact Nat.le_add_right _ _
+
+/-- Over a feasible sequence of adversary moves, the chain's clock only
+    advances (`NetworkState.applyAdv_now_le`, by induction). -/
+theorem Threat.FeasibleSeq.now_le {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net net' : NetworkState E p} {advs : List (AdvMove E)}
+    (h : T.FeasibleSeq apps net advs net') : net.chain.now ≤ net'.chain.now := by
+  induction h with
+  | nil => exact le_refl _
+  | cons _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
+
+/-- Within one round, channel `c` stays either finalized with `Ω` or open
+    at the round's eventual end `net'`, given it starts that way. Once
+    finalized with `Ω` it stays so (`Adjudicator.finalizedWith_apply`). A
+    fresh or renewed challenge on `c` cannot expire before `net'`: its
+    deadline is set at least `c.challengeDuration ≥ 2 * T.ε` past the
+    current clock (`hdur`), and the round itself ends strictly before
+    `T.ε` has passed from that same clock (`hεbound`, per step).
+    An adversary `conclude` on `c` still needs `p`'s genuine signature
+    (`hbounds.unforgeable`, `hp`), which `p` only ever put on a final state
+    of `c` that already carries `Ω` (`hsent`); so it cannot finalize `c`
+    with anything but `Ω`. Used by `conclusion_proof_finalizable`. -/
+theorem round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E p}
+    (hbounds : Bounds apps p T) {c : FixedPart} {Ω : Outcome E} (hp : p ∈ c.participants)
+    (hdur : 2 * T.ε ≤ c.challengeDuration) :
+    ∀ {net net' : NetworkState E p} {advs : List (AdvMove E)},
+      T.FeasibleSeq apps net advs net' →
+      net'.chain.now < net.chain.now + T.ε →
+      (∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = Ω) →
+      (net.chain.finalizedWith c.address = some Ω ∨ (net.chain.statusOf c).IsOpen net'.chain.now) →
+      net'.chain.finalizedWith c.address = some Ω ∨ (net'.chain.statusOf c).IsOpen net'.chain.now := by
+  intro net net' advs hseq
+  induction hseq with
+  | nil => intro _ _ hbase; exact hbase
+  | @cons net1 net2 m rest hfeas hrest ih =>
+    intro hεbound hsent hbase
+    have step : net1.chain.finalizedWith c.address = some Ω ∨
+        (net1.chain.statusOf c).IsOpen net2.chain.now →
+        (net1.applyAdv apps m).chain.finalizedWith c.address = some Ω ∨
+        ((net1.applyAdv apps m).chain.statusOf c).IsOpen net2.chain.now := by
+      intro hbase1
+      cases m with
+      | deliver ss' => exact hbase1
+      | tick dt =>
+        rcases hbase1 with h | h
+        · exact Or.inl (by
+            simpa [NetworkState.applyAdv, FixedPart.address_eq] using
+              ChannelStatus.finalizedWith_mono
+                (by simpa [FixedPart.address_eq] using h) (Nat.le_add_right _ dt))
+        · exact Or.inr (by simpa [NetworkState.applyAdv, Adjudicator.tick_statusOf] using h)
+      | chain caller op =>
+        simp only [NetworkState.applyAdv]
+        cases h : net1.chain.apply apps caller op with
+        | none => simpa using hbase1
+        | some s' =>
+          rcases hbase1 with hfz | hop
+          · exact Or.inl (Adjudicator.finalizedWith_apply h hfz)
+          · have hle : net1.chain.now ≤ net2.chain.now :=
+              le_trans (NetworkState.applyAdv_now_le apps net1 (.chain caller op)) hrest.now_le
+            have hopen1 : (net1.chain.statusOf c).IsOpen net1.chain.now := by
+              by_contra hc'
+              rw [ChannelStatus.isOpen_iff_ne, not_not] at hc'
+              exact hop (ChannelStatus.mode_finalized_mono hc' hle)
+            have hfo1 : net1.chain.finalOutcome c.address = none := by
+              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel]
+              have hns : ¬ ((net1.chain.statusOf c).finalOutcome net1.chain.now).isSome := by
+                rw [← ChannelStatus.mode_eq_finalized_iff]; exact hopen1
+              exact Option.not_isSome_iff_eq_none.mp hns
+            cases op with
+            | deposit a e x =>
+              obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
+              exact Or.inr (by rw [Adjudicator.statusOf_of_status hs]; exact hop)
+            | tick dt' =>
+              have hs' : net1.chain.tick dt' = s' := by simpa using h
+              subst hs'
+              exact Or.inr (by rw [Adjudicator.tick_statusOf]; exact hop)
+            | transfer a b =>
+              by_cases hac : a = c
+              · subst hac
+                obtain ⟨o, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
+                rw [hfo1] at hfo; exact absurd hfo (by simp)
+              · obtain ⟨_, _, _, _, _, _, _, _, hs, _, _, _⟩ := Adjudicator.transfer_some h
+                exact Or.inr (by
+                  rw [Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus,
+                    if_neg (Ne.symm hac)]
+                  exact hop)
+            | reclaim l v =>
+              by_cases hlc : l = c
+              · subst hlc
+                obtain ⟨oL, -, -, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.reclaim_some h
+                rw [hfo1] at hfo; exact absurd hfo (by simp)
+              · obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hs', _, _⟩ := Adjudicator.reclaim_some h
+                exact Or.inr (by
+                  rw [hs', Adjudicator.statusOf_setStatus, if_neg (Ne.symm hlc)]; exact hop)
+            | challenge c' proof candidate =>
+              by_cases hcc : c' = c
+              · subst hcc
+                obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+                refine Or.inr ?_
+                rw [Adjudicator.statusOf_setStatus, if_pos rfl]
+                have hself : T.ε ≤ 2 * T.ε := by
+                  rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
+                have hge : T.ε ≤ c'.challengeDuration := le_trans hself hdur
+                have hdlt : net2.chain.now < net1.chain.now + c'.challengeDuration :=
+                  lt_of_lt_of_le hεbound (Nat.add_le_add_left hge net1.chain.now)
+                simp [ChannelStatus.IsOpen, ChannelStatus.mode, not_le.mpr hdlt]
+              · obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+                exact Or.inr (by
+                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact hop)
+            | checkpoint c' proof candidate =>
+              by_cases hcc : c' = c
+              · subst hcc
+                obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+                refine Or.inr ?_
+                rw [Adjudicator.statusOf_setStatus, if_pos rfl]
+                simp [ChannelStatus.IsOpen, ChannelStatus.mode]
+              · obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+                exact Or.inr (by
+                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact hop)
+            | conclude c' ss' =>
+              by_cases hcc : c' = c
+              · subst hcc
+                obtain ⟨⟨-, hproof'⟩, rfl⟩ := Adjudicator.conclude_some h
+                refine Or.inl ?_
+                have hp' : p ∈ ss'.signers := hproof'.2.2 p (hproof'.1 ▸ hp)
+                have hmem : ss' ∈ (Op.conclude c' ss').proofStates := by simp [Op.proofStates]
+                have := (hbounds.unforgeable net1 caller (.conclude c' ss') hfeas ss' hmem).1 hp'
+                obtain ⟨t, htmem, hteq⟩ := this
+                have hΩ' := hsent t htmem (hteq ▸ hproof'.1) (hteq ▸ hproof'.2.1)
+                simp [Adjudicator.finalizedWith_channel, hteq ▸ hΩ']
+              · obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
+                exact Or.inr (by
+                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact hop)
+    have hbase' := step hbase
+    have hεbound' : net2.chain.now < (net1.applyAdv apps m).chain.now + T.ε :=
+      lt_of_lt_of_le hεbound (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps net1 m) T.ε)
+    have hsent' : ∀ t ∈ (net1.applyAdv apps m).sent, t.state.channel = c →
+        t.state.isFinal = true → t.state.outcome = Ω := by
+      rw [NetworkState.applyAdv_sent]; exact hsent
+    exact ih hεbound' hsent' hbase'
+
 /-- Nitro-13, Nitro-21, Nitro-23, docs-0070-05, ForceMove-A14. SATP:286-289: a
     final state supported by all finalizes "without delay"; Nitro:296-299: a
     participant who holds a conclusion proof can register it; go-nitro
@@ -80,7 +245,53 @@ theorem conclusion_proof_finalizable (apps : Apps E) {p : Participant} (T : Thre
     (hchain : net.chain.finalizedWith c.address = none ∨ net.Finalized c Ω)
     (hdur : 2 * T.ε ≤ c.challengeDuration) (hpend : net.DeadlineAfter c T.ε) :
     UnbeatableNoWait apps T (fun net' => net'.Finalized c Ω) net := by
-  sorry
+  rcases hchain with h1 | h2
+  · refine UnbeatableIn.move (.chain (.conclude c ss)) trivial ?_ ?_
+    · intro ss' hmem
+      simp only [Op.proofStates, List.mem_singleton] at hmem
+      subst hmem
+      exact hh
+    · intro advs net' hround
+      obtain ⟨hseq, hεbound⟩ := hround
+      have hbase : net.chain.finalizedWith c.address = some Ω ∨
+          (net.chain.statusOf c).IsOpen net'.chain.now := by
+        right
+        rcases hstat : net.chain.statusOf c with t | ⟨t, ch⟩ | ⟨t, f, o⟩
+        · simp [ChannelStatus.IsOpen, ChannelStatus.mode]
+        · have hdl := hpend t ch hstat
+          have hnf : ¬ (ch.deadline ≤ net'.chain.now) := by
+            intro hle
+            exact absurd (le_trans hdl hle) (not_le.mpr hεbound)
+          simp [ChannelStatus.IsOpen, ChannelStatus.mode, hnf]
+        · exfalso
+          have hfw : net.chain.finalizedWith c.address = some f := by
+            simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hstat,
+              ChannelStatus.finalizedWith_finalized]
+          rw [h1] at hfw
+          exact absurd hfw (by simp)
+      have hfinal := round_keeps_status A.toBounds hp hdur hseq hεbound hsent hbase
+      rcases hfinal with hΩ' | hopen'
+      · apply UnbeatableIn.done
+        show (net'.applyHonest apps (.chain (.conclude c ss))).Finalized c Ω
+        cases hcc : net'.chain.apply apps p (.conclude c ss) with
+        | none =>
+          simp only [NetworkState.Finalized, NetworkState.applyHonest, hcc, Option.getD_none]
+          simpa [FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hΩ'
+        | some s' =>
+          simp only [NetworkState.Finalized, NetworkState.applyHonest, hcc, Option.getD_some]
+          simpa [FixedPart.address_eq, Adjudicator.finalizedWith_channel] using
+            Adjudicator.finalizedWith_apply hcc hΩ'
+      · apply UnbeatableIn.done
+        show (net'.applyHonest apps (.chain (.conclude c ss))).Finalized c Ω
+        have hsucc : net'.chain.conclude c ss =
+            some (net'.chain.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
+          unfold Adjudicator.conclude
+          rw [if_pos (And.intro hopen' hproof)]
+        simp only [NetworkState.Finalized, NetworkState.applyHonest, Adjudicator.apply_conclude,
+          hsucc, Option.getD_some]
+        simpa [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+          Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized] using hΩ
+  · exact UnbeatableIn.done h2
 
 /-- Nitro-12, ForceMove-B01, ForceMove-B03, docs-0070-06, ForceMove-C02.
     SATP:290-292: "an adjudicator implements a challenge operation, enabling
