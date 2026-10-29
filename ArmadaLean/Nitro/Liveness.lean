@@ -2560,6 +2560,240 @@ theorem satp_outcome_change_keeps_total (c : FixedPart) (alice bob : Participant
     rw [← h.2]
     exact ⟨(key _ da db a b ho).trans hab, fun _ => ⟨da, db, a, b, hp, ho, hab⟩⟩
 
+omit [DecidableEq E] in
+/-- A state doubly signed by every participant of a route's virtual channel
+    (the shape of `hsigned`'s conclusion) pays `alice` and `bob` a total of
+    `a0 + b0`: the setup-state branch's `originalOutcome` is itself such a
+    pair, with `a = a0`, `b = b0`. -/
+theorem satp_pairOutcome_of_hsigned {da db : E} {a0 b0 : Coins} {st : State E}
+    (h : (st.turnNum ≤ 1 ∧ st.outcome = originalOutcome da db a0 b0) ∨
+      (st.isFinal = true ∧ ∃ a b, PairOutcome da db st.outcome a b ∧ a + b = a0 + b0)) :
+    ∃ a b, PairOutcome da db st.outcome a b ∧ a + b = a0 + b0 := by
+  rcases h with ⟨-, heq⟩ | ⟨-, hp⟩
+  · exact ⟨a0, b0, heq, rfl⟩
+  · exact hp
+
+omit [DecidableEq E] in
+/-- A pair outcome's destinations and funded total, read off its shape. -/
+theorem satp_pairOutcome_pairDests_total {da db : E} {Ω : Outcome E} {a b : Coins}
+    (h : PairOutcome da db Ω a b) :
+    Ω.pairDests = some (Address.external da, Address.external db) ∧ Ω.fundedTotal = a + b := by
+  unfold PairOutcome at h; subst h; exact ⟨rfl, rfl⟩
+
+omit [DecidableEq E] in
+/-- `ByAll` and `SignedIn` combine into the exact membership `hsigned`
+    needs: every participant's signature on the state is listed in
+    `signed`. -/
+theorem satp_signed_membership {signed : List (Participant × State E)} {ss : SignedState E}
+    (hall : ss.ByAll) (hsig : ss.SignedIn signed) :
+    ∀ q ∈ ss.state.channel.participants, (q, ss.state) ∈ signed :=
+  fun q hq => hsig.1 q (hall q hq)
+
+omit [DecidableEq E] in
+/-- SATP:682-690 `validStart` unfolded: a start state is signed by everyone
+    and carries the given channel. -/
+theorem satp_validStart_byAll {c : FixedPart} {s : SignedState E} (h : validStart c s = true) :
+    s.ByAll ∧ s.state.channel = c := by
+  unfold validStart at h
+  split at h
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    exact ⟨h.1.2, h.2⟩
+  · cases h
+
+/-- Every `validChallenge` run starts from a `validStart` state. -/
+theorem satp_validChallenge_start {c : FixedPart} {alice bob : Participant} {s ch : SignedState E}
+    (h : validChallenge c alice bob s ch = true) : validStart c s = true := by
+  unfold validChallenge at h
+  split at h
+  · simp only [Bool.and_eq_true] at h
+    repeat (obtain ⟨h, -⟩ := h)
+    exact h
+  · cases h
+
+/-- Every `validResponse` run starts from a `validStart` state. -/
+theorem satp_validResponse_start {c : FixedPart} {alice bob : Participant} {s ch re : SignedState E}
+    (h : validResponse c alice bob s ch re = true) : validStart c s = true := by
+  apply satp_validChallenge_start (c := c) (alice := alice) (bob := bob) (ch := ch)
+  unfold validResponse at h
+  split at h
+  · simp only [Bool.and_eq_true] at h
+    repeat (obtain ⟨h, -⟩ := h)
+    exact h
+  · cases h
+
+/-- `consensusRules.supports`, genuinely signed, pays `alice` and `bob` a
+    total of `a0 + b0`, by `hsigned`. -/
+theorem satp_consensus_pairOutcome {r : Route E} {alice bob : Participant}
+    {signed : List (Participant × State E)}
+    (hsigned : ∀ st : State E, (∀ q ∈ r.V.participants, (q, st) ∈ signed) → st.channel = r.V →
+      (st.turnNum ≤ 1 ∧ st.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
+      (st.isFinal = true ∧ ∃ a b, PairOutcome (r.dest alice) (r.dest bob) st.outcome a b ∧
+        a + b = r.a0 + r.b0))
+    {proof : SupportProof E} {candidate : State E}
+    (hcon : consensusRules.supports r.V proof candidate = true)
+    (hsig : ∀ ss ∈ proof, ss.SignedIn signed) :
+    ∃ a b, PairOutcome (r.dest alice) (r.dest bob) candidate.outcome a b ∧ a + b = r.a0 + r.b0 := by
+  match proof, hcon with
+  | [ssx], hcon =>
+    simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hcon
+    obtain ⟨⟨hst, hchan⟩, hall⟩ := hcon
+    have hsi : ssx.SignedIn signed := hsig ssx (List.mem_singleton_self ssx)
+    have hmem := satp_signed_membership hall hsi
+    rw [hchan] at hmem
+    have hres := hsigned ssx.state hmem hchan
+    rw [hst] at hres
+    exact satp_pairOutcome_of_hsigned hres
+  | [], hcon => simp [consensusRules] at hcon
+  | _ :: _ :: _, hcon => simp [consensusRules] at hcon
+
+/-- A `validateOutcomeChange` run, genuinely signed from its start state,
+    pays `alice` and `bob` a total of `a0 + b0`: `hsigned` gives the start
+    state's own total, and `satp_outcome_change_keeps_total` carries it to
+    the candidate. -/
+theorem satp_validateOutcomeChange_pairOutcome {r : Route E} {alice bob : Participant}
+    {signed : List (Participant × State E)}
+    (hsigned : ∀ st : State E, (∀ q ∈ r.V.participants, (q, st) ∈ signed) → st.channel = r.V →
+      (st.turnNum ≤ 1 ∧ st.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
+      (st.isFinal = true ∧ ∃ a b, PairOutcome (r.dest alice) (r.dest bob) st.outcome a b ∧
+        a + b = r.a0 + r.b0))
+    {proof : SupportProof E} {candidate : State E}
+    (hval : validateOutcomeChange r.V alice bob proof candidate = true)
+    (hsig : ∀ ss ∈ proof, ss.SignedIn signed) :
+    ∃ a b, PairOutcome (r.dest alice) (r.dest bob) candidate.outcome a b ∧ a + b = r.a0 + r.b0 := by
+  have hstart : ∃ s0 : SignedState E, s0 ∈ proof ∧ proof.head? = some s0 ∧
+      validStart r.V s0 = true := by
+    match proof, hval with
+    | [s], hval =>
+      simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at hval
+      exact ⟨s, by simp, rfl, hval.1⟩
+    | [s, ch], hval =>
+      simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at hval
+      exact ⟨s, by simp, rfl, satp_validChallenge_start hval.1⟩
+    | [s, ch, re], hval =>
+      simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at hval
+      exact ⟨s, by simp, rfl, satp_validResponse_start hval.1⟩
+  obtain ⟨s0, hmemp, h0, hs0⟩ := hstart
+  obtain ⟨hall, hchan⟩ := satp_validStart_byAll hs0
+  have hsi : s0.SignedIn signed := hsig s0 hmemp
+  have hmem := satp_signed_membership hall hsi
+  rw [hchan] at hmem
+  obtain ⟨a, b, hp, hab⟩ := satp_pairOutcome_of_hsigned (hsigned s0.state hmem hchan)
+  obtain ⟨hpd, hfundab⟩ := satp_pairOutcome_pairDests_total hp
+  obtain ⟨-, hne⟩ := satp_outcome_change_keeps_total r.V alice bob proof candidate hval s0 h0
+  by_cases hceq : candidate = s0.state
+  · exact ⟨a, b, by rw [hceq]; exact hp, hab⟩
+  · obtain ⟨da, db, a', b', hpd', hco, hab'⟩ := hne hceq
+    have hdaeq : da = Address.external (r.dest alice) ∧ db = Address.external (r.dest bob) := by
+      have heq := hpd'.symm.trans hpd
+      simpa using heq
+    obtain ⟨rfl, rfl⟩ := hdaeq
+    refine ⟨a', b', hco, ?_⟩
+    rw [hab', hfundab, hab]
+
+/-- The content `satp_lemma_3_1` needs about `r.V`'s on-chain adjudication
+    status: nothing pending while open, and while challenged or finalized,
+    the stored outcome pays `alice` and `bob` a total of `a0 + b0`. Unlike
+    `StatusOrigin`/`FinalizedTwoWays` (`Safety.lean`), which trace through
+    plain `Reachable` and so forget which signatures are genuine, this
+    threads `ReachableSigned`'s extra guarantee through the induction below. -/
+def SatpOrigin (r : Route E) (alice bob : Participant) (s : Adjudicator E) : Prop :=
+  match s.statusOf r.V with
+  | .open _ => True
+  | .challenged _ ch =>
+      ∃ a b, PairOutcome (r.dest alice) (r.dest bob) ch.state.outcome a b ∧ a + b = r.a0 + r.b0
+  | .finalized _ _ o =>
+      ∃ a b, PairOutcome (r.dest alice) (r.dest bob) o a b ∧ a + b = r.a0 + r.b0
+
+/-- `SatpOrigin` holds at every state `ReachableSigned` from genesis. A
+    `deposit`, `tick`, `transfer` or `reclaim` never touches `r.V`'s status
+    (a `transfer`'s or `reclaim`'s ledger argument has `kind = .ledger`,
+    `r.V.kind = .virtual`); a `checkpoint` of `r.V` reopens it; a `challenge`
+    or `conclude` of `r.V` is genuinely signed by every one of `r.V`'s
+    participants (`ConclusionProof.ByAll`, or `consensusRules`/
+    `validateOutcomeChange`'s own start state), so `hsigned` applies. -/
+theorem satpOrigin_reachableSigned {apps : Apps E} {r : Route E} {alice bob : Participant}
+    (hr : r.WellFormed apps) (hV : apps r.V.appDef = satpVirtualRules)
+    (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
+    {signed : List (Participant × State E)}
+    (hsigned : ∀ st : State E, (∀ q ∈ r.V.participants, (q, st) ∈ signed) → st.channel = r.V →
+      (st.turnNum ≤ 1 ∧ st.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
+      (st.isFinal = true ∧ ∃ a b, PairOutcome (r.dest alice) (r.dest bob) st.outcome a b ∧
+        a + b = r.a0 + r.b0))
+    {s : Adjudicator E} (hs : ReachableSigned apps signed s) :
+    SatpOrigin r alice bob s := by
+  obtain ⟨-, -, -, -, -, hVp, hVk, -⟩ := hr
+  induction hs with
+  | refl => unfold SatpOrigin; simp [Adjudicator.statusOf, Adjudicator.genesis]
+  | tail _ hstep ih =>
+    cases hstep with
+    | mk caller op _ _ hsig happ =>
+    cases op with
+    | deposit a e x =>
+      obtain ⟨-, -, -, -, hst, -⟩ := Adjudicator.deposit_some happ
+      unfold SatpOrigin
+      rw [Adjudicator.statusOf_of_status hst]
+      exact ih
+    | tick dt =>
+      simp only [Adjudicator.apply_tick, Option.some.injEq] at happ
+      subst happ
+      unfold SatpOrigin
+      rw [Adjudicator.tick_statusOf]
+      exact ih
+    | transfer a b =>
+      obtain ⟨_, _, _, _, _, _, _, _, hst, _, hak, _⟩ := Adjudicator.transfer_some happ
+      have hne : r.V ≠ a := by rintro rfl; rw [hVk] at hak; cases hak
+      unfold SatpOrigin
+      rw [Adjudicator.statusOf_of_status hst, Adjudicator.statusOf_setStatus, if_neg hne]
+      exact ih
+    | reclaim l v =>
+      obtain ⟨oL, oV, x, left, right, hfo, hfw, hfind, hne1, hne2, hsum, hseq, hlk, hvk⟩ :=
+        Adjudicator.reclaim_some happ
+      have hne : r.V ≠ l := by rintro rfl; rw [hVk] at hlk; cases hlk
+      unfold SatpOrigin
+      rw [hseq, Adjudicator.statusOf_setStatus, if_neg hne]
+      exact ih
+    | checkpoint c proof candidate =>
+      obtain ⟨-, hseq⟩ := Adjudicator.checkpoint_some happ
+      rcases eq_or_ne c r.V with hcc | hcc
+      · subst hcc
+        unfold SatpOrigin
+        rw [hseq, Adjudicator.statusOf_setStatus, if_pos rfl]; trivial
+      · unfold SatpOrigin
+        rw [hseq, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
+        exact ih
+    | challenge c proof candidate =>
+      obtain ⟨⟨-, hsup, hchan, -⟩, hseq⟩ := Adjudicator.challenge_some happ
+      rcases eq_or_ne c r.V with hcc | hcc
+      · subst hcc
+        unfold SatpOrigin
+        rw [hseq, Adjudicator.statusOf_setStatus, if_pos rfl]
+        rw [hV] at hsup
+        have hsig' : ∀ ss ∈ proof, ss.SignedIn signed := hsig
+        simp only [satpVirtualRules, hVp, halice, hbob] at hsup
+        split_ifs at hsup with ht1 ht4
+        · exact satp_consensus_pairOutcome hsigned hsup hsig'
+        · simp only [Bool.and_eq_true] at hsup
+          obtain ⟨hcon, -⟩ := hsup
+          exact satp_consensus_pairOutcome hsigned hcon hsig'
+        · exact satp_validateOutcomeChange_pairOutcome hsigned hsup hsig'
+      · unfold SatpOrigin
+        rw [hseq, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
+        exact ih
+    | conclude c ss =>
+      obtain ⟨⟨-, hchan, -, hall⟩, hseq⟩ := Adjudicator.conclude_some happ
+      rcases eq_or_ne c r.V with hcc | hcc
+      · subst hcc
+        unfold SatpOrigin
+        rw [hseq, Adjudicator.statusOf_setStatus, if_pos rfl]
+        have hsi : ss.SignedIn signed := hsig ss (List.mem_singleton_self ss)
+        have hmem := satp_signed_membership hall hsi
+        rw [hchan] at hmem
+        exact satp_pairOutcome_of_hsigned (hsigned ss.state hmem hchan)
+      · unfold SatpOrigin
+        rw [hseq, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
+        exact ih
+
+
 /-- SATP-21, SATP-19 (Lemma 3.1, SATP:511-513; Lemma A.1, SATP:746-753). "Suppose V
     finalizes on-chain. Either V is finalized with version = 0 and its
     original outcome {A : A(a0), B : A(b0)} or it is finalized with an
@@ -2583,7 +2817,24 @@ theorem satp_lemma_3_1 (apps : Apps E) (r : Route E) (alice bob : Participant)
       (((s.statusOf r.V).turnNumRecord = 0 ∧
         Ω0 = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
        (∃ a b, PairOutcome (r.dest alice) (r.dest bob) Ω0 a b ∧ a + b = r.a0 + r.b0)) := by
-  sorry
+  have horig := satpOrigin_reachableSigned hr hV halice hbob hsigned hs
+  simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hfin
+  unfold SatpOrigin at horig
+  revert hfin horig
+  cases s.statusOf r.V with
+  | «open» t => simp
+  | challenged t ch =>
+    intro hfin horig
+    simp only [ChannelStatus.finalOutcome_challenged] at hfin
+    split at hfin
+    · cases hfin
+      exact ⟨ch.state.outcome, Relation.ReflTransGen.refl, Or.inr horig⟩
+    · cases hfin
+  | finalized t f o =>
+    intro hfin horig
+    simp only [ChannelStatus.finalOutcome_finalized, Option.some.injEq] at hfin
+    subst hfin
+    exact ⟨o, Relation.ReflTransGen.refl, Or.inr horig⟩
 
 /-- SATP-21 (Lemma A.1, SATP:747-750, liveness half). "every party has signed a
     None state with version 1, in which case peers can take unilateral
