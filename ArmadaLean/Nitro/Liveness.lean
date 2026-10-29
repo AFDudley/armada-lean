@@ -3888,7 +3888,34 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
 /-- SATP-20 (Theorem 3.2, Case 1-2, SATP:522-537). An intermediary that has not
     signed any ledger update with a guarantee for `V` keeps its ledger
     balances: "Without Pi's signature on such an update, the consensus app
-    guarantees there is no risk to Pi's balances". -/
+    guarantees there is no risk to Pi's balances".
+
+    **Argument under the explicit-time game (item 6, not proved here): the
+    hypotheses already suffice, unchanged.** `hpend` gives one `T.ε` bound
+    per channel (`net.DeadlineAfter Lm T.ε`, `net.DeadlineAfter Lp T.ε`
+    separately), not `2 * T.ε` on either. `P`'s strategy issues ONE
+    reaction (`Reaction.calls`, `Strategy.lean`) carrying both channels'
+    calls — the checkpoint or challenge Protocol 3.1 names for `Lm` and
+    for `Lp` — at the same time `t = net.chain.now`. Both calls get the
+    SAME deadline `t + T.ε` (`Threat.RoundSeq.land`, one entry per call in
+    `Reaction.calls`); the round that lands them (`Threat.RoundSeq`'s
+    `land`/`tick`/`other` steps) cannot close until BOTH have landed, and
+    cannot let the clock pass `t + T.ε` while either is still pending
+    (`Threat.RoundSeq.tick`'s gate, Lamport's enabling condition,
+    `Strategy.lean`'s header). So both calls are guaranteed to land before
+    `t + T.ε`, exactly the bound `hpend` already grants each channel
+    separately — no `2 * T.ε` margin is needed. The adversary may still
+    front-run between the two (`Threat.RoundSeq.land`'s unconstrained
+    position among the round's other moves, Nitro:540-542): it can act on
+    `Lp` after `Lm` lands, or vice versa, but it cannot delay either
+    landing past its OWN channel's `T.ε` bound to do so. This is the exact
+    fix the operator ruling (`armada-laconic`
+    labbook/2026-10-29-machine-types-for-approval.md, "Time bounds per
+    pending action") names: the earlier per-move game forced two
+    sequential rounds for two calls, so the second call's deadline was
+    measured from the SECOND round's own start, up to `2 * T.ε` after the
+    first; the explicit-time game measures both calls' deadlines from the
+    ONE reaction that issues them. -/
 theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (hr : r.WellFormed apps) (i : Nat) (hi : 1 ≤ i)
     (hin : i + 1 < r.peers.length) (hP : r.peers[i]? = some P)
