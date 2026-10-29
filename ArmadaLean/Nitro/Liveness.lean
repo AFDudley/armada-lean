@@ -388,23 +388,17 @@ theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
       rwa [Allocation.paidTo_eq_get]
     grind
 
-/-- Nitro-17, Nitro-21, Nitro-16. Nitro:480-481 and Nitro:590-593: a finalized allocation
-    in a channel funded for `p` pays `d` its allocation. The channel is
-    finalized already: a strategy to finalize and a strategy to fund do not
-    compose, because the second one starts from `net`.
-
-    Operator ruling 2026-10-29: `net` is a reachable network state, for the
-    same reason as `directly_funded_pays`. -/
-theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
-    (hf : net.chain.finalOutcome c.address = some (.allocation o))
-    (hfund : FundedFor apps T c o.total net) (amt : Coins)
-    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
-    CanObtain apps T (.external d) (net.chain.balances.get (.external d) + o.owed (.external d))
-      net := by
-  sorry
-
+/-- `UnbeatableIn` is monotone in its allowed-move set: a strategy built from
+    a more restrictive `allowed1` is still a strategy under any looser
+    `allowed2` that contains it. Used to widen `UnbeatableNoWait` (moves
+    excluding `.wait`) into `Unbeatable` (every move). -/
+theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed1 allowed2 : HonestMove E → Prop} (hsub : ∀ m, allowed1 m → allowed2 m)
+    {G : NetworkState E p → Prop} {net : NetworkState E p}
+    (hU : UnbeatableIn apps T allowed1 G net) : UnbeatableIn apps T allowed2 G net := by
+  induction hU with
+  | done hG => exact .done hG
+  | move m hm hfeas _ ih => exact .move m (hsub m hm) hfeas ih
 
 /-- An adversary move changes only the chain and what `p` has received; the
     states `p` has itself sent are untouched (`NetworkState.applyAdv`). -/
@@ -1640,18 +1634,6 @@ theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E ap
     UniversallyFinalizable apps Ts v c Ω := by
   sorry
 
-/-- `UnbeatableIn` is monotone in its allowed-move set: a strategy built from
-    a more restrictive `allowed1` is still a strategy under any looser
-    `allowed2` that contains it. Used to widen `UnbeatableNoWait` (moves
-    excluding `.wait`) into `Unbeatable` (every move). -/
-theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
-    {allowed1 allowed2 : HonestMove E → Prop} (hsub : ∀ m, allowed1 m → allowed2 m)
-    {G : NetworkState E p → Prop} {net : NetworkState E p}
-    (hU : UnbeatableIn apps T allowed1 G net) : UnbeatableIn apps T allowed2 G net := by
-  induction hU with
-  | done hG => exact .done hG
-  | move m hm hfeas _ ih => exact .move m (hsub m hm) hfeas ih
-
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
@@ -1732,6 +1714,428 @@ theorem NetworkState.Holds.mono {p : Participant} {net net' : NetworkState E p}
   · rcases h2 v hv q hq with ⟨hqp, s, hs, hse⟩ | ⟨r, hr, hre, hrq⟩
     · exact Or.inl ⟨hqp, s, hsent ▸ hs, hse⟩
     · exact Or.inr ⟨r, hrecv r hr, hre, hrq⟩
+
+/-- `UnbeatableIn` is monotone in its goal: a strategy for `G1` is a strategy
+    for any `G2` it implies pointwise. Used to restate a reached
+    `CanObtain`-style balance bound in terms of a smaller original balance. -/
+theorem UnbeatableIn.imp {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G1 G2 : NetworkState E p → Prop} {net : NetworkState E p}
+    (himp : ∀ {net'}, G1 net' → G2 net') (hU : UnbeatableIn apps T allowed G1 net) :
+    UnbeatableIn apps T allowed G2 net := by
+  induction hU with
+  | done hG => exact .done (himp hG)
+  | move m hm hfeas _ ih => exact .move m hm hfeas ih
+
+/-- `UnbeatableIn` composes sequentially: a strategy reaching `G1`, followed
+    by a strategy from every `G1`-state reaching `G2`, is a strategy reaching
+    `G2`. Used to chain a `FundedFor` strategy (reaching a directly-funded
+    state) with a `directly_funded_pays` payout from that state. -/
+theorem UnbeatableIn.bind {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G1 G2 : NetworkState E p → Prop} {net : NetworkState E p}
+    (hU1 : UnbeatableIn apps T allowed G1 net)
+    (hcont : ∀ {net'}, G1 net' → UnbeatableIn apps T allowed G2 net') :
+    UnbeatableIn apps T allowed G2 net := by
+  induction hU1 with
+  | done hG => exact hcont hG
+  | move m hm hfeas _ ih => exact .move m hm hfeas ih
+
+/-- `c`'s entry for `d` and `o`'s own total through one successful on-chain
+    step, with no funding assumption: same argument as `directly_funded_step`
+    with every use of `o.total ≤ s.balances.get c.address` dropped (it is
+    never read to derive `hf'`, `hd'` or the growth bound, only to re-derive
+    itself for the next step). `o`'s own total never grows: a deposit and an
+    unrelated transfer or reclaim leave it exactly as is; a transfer paying
+    out of `c` only lowers it (`Allocation.total_reduceOwed`); a reclaim onto
+    `c` removes a guarantee entry worth exactly what it adds to the two
+    destinations (`Adjudicator.reclaim_some`'s `oV.amountAt 0 + oV.amountAt 1
+    = x`), so its total is unchanged (the same inequalities
+    `directly_funded_step` already derives bound it both ways). Used by
+    `finalizable_funded_pays` to carry `c`'s finalized outcome, unshrunk,
+    from `net` to wherever a `FundedFor` strategy first directly funds it. -/
+theorem funded_entry_step {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {op : Op E} {c : FixedPart} {o : Allocation E} {d : E} {amt : Coins}
+    (hf : s.finalOutcome c.address = some (.allocation o))
+    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩)
+    (h : s.apply apps caller op = some s') :
+    ∃ o' amt', s'.finalOutcome c.address = some (.allocation o') ∧
+      o'.total ≤ o.total ∧
+      o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
+      s.balances.get (.external d) + amt ≤ s'.balances.get (.external d) + amt' := by
+  have hf0 : (s.statusOf c).finalOutcome s.now = some (.allocation o) := by
+    simpa [FixedPart.address_eq] using hf
+  have hfin : (s.statusOf c).mode s.now = .finalized := by
+    rw [ChannelStatus.mode_eq_finalized_iff, hf0]; rfl
+  cases op with
+  | deposit a e x =>
+    obtain ⟨⟨c', hac', -⟩, -, hb, -, hs, hn⟩ := Adjudicator.deposit_some h
+    have had : a ≠ (Address.external d : Address E) := by rw [hac']; intro hh; cases hh
+    refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+    · simpa [FixedPart.address_eq, Adjudicator.statusOf_of_status hs, hn] using hf
+    · rw [hb, Balances.get_add, if_neg (Ne.symm had)]
+  | transfer a b =>
+    by_cases hac : a = c
+    · subst hac
+      obtain ⟨o'', amt'', x, hf'', hfind, hxeq, hbal, -, hstat, hnow, hak, hbf⟩ :=
+        Adjudicator.transfer_some h
+      rw [hf] at hf''
+      simp only [Option.some.injEq, Outcome.allocation.injEq] at hf''
+      subst hf''
+      have hfo' : s'.finalOutcome a.address = some (.allocation (o.reduceOwed b x)) := by
+        have hstatc : s'.statusOf a = (s.statusOf a).withOutcome (.allocation (o.reduceOwed b x)) :=
+          by rw [Adjudicator.statusOf_of_status hstat, Adjudicator.statusOf_setStatus, if_pos rfl]
+        simp [FixedPart.address_eq, hstatc]
+      have hxb : x ≤ o.owed b := hxeq ▸ paidTo_first_entry_only _ _ _
+      have htot := Allocation.total_reduceOwed o b hxb
+      have hcd : (Address.external d : Address E) ≠ a.address := by
+        rw [FixedPart.address_eq]; intro hh; cases hh
+      have hfind' := Allocation.find_reduceOwed o b (Address.external d) x
+      by_cases hbd : (Address.external d : Address E) = b
+      · subst hbd
+        rw [if_pos rfl, hd] at hfind'
+        simp only [Option.map_some] at hfind'
+        have hxamt : x ≤ amt := by
+          have heq : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
+          rw [heq] at hxb; exact hxb
+        have htot' : (o.reduceOwed (Address.external d) x).total ≤ o.total := Nat.le.intro htot
+        refine ⟨o.reduceOwed (Address.external d) x, amt - x, hfo', htot', hfind', ?_⟩
+        rw [hbal, Balances.get_sub, if_neg hcd, Balances.get_add, if_pos rfl]
+        grind
+      · rw [if_neg hbd] at hfind'
+        have htot' : (o.reduceOwed b x).total ≤ o.total := Nat.le.intro htot
+        refine ⟨o.reduceOwed b x, amt, hfo', htot', by rw [hfind']; exact hd, ?_⟩
+        rw [hbal, Balances.get_sub, if_neg hcd, Balances.get_add, if_neg hbd]
+    · obtain ⟨o'', amt'', x, hf'', hfind, hxeq, hbal, -, hstat, hnow, hak, hbf⟩ :=
+        Adjudicator.transfer_some h
+      have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [Adjudicator.statusOf_of_status hstat, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hac)]
+      have hcd : (Address.external d : Address E) ≠ a.address := by
+        rw [FixedPart.address_eq]; intro hh; cases hh
+      refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal, Balances.get_sub, if_neg hcd, Balances.get_add]
+        by_cases hbd : (Address.external d : Address E) = b
+        · rw [if_pos hbd]; grind
+        · rw [if_neg hbd]
+  | reclaim l v =>
+    by_cases hcl : l = c
+    · subst hcl
+      obtain ⟨oL, oV, x, left, right, hL, hV, hfind, -, -, hxeq, hsucc, hlk, hvk⟩ :=
+        Adjudicator.reclaim_some h
+      rw [hf] at hL
+      simp only [Option.some.injEq, Outcome.allocation.injEq] at hL
+      subst hL
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      have hfo' : s'.finalOutcome l.address = some (.allocation
+          (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address)) := by
+        have hstatl : s'.statusOf l = (s.statusOf l).withOutcome (.allocation
+            (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address)) := by
+          rw [hsucc, Adjudicator.statusOf_setStatus, if_pos rfl]
+        simp [FixedPart.address_eq, hstatl]
+      have h1 : (o.addTo left (oV.amountAt 0)).total ≤ o.total + oV.amountAt 0 :=
+        Allocation.total_addTo_le _ _ _
+      have h2 : ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).total ≤
+          (o.addTo left (oV.amountAt 0)).total + oV.amountAt 1 :=
+        Allocation.total_addTo_le _ _ _
+      have h3 : o.owed v.address ≤ (o.addTo left (oV.amountAt 0)).owed v.address :=
+        Allocation.owed_addTo_ge _ _ _ _
+      have h4 : (o.addTo left (oV.amountAt 0)).owed v.address ≤
+          ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).owed v.address :=
+        Allocation.owed_addTo_ge _ _ _ _
+      have h5 := Allocation.total_remove_le
+        ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)) v.address
+      have hvo : o.owed v.address = x := by
+        simp only [Allocation.owed, hfind, Option.map_some, Option.getD_some, Entry.amount_mk,
+          Item.amount_guarantee]
+      have had : (Address.external d : Address E) ≠ v.address := by intro hh; cases hh
+      have hfind1 : (o.addTo left (oV.amountAt 0)).find (Address.external d) =
+          some ⟨Address.external d, .alloc (if (Address.external d : Address E) = left
+            then amt + oV.amountAt 0 else amt)⟩ := by
+        by_cases hld : (Address.external d : Address E) = left
+        · rw [if_pos hld, ← hld, Allocation.find_addTo_self, hd]; simp
+        · rw [if_neg hld, Allocation.find_addTo_of_ne _ _ hld, hd]
+      have hfind2 : ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).find
+          (Address.external d) = some ⟨Address.external d, .alloc
+            ((if (Address.external d : Address E) = left then amt + oV.amountAt 0 else amt) +
+              (if (Address.external d : Address E) = right then oV.amountAt 1 else 0))⟩ := by
+        by_cases hrd : (Address.external d : Address E) = right
+        · rw [if_pos hrd, ← hrd, Allocation.find_addTo_self, hfind1]; simp
+        · rw [if_neg hrd, Allocation.find_addTo_of_ne _ _ hrd, hfind1]; simp
+      have hfind3 : (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove
+          v.address).find (Address.external d) = some ⟨Address.external d, .alloc
+            ((if (Address.external d : Address E) = left then amt + oV.amountAt 0 else amt) +
+              (if (Address.external d : Address E) = right then oV.amountAt 1 else 0))⟩ := by
+        rw [Allocation.find_remove, if_neg had, hfind2]
+      have htotR : x ≤ ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).owed
+          v.address := hvo ▸ le_trans h3 h4
+      have htotB : ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).total ≤
+          o.total + x := by
+        calc ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).total
+            ≤ (o.addTo left (oV.amountAt 0)).total + oV.amountAt 1 := h2
+          _ ≤ o.total + oV.amountAt 0 + oV.amountAt 1 := Nat.add_le_add_right h1 _
+          _ = o.total + (oV.amountAt 0 + oV.amountAt 1) := by rw [Nat.add_assoc]
+          _ = o.total + x := by rw [hxeq]
+      have htot' : (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove
+          v.address).total ≤ o.total := by
+        have hstepA : (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove
+            v.address).total + ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).owed
+            v.address ≤ o.total + x := le_trans h5 htotB
+        have hstepB : (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove
+            v.address).total + x ≤
+            (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove
+              v.address).total +
+              ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).owed v.address :=
+          Nat.add_le_add_left htotR _
+        exact Nat.le_of_add_le_add_right (le_trans hstepB hstepA)
+      refine ⟨_, _, hfo', htot', hfind3, ?_⟩
+      rw [hbal']
+      split <;> split <;> grind
+    · obtain ⟨oL, oV, x, left, right, hL, hV, hfind, -, -, hxeq, hsucc, hlk, hvk⟩ :=
+        Adjudicator.reclaim_some h
+      have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcl)]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']
+  | challenge c' proof candidate =>
+    obtain ⟨⟨-, -, -, hm⟩, hsucc⟩ := Adjudicator.challenge_some h
+    by_cases hcc : c = c'
+    · exfalso
+      subst hcc
+      rw [Adjudicator.mode_eq] at hm
+      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hfin <;> cases hfin
+    · have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg hcc]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']
+  | checkpoint c' proof candidate =>
+    obtain ⟨⟨ho, -, -, -⟩, hsucc⟩ := Adjudicator.checkpoint_some h
+    by_cases hcc : c = c'
+    · exfalso
+      subst hcc
+      exact ho hfin
+    · have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg hcc]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']
+  | conclude c' ss =>
+    obtain ⟨⟨ho, -⟩, hsucc⟩ := Adjudicator.conclude_some h
+    by_cases hcc : c = c'
+    · exfalso
+      subst hcc
+      exact ho hfin
+    · have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg hcc]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']
+  | tick dt =>
+    have hs' : s.tick dt = s' := by simpa using h
+    subst hs'
+    refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+    · simpa [FixedPart.address_eq] using
+        ChannelStatus.finalOutcome_mono hf0 (Nat.le_add_right s.now dt)
+    · simp
+
+/-- Over a whole adversary round, `funded_entry_step`'s invariant holds, and
+    the round also keeps `Nitro.participant`-reachability (each successful
+    step is one of `T.feasible`'s moves, `Machine.Reachable.tail`). Used by
+    `funded_entry_unbeatable`. -/
+theorem funded_entry_round {apps : Apps E} {p : Participant} {T : Threat E p} (c : FixedPart)
+    (d : E) :
+    ∀ {net net' : NetworkState E p} {advs : List (AdvMove E)},
+      T.FeasibleSeq apps net advs net' →
+      (Nitro.participant apps T).Reachable net →
+      ∀ {o : Allocation E} {amt : Coins},
+        net.chain.finalOutcome c.address = some (.allocation o) →
+        o.find (.external d) = some ⟨.external d, .alloc amt⟩ →
+        (Nitro.participant apps T).Reachable net' ∧
+        ∃ o' amt', net'.chain.finalOutcome c.address = some (.allocation o') ∧
+          o'.total ≤ o.total ∧
+          o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
+          net.chain.balances.get (.external d) + amt ≤
+            net'.chain.balances.get (.external d) + amt' := by
+  intro net net' advs hseq
+  induction hseq with
+  | nil => intro hR o amt hf hd; exact ⟨hR, o, amt, hf, le_refl _, hd, le_refl _⟩
+  | @cons net1 net2 m rest hfeas hrest ih =>
+    intro hR o amt hf hd
+    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps m) :=
+      Machine.Reachable.tail hR (Or.inr ⟨m, hfeas, rfl⟩)
+    have hstep : ∃ o1 amt1, (net1.applyAdv apps m).chain.finalOutcome c.address =
+        some (.allocation o1) ∧ o1.total ≤ o.total ∧
+        o1.find (.external d) = some ⟨.external d, .alloc amt1⟩ ∧
+        net1.chain.balances.get (.external d) + amt ≤
+          (net1.applyAdv apps m).chain.balances.get (.external d) + amt1 := by
+      cases m with
+      | chain caller op =>
+        cases hm : net1.chain.apply apps caller op with
+        | none => exact ⟨o, amt, by simp only [NetworkState.applyAdv, hm]; exact hf, le_refl _,
+            hd, by simp only [NetworkState.applyAdv, hm]; exact le_refl _⟩
+        | some s' =>
+          obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_step hf hd hm
+          exact ⟨o1, amt1, by simp only [NetworkState.applyAdv, hm]; exact hf1, htot1,
+            hd1, by simp only [NetworkState.applyAdv, hm]; exact hle1⟩
+      | deliver ss =>
+        exact ⟨o, amt, by simp only [NetworkState.applyAdv]; exact hf, le_refl _,
+          hd, by simp only [NetworkState.applyAdv]; exact le_refl _⟩
+      | tick dt =>
+        refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+        · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
+            ChannelStatus.finalOutcome_mono
+              (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
+                simpa [FixedPart.address_eq] using hf)
+              (Nat.le_add_right net1.chain.now dt)
+        · simp [NetworkState.applyAdv]
+    obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := hstep
+    obtain ⟨hR2, o2, amt2, hf2, htot2, hd2, hle2⟩ := ih hR1 hf1 hd1
+    exact ⟨hR2, o2, amt2, hf2, le_trans htot2 htot1, hd2, le_trans hle1 hle2⟩
+
+/-- One honest move keeps `funded_entry_step`'s invariant: a `.chain op` is
+    `funded_entry_step` with caller `p`; `.send` never touches the chain;
+    `.wait` only advances the clock (`ChannelStatus.finalOutcome_mono`). Used
+    by `funded_entry_unbeatable`. -/
+theorem funded_entry_honest_step {apps : Apps E} {p : Participant}
+    {net : NetworkState E p} (m : HonestMove E) {c : FixedPart} {o : Allocation E}
+    {d : E} {amt : Coins}
+    (hf : net.chain.finalOutcome c.address = some (.allocation o))
+    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
+    ∃ o' amt', (net.applyHonest apps m).chain.finalOutcome c.address = some (.allocation o') ∧
+      o'.total ≤ o.total ∧
+      o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
+      net.chain.balances.get (.external d) + amt ≤
+        (net.applyHonest apps m).chain.balances.get (.external d) + amt' := by
+  cases m with
+  | chain op =>
+    cases hm : net.chain.apply apps p op with
+    | none => exact ⟨o, amt, by simp only [NetworkState.applyHonest, hm]; exact hf, le_refl _,
+        hd, by simp only [NetworkState.applyHonest, hm]; exact le_refl _⟩
+    | some s' =>
+      obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_step hf hd hm
+      exact ⟨o1, amt1, by simp only [NetworkState.applyHonest, hm]; exact hf1, htot1, hd1,
+        by simp only [NetworkState.applyHonest, hm]; exact hle1⟩
+  | send st =>
+    exact ⟨o, amt, by simp only [NetworkState.applyHonest]; exact hf, le_refl _, hd,
+      by simp only [NetworkState.applyHonest]; exact le_refl _⟩
+  | wait dt =>
+    refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
+    · simpa [NetworkState.applyHonest, FixedPart.address_eq] using
+        ChannelStatus.finalOutcome_mono
+          (show (net.chain.statusOf c).finalOutcome net.chain.now = some (.allocation o) by
+            simpa [FixedPart.address_eq] using hf)
+          (Nat.le_add_right net.chain.now dt)
+    · simp [NetworkState.applyHonest]
+
+/-- One round of adversary play keeps an honest move feasible: `.send`/
+    `.wait` are always feasible; a non-`deposit` `.chain op`'s feasibility is
+    "every proof state is held", and a round only grows `received` while
+    leaving `sent` unchanged (`Threat.FeasibleSeq.sent_eq`,
+    `Threat.FeasibleSeq.received_subset`), so `NetworkState.Holds.mono`
+    carries it forward; `deposit` is infeasible either way. Used by
+    `funded_entry_unbeatable`: the committed move's own feasibility (checked
+    before the round) still holds at the state it is actually applied to
+    (after the round). -/
+theorem HonestMove.Feasible.round {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net net' : NetworkState E p} {advs : List (AdvMove E)}
+    (hseq : T.FeasibleSeq apps net advs net') {m : HonestMove E} (hfeas : m.Feasible net) :
+    m.Feasible net' := by
+  cases m with
+  | chain op =>
+    cases op with
+    | deposit a e x => exact hfeas
+    | transfer _ _ | reclaim _ _ | challenge _ _ _ | checkpoint _ _ _ | conclude _ _ =>
+      exact fun ss hss => NetworkState.Holds.mono (Threat.FeasibleSeq.sent_eq hseq).symm
+        (Threat.FeasibleSeq.received_subset hseq) (hfeas ss hss)
+    | tick dt => exact fun ss hss => nomatch hss
+  | send st => trivial
+  | wait dt => trivial
+
+/-- A `FundedFor`-shaped `UnbeatableIn` tree, run from a state where `c` is
+    finalized with `o` and `o` already pays `d` its `amt`, reaches a
+    `DirectlyFundedWith c x` state that is STILL reachable, still finalized
+    with some `o'` whose total has not grown past `o`'s (`funded_entry_step`,
+    `funded_entry_round`, `funded_entry_honest_step`, chained through every
+    honest move and adversary round the tree plays), still pays `d` at least
+    `amt' ≥ amt`, and keeps the balance-at-`d` bookkeeping
+    (`directly_funded_round`'s shape) all the way from `net`. Used by
+    `finalizable_funded_pays`: `o'.total ≤ o.total ≤ x` then gives
+    `net'.chain.DirectlyFunded c` via `o'` itself. -/
+theorem funded_entry_unbeatable {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} (c : FixedPart) (x : Coins) (d : E) :
+    ∀ {net : NetworkState E p},
+      UnbeatableIn apps T allowed (fun net' => net'.chain.DirectlyFundedWith c x) net →
+      (Nitro.participant apps T).Reachable net →
+      ∀ {o : Allocation E} {amt : Coins},
+        net.chain.finalOutcome c.address = some (.allocation o) →
+        o.find (.external d) = some ⟨.external d, .alloc amt⟩ →
+        UnbeatableIn apps T allowed
+          (fun net' => (Nitro.participant apps T).Reachable net' ∧
+            ∃ o' amt', net'.chain.finalOutcome c.address = some (.allocation o') ∧
+              o'.total ≤ o.total ∧
+              net'.chain.DirectlyFundedWith c x ∧
+              o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
+              net.chain.balances.get (.external d) + amt ≤
+                net'.chain.balances.get (.external d) + amt')
+          net := by
+  intro net hU
+  induction hU with
+  | done hG => intro hR o amt hf hd; exact .done ⟨hR, o, amt, hf, le_refl _, hG, hd, le_refl _⟩
+  | move m hm hfeas _ ih =>
+    intro hR o amt hf hd
+    refine .move m hm hfeas ?_
+    intro advs net' hround
+    obtain ⟨hR1, o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_round c d hround.1 hR hf hd
+    have hR2 : (Nitro.participant apps T).Reachable (net'.applyHonest apps m) :=
+      Machine.Reachable.tail hR1 (Or.inl ⟨m, HonestMove.Feasible.round hround.1 hfeas, rfl⟩)
+    obtain ⟨o2, amt2, hf2, htot2, hd2, hle2⟩ := funded_entry_honest_step m hf1 hd1
+    refine UnbeatableIn.imp ?_ (ih advs net' hround hR2 hf2 hd2)
+    rintro net'' ⟨hR3, o3, amt3, hf3, htot3, hG3, hd3, hle3⟩
+    exact ⟨hR3, o3, amt3, hf3, le_trans htot3 (le_trans htot2 htot1), hG3, hd3,
+      le_trans hle1 (le_trans hle2 hle3)⟩
+
+/-- Nitro-17, Nitro-21, Nitro-16. Nitro:480-481 and Nitro:590-593: a finalized allocation
+    in a channel funded for `p` pays `d` its allocation. The channel is
+    finalized already: a strategy to finalize and a strategy to fund do not
+    compose, because the second one starts from `net`.
+
+    Operator ruling 2026-10-29: `net` is a reachable network state, for the
+    same reason as `directly_funded_pays`. -/
+theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
+    (A : Assumptions apps p T) (net : NetworkState E p)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
+    (hf : net.chain.finalOutcome c.address = some (.allocation o))
+    (hfund : FundedFor apps T c o.total net) (amt : Coins)
+    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
+    CanObtain apps T (.external d) (net.chain.balances.get (.external d) + o.owed (.external d))
+      net := by
+  have howed : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
+  rw [howed]
+  have hU : UnbeatableIn apps T (fun _ => True)
+      (fun net' => net'.chain.DirectlyFundedWith c o.total) net := hfund
+  have hU2 := funded_entry_unbeatable c o.total d hU hr hf hd
+  refine UnbeatableIn.bind hU2 ?_
+  rintro net' ⟨hR', o', amt', hf', htot', hfund', hd', hle'⟩
+  have hDF : net'.chain.DirectlyFunded c := ⟨o', hf', le_trans htot' hfund'⟩
+  have hpay := directly_funded_pays apps T A net' hR' c o' d hf' hDF amt' hd'
+  have howed' : o'.owed (Address.external d) = amt' := by simp [Allocation.owed, hd']
+  rw [howed'] at hpay
+  have hpayMono : UnbeatableIn apps T (fun _ => True)
+      (fun net'' => net'.chain.balances.get (.external d) + amt' ≤
+        net''.chain.balances.get (.external d)) net' :=
+    UnbeatableIn.mono (fun _ _ => trivial) hpay
+  refine UnbeatableIn.imp ?_ hpayMono
+  intro net'' hle''
+  exact le_trans hle' hle''
+
 
 /-- One round of adversary play keeps `ConsensusSafe`. Any candidate on
     channel `c` that carries `p`'s genuine signature (`ByAll`, consensus app,
