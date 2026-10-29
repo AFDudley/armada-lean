@@ -1,0 +1,41 @@
+status: completed
+pebble_id: aln-069
+summary: >
+  Proved concluded_universally_finalizable in ArmadaLean/Nitro/Liveness.lean
+  with no change to its statement. Per participant p in c.participants, the
+  existing Concluded v c Omega hypothesis supplies a ConclusionProof already
+  held by (v p); the already-sorry-free conclusion_proof_finalizable (same
+  file) consumes that proof plus the theorem's hsent/hchain/hdur/hpend
+  hypotheses (instantiated at p via Ts.T p / Ts.ok p) to produce
+  UnbeatableNoWait apps (Ts.T p) (Finalized c Omega) (v p). Since
+  Finalizable/UniversallyFinalizable need the unrestricted Unbeatable, a new
+  helper theorem UnbeatableIn.mono (UnbeatableIn is monotone in its
+  allowed-move predicate, proved by induction on the UnbeatableIn
+  derivation) widens UnbeatableNoWait to Unbeatable, closing the goal.
+  Verified by running `lake build` (595/595 jobs, success) and
+  `scripts/check.sh --json concluded_universally_finalizable`, which prints
+  theorem_in_sorry: false and signatures_ok: true (sorry count dropped from
+  46 to 26 against the 46 baseline, no approved theorem statement changed).
+  Also ran `#print axioms ArmadaLean.Nitro.concluded_universally_finalizable`
+  directly, confirming it depends only on [propext, Classical.choice,
+  Quot.sound] with no sorryAx anywhere in its dependency chain.
+cost: "~55k tokens"
+commits:
+  - "bf6f463"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 19
+    - name: "scripts/check.sh --json concluded_universally_finalizable"
+      outcome: passed
+      duration_s: 2
+    - name: "#print axioms concluded_universally_finalizable"
+      outcome: passed
+      duration_s: 1
+e2e_gate:
+  spec: contracts/specs/derived-aln-069.spec.json
+  command: "scripts/check.sh --json concluded_universally_finalizable"
+  result: passed
+  ran_at_sha: "bf6f463"
+  mocks_in_path: false
