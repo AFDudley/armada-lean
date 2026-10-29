@@ -1,0 +1,48 @@
+status: completed
+pebble_id: aln-809
+summary: >
+  Replaced the sorry placeholder in latest_state_finalizable
+  (ArmadaLean/Nitro/Liveness.lean) with a complete Lean proof. The
+  theorem's strategy is "challenge with ss, then wait": if the channel
+  is open or already challenged below ss.state.turnNum, p issues its own
+  challenge with ss (landing on a fresh challenge at ss.state.turnNum);
+  if already challenged exactly at ss.state with ss.state as the
+  challenge state, p just waits. Two new reusable invariant-preservation
+  lemmas carry the argument across adversary rounds:
+  latest_round_keeps_status (one adversary round keeps the
+  open-at-or-below/challenged-at-or-below-ss.turn disjunction intact,
+  using hlatest to bound any candidate's turn and hfinal to force any
+  successful conclude to match ss's outcome) and
+  latest_wait_keeps_status (once challenged at ss.state.turnNum
+  specifically, no further challenge/checkpoint can succeed, since
+  hlatest caps every candidate's turn at ss.state.turnNum too, so the
+  channel only finalizes with ss's outcome). A small
+  Threat.FeasibleSeq.sent_eq helper (p's own sent list is invariant
+  across adversary play) carries hlatest/hfinal from the original
+  network state across both of p's own honest moves. Verified by
+  running scripts/check.sh --json latest_state_finalizable (reports
+  theorem_in_sorry=false, build_ok=true) and the full lake build plus
+  scripts/check.sh default mode (build, sorry count 32 vs baseline 46,
+  axioms, signatures, NonVacuity.lean all PASS) — NonVacuity.lean
+  exercises latest_state_finalizable's full signature as a downstream
+  consumer, so the proof integrates with its existing call sites.
+cost: "~210k tokens"
+commits:
+  - "6e021f3"
+verify_transcript:
+  hooks:
+    - name: "lake build (full project)"
+      outcome: passed
+      duration_s: 6.06
+    - name: "scripts/check.sh --json latest_state_finalizable"
+      outcome: passed
+      duration_s: 2.46
+    - name: "scripts/check.sh (default, all gates)"
+      outcome: passed
+      duration_s: 2.43
+e2e_gate:
+  spec: contracts/specs/derived-aln-809.spec.json
+  command: "scripts/check.sh --json latest_state_finalizable"
+  result: passed
+  ran_at_sha: "6e021f3"
+  mocks_in_path: false
