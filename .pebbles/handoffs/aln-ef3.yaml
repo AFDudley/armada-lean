@@ -1,0 +1,34 @@
+status: completed
+pebble_id: aln-ef3
+summary: >
+  Completed the Lean proof of transactOwned_not_blocked in
+  ArmadaLean/PoolSafety.lean by specializing the shared spend_not_blocked
+  lemma for Step.transactOwned, mirroring the existing transact_not_blocked
+  proof for Step.transact. Rewrote pub.nullifiers via List.map_ofFn and
+  OwnedConstrained.nullifiers into spend_not_blocked's expected
+  nullifier-list shape (nullifier pub.ownerField e.1.2), derived hTree from
+  ownedSpentPositions' List.ofFn structure, then discharged the goal with
+  spend_not_blocked hs hstep hTree hEnabled hDisjoint. Verified by
+  installing elan/lake (not preinstalled in this environment) into
+  /pebble/agent-home/.elan, running `lake build ArmadaLean.PoolSafety`
+  (succeeds, no sorry warning at the theorem's line), and running
+  `python3 scripts/check_theorem_sorry_absent.py transactOwned_not_blocked`,
+  which prints {"contains_sorry": false} and exits 0 — the exact acceptance
+  oracle named in contracts/specs/derived-aln-ef3.spec.json.
+cost: "~55k tokens"
+commits:
+  - "f77cb88"
+verify_transcript:
+  hooks:
+    - name: "lake build ArmadaLean.PoolSafety"
+      outcome: passed
+      duration_s: 63
+    - name: "scripts/check_theorem_sorry_absent.py transactOwned_not_blocked"
+      outcome: passed
+      duration_s: 76
+e2e_gate:
+  spec: contracts/specs/derived-aln-ef3.spec.json
+  command: "python3 scripts/check_theorem_sorry_absent.py transactOwned_not_blocked"
+  result: passed
+  ran_at_sha: "f77cb88"
+  mocks_in_path: false
