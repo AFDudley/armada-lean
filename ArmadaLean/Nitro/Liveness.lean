@@ -2599,15 +2599,24 @@ theorem NetworkState.applyAdv_received_subset (apps : Apps E) {p : Participant}
     | some s' => exact fun r hr => List.mem_append_right _ hr
   | deliver ss => exact fun r hr => List.mem_cons_of_mem _ hr
   | tick dt => exact fun r hr => hr
+  | land op =>
+    simp only [NetworkState.applyAdv]
+    cases net.chain.apply apps p op with
+    | none => exact fun r hr => hr
+    | some s' => exact fun r hr => List.mem_append_right _ hr
 
-/-- Over a feasible sequence of adversary moves, what `p` has received
-    only grows, by induction on `NetworkState.applyAdv_received_subset`. -/
-theorem Threat.FeasibleSeq.received_subset {apps : Apps E} {p : Participant} {T : Threat E p}
-    {net net' : NetworkState E p} {advs : List (AdvMove E)}
-    (h : T.FeasibleSeq apps net advs net') : ∀ r ∈ net.received, r ∈ net'.received := by
+/-- Over a round's adversary play, what `p` has received only grows, by
+    induction on `NetworkState.applyAdv_received_subset`. -/
+theorem Threat.RoundSeq.received_subset {apps : Apps E} {p : Participant} {T : Threat E p}
+    {t : Time} {pending : List (Op E)} {net net' : NetworkState E p}
+    (h : Threat.RoundSeq apps T t pending net net') : ∀ r ∈ net.received, r ∈ net'.received := by
   induction h with
   | nil => exact fun r hr => hr
-  | @cons net1 net2 m rest _ _ ih =>
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    exact fun r hr => ih r (NetworkState.applyAdv_received_subset apps net1 (.land op) r hr)
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    exact fun r hr => ih r (NetworkState.applyAdv_received_subset apps net1 (.tick dt) r hr)
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     exact fun r hr => ih r (NetworkState.applyAdv_received_subset apps net1 m r hr)
 
 omit [DecidableEq E] in
