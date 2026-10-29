@@ -33,9 +33,12 @@ def alloc (a : Address E) (x : Coins) : Entry E := ⟨a, .alloc x⟩
 
 /-- Nitro:848-851: "A ledger channel is a channel whose sole purpose is to
     provide funding to other channels... All ledger channels run the consensus
-    game." -/
+    game." Both halves: the channel's kind is `ledger` (its funding role,
+    `FixedPart.kind`, operator ruling 2026-10-27, SATP §1 SATP:79-84), and its
+    app is the consensus game. The app alone does not make a channel a ledger
+    channel: a virtual channel may run any app (aln-d1a, 2026-10-29). -/
 def IsLedgerChannel (apps : Apps E) (c : FixedPart) : Prop :=
-  apps c.appDef = consensusRules
+  c.kind = .ledger ∧ apps c.appDef = consensusRules
 
 /-- Nitro:857 (equation 2): `⟦L : 10⟧, [L ↦ (A : 3, B : 1, χ : 6)]_{A,B}`, in
     general `⟦L : x⟧, [L ↦ (A : a, B : b, χ : c)]_{A,B}` (Nitro:945, eq 6).

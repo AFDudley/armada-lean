@@ -1442,7 +1442,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     w.Holds apps0 (Ts apps0) v ∧
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) := by
-  refine ⟨nLW.views, nLW, wLS, nLW_reach, rfl, ⟨rfl, rfl, fun r => ?_, nLW_finalizable⟩,
+  refine ⟨nLW.views, nLW, wLS, nLW_reach, rfl, ⟨⟨rfl, rfl⟩, rfl, fun r => ?_, nLW_finalizable⟩,
     fun r => by rw [nLW_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLW_views_chain]; exact zero_g0 _
   · by_cases hrp0 : r = p0
@@ -1773,7 +1773,7 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB
       (.allocation [alloc (.external dA) a', alloc (.external dB) b']) [A, B] ∧
     (∀ p, p = A ∨ p = B → (v p).chain = (v' p).chain) := by
   refine ⟨nOpen.views, nOpen'.views, nOpen, nOpen', p0, q0, 0, 1, cLW, cχ, 0, 0, 0, 0,
-    nOpen_reach, rfl, nOpen'_reach, rfl, le_rfl, le_rfl, rfl, rfl, rfl, ?_, ?_,
+    nOpen_reach, rfl, nOpen'_reach, rfl, le_rfl, le_rfl, ⟨rfl, rfl⟩, rfl, rfl, ?_, ?_,
     nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl, nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl,
     nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl, nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl,
     fun r _ => by simp only [nOpen, nOpen', nTwoCh_views_chain]⟩
@@ -1800,7 +1800,7 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a
     (∀ p, p = w.A ∨ p = w.B → (v p).chain = (v' p).chain) := by
   refine ⟨nOpen'.views, nClose'.views, nOpen', nClose', wLS, 0, 0,
     nOpen'_reach, rfl, nClose'_reach, rfl, rfl,
-    ⟨rfl, rfl, ?_, nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl⟩,
+    ⟨⟨rfl, rfl⟩, rfl, ?_, nTwoCh_finalizable_fst rfl rfl cLW_ne_cχ.symm rfl⟩,
     nTwoCh_finalizable_snd rfl rfl cLW_ne_cχ rfl, nOneCh_finalizable rfl rfl, ?_,
     fun r _ => by simp only [nOpen', nClose', nTwoCh_views_chain, nOneCh_views_chain]⟩
   · intro r; simp only [nOpen', nTwoCh_views_chain]; exact zero_g0 _
@@ -1852,7 +1852,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = L' → t.state.isFinal = false) ∧
     v.FinalizableBy apps0 (Ts apps0) L'
       (.allocation [alloc (.external dA) a, alloc (.external dB) b, alloc χ.address c]) [A, B] := by
-  refine ⟨nPW.views, nPW, p0, q0, 0, 1, cLW, cL2, c3, 0, 0, 0, 0, nPW_reach, rfl, rfl, rfl, rfl,
+  refine ⟨nPW.views, nPW, p0, q0, 0, 1, cLW, cL2, c3, 0, 0, 0, 0, nPW_reach, rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl,
     rfl, cLW_ne_cL2, ?_, ?_, ?_,
     fun r => by simp only [nPW, nTwoCh_views_chain]; exact g0_finalizedWith _,
     fun _ => ⟨(by decide : 2 * 1 ≤ 2), (by decide : 2 * 1 ≤ 2)⟩, ?_,
@@ -1926,7 +1926,7 @@ def stV : State Nat :=
 theorem r2_wf : r2.WellFormed apps2 := by
   refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | i
-    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩, rfl⟩
     · simp [r2] at h
   · rcases i with _ | i
     · simp [r2] at h; subst h; decide
@@ -2005,8 +2005,8 @@ def r3 : Route Nat := ⟨[p0, q0, w0], [Lm3, Lp3], V3, 1, 1, fun p => p.key⟩
 theorem r3_wf : r3.WellFormed apps2 := by
   refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | _ | i
-    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, rfl, rfl⟩
-    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, rfl, rfl⟩
+    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩, rfl⟩
+    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, ⟨rfl, rfl⟩, rfl⟩
     · simp [r3] at h
   · rcases i with _ | _ | i
     · simp [r3] at h; subst h; decide
