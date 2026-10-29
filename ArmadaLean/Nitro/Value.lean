@@ -96,10 +96,12 @@ def OnlyTransfers (ops : List (Participant × Op E)) : Prop :=
   ∀ e ∈ ops, ∃ a b, e.2 = Op.transfer a b
 
 /-- An honest transfer move: the moves of the Turbo game (Nitro:779-781,
-    "strategies and counter-strategies involving transfer operations only"). -/
+    "strategies and counter-strategies involving transfer operations only").
+    A reaction counts only when it is exactly today's single transfer call
+    (`HonestMove.chain (.transfer a b)`, no other calls, no sends). -/
 def HonestMove.IsTransfer : HonestMove E → Prop
-  | .chain (.transfer _ _) => True
-  | _ => False
+  | .react r => ∃ a b, r.calls = [Op.transfer a b] ∧ r.sends = []
+  | .wait _ => False
 
 /-- Nitro:779-781: the adversary of the Turbo game plays transfers only
     (go-nitro `transfer`). The clock does not move. -/

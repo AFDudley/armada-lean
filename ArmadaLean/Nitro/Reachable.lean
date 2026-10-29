@@ -8,6 +8,16 @@
   machine's `Machine.Reachable`, not a separate predicate. This file states
   the network game as a `Machine` and connects it to `Adjudicator.lean`'s
   existing chain-only `Reachable`.
+
+  Explicit-time game (operator ruling 2026-10-29, "Time bounds per pending
+  action", `Strategy.lean`'s header): a reaction's calls are no longer
+  applied by `NetworkState.applyHonest`/`Network.applyHonest` — they land
+  separately, one at a time, each gated only by its own feasibility at the
+  moment it lands (`HonestFeasible`), not by which reaction first issued it.
+  This is a sound over-approximation for bare reachability (every call that
+  could ever legally land is reachable), the same relaxation a fuller
+  `Threat.Round`-respecting reachability would refine; no Liveness theorem
+  needs the refinement, only the game (`UnbeatableIn`) does.
 -/
 import ArmadaLean.Machine
 import ArmadaLean.Nitro.Strategy
@@ -17,20 +27,14 @@ namespace ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
 
-/-- An honest move (`NetworkState.applyHonest`) never changes the chain
-    except through a successful `Adjudicator.apply`, so it keeps `Reachable
-    apps`: either the operation fails and the chain is unchanged
-    (`Option.getD`), or it succeeds and is one `Step`. -/
+/-- An honest move (`NetworkState.applyHonest`) never touches the chain: a
+    reaction's sends only ever touch `sent`, and its calls land separately
+    (`.land`, below), not here. -/
 theorem NetworkState.applyHonest_chain_reachable {apps : Apps E} {p : Participant}
     (net : NetworkState E p) (m : HonestMove E) (hr : Reachable apps net.chain) :
-    Reachable apps (net.applyHonest apps m).chain := by
+    Reachable apps (net.applyHonest m).chain := by
   cases m with
-  | chain op =>
-    simp only [NetworkState.applyHonest]
-    cases h : net.chain.apply apps p op with
-    | none => exact hr
-    | some s' => exact hr.tail (Step.mk p op net.chain s' h)
-  | send st => simpa [NetworkState.applyHonest] using hr
+  | react r => simpa [NetworkState.applyHonest] using hr
   | wait dt =>
     simp only [NetworkState.applyHonest]
     have happly : net.chain.apply apps p (.tick dt) = some (net.chain.tick dt) := rfl
@@ -39,7 +43,7 @@ theorem NetworkState.applyHonest_chain_reachable {apps : Apps E} {p : Participan
 /-- An adversary move (`NetworkState.applyAdv`) never changes the chain
     except through a successful `Adjudicator.apply`, for the same reason as
     `NetworkState.applyHonest_chain_reachable`. `deliver` never touches the
-    chain. -/
+    chain; `land` applies with caller `p`, the same shape as `chain`. -/
 theorem NetworkState.applyAdv_chain_reachable {apps : Apps E} {p : Participant}
     (net : NetworkState E p) (m : AdvMove E) (hr : Reachable apps net.chain) :
     Reachable apps (net.applyAdv apps m).chain := by
@@ -54,6 +58,11 @@ theorem NetworkState.applyAdv_chain_reachable {apps : Apps E} {p : Participant}
     simp only [NetworkState.applyAdv]
     have happly : net.chain.apply apps p (.tick dt) = some (net.chain.tick dt) := rfl
     exact hr.tail (Step.mk p (.tick dt) net.chain (net.chain.tick dt) happly)
+  | land op =>
+    simp only [NetworkState.applyAdv]
+    cases h : net.chain.apply apps p op with
+    | none => exact hr
+    | some s' => exact hr.tail (Step.mk p op net.chain s' h)
 
 /-- One successful on-chain step leaves a virtual channel's balance at
     zero, given it started at zero. `Adjudicator.deposit` refuses a
@@ -136,7 +145,10 @@ variable {E : Type} [DecidableEq E]
 
 /-- `p`'s own machine: from the empty state (`Adjudicator.genesis`, empty
     `sent` and `received`, Nitro:446-454), one of `p`'s own feasible honest
-    moves (`NetworkState.applyHonest`, `HonestMove.Feasible`) or one
+    moves (`NetworkState.applyHonest`, `HonestMove.Feasible`), `p` landing
+    one of its own currently-feasible calls directly (`land`, the
+    explicit-time game's two-phase issue/land split collapsed back to one
+    step, sound for bare reachability — this file's header), or one
     feasible move of the adversary `T` (`NetworkState.applyAdv`,
     `Threat.feasible`). Declared at the root, not inside `ArmadaLean.Nitro`
     (which already holds `NetworkState`, `Threat`, ...), so its name is
@@ -147,7 +159,8 @@ def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
     Machine (NetworkState E p) where
   init := fun net => net = ⟨Adjudicator.genesis, [], []⟩
   step := fun net net' =>
-    (∃ m : HonestMove E, m.Feasible net ∧ net' = net.applyHonest apps m) ∨
+    (∃ m : HonestMove E, m.Feasible net ∧ net' = net.applyHonest m) ∨
+    (∃ op : Op E, op.HonestFeasible net ∧ net' = net.applyAdv apps (.land op)) ∨
     (∃ m : AdvMove E, T.feasible net m ∧ net' = net.applyAdv apps m)
 
 /-- `Nitro.chain apps`: the chain alone as a `Machine`, from
@@ -170,7 +183,8 @@ theorem Nitro.chain_reachable_iff {apps : Apps E} {s : Adjudicator E} :
 /-- **The chain of a reachable network state is reachable.** By
     `Machine.invariant` over `Nitro.participant apps T`, with
     `NetworkState.applyHonest_chain_reachable` /
-    `NetworkState.applyAdv_chain_reachable` for the step case and
+    `NetworkState.applyAdv_chain_reachable` for the step case (the `land`
+    branch is `applyAdv_chain_reachable`'s own `land` case) and
     `Relation.ReflTransGen.refl` for the (unique) initial state. -/
 theorem Nitro.participant_chain_reachable {apps : Apps E} {p : Participant} {T : Threat E p}
     {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) :
@@ -181,8 +195,9 @@ theorem Nitro.participant_chain_reachable {apps : Apps E} {p : Participant} {T :
     rw [hinit]
     exact Relation.ReflTransGen.refl
   · intro net net' hP hstep
-    rcases hstep with ⟨m, -, rfl⟩ | ⟨m, -, rfl⟩
+    rcases hstep with ⟨m, -, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, rfl⟩
     · exact NetworkState.applyHonest_chain_reachable net m hP
+    · exact NetworkState.applyAdv_chain_reachable net (.land op) hP
     · exact NetworkState.applyAdv_chain_reachable net m hP
 
 /-- A full network state: ONE shared chain, and each participant's own
@@ -201,13 +216,13 @@ structure Network (E : Type) where
   sent : Participant → List (SignedState E)
   received : Participant → List (SignedState E)
 
-/-- `p`'s view of a `Network`: exactly `Strategy.lean:34`'s `NetworkState`,
+/-- `p`'s view of a `Network`: exactly `Strategy.lean`'s `NetworkState`,
     read off the shared chain and `p`'s own lists. -/
 def Network.view (n : Network E) (p : Participant) : NetworkState E p :=
   ⟨n.chain, n.received p, n.sent p⟩
 
-/-- The family of views `Views.Consistent` (`Strategy.lean:270`) and every
-    multi-view Liveness theorem read. -/
+/-- The family of views `Views.Consistent` and every multi-view Liveness
+    theorem read. -/
 def Network.views (n : Network E) : Views E := n.view
 
 omit [DecidableEq E] in
@@ -221,75 +236,110 @@ theorem Network.views_chain_eq (n : Network E) (p q : Participant) :
     the same for any voucher it carries — the same shape as
     `SignedState.SignedIn` (`Adjudicator.lean:316`, used by
     `ReachableSigned`), here read against `n`'s own `sent` record instead
-    of an abstract `signed` list. Gates `Network.applyAdv`'s `.deliver`:
-    see that definition's doc comment for why the per-participant model
-    alone does not already enforce this. -/
+    of an abstract `signed` list. Gates `Network.land`'s broadcast and the
+    old `Nitro.network`'s `.deliver`: see those definitions' doc comments
+    for why the per-participant model alone does not already enforce
+    this. -/
 def Network.Sendable (n : Network E) (ss : SignedState E) : Prop :=
   (∀ q ∈ ss.signers, ∃ s ∈ n.sent q, s.state = ss.state) ∧
   ∀ v, ss.state.voucher? = some v → ∀ q ∈ v.signers, ∃ s ∈ n.sent q, s.state.voucher? = some v
 
 /-- A state's voucher, if any, is only sent by participants who already
     hold a matching-voucher state of their own. Gates `Nitro.network`'s
-    honest `.send`: `Network.Sendable`'s own first conjunct cannot gate a
+    honest `.react`: `Network.Sendable`'s own first conjunct cannot gate a
     first send of `st` (`p`'s own `sent` does not yet hold it), but every
-    recipient's `Unforged` check (`Strategy.lean:133-135`) only reads its
-    own alleged signature — vacuous here, since the delivered entry's
-    sole top-level signer is `p` itself, never the recipient — and `st`'s
+    recipient's `Unforged` check (`Strategy.lean`) only reads its own
+    alleged signature — vacuous here, since the delivered entry's sole
+    top-level signer is `p` itself, never the recipient — and `st`'s
     voucher's signers, which this clause covers exactly. -/
 def Network.VoucherSendable (n : Network E) (st : State E) : Prop :=
   ∀ v, st.voucher? = some v → ∀ q ∈ v.signers, ∃ s ∈ n.sent q, s.state.voucher? = some v
 
 /-- One honest move of `p`, applied to the whole `Network`
-    (`NetworkState.applyHonest`, `Strategy.lean:81`, read from `p`'s view).
-    A successful `.chain` operation's proof states reach every OTHER
-    participant's `received` (not `p`'s own, which `applyHonest`'s own
-    `.chain` arm never touches, because `HonestMove.Feasible` already
-    requires `p` to hold them before submitting): this generalizes the D9
-    repair (`applyAdv`'s own `.chain` arm, `Strategy.lean:88-96`) from one
-    adversary-modelled observer to the whole network, because an on-chain
-    call is public, not visible to one observer only. Operator ruling
-    2026-10-29 (synchronous network): `.send st` reaches `st.recipients p`
-    (its channel's other participants, `Channel.lean`) in the same step,
-    not one `.deliver` later — the asynchronous variant of this machine
-    is the same type with `.send` writing only `sent` and a separate
-    adversary `.deliver` writing `received`, as `Nitro.network` already
-    models for the chain-op broadcast case below. -/
-def Network.applyHonest (apps : Apps E) (n : Network E) (p : Participant) (m : HonestMove E) :
-    Network E :=
+    (`NetworkState.applyHonest`, read from `p`'s view): a reaction's sends
+    reach the sender's own `sent`, and, in the same step (operator ruling
+    2026-10-29, synchronous network), every recipient's `received`
+    (`State.recipients`, `Channel.lean`) — one shot, not a fold, so a
+    recipient `q`'s one new batch of entries is exactly the sends `q`
+    actually receives, `(r.sends.filter (q ∈ ·.recipients p)).map _`.
+    A reaction's calls do not touch the chain here — they land
+    separately, one at a time, through `Network.land` (the explicit-time
+    game's pending calls, `Strategy.lean`'s header). `wait` still moves
+    the clock directly, `p`'s own move. -/
+def Network.applyHonest (n : Network E) (p : Participant) (m : HonestMove E) : Network E :=
   match m with
-  | .chain op =>
-    match n.chain.apply apps p op with
-    | some s' =>
-      { chain := s', sent := n.sent,
-        received := fun q => if q = p then n.received q else op.proofStates ++ n.received q }
-    | none => n
-  | .send st =>
+  | .react r =>
     { n with
-      sent := (fun q => if q = p then ⟨st, [p]⟩ :: n.sent q else n.sent q)
-      received :=
-        (fun q => if q ∈ st.recipients p then ⟨st, [p]⟩ :: n.received q else n.received q) }
+      sent := fun q =>
+        if q = p then r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ n.sent q
+        else n.sent q
+      received := fun q =>
+        (r.sends.filter (fun st => decide (q ∈ st.recipients p))).map
+          (fun st => (⟨st, [p]⟩ : SignedState E)) ++ n.received q }
   | .wait dt => { n with chain := n.chain.tick dt }
 
+omit [DecidableEq E] in
+@[simp] theorem Network.applyHonest_react_chain (n : Network E) (p : Participant) (r : Reaction E) :
+    (Network.applyHonest n p (.react r)).chain = n.chain := rfl
+
+omit [DecidableEq E] in
+theorem Network.applyHonest_react_sent (n : Network E) (p : Participant) (r : Reaction E)
+    (q : Participant) : (Network.applyHonest n p (.react r)).sent q =
+      if q = p then r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ n.sent q
+      else n.sent q := rfl
+
+omit [DecidableEq E] in
+theorem Network.applyHonest_react_received (n : Network E) (p : Participant) (r : Reaction E)
+    (q : Participant) : (Network.applyHonest n p (.react r)).received q =
+      (r.sends.filter (fun st => decide (q ∈ st.recipients p))).map
+        (fun st => (⟨st, [p]⟩ : SignedState E)) ++ n.received q := rfl
+
+/-- `p` never receives its own send: `State.recipients` excludes `p` by
+    construction, so the filter above is always empty at `q = p`. -/
+theorem Network.applyHonest_react_received_self (n : Network E) (p : Participant) (r : Reaction E) :
+    (Network.applyHonest n p (.react r)).received p = n.received p := by
+  rw [Network.applyHonest_react_received]
+  have hempty : r.sends.filter (fun st => decide (p ∈ st.recipients p)) = [] := by
+    rw [List.filter_eq_nil_iff]
+    intro st _
+    simp [State.recipients, List.mem_filter]
+  rw [hempty]
+  rfl
+
+/-- `p` lands one of its own currently-feasible calls, applied to the whole
+    `Network`: public, the same broadcast shape as `.chain` always had
+    (D9 repair, `docs/nitro-repair-2026-10-27.md`) — every participant's
+    `received` gains `op.proofStates`, since an on-chain call is public.
+    `p`'s own entry is redundant (`HonestFeasible` already requires `p` to
+    hold every proof state before landing) but harmless, and keeps this
+    the same shape as `NetworkState.applyAdv`'s own `.land` case (always
+    self-referential there, so it never excludes the landing participant
+    either). A failed call changes nothing (ForceMove:685-686). -/
+def Network.land (apps : Apps E) (n : Network E) (p : Participant) (op : Op E) : Network E :=
+  match n.chain.apply apps p op with
+  | some s' => { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q }
+  | none => n
+
 /-- One adversary move against `p`, applied to the whole `Network`
-    (`NetworkState.applyAdv`, `Strategy.lean:97`, read from `p`'s view),
-    with the same public-broadcast `.chain` case as `Network.applyHonest`.
-    `.deliver ss` reaches only `p`'s own `received`: the per-participant
-    model alone does not forbid delivering a forged OTHER signer's claim
+    (`NetworkState.applyAdv`, read from `p`'s view). `.deliver ss` reaches
+    only `p`'s own `received`: the per-participant model alone does not
+    forbid delivering a forged OTHER signer's claim
     (`Bounds.unforgeable`/`NetworkState.Unforged` bound only `p`'s own
-    alleged signature, by design, `Strategy.lean:129-135`), so
-    `Nitro.network`'s step additionally requires `Network.Sendable ss`.
-    Operator ruling 2026-10-29 (synchronous network): `.deliver` stays, on
-    top of the now-synchronous `.send`, for two cases the single-signer
+    alleged signature, by design, `Strategy.lean`), so `Nitro.network`'s
+    step additionally requires `Network.Sendable ss`. The caller rule
+    (operator ruling 2026-10-29) excludes `.chain` and `.land` from the
+    adversary's own moves at the `Nitro.network` step (below); this
+    function still accepts them, for the single-view lemmas that reuse
+    it with an explicit caller/landing participant. Operator ruling
+    2026-10-29 (synchronous network): `.deliver` stays, on top of the
+    now-synchronous `.send`/`.react`, for two cases the recipient-scoped
     broadcast cannot cover. First, a multi-signer state (`SignedState.ByAll`,
-    `Strategy.lean:91-92`, e.g. a conclusion proof every participant has
-    signed) needs an entry whose `signers` list names more than the one
-    sender `.send` ever attaches (`.send st` always produces `⟨st,[p]⟩`);
-    assembling that entry for a recipient is still `.deliver`, Sendable-gated
-    so every one of its claimed signers genuinely sent a matching state.
-    Second, an observer outside a channel (`late_observer_can_checkpoint`)
-    is not a recipient of that channel's states (`State.recipients`
-    excludes every non-participant by construction), so only `.deliver`
-    reaches it. -/
+    `Strategy.lean`, e.g. a conclusion proof every participant has signed)
+    needs an entry whose `signers` list names more than the one sender a
+    send ever attaches. Second, an observer outside a channel
+    (`late_observer_can_checkpoint`) is not a recipient of that channel's
+    states (`State.recipients` excludes every non-participant by
+    construction), so only `.deliver` reaches it. -/
 def Network.applyAdv (apps : Apps E) (n : Network E) (p : Participant) (m : AdvMove E) :
     Network E :=
   match m with
@@ -299,21 +349,24 @@ def Network.applyAdv (apps : Apps E) (n : Network E) (p : Participant) (m : AdvM
     | none => n
   | .deliver ss => { n with received := fun q => if q = p then ss :: n.received q else n.received q }
   | .tick dt => { n with chain := n.chain.tick dt }
+  | .land op => Network.land apps n p op
 
 theorem Network.applyHonest_chain_reachable {apps : Apps E} (n : Network E) (p : Participant)
     (m : HonestMove E) (hr : Reachable apps n.chain) :
-    Reachable apps (Network.applyHonest apps n p m).chain := by
+    Reachable apps (Network.applyHonest n p m).chain := by
   cases m with
-  | chain op =>
-    simp only [Network.applyHonest]
-    cases h : n.chain.apply apps p op with
-    | none => exact hr
-    | some s' => exact hr.tail (Step.mk p op n.chain s' h)
-  | send st => simpa [Network.applyHonest] using hr
+  | react r => simpa using hr
   | wait dt =>
     simp only [Network.applyHonest]
     have happly : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
     exact hr.tail (Step.mk p (.tick dt) n.chain (n.chain.tick dt) happly)
+
+theorem Network.land_chain_reachable {apps : Apps E} (n : Network E) (p : Participant) (op : Op E)
+    (hr : Reachable apps n.chain) : Reachable apps (Network.land apps n p op).chain := by
+  simp only [Network.land]
+  cases h : n.chain.apply apps p op with
+  | none => exact hr
+  | some s' => exact hr.tail (Step.mk p op n.chain s' h)
 
 theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Participant)
     (m : AdvMove E) (hr : Reachable apps n.chain) :
@@ -329,46 +382,51 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     simp only [Network.applyAdv]
     have happly : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
     exact hr.tail (Step.mk p (.tick dt) n.chain (n.chain.tick dt) happly)
+  | land op => exact Network.land_chain_reachable n p op hr
 
 /-- The network game: at each step, some participant `p` makes one of its
-    own feasible honest moves, or `p`'s own adversary `Ts.T p` makes one
-    feasible move against `p`. `Network.Sendable` gates a `.deliver` and
-    every `.chain` operation's proof states: SATP:168 "forging
-    cryptographic signatures is infeasible" is a system-wide fact,
-    already encoded on the chain side by `ReachableSigned`'s own
-    hypothesis (`Adjudicator.lean:331`, `SignedStep`'s `hsig`); this is
-    the same fact for the network's own `sent` record, so every
-    signature a proof state carries is genuine, not only the acting
+    own feasible honest moves (a reaction's sends only, calls land
+    separately below), `p` lands one of its own currently-feasible calls
+    (`Network.land`, gated by `Network.Sendable` on its proof states, the
+    same public-broadcast fact the old `.chain` gate stated), or `p`'s own
+    adversary `Ts.T p` makes one feasible `.deliver`/`.tick` move against
+    `p`. `Network.Sendable` gates a `.deliver` and every landed call's
+    proof states: SATP:168 "forging cryptographic signatures is
+    infeasible" is a system-wide fact, already encoded on the chain side
+    by `ReachableSigned`'s own hypothesis (`Adjudicator.lean`, `SignedStep`'s
+    `hsig`); this is the same fact for the network's own `sent` record, so
+    every signature a proof state carries is genuine, not only the acting
     view's own. The caller rule (operator ruling 2026-10-29, "Caller
     rule",
     `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`
     §"Result" item 3, read literally): "only q's own honest moves may
     submit an on-chain call with caller q" — for every participant, not
-    only a channel's. An adversary move is never a `.chain` move at
-    all: every on-chain call is `p`'s own `Op.proofStates`-held, honest
-    `.chain op` (Nitro:312-313 "anyone can trigger an operation" reads,
-    for this model, as "the caller is that participant, using its own
-    `Feasible` move"), so the adversary's moves are only `.deliver` and
-    `.tick`. Operator ruling 2026-10-29: `ReachableViews` is
-    `(Nitro.network apps Ts).Reachable`, not a separate predicate. A
-    second gate, `Network.VoucherSendable`, covers the one part of
-    `Network.Sendable` a first `.send st` cannot satisfy of itself (that
+    only a channel's, and (explicit-time addendum) the same for landing:
+    only `q`'s own call ever lands with caller `q`. An adversary move is
+    never a `.chain` or `.land` move at all, so the adversary's moves are
+    only `.deliver` and `.tick`. Operator ruling 2026-10-29:
+    `ReachableViews` is `(Nitro.network apps Ts).Reachable`, not a separate
+    predicate. A second gate, `Network.VoucherSendable`, covers the one
+    part of `Network.Sendable` a first send cannot satisfy of itself (that
     definition's doc comment). -/
 def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) where
   init := fun n => n = ⟨Adjudicator.genesis, fun _ => [], fun _ => []⟩
   step := fun n n' => ∃ p : Participant,
     (∃ m : HonestMove E, m.Feasible (n.view p) ∧
-      (∀ op, m = .chain op → ∀ ss ∈ op.proofStates, n.Sendable ss) ∧
-      (∀ st, m = .send st → n.VoucherSendable st) ∧
-      n' = Network.applyHonest apps n p m) ∨
+      (∀ r : Reaction E, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) ∧
+      n' = Network.applyHonest n p m) ∨
+    (∃ op : Op E, op.HonestFeasible (n.view p) ∧
+      (∀ ss ∈ op.proofStates, n.Sendable ss) ∧
+      n' = Network.land apps n p op) ∨
     (∃ m : AdvMove E, (Ts.T p).feasible (n.view p) m ∧
       (∀ ss, m = .deliver ss → n.Sendable ss) ∧
-      (∀ caller op, m ≠ .chain caller op) ∧
+      (∀ caller op, m ≠ .chain caller op) ∧ (∀ op, m ≠ .land op) ∧
       n' = Network.applyAdv apps n p m)
 
 /-- **The chain of a reachable `Network` is reachable.** By
     `Machine.invariant`, using `Network.applyHonest_chain_reachable` /
-    `Network.applyAdv_chain_reachable` for the step case. -/
+    `Network.land_chain_reachable` / `Network.applyAdv_chain_reachable` for
+    the step case. -/
 theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) : Reachable apps n.chain := by
   refine Machine.invariant (Nitro.network apps Ts) (P := fun n => Reachable apps n.chain) ?_ ?_ n h
@@ -376,19 +434,21 @@ theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n :
     rw [hinit]
     exact Relation.ReflTransGen.refl
   · intro n n' hP hstep
-    obtain ⟨p, ⟨m, -, -, -, rfl⟩ | ⟨m, -, -, -, rfl⟩⟩ := hstep
+    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, -, -, -, rfl⟩⟩ := hstep
     · exact Network.applyHonest_chain_reachable n p m hP
+    · exact Network.land_chain_reachable n p op hP
     · exact Network.applyAdv_chain_reachable n p m hP
 
 /-- **`Views.Consistent`'s third conjunct holds for every reachable
     `Network`.** A state `p` received that names `q` as a signer is a
     state `q` really sent. By `Machine.invariant`: at genesis every
     `received` is empty (vacuous); a step leaves `received` untouched
-    (`.send`, `.wait`, `.tick`), touches only the mover's own `received`
-    through a `Network.Sendable`-gated `.deliver` (whose statement is
-    exactly this conjunct for the one new entry), or broadcasts a
-    `.chain` operation's `Network.Sendable`-gated proof states (same
-    argument, for every new entry at once). -/
+    (`wait`), touches only the mover's own `received` through a
+    `Network.Sendable`-gated `.deliver` (whose statement is exactly this
+    conjunct for the one new entry), broadcasts a landed call's
+    `Network.Sendable`-gated proof states (same argument, for every new
+    entry at once), or appends a `.react`'s one-shot recipient batch, each
+    new entry's own signer `p₀` already known-genuine by `hP`. -/
 theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) :
     ∀ p q : Participant, p ≠ q → ∀ r ∈ (n.views p).received, q ∈ r.signers →
@@ -400,68 +460,53 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
     rw [hinit] at hr
     simp at hr
   · intro n n' hP hstep p q hpq r hr hqr
-    obtain ⟨p₀, ⟨m, -, hgate, -, rfl⟩ | ⟨m, -, hdgate, hnochain, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩⟩ :=
+      hstep
     · cases m with
-      | chain op =>
-        cases hop : n.chain.apply apps p₀ op with
-        | none =>
-          have hsent : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
-            simp [Network.applyHonest, hop]
-          have hrecv : (Network.applyHonest apps n p₀ (.chain op)).received p = n.received p := by
-            simp [Network.applyHonest, hop]
-          rw [hsent]
-          rw [hrecv] at hr
-          exact hP p q hpq r hr hqr
-        | some s' =>
-          have hsent : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
-            simp [Network.applyHonest, hop]
-          have hrecv : (Network.applyHonest apps n p₀ (.chain op)).received p =
-              if p = p₀ then n.received p else op.proofStates ++ n.received p := by
-            simp [Network.applyHonest, hop]
-          rw [hsent]
-          rw [hrecv] at hr
-          by_cases hpp0 : p = p₀
-          · rw [if_pos hpp0] at hr
-            exact hP p q hpq r hr hqr
-          · rw [if_neg hpp0] at hr
-            rcases List.mem_append.mp hr with hnew | hold
-            · exact (hgate op rfl r hnew).1 q hqr
-            · exact hP p q hpq r hold hqr
-      | send st =>
-        have hsent : (Network.applyHonest apps n p₀ (.send st)).sent q =
-            if q = p₀ then ⟨st, [p₀]⟩ :: n.sent q else n.sent q := by
-          simp [Network.applyHonest]
-        have hrecv : (Network.applyHonest apps n p₀ (.send st)).received p =
-            if p ∈ st.recipients p₀ then ⟨st, [p₀]⟩ :: n.received p else n.received p := by
-          simp [Network.applyHonest]
-        rw [hrecv] at hr
-        have hold : r ∈ n.received p →
-            ∃ s ∈ (Network.applyHonest apps n p₀ (.send st)).sent q, s.state = r.state := by
-          intro hr'
-          obtain ⟨s, hs, hseq⟩ := hP p q hpq r hr' hqr
+      | react rr =>
+        rw [Network.applyHonest_react_received] at hr
+        rw [List.mem_append] at hr
+        rcases hr with hnew | hold
+        · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
+          obtain ⟨hst', -⟩ := List.mem_filter.mp hst
+          rw [← hseq] at hqr
+          simp only [List.mem_singleton] at hqr
+          refine ⟨⟨st, [p₀]⟩, ?_, by rw [← hseq]⟩
+          rw [Network.applyHonest_react_sent, if_pos hqr]
+          exact List.mem_append_left _ (List.mem_map.mpr ⟨st, hst', rfl⟩)
+        · obtain ⟨s, hs, hseq⟩ := hP p q hpq r hold hqr
           refine ⟨s, ?_, hseq⟩
-          rw [hsent]
+          rw [Network.applyHonest_react_sent]
           by_cases hqp0 : q = p₀
-          · rw [if_pos hqp0]; exact List.mem_cons_of_mem _ hs
+          · rw [if_pos hqp0]; exact List.mem_append_right _ hs
           · rw [if_neg hqp0]; exact hs
-        by_cases hpr : p ∈ st.recipients p₀
-        · rw [if_pos hpr] at hr
-          rcases List.mem_cons.mp hr with rfl | hold'
-          · simp only [List.mem_singleton] at hqr
-            refine ⟨⟨st, [p₀]⟩, ?_, rfl⟩
-            rw [hsent, if_pos hqr]
-            exact List.mem_cons_self
-          · exact hold hold'
-        · rw [if_neg hpr] at hr
-          exact hold hr
       | wait dt =>
-        have hrecv : (Network.applyHonest apps n p₀ (.wait dt)).received p = n.received p := by
+        have hrecv : (Network.applyHonest n p₀ (.wait dt)).received p = n.received p := by
           simp [Network.applyHonest]
-        have hsent : (Network.applyHonest apps n p₀ (.wait dt)).sent = n.sent := by
+        have hsent : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
           simp [Network.applyHonest]
         rw [hrecv] at hr
         rw [hsent]
         exact hP p q hpq r hr hqr
+    · cases hop : n.chain.apply apps p₀ op with
+      | none =>
+        have hsent : (Network.land apps n p₀ op).sent = n.sent := by
+          simp [Network.land, hop]
+        have hrecv : (Network.land apps n p₀ op).received p = n.received p := by
+          simp [Network.land, hop]
+        rw [hsent]
+        rw [hrecv] at hr
+        exact hP p q hpq r hr hqr
+      | some s' =>
+        have hsent : (Network.land apps n p₀ op).sent = n.sent := by
+          simp [Network.land, hop]
+        have hrecv : (Network.land apps n p₀ op).received p = op.proofStates ++ n.received p := by
+          simp [Network.land, hop]
+        rw [hsent]
+        rw [hrecv] at hr
+        rcases List.mem_append.mp hr with hnew | hold
+        · exact (hsgate r hnew).1 q hqr
+        · exact hP p q hpq r hold hqr
     · cases m with
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss =>
@@ -487,6 +532,7 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
         rw [hrecv] at hr
         rw [hsent]
         exact hP p q hpq r hr hqr
+      | land op => exact absurd rfl (hnoland op)
 
 /-- Bigger `signed` lists only reach more: `SignedState.SignedIn` is
     monotone in `signed`, so a `SignedStep` for `signed` is also one for
@@ -507,12 +553,12 @@ theorem ReachableSigned.mono {apps : Apps E} {signed signed' : List (Participant
 
 /-- **Every reachable `Network`'s chain is `ReachableSigned`**, for a
     signed-state record that exactly mirrors its own `sent`. `Participant`
-    (`Address.lean:36`, a bare `Nat` wrapper) is infinite, so no single
-    flat list can be "all of `n.sent`" at once; the existential below is
-    the finite record one actual reachability derivation builds, carried
-    along the same induction as `Nitro.network_views_signers`:
-    `Network.Sendable`, gated on every `.chain` operation's proof states
-    by `Nitro.network`'s step, is `SignedState.SignedIn` read against
+    (`Address.lean`, a bare `Nat` wrapper) is infinite, so no single flat
+    list can be "all of `n.sent`" at once; the existential below is the
+    finite record one actual reachability derivation builds, carried along
+    the same induction as `Nitro.network_views_signers`:
+    `Network.Sendable`, gated on every landed call's proof states by
+    `Nitro.network`'s step, is `SignedState.SignedIn` read against
     `n.sent` instead of `signed`, so each new chain step is a genuine
     `SignedStep`. -/
 theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps} {n : Network E}
@@ -530,75 +576,62 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
     · intro q st; rw [hinit]; simp
   · intro n n' hP hstep
     obtain ⟨signed, hreach, hmirror⟩ := hP
-    obtain ⟨p₀, ⟨m, -, hgate, -, rfl⟩ | ⟨m, -, -, hnochain, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, -, hnochain, hnoland, rfl⟩⟩ := hstep
     · cases m with
-      | chain op =>
-        cases hop : n.chain.apply apps p₀ op with
-        | none =>
-          refine ⟨signed, ?_, ?_⟩
-          · have hc : (Network.applyHonest apps n p₀ (.chain op)).chain = n.chain := by
-              simp [Network.applyHonest, hop]
-            rw [hc]; exact hreach
-          · have hs : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
-              simp [Network.applyHonest, hop]
-            rw [hs]; exact hmirror
-        | some s' =>
-          have hc : (Network.applyHonest apps n p₀ (.chain op)).chain = s' := by
-            simp [Network.applyHonest, hop]
-          have hs : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
-            simp [Network.applyHonest, hop]
-          refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
-          rw [hc]
-          refine hreach.tail ⟨p₀, op, _, _, ?_, hop⟩
-          intro ss hss
-          obtain ⟨hsg, hvoucher⟩ := hgate op rfl ss hss
-          refine ⟨fun q' hq' => ?_, fun v hv q' hq' => ?_⟩
-          · obtain ⟨s, hs', hseq⟩ := hsg q' hq'
-            exact (hmirror q' ss.state).mpr ⟨s, hs', hseq⟩
-          · obtain ⟨s, hs', hseq⟩ := hvoucher v hv q' hq'
-            exact ⟨s.state, (hmirror q' s.state).mpr ⟨s, hs', rfl⟩, hseq⟩
-      | send st =>
-        have hc : (Network.applyHonest apps n p₀ (.send st)).chain = n.chain := by
-          simp [Network.applyHonest]
-        refine ⟨(p₀, st) :: signed, ?_, ?_⟩
-        · rw [hc]; exact ReachableSigned.mono (fun x hx => List.mem_cons_of_mem _ hx) hreach
-        · intro q st'
-          have hs : (Network.applyHonest apps n p₀ (.send st)).sent q =
-              if q = p₀ then ⟨st, [p₀]⟩ :: n.sent q else n.sent q := by
-            simp [Network.applyHonest]
-          rw [hs]
+      | react rr =>
+        refine ⟨rr.sends.map (fun st => (p₀, st)) ++ signed, ?_, ?_⟩
+        · simpa using ReachableSigned.mono (fun x hx => List.mem_append_right _ hx) hreach
+        · intro q st
+          rw [Network.applyHonest_react_sent, List.mem_append, List.mem_map]
           by_cases hqp0 : q = p₀
-          · subst hqp0
-            rw [if_pos rfl]
-            simp only [List.mem_cons]
+          · simp only [if_pos hqp0, List.mem_append, List.mem_map]
             constructor
-            · rintro (heq | hmem)
-              · injection heq with h1 h2
-                exact ⟨⟨st, [q]⟩, Or.inl rfl, h2.symm⟩
-              · obtain ⟨s, hs', hseq⟩ := (hmirror q st').mp hmem
-                exact ⟨s, Or.inr hs', hseq⟩
-            · rintro ⟨s, (hs' | hs'), hseq⟩
-              · subst hs'
-                subst hseq
-                exact Or.inl rfl
-              · exact Or.inr ((hmirror q st').mpr ⟨s, hs', hseq⟩)
-          · rw [if_neg hqp0, List.mem_cons]
+            · rintro (⟨st', hst', hseq⟩ | hmem)
+              · rw [Prod.mk.injEq] at hseq
+                exact ⟨⟨st', [p₀]⟩, Or.inl ⟨st', hst', rfl⟩, hseq.2⟩
+              · obtain ⟨s, hs, hseq⟩ := (hmirror q st).mp hmem
+                exact ⟨s, Or.inr hs, hseq⟩
+            · rintro ⟨s, (⟨st', hst', hseq⟩ | hmem), hstate⟩
+              · subst hseq
+                exact Or.inl ⟨st', hst', by rw [Prod.mk.injEq]; exact ⟨hqp0.symm, hstate⟩⟩
+              · exact Or.inr ((hmirror q st).mpr ⟨s, hmem, hstate⟩)
+          · simp only [if_neg hqp0]
             constructor
-            · rintro (heq | hmem)
-              · injection heq with h1 h2
-                exact absurd h1 hqp0
-              · exact (hmirror q st').mp hmem
+            · rintro (⟨st', hst', hseq⟩ | hmem)
+              · rw [Prod.mk.injEq] at hseq
+                exact absurd hseq.1.symm hqp0
+              · exact (hmirror q st).mp hmem
             · intro hmem
-              exact Or.inr ((hmirror q st').mpr hmem)
+              exact Or.inr ((hmirror q st).mpr hmem)
       | wait dt =>
-        have hc : (Network.applyHonest apps n p₀ (.wait dt)).chain = n.chain.tick dt := by
+        have hc : (Network.applyHonest n p₀ (.wait dt)).chain = n.chain.tick dt := by
           simp [Network.applyHonest]
-        have hs : (Network.applyHonest apps n p₀ (.wait dt)).sent = n.sent := by
+        have hs : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
           simp [Network.applyHonest]
         refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
         rw [hc]
         refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
         simp [Op.proofStates]
+    · cases hop : n.chain.apply apps p₀ op with
+      | none =>
+        refine ⟨signed, ?_, ?_⟩
+        · have hc : (Network.land apps n p₀ op).chain = n.chain := by simp [Network.land, hop]
+          rw [hc]; exact hreach
+        · have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+          rw [hs]; exact hmirror
+      | some s' =>
+        have hc : (Network.land apps n p₀ op).chain = s' := by simp [Network.land, hop]
+        have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
+        rw [hc]
+        refine hreach.tail ⟨p₀, op, _, _, ?_, hop⟩
+        intro ss hss
+        obtain ⟨hsg, hvoucher⟩ := hsgate ss hss
+        refine ⟨fun q' hq' => ?_, fun v hv q' hq' => ?_⟩
+        · obtain ⟨s, hs', hseq⟩ := hsg q' hq'
+          exact (hmirror q' ss.state).mpr ⟨s, hs', hseq⟩
+        · obtain ⟨s, hs', hseq⟩ := hvoucher v hv q' hq'
+          exact ⟨s.state, (hmirror q' s.state).mpr ⟨s, hs', rfl⟩, hseq⟩
     · cases m with
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss =>
@@ -616,13 +649,14 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
         rw [hc]
         refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
         simp [Op.proofStates]
+      | land op => exact absurd rfl (hnoland op)
 
 /-- **`Views.Consistent`'s second conjunct holds for every reachable
     `Network`.** Operator ruling 2026-10-29: the network is synchronous by
     construction, so a state `p` sends reaches its recipients in the same
-    step (`Network.applyHonest`'s `.send` arm). By `Machine.invariant`: at
+    step (`Network.applyHonest`'s `.react` arm). By `Machine.invariant`: at
     genesis every `sent` is empty (vacuous); a step leaves `sent`
-    untouched except an honest `.send`, which both appends to the
+    untouched except an honest `.react`, which both appends to the
     sender's own `sent` and, in the same step, to every recipient's
     `received`; every other move only ever grows `received`, for any
     participant, never removes from it, so a state already delivered to
@@ -637,65 +671,50 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
     rw [hinit] at hss
     simp at hss
   · intro n n' hP hstep p ss hss q hq
-    obtain ⟨p₀, ⟨m, -, hgate, hvgate, rfl⟩ | ⟨m, -, hdgate, hnochain, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩⟩ := hstep
     · cases m with
-      | chain op =>
-        cases hop : n.chain.apply apps p₀ op with
-        | none =>
-          have hsent : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
-            simp [Network.applyHonest, hop]
-          have hrecv : (Network.applyHonest apps n p₀ (.chain op)).received q = n.received q := by
-            simp [Network.applyHonest, hop]
-          rw [hsent] at hss
-          rw [hrecv]
-          exact hP p ss hss q hq
-        | some s' =>
-          have hsent : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
-            simp [Network.applyHonest, hop]
-          have hrecv : (Network.applyHonest apps n p₀ (.chain op)).received q =
-              if q = p₀ then n.received q else op.proofStates ++ n.received q := by
-            simp [Network.applyHonest, hop]
-          rw [hsent] at hss
-          rw [hrecv]
-          by_cases hqp0 : q = p₀
-          · rw [if_pos hqp0]
-            exact hP p ss hss q hq
-          · rw [if_neg hqp0]
-            exact List.mem_append_right _ (hP p ss hss q hq)
-      | send st =>
-        have hrecv : (Network.applyHonest apps n p₀ (.send st)).received q =
-            if q ∈ st.recipients p₀ then ⟨st, [p₀]⟩ :: n.received q else n.received q := by
-          simp [Network.applyHonest]
-        have hsent : (Network.applyHonest apps n p₀ (.send st)).sent p =
-            if p = p₀ then ⟨st, [p₀]⟩ :: n.sent p else n.sent p := by
-          simp [Network.applyHonest]
-        rw [hsent] at hss
-        rw [hrecv]
+      | react rr =>
+        rw [Network.applyHonest_react_sent] at hss
+        rw [Network.applyHonest_react_received]
         by_cases hpp0 : p = p₀
         · rw [if_pos hpp0] at hss
-          rcases List.mem_cons.mp hss with rfl | hold
-          · rw [hpp0] at hq
-            rw [if_pos hq]
-            exact List.mem_cons_self
-          · by_cases hqr : q ∈ st.recipients p₀
-            · rw [if_pos hqr]
-              exact List.mem_cons_of_mem _ (hP p ss hold q hq)
-            · rw [if_neg hqr]
-              exact hP p ss hold q hq
+          rcases List.mem_append.mp hss with hnew | hold
+          · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
+            subst hseq
+            rw [List.mem_append]
+            refine Or.inl (List.mem_map.mpr ⟨st, ?_, rfl⟩)
+            rw [List.mem_filter]
+            refine ⟨hst, ?_⟩
+            rw [hpp0] at hq
+            simpa using hq
+          · rw [List.mem_append]
+            exact Or.inr (hP p ss hold q hq)
         · rw [if_neg hpp0] at hss
-          by_cases hqr : q ∈ st.recipients p₀
-          · rw [if_pos hqr]
-            exact List.mem_cons_of_mem _ (hP p ss hss q hq)
-          · rw [if_neg hqr]
-            exact hP p ss hss q hq
+          rw [List.mem_append]
+          exact Or.inr (hP p ss hss q hq)
       | wait dt =>
-        have hrecv : (Network.applyHonest apps n p₀ (.wait dt)).received q = n.received q := by
+        have hrecv : (Network.applyHonest n p₀ (.wait dt)).received q = n.received q := by
           simp [Network.applyHonest]
-        have hsent : (Network.applyHonest apps n p₀ (.wait dt)).sent = n.sent := by
+        have hsent : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
           simp [Network.applyHonest]
         rw [hsent] at hss
         rw [hrecv]
         exact hP p ss hss q hq
+    · cases hop : n.chain.apply apps p₀ op with
+      | none =>
+        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        have hrecv : (Network.land apps n p₀ op).received q = n.received q := by
+          simp [Network.land, hop]
+        rw [hsent] at hss
+        rw [hrecv]
+        exact hP p ss hss q hq
+      | some s' =>
+        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        have hrecv : (Network.land apps n p₀ op).received q = op.proofStates ++ n.received q := by
+          simp [Network.land, hop]
+        rw [hsent] at hss
+        rw [hrecv]
+        exact List.mem_append_right _ (hP p ss hss q hq)
     · cases m with
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss' =>
@@ -707,10 +726,8 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
         rw [hsent] at hss
         rw [hrecv]
         by_cases hqp0 : q = p₀
-        · rw [if_pos hqp0]
-          exact List.mem_cons_of_mem _ (hP p ss hss q hq)
-        · rw [if_neg hqp0]
-          exact hP p ss hss q hq
+        · rw [if_pos hqp0]; exact List.mem_cons_of_mem _ (hP p ss hss q hq)
+        · rw [if_neg hqp0]; exact hP p ss hss q hq
       | tick dt =>
         have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
           simp [Network.applyAdv]
@@ -719,37 +736,85 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
         rw [hsent] at hss
         rw [hrecv]
         exact hP p ss hss q hq
+      | land op => exact absurd rfl (hnoland op)
 
 /-- **Every reachable `Network`'s views are `Views.Consistent`**, all
     three conjuncts, no further hypothesis. The first holds
     unconditionally (`Network.views_chain_eq`); the second is the
     synchronous-delivery fact (`Nitro.network_views_delivered`); the
     third is `Nitro.network_views_signers`. Every multi-view Liveness
-    theorem that took `hv : v.Consistent` alongside `hr` now derives it
-    from `hr` alone instead (operator ruling 2026-10-29). -/
+    theorem that took `hv : v.Consistent` alongside `hr` derives it from
+    `hr` alone. -/
 theorem Nitro.network_views_consistent {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) : n.views.Consistent :=
   ⟨Network.views_chain_eq n, Nitro.network_views_delivered h, Nitro.network_views_signers h⟩
 
+/-- `base`'s view after receiving every `p₀`-sent state in `sends` that
+    names it a recipient, batched as one list (helper for
+    `Nitro.participant_reachable_deliver_sends`; a plain `def`, not an
+    inline structure update, so it is one unambiguous term throughout). -/
+def ArmadaLean.Nitro.NetworkState.recvBatch {q : Participant} (base : NetworkState E q) (p₀ : Participant)
+    (sends : List (State E)) : NetworkState E q :=
+  let batch : List (State E) := sends.filter (fun st => decide (q ∈ st.recipients p₀))
+  { base with received := batch.map (fun st => (⟨st, [p₀]⟩ : SignedState E)) ++ base.received }
+
+/-- **A bystander `q` of a multi-send reaction reaches every send meant for
+    it, one `.deliver` at a time.** `Network.applyHonest`'s `.react` case
+    delivers every recipient's whole batch in one `Network` step; from a
+    single participant's own `Nitro.participant` machine, that batch is a
+    `Relation.ReflTransGen` of one `.deliver` per relevant send instead —
+    `Capable.capableDeliver` grants each one (`Unforged`: the only signer,
+    `p₀ ≠ q`, so `q`'s own forgery check is vacuous; `VoucherSendable`
+    covers the voucher, `hvgate`). Used by
+    `Nitro.network_views_participant_reachable`'s `.react` case for `q ≠
+    p₀`, generalizing the old single-`.send` case (`sends = [st]`). -/
+theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats E apps}
+    {p₀ q : Participant} (hqp0 : q ≠ p₀) (sends : List (State E))
+    {base : NetworkState E q} (hvg : ∀ st ∈ sends, ∀ v, st.voucher? = some v → q ∈ v.signers →
+        ∃ s ∈ base.sent, s.state.voucher? = some v)
+    (hbase : (Nitro.participant apps (Ts.T q)).Reachable base) :
+    (Nitro.participant apps (Ts.T q)).Reachable (base.recvBatch p₀ sends) := by
+  induction sends with
+  | nil => simpa [NetworkState.recvBatch] using hbase
+  | cons st rest ih =>
+    have ihrest : (Nitro.participant apps (Ts.T q)).Reachable (base.recvBatch p₀ rest) :=
+      ih (fun st' hst' => hvg st' (List.mem_cons_of_mem _ hst'))
+    by_cases hqr : q ∈ st.recipients p₀
+    · have hUnforged : NetworkState.Unforged (base.recvBatch p₀ rest) (⟨st, [p₀]⟩ : SignedState E) := by
+        refine ⟨fun hqsg => ?_, fun v hv hqv => ?_⟩
+        · simp only [List.mem_singleton] at hqsg
+          exact absurd hqsg hqp0
+        · exact hvg st List.mem_cons_self v hv hqv
+      obtain ⟨s₀, hinit, hsteps⟩ := ihrest
+      refine ⟨s₀, hinit, hsteps.tail (Or.inr (Or.inr
+        ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged, ?_⟩))⟩
+      simp [NetworkState.recvBatch, NetworkState.applyAdv, hqr]
+    · simpa [NetworkState.recvBatch, List.filter_cons, hqr] using ihrest
+
 /-- **Every view of a reachable `Network` is `Nitro.participant`-reachable.**
     The caller rule (operator ruling 2026-10-29, "Caller rule", read
-    literally: no adversary move is `.chain`) removes the one gap the
-    earlier channel-participant gloss left open. The mover `p₀`'s own
-    view is always reachable as its own move (same witness, same
-    feasibility, `Nitro.participant`'s step). Every OTHER participant
-    `q`'s view changes only two ways: `p₀`'s honest `.chain op` broadcasts
+    literally: no adversary move is `.chain` or `.land`) removes the one
+    gap the earlier channel-participant gloss left open. The mover `p₀`'s
+    own view is always reachable as its own move (same witness, same
+    feasibility, `Nitro.participant`'s step — a `.react` as `p₀`'s own
+    honest branch, using `Network.applyHonest_react_sent`/`_received_self`
+    to match `NetworkState.applyHonest`'s own `.react` arm exactly, or a
+    landed call as `p₀`'s own `land` branch). Every OTHER participant
+    `q`'s view changes three ways: `p₀`'s landed call broadcasts
     `op.proofStates` to `q`'s `received` — exactly `(n.view q).applyAdv
-    apps (.chain p₀ op)`, and `Capable.capable` (`Strategy.lean:153`)
-    grants `(Ts.T q).feasible (n.view q) (.chain p₀ op)` from `p₀ ≠ q`
-    (`Bounds.notHonest`'s own bound, read for `Ts.T p₀`, vacuously true
-    here since the caller IS `p₀`) and `Network.Sendable` (`Unforged` for
-    every signer, not only `q`'s); or the chain's clock ticks (`p₀`'s
-    honest `.wait` or adversary `.tick`), shared, so it reaches `q` too —
-    exactly `q`'s own adversary `.tick dt`, always feasible
-    (`Capable.capableTick`). Every other case (`.send`, `.deliver` to
-    `p₀ ≠ q`) leaves `q`'s view untouched. No case needs `q` to be a
-    channel participant; the caller rule rules out an adversary `.chain`
-    move outright, so there is no bystander case left to block. -/
+    apps (.chain p₀ op)`, and `Capable.capable` grants `(Ts.T q).feasible
+    (n.view q) (.chain p₀ op)` from `p₀ ≠ q` (`Bounds.notHonest`'s own
+    bound, read for `Ts.T p₀`, vacuously true here since the caller IS
+    `p₀`) and `Network.Sendable` (`Unforged` for every signer, not only
+    `q`'s); `p₀`'s send reaches `q`'s `received` exactly when `q` is a
+    recipient — a `.deliver` of the one new entry; or the chain's clock
+    ticks (`p₀`'s honest `.wait` or adversary `.tick`), shared, so it
+    reaches `q` too — exactly `q`'s own adversary `.tick dt`, always
+    feasible (`Capable.capableTick`). Every other case (`.react` to a
+    non-recipient, `.deliver` to `p₀ ≠ q`) leaves `q`'s view untouched. No
+    case needs `q` to be a channel participant; the caller rule rules out
+    an adversary `.chain`/`.land` move outright, so there is no bystander
+    case left to block. -/
 theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats E apps}
     {n : Network E} (h : (Nitro.network apps Ts).Reachable n) (q : Participant) :
     (Nitro.participant apps (Ts.T q)).Reachable (n.view q) := by
@@ -759,62 +824,53 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
     rw [hinit]
     exact ⟨_, rfl, Relation.ReflTransGen.refl⟩
   · intro n n' hP hstep
-    obtain ⟨p₀, ⟨m, hfeas, hgate, hvgate, rfl⟩ | ⟨m, hfeas, -, hnochain, rfl⟩⟩ := hstep
+    obtain ⟨p₀, ⟨m, hfeas, hvgate, rfl⟩ | ⟨op, hfeas, hsgate, rfl⟩ | ⟨m, hfeas, -, hnochain, hnoland, rfl⟩⟩ :=
+      hstep
     · by_cases hqp0 : q = p₀
       · subst hqp0
-        have heq : (Network.applyHonest apps n q m).view q = (n.view q).applyHonest apps m := by
+        have heq : (Network.applyHonest n q m).view q = (n.view q).applyHonest m := by
           cases m with
-          | chain op =>
-            cases hop : n.chain.apply apps q op with
-            | none => simp [Network.applyHonest, hop, Network.view, NetworkState.applyHonest]
-            | some s' =>
-              simp [Network.applyHonest, hop, Network.view, NetworkState.applyHonest]
-          | send st =>
-            simp [Network.applyHonest, Network.view, NetworkState.applyHonest, State.recipients,
-              List.mem_filter]
+          | react rr =>
+            simp [Network.view, Network.applyHonest_react_sent, Network.applyHonest_react_received_self,
+              NetworkState.applyHonest]
           | wait dt => simp [Network.applyHonest, Network.view, NetworkState.applyHonest]
         rw [heq]
         exact hP.tail (Or.inl ⟨m, hfeas, rfl⟩)
       · cases m with
-        | chain op =>
-          have heq : (Network.applyHonest apps n p₀ (.chain op)).view q =
-              (n.view q).applyAdv apps (.chain p₀ op) := by
-            cases hop : n.chain.apply apps p₀ op with
-            | none => simp [Network.applyHonest, hop, Network.view, NetworkState.applyAdv]
-            | some s' =>
-              simp [Network.applyHonest, hop, Network.view, NetworkState.applyAdv, if_neg hqp0]
+        | react rr =>
+          have heq : (Network.applyHonest n p₀ (.react rr)).view q =
+              (n.view q).recvBatch p₀ rr.sends := by
+            simp [Network.view, Network.applyHonest_react_sent, hqp0,
+              Network.applyHonest_react_received, NetworkState.recvBatch]
           rw [heq]
-          have hUnforged : ∀ ss ∈ op.proofStates, (n.view q).Unforged ss := by
-            intro ss hss
-            obtain ⟨hsg, hvoucher⟩ := hgate op rfl ss hss
-            exact ⟨fun hqsg => hsg q hqsg, fun v hv hqv => hvoucher v hv q hqv⟩
-          have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ op) :=
-            (Ts.ok q).toCapable.capable (n.view q) p₀ op (Ne.symm hqp0) hUnforged
-          exact hP.tail (Or.inr ⟨.chain p₀ op, hcap, rfl⟩)
-        | send st =>
-          by_cases hqr : q ∈ st.recipients p₀
-          · have heq : (Network.applyHonest apps n p₀ (.send st)).view q =
-                (n.view q).applyAdv apps (.deliver ⟨st, [p₀]⟩) := by
-              simp [Network.applyHonest, Network.view, NetworkState.applyAdv, if_pos hqr,
-                if_neg hqp0]
-            rw [heq]
-            have hUnforged : (n.view q).Unforged ⟨st, [p₀]⟩ := by
-              refine ⟨fun hqsg => ?_, fun v hv hqv => hvgate st rfl v hv q hqv⟩
-              simp at hqsg
-              exact absurd hqsg hqp0
-            have hcap : (Ts.T q).feasible (n.view q) (.deliver ⟨st, [p₀]⟩) :=
-              (Ts.ok q).toCapable.capableDeliver (n.view q) ⟨st, [p₀]⟩ hUnforged
-            exact hP.tail (Or.inr ⟨.deliver ⟨st, [p₀]⟩, hcap, rfl⟩)
-          · have heq : (Network.applyHonest apps n p₀ (.send st)).view q = n.view q := by
-              simp [Network.applyHonest, Network.view, if_neg hqr, if_neg hqp0]
-            rw [heq]
-            exact hP
+          refine Nitro.participant_reachable_deliver_sends hqp0 rr.sends ?_ hP
+          intro st hst v hv hqv
+          exact hvgate rr rfl st hst v hv q hqv
         | wait dt =>
-          have heq : (Network.applyHonest apps n p₀ (.wait dt)).view q =
+          have heq : (Network.applyHonest n p₀ (.wait dt)).view q =
               (n.view q).applyAdv apps (.tick dt) := by
             simp [Network.applyHonest, Network.view, NetworkState.applyAdv]
           rw [heq]
-          exact hP.tail (Or.inr ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)
+          exact hP.tail (Or.inr (Or.inr ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩))
+    · by_cases hqp0 : q = p₀
+      · subst hqp0
+        have heq : (Network.land apps n q op).view q = (n.view q).applyAdv apps (.land op) := by
+          simp only [Network.land, Network.view, NetworkState.applyAdv]
+          cases n.chain.apply apps q op <;> rfl
+        rw [heq]
+        exact hP.tail (Or.inr (Or.inl ⟨op, hfeas, rfl⟩))
+      · have heq : (Network.land apps n p₀ op).view q =
+            (n.view q).applyAdv apps (.chain p₀ op) := by
+          simp only [Network.land, Network.view, NetworkState.applyAdv]
+          cases n.chain.apply apps p₀ op <;> simp [if_neg hqp0]
+        rw [heq]
+        have hUnforged : ∀ ss ∈ op.proofStates, (n.view q).Unforged ss := by
+          intro ss hss
+          obtain ⟨hsg, hvoucher⟩ := hsgate ss hss
+          exact ⟨fun hqsg => hsg q hqsg, fun v hv hqv => hvoucher v hv q hqv⟩
+        have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ op) :=
+          (Ts.ok q).toCapable.capable (n.view q) p₀ op (Ne.symm hqp0) hUnforged
+        exact hP.tail (Or.inr (Or.inr ⟨.chain p₀ op, hcap, rfl⟩))
     · by_cases hqp0 : q = p₀
       · subst hqp0
         have heq : (Network.applyAdv apps n q m).view q = (n.view q).applyAdv apps m := by
@@ -822,8 +878,9 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
           | chain caller op => exact absurd rfl (hnochain caller op)
           | deliver ss => simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
           | tick dt => simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
+          | land op => exact absurd rfl (hnoland op)
         rw [heq]
-        exact hP.tail (Or.inr ⟨m, hfeas, rfl⟩)
+        exact hP.tail (Or.inr (Or.inr ⟨m, hfeas, rfl⟩))
       · cases m with
         | chain caller op => exact absurd rfl (hnochain caller op)
         | deliver ss =>
@@ -836,4 +893,5 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
               (n.view q).applyAdv apps (.tick dt) := by
             simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
           rw [heq]
-          exact hP.tail (Or.inr ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)
+          exact hP.tail (Or.inr (Or.inr ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩))
+        | land op => exact absurd rfl (hnoland op)
