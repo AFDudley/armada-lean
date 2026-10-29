@@ -2037,7 +2037,10 @@ theorem spend_bound_to_adapt {boundHash : Term} {bp₀ bp : BoundParams} {a call
     (hProof : boundHash = hashBoundParams bp₀) (hA : bp₀.adaptContract = some a)
     (hStep : boundHash = hashBoundParams bp) (hAdapt : AdaptAllows bp caller) :
     caller = a ∧ bp = bp₀ := by
-  sorry
+  have heq : hashBoundParams bp₀ = hashBoundParams bp := hProof.symm.trans hStep
+  have hbp : bp₀ = bp := hashBoundParams_inj heq
+  rw [hbp] at hA
+  exact ⟨hAdapt a hA, hbp.symm⟩
 
 /-! ### An owned merge (theorem 3 of the channel design) -/
 
