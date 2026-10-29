@@ -1,4 +1,6 @@
 .lake/
+# A worker HOME toolchain; never repo content (aln-d1a capture 9fccf63 committed 15,031 files of it).
+.elan/
 *.olean
 *.trace
 .scratch/
