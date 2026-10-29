@@ -1337,13 +1337,13 @@ theorem concluded_universally_finalizable (apps : Apps E) (Ts : Threats E apps) 
     (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration)
     (hpend : ∀ p, (v p).DeadlineAfter c (Ts.T p).ε) :
     UniversallyFinalizable apps Ts v c Ω := by
-  -- Restating 2026-10-29: this called `conclusion_proof_finalizable (v p)`,
-  -- which now needs `(Nitro.participant apps (Ts.T p)).Reachable (v p)`.
-  -- Nothing here derives it: `hr` only reaches `n`, the whole network, and
-  -- "every view of a reachable Network is participant-reachable" is false
-  -- in general (`Reachable.lean`, the finding after the caller rule). No
-  -- longer proved; reopened pending that gap.
-  sorry
+  subst hvn
+  intro p hp
+  obtain ⟨ss, hh, hproof, hΩ⟩ := h p hp
+  exact UnbeatableIn.mono (fun _ _ => trivial)
+    (conclusion_proof_finalizable apps (Ts.T p) (Ts.ok p) (n.views p)
+      (Nitro.network_views_participant_reachable hr p) c ss Ω hc hp hh hproof hΩ
+      (hsent p) (hchain p) (hdur p) (hpend p))
 
 /-- The safety invariant used by `consensus_enabled_outcomes`: under the
     consensus app, with `p` holding `ss` (`ss.state.outcome = Ω1`), the

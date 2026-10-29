@@ -39,3 +39,9 @@ theorem Machine.invariant {S : Type} (M : Machine S) {P : S → Prop}
   induction hsteps with
   | refl => exact hP0
   | tail _ hstep ih => exact hs _ _ ih hstep
+
+/-- One more feasible step keeps `Machine.Reachable`. -/
+theorem Machine.Reachable.tail {S : Type} {M : Machine S} {s s' : S}
+    (h : M.Reachable s) (hstep : M.step s s') : M.Reachable s' := by
+  obtain ⟨s₀, hinit, hsteps⟩ := h
+  exact ⟨s₀, hinit, hsteps.tail hstep⟩
