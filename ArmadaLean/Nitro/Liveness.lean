@@ -1573,7 +1573,7 @@ theorem late_observer_can_checkpoint (apps : Apps E) {p : Participant} (T : Thre
     where two different finalizable outcomes are held by different
     participants, as in this case at least one participant's strategy would
     be beatable by the other participant's strategy." -/
-theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E) (hv : v.Consistent)
+theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n) (hvn : v = n.views)
     (c : FixedPart) (p q : Participant) (hpq : p ≠ q) (Ω Ω' : Outcome E)
     (hp : Finalizable apps (Ts.T p) c Ω (v p)) (hq : Finalizable apps (Ts.T q) c Ω' (v q)) :
@@ -1585,7 +1585,7 @@ theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E) (
     participant has multiple finalizable outcomes ... 3. Multiple participants
     share one finalizable outcome ... 4. No finalizable outcomes." -/
 theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (c : FixedPart) (p0 : Participant) :
     (∃ Ω, (v p0).Finalized c Ω) ∨
     (∃ p, p ∈ c.participants ∧ (∃ Ω, Finalizable apps (Ts.T p) c Ω (v p)) ∧
@@ -1631,7 +1631,7 @@ theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Thr
     setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
     and the game library accepts its transitions. -/
 theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
     (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
     (hvt : SetupPhaseAccepted vt c)
@@ -1656,7 +1656,7 @@ theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
 theorem concluded_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (c : FixedPart) (Ω : Outcome E) (hc : apps c.appDef = consensusRules)
     (h : Concluded v c Ω)
     (hsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = c → t.state.isFinal = true →
@@ -2756,7 +2756,7 @@ theorem turbo_value_exists_unique (s : Adjudicator E) (hdag : s.IsDAG) (n : Addr
     `χ` must not finalize during the strategy, as `ledger_partial_withdrawal`
     already requires of its receiving ledger. -/
 theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (w : LedgerWithSub E) (hw : w.Holds apps Ts v)
     (hχopen : ∀ p, (v p).chain.finalOutcome w.χ.address = none)
     (hχsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) :
@@ -2769,8 +2769,8 @@ theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v
     `[L ↦ (A : a − a', B : b − b', χ : a' + b')]_{A,B}` preserves the value
     of `A` and `B` at their destinations `dA` and `dB`. -/
 theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (v v' : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (hv' : v'.Consistent) (n' : Network E)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (hvn : v = n.views) (n' : Network E)
     (hr' : (Nitro.network apps Ts).Reachable n') (hvn' : v' = n'.views)
     (A B : Participant) (dA dB : E) (L χ : FixedPart)
     (a b a' b' : Coins) (ha : a' ≤ a) (hb : b' ≤ b)
@@ -2795,8 +2795,8 @@ theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (
     `[L ↦ (A : a + a', B : b + b')]_{A,B}` preserves the value of `A` and
     `B`. -/
 theorem subchannel_close_value_preserving (apps : Apps E) (Ts : Threats E apps) (v v' : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (hv' : v'.Consistent) (n' : Network E)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (hvn : v = n.views) (n' : Network E)
     (hr' : (Nitro.network apps Ts).Reachable n') (hvn' : v' = n'.views)
     (w : LedgerWithSub E) (a' b' : Coins)
     (hc : a' + b' = w.c) (hw : w.Holds apps Ts v)
@@ -2878,7 +2878,7 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     restatement adds `n`, `hr` and the link `hvn`, rather than rewriting
     every one of this theorem's existing uses of `v` to `n.views`. -/
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (A B : Participant) (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
     (hL : IsLedgerChannel apps L) (hL' : IsLedgerChannel apps L') (hLp : L.participants = [A, B])
     (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L')

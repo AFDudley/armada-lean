@@ -264,12 +264,16 @@ def Value (apps : Apps E) {p : Participant} (T : Threat E p) (d : E) (net : Netw
     of a channel is finalizable by all its participants". -/
 def Views (E : Type) := ∀ p : Participant, NetworkState E p
 
-/-- The views agree: they share one chain, what one participant sent the
-    others received, and a signature of `q` that `p` received is on a state
-    `q` sent (SATP:168). -/
+/-- The views agree: they share one chain, a state `p` sends reaches its
+    channel's other participants (operator ruling 2026-10-29: the network
+    is synchronous by construction, `State.recipients`), and a signature
+    of `q` that `p` received is on a state `q` sent (SATP:168). The
+    asynchronous system — where sending and delivery are separate steps,
+    so a sent state need not yet have reached its recipients — is future
+    work; this file models only the synchronous one. -/
 def Views.Consistent (v : Views E) : Prop :=
   (∀ p q, (v p).chain = (v q).chain) ∧
-  (∀ p q, p ≠ q → ∀ ss ∈ (v p).sent, ss ∈ (v q).received) ∧
+  (∀ p, ∀ ss ∈ (v p).sent, ∀ q ∈ ss.state.recipients p, ss ∈ (v q).received) ∧
   (∀ p q, p ≠ q → ∀ r ∈ (v p).received, q ∈ r.signers → ∃ s ∈ (v q).sent, s.state = r.state)
 
 /-- A family of threats, one per participant, and their assumptions. -/

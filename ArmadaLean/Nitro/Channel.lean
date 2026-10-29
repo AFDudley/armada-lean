@@ -74,6 +74,15 @@ def State.voucher? (s : State E) : Option Voucher :=
   | .satpVirtual d => some d.voucher
   | .opaque _ => none
 
+/-- The recipients of a state a participant sends: the other participants
+    of its channel. Operator ruling 2026-10-29 (synchronous network):
+    SATP:393-395 (Definition 3.1) "A peer commits to a state s in a
+    channel by signing s and sending it ... to each peer in
+    s.consts.peers"; Nitro:451-453: the commitments a participant sends
+    and receives are "for each channel [it] is a participant of". -/
+def State.recipients (st : State E) (p : Participant) : List Participant :=
+  st.channel.participants.filter (· ≠ p)
+
 /-- ForceMove:714 `State::mover: s ↦ s.channel.participants[s.turnNum % n]`
     (ForceMove only; SATP and Nitro leave turn-taking to the application;
     go-nitro StrictTurnTaking.sol has the same rule as a library). -/
