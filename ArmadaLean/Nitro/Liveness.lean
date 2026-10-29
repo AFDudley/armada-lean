@@ -257,142 +257,6 @@ theorem directly_funded_step {apps : Apps E} {s s' : Adjudicator E} {caller : Pa
     · simpa using ht
     · simp
 
-/-- Over a round that lands `p`'s one pending call, the transfer to `d`
-    (`Threat.RoundSeq`, `pending = [Op.transfer c d]`): `c`'s fully-funded
-    slack at `d` (`directly_funded_step`) only grows up to the moment the
-    transfer lands — `other` (an adversary `.chain`/`.deliver`) follows
-    `directly_funded_step`, or leaves everything unchanged on failure;
-    `tick` only advances the clock (`ChannelStatus.finalOutcome_mono`).
-    `land` is forced, exactly once (`pending` is a singleton): at that
-    point the slack invariant, carried this far, is exactly
-    `transfer_can_happen`'s own hypothesis, so the transfer itself
-    succeeds and pays `d` at least `amt`; after that, `d`'s raw balance
-    (not the slack) only grows for the rest of the round
-    (`Threat.RoundSeq.balances_external_mono`). Used by
-    `directly_funded_pays`. -/
-theorem directly_funded_round {apps : Apps E} {p : Participant} {T : Threat E p} (c : FixedPart)
-    (d : E) (hk : c.kind = .ledger) :
-    ∀ {net net' : NetworkState E p},
-      Threat.RoundSeq apps T net.chain.now [Op.transfer c (.external d)] net net' →
-      ∀ {o : Allocation E} {amt : Coins},
-        net.chain.finalOutcome c.address = some (.allocation o) →
-        o.total ≤ net.chain.balances.get c.address →
-        o.find (.external d) = some ⟨.external d, .alloc amt⟩ →
-        net.chain.balances.get (.external d) + amt ≤ net'.chain.balances.get (.external d) := by
-  intro n0 n1 hseq
-  generalize hp : ([Op.transfer c (.external d)] : List (Op E)) = pending at hseq
-  induction hseq with
-  | nil => intro o amt hf ht hd; cases hp
-  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
-    intro o amt hf ht hd
-    cases hp
-    rcases l1 with _ | ⟨a, l1⟩
-    · rcases l2 with _ | ⟨b, l2⟩
-      · cases hsplit
-        have hbf : (Address.external d : Address E).fundable = true := rfl
-        obtain ⟨s', hs', hbal⟩ := transfer_can_happen net1.chain c (.external d) o amt hk hbf hf hd
-        have happly : net1.chain.apply apps p (.transfer c (.external d)) = some s' := by
-          rw [Adjudicator.apply_transfer]; exact hs'
-        have hchain : (net1.applyAdv apps (.land (Op.transfer c (.external d)))).chain = s' := by
-          simp [NetworkState.applyAdv, happly]
-        have hmono := hrest.balances_external_mono d
-        rw [hchain] at hmono
-        have hcne : (Address.external d : Address E) ≠ c.address := by
-          rw [FixedPart.address_eq]; intro hh; cases hh
-        rw [hbal, if_neg hcne] at hmono
-        have hpaid : amt ≤ o.paidTo (net1.chain.balances.get c.address) (Address.external d) := by
-          have hsub : o.dedup.total ≤ o.total :=
-            Allocation.total_le_of_sublist (Allocation.dedupFrom_sublist [] o)
-          have hdedup_le : o.dedup.total ≤ net1.chain.balances.get c.address := le_trans hsub ht
-          have howed1 : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
-          have hdedup_owed : o.dedup.owed (Address.external d) = amt := by
-            rw [Allocation.owed_dedup]; exact howed1
-          have hle := Allocation.owed_le_payout_get hdedup_le (Address.external d)
-          rw [hdedup_owed] at hle
-          rwa [Allocation.paidTo_eq_get]
-        grind
-      · simp at hsplit
-    · simp at hsplit
-  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
-    intro o amt hf ht hd
-    refine ih ?_ ?_ hd
-    · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
-        ChannelStatus.finalOutcome_mono
-          (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
-            simpa [FixedPart.address_eq] using hf)
-          (Nat.le_add_right net1.chain.now dt)
-    · simpa [NetworkState.applyAdv] using ht
-  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
-    intro o amt hf ht hd
-    cases m with
-    | chain caller op =>
-      cases hm : net1.chain.apply apps caller op with
-      | none =>
-        refine ih ?_ ?_ hd
-        · simp only [NetworkState.applyAdv, hm]; exact hf
-        · simp only [NetworkState.applyAdv, hm]; exact ht
-      | some s' =>
-        obtain ⟨o1, amt1, hf1, ht1, hd1, hle1⟩ := directly_funded_step hf ht hd hm
-        have := ih (by simp only [NetworkState.applyAdv, hm]; exact hf1)
-          (by simp only [NetworkState.applyAdv, hm]; exact ht1) hd1
-        exact le_trans hle1 this
-    | deliver ss =>
-      refine ih ?_ ?_ hd
-      · simp only [NetworkState.applyAdv]; exact hf
-      · simp only [NetworkState.applyAdv]; exact ht
-    | tick dt => exact absurd rfl (hnotick dt)
-    | land op => exact absurd rfl (hnoland op)
-
-/-- Nitro-16, Nitro-21, ForceMove-B01, ForceMove-C03, docs-0070-05, docs-0080-06. Nitro:395-398: "where
-    the channel L itself has enough coins in the adjudicator to cover the
-    entire allocation ... A will receive all x coins allocated to them in ω."
-    The strategy is one transfer. The entry of `d` is an allocation item:
-    go-nitro refuses to transfer a guarantee (MultiAssetHolder.sol:169-170).
-
-    Operator ruling 2026-10-29: `net` is a reachable network state
-    (`Nitro.participant_chain_reachable`); a reachable chain never pays a
-    virtual-kind channel's own balance out through `d` (the unreachable
-    counterexample put coins in a virtual-kind channel,
-    `Reachable.balances_virtual_zero`). -/
-theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
-    (hf : net.chain.finalOutcome c.address = some (.allocation o))
-    (hfund : net.chain.DirectlyFunded c) (amt : Coins)
-    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
-    UnbeatableNoWait apps T
-      (fun net' => net.chain.balances.get (.external d) + o.owed (.external d) ≤
-        net'.chain.balances.get (.external d)) net := by
-  have hrc : Reachable apps net.chain := Nitro.participant_chain_reachable hr
-  obtain ⟨o', hfo', htot'⟩ := hfund
-  rw [hf] at hfo'
-  simp only [Option.some.injEq, Outcome.allocation.injEq] at hfo'
-  subst hfo'
-  have howed : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
-  rw [howed]
-  cases hk : c.kind with
-  | virtual =>
-    have hzero : net.chain.balances.get (Address.channel c) = 0 :=
-      Reachable.balances_virtual_zero hrc c hk
-    have htot0 : o.total = 0 := by
-      have := htot'
-      rw [FixedPart.address_eq, hzero] at this
-      exact Nat.le_zero.mp this
-    have hamt0 : amt = 0 := by
-      have hle := Allocation.owed_le_total o (Address.external d)
-      rw [howed, htot0] at hle
-      exact Nat.le_zero.mp hle
-    exact UnbeatableIn.done (by rw [hamt0]; exact Nat.le_refl _)
-  | ledger =>
-    refine UnbeatableIn.move (.chain (.transfer c (.external d))) trivial
-      (by simp [HonestMove.Feasible, Op.proofStates]) ?_
-    intro net' hround
-    obtain ⟨hseq, -⟩ := hround
-    simp only [HonestMove.calls_chain] at hseq
-    have hle := directly_funded_round c d hk hseq hf htot' hd
-    apply UnbeatableIn.done
-    simpa using hle
-
 /-- `UnbeatableIn` is monotone in its allowed-move set: a strategy built from
     a more restrictive `allowed1` is still a strategy under any looser
     `allowed2` that contains it. Used to widen `UnbeatableNoWait` (moves
@@ -677,25 +541,6 @@ theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
     have hle := directly_funded_round c d hk net net' _ rfl hseq hf htot' hd
     apply UnbeatableIn.done
     simpa using hle
-
-/-- Nitro-17, Nitro-21, Nitro-16. Nitro:480-481 and Nitro:590-593: a finalized allocation
-    in a channel funded for `p` pays `d` its allocation. The channel is
-    finalized already: a strategy to finalize and a strategy to fund do not
-    compose, because the second one starts from `net`.
-
-    Operator ruling 2026-10-29: `net` is a reachable network state, for the
-    same reason as `directly_funded_pays`. -/
-theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
-    (hf : net.chain.finalOutcome c.address = some (.allocation o))
-    (hfund : FundedFor apps T c o.total net) (amt : Coins)
-    (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
-    CanObtain apps T (.external d) (net.chain.balances.get (.external d) + o.owed (.external d))
-      net := by
-  sorry
-
-
 
 /-- Within one round, `p`'s own `conclude c ss` call lands exactly once
     (the round's `pending` is the singleton `[Op.conclude c ss]`); it needs
@@ -2867,14 +2712,65 @@ theorem funded_entry_step {apps : Apps E} {s s' : Adjudicator E} {caller : Parti
         ChannelStatus.finalOutcome_mono hf0 (Nat.le_add_right s.now dt)
     · simp
 
+/-- One remaining pending call's own feasibility carries across one
+    adversary move: `sent` is untouched and `received` only grows
+    (`NetworkState.applyAdv_sent`, `NetworkState.applyAdv_received_subset`),
+    and `Op.HonestFeasible`, for every op besides `deposit`/`tick`, only
+    reads `net.Holds`, monotone in exactly those two facts
+    (`NetworkState.Holds.mono`). Used by `funded_entry_round`'s `land`
+    case, to carry every op still pending forward past the one that just
+    landed. -/
+theorem Op.HonestFeasible.applyAdv {apps : Apps E} {p : Participant} {net : NetworkState E p}
+    (m : AdvMove E) {op : Op E} (hfeas : op.HonestFeasible net) :
+    op.HonestFeasible (net.applyAdv apps m) := by
+  cases op with
+  | deposit a e x => exact hfeas
+  | tick dt => exact hfeas
+  | transfer _ _ | reclaim _ _ | challenge _ _ _ | checkpoint _ _ _ | conclude _ _ =>
+    exact fun ss hss => NetworkState.Holds.mono (NetworkState.applyAdv_sent apps net m).symm
+      (NetworkState.applyAdv_received_subset apps net m) (hfeas ss hss)
+
+/-- An op's own feasibility carries across a whole round, the same way as
+    one step (`Op.HonestFeasible.applyAdv`), using the round's own
+    `sent`/`received` monotonicity (`Threat.RoundSeq.sent_eq`,
+    `Threat.RoundSeq.received_subset`) directly instead of composing one
+    step at a time. Used by `HonestMove.Feasible.round`. -/
+theorem Op.HonestFeasible.round {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    {pending : List (Op E)} {net net' : NetworkState E p}
+    (hseq : Threat.RoundSeq apps T t pending net net') {op : Op E}
+    (hfeas : op.HonestFeasible net) : op.HonestFeasible net' := by
+  cases op with
+  | deposit a e x => exact hfeas
+  | tick dt => exact hfeas
+  | transfer _ _ | reclaim _ _ | challenge _ _ _ | checkpoint _ _ _ | conclude _ _ =>
+    exact fun ss hss => NetworkState.Holds.mono hseq.sent_eq.symm hseq.received_subset
+      (hfeas ss hss)
+
+omit [DecidableEq E] in
+/-- A move's own feasibility, read call by call: `.wait` has none; a
+    `.react r`'s feasibility is already exactly `∀op∈r.calls,
+    op.HonestFeasible net`. Used by `funded_entry_unbeatable`'s `move`
+    case, so `funded_entry_round` gets its feasibility hypothesis from
+    `hfeas` without naming `net` or `m` explicitly (avoiding a `cases m`
+    on a hypothesis that outlives the match). -/
+theorem HonestMove.Feasible.calls {p : Participant} {net : NetworkState E p} {m : HonestMove E}
+    (hfeas : m.Feasible net) : ∀ op ∈ m.calls, op.HonestFeasible net := by
+  cases m with
+  | react r => exact hfeas
+  | wait dt => simp [HonestMove.calls]
+
 /-- Over a whole adversary round, `funded_entry_step`'s invariant holds, and
-    the round also keeps `Nitro.participant`-reachability (each successful
-    step is one of `T.feasible`'s moves, `Machine.Reachable.tail`). Used by
-    `funded_entry_unbeatable`. -/
+    the round also keeps `Nitro.participant`-reachability: a `land` is the
+    machine's own second disjunct (`op.HonestFeasible`, carried this far,
+    one step at a time, by `Op.HonestFeasible.applyAdv`, from every call
+    still pending at the round's start — the caller's hypothesis); a
+    `tick`/`other` step is the third disjunct, `T.feasible` directly
+    (`Machine.Reachable.tail`). Used by `funded_entry_unbeatable`. -/
 theorem funded_entry_round {apps : Apps E} {p : Participant} {T : Threat E p} (c : FixedPart)
     (d : E) :
-    ∀ {net net' : NetworkState E p} {advs : List (AdvMove E)},
-      T.FeasibleSeq apps net advs net' →
+    ∀ {net net' : NetworkState E p} {t : Time} {pending : List (Op E)},
+      Threat.RoundSeq apps T t pending net net' →
+      (∀ op ∈ pending, op.HonestFeasible net) →
       (Nitro.participant apps T).Reachable net →
       ∀ {o : Allocation E} {amt : Coins},
         net.chain.finalOutcome c.address = some (.allocation o) →
@@ -2885,68 +2781,98 @@ theorem funded_entry_round {apps : Apps E} {p : Participant} {T : Threat E p} (c
           o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
           net.chain.balances.get (.external d) + amt ≤
             net'.chain.balances.get (.external d) + amt' := by
-  intro net net' advs hseq
+  intro net net' t pending hseq
   induction hseq with
-  | nil => intro hR o amt hf hd; exact ⟨hR, o, amt, hf, le_refl _, hd, le_refl _⟩
-  | @cons net1 net2 m rest hfeas hrest ih =>
-    intro hR o amt hf hd
-    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps m) :=
-      Machine.Reachable.tail hR (Or.inr ⟨m, hfeas, rfl⟩)
-    have hstep : ∃ o1 amt1, (net1.applyAdv apps m).chain.finalOutcome c.address =
+  | nil => intro _ hR o amt hf hd; exact ⟨hR, o, amt, hf, le_refl _, hd, le_refl _⟩
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    intro hpfeas hR o amt hf hd
+    have hopfeas : op.HonestFeasible net1 := hpfeas op (by simp [hsplit])
+    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps (.land op)) :=
+      Machine.Reachable.tail hR (Or.inr (Or.inl ⟨op, hopfeas, rfl⟩))
+    have hpfeas' : ∀ op' ∈ l1 ++ l2, op'.HonestFeasible (net1.applyAdv apps (.land op)) := by
+      intro op' hop'
+      refine Op.HonestFeasible.applyAdv (.land op) (hpfeas op' ?_)
+      simp only [hsplit, List.mem_append, List.mem_cons] at hop' ⊢
+      tauto
+    have hstep : ∃ o1 amt1, (net1.applyAdv apps (.land op)).chain.finalOutcome c.address =
         some (.allocation o1) ∧ o1.total ≤ o.total ∧
         o1.find (.external d) = some ⟨.external d, .alloc amt1⟩ ∧
         net1.chain.balances.get (.external d) + amt ≤
-          (net1.applyAdv apps m).chain.balances.get (.external d) + amt1 := by
-      cases m with
-      | chain caller op =>
-        cases hm : net1.chain.apply apps caller op with
-        | none => exact ⟨o, amt, by simp only [NetworkState.applyAdv, hm]; exact hf, le_refl _,
-            hd, by simp only [NetworkState.applyAdv, hm]; exact le_refl _⟩
-        | some s' =>
-          obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_step hf hd hm
-          exact ⟨o1, amt1, by simp only [NetworkState.applyAdv, hm]; exact hf1, htot1,
-            hd1, by simp only [NetworkState.applyAdv, hm]; exact hle1⟩
-      | deliver ss =>
-        exact ⟨o, amt, by simp only [NetworkState.applyAdv]; exact hf, le_refl _,
-          hd, by simp only [NetworkState.applyAdv]; exact le_refl _⟩
-      | tick dt =>
-        refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
-        · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
-            ChannelStatus.finalOutcome_mono
-              (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
-                simpa [FixedPart.address_eq] using hf)
-              (Nat.le_add_right net1.chain.now dt)
-        · simp [NetworkState.applyAdv]
+          (net1.applyAdv apps (.land op)).chain.balances.get (.external d) + amt1 := by
+      cases hm : net1.chain.apply apps p op with
+      | none => exact ⟨o, amt, by simp only [NetworkState.applyAdv, hm]; exact hf, le_refl _,
+          hd, by simp only [NetworkState.applyAdv, hm]; exact le_refl _⟩
+      | some s' =>
+        obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_step hf hd hm
+        exact ⟨o1, amt1, by simp only [NetworkState.applyAdv, hm]; exact hf1, htot1,
+          hd1, by simp only [NetworkState.applyAdv, hm]; exact hle1⟩
     obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := hstep
-    obtain ⟨hR2, o2, amt2, hf2, htot2, hd2, hle2⟩ := ih hR1 hf1 hd1
+    obtain ⟨hR2, o2, amt2, hf2, htot2, hd2, hle2⟩ := ih hpfeas' hR1 hf1 hd1
     exact ⟨hR2, o2, amt2, hf2, le_trans htot2 htot1, hd2, le_trans hle1 hle2⟩
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hpfeas hR o amt hf hd
+    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps (.tick dt)) :=
+      Machine.Reachable.tail hR (Or.inr (Or.inr ⟨.tick dt, hfeas, rfl⟩))
+    have hpfeas' : ∀ op' ∈ pending, op'.HonestFeasible (net1.applyAdv apps (.tick dt)) :=
+      fun op' hop' => Op.HonestFeasible.applyAdv (.tick dt) (hpfeas op' hop')
+    refine ih hpfeas' hR1 ?_ ?_
+    · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
+        ChannelStatus.finalOutcome_mono
+          (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
+            simpa [FixedPart.address_eq] using hf)
+          (Nat.le_add_right net1.chain.now dt)
+    · simpa [NetworkState.applyAdv] using hd
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hpfeas hR o amt hf hd
+    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps m) :=
+      Machine.Reachable.tail hR (Or.inr (Or.inr ⟨m, hfeas, rfl⟩))
+    have hpfeas' : ∀ op' ∈ pending, op'.HonestFeasible (net1.applyAdv apps m) :=
+      fun op' hop' => Op.HonestFeasible.applyAdv m (hpfeas op' hop')
+    cases m with
+    | chain caller op =>
+      cases hm : net1.chain.apply apps caller op with
+      | none =>
+        have hf' : (net1.applyAdv apps (.chain caller op)).chain.finalOutcome c.address =
+            some (.allocation o) := by simp only [NetworkState.applyAdv, hm]; exact hf
+        have hd' : o.find (.external d) = some ⟨.external d, .alloc amt⟩ := hd
+        have hres := ih hpfeas' hR1 hf' hd'
+        simpa [NetworkState.applyAdv, hm] using hres
+      | some s' =>
+        obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_step hf hd hm
+        have hf1' : (net1.applyAdv apps (.chain caller op)).chain.finalOutcome c.address =
+            some (.allocation o1) := by simp only [NetworkState.applyAdv, hm]; exact hf1
+        have hd1' : o1.find (.external d) = some ⟨.external d, .alloc amt1⟩ := hd1
+        obtain ⟨hR2, o2, amt2, hf2, htot2, hd2, hle2⟩ := ih hpfeas' hR1 hf1' hd1'
+        simp only [NetworkState.applyAdv, hm] at hle2
+        exact ⟨hR2, o2, amt2, hf2, le_trans htot2 htot1, hd2, le_trans hle1 hle2⟩
+    | deliver ss =>
+      have hf' : (net1.applyAdv apps (.deliver ss)).chain.finalOutcome c.address =
+          some (.allocation o) := by simp only [NetworkState.applyAdv]; exact hf
+      have hd' : o.find (.external d) = some ⟨.external d, .alloc amt⟩ := hd
+      have hres := ih hpfeas' hR1 hf' hd'
+      simpa [NetworkState.applyAdv] using hres
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
 
-/-- One honest move keeps `funded_entry_step`'s invariant: a `.chain op` is
-    `funded_entry_step` with caller `p`; `.send` never touches the chain;
-    `.wait` only advances the clock (`ChannelStatus.finalOutcome_mono`). Used
-    by `funded_entry_unbeatable`. -/
-theorem funded_entry_honest_step {apps : Apps E} {p : Participant}
+/-- One honest move keeps `funded_entry_step`'s invariant: a `.react r`
+    never touches the chain at all (`NetworkState.applyHonest`; its calls
+    land separately, through `Threat.RoundSeq.land`, which
+    `funded_entry_round`'s own `land` case already covers); `.wait` only
+    advances the clock (`ChannelStatus.finalOutcome_mono`). Used by
+    `funded_entry_unbeatable`. -/
+theorem funded_entry_honest_step {p : Participant}
     {net : NetworkState E p} (m : HonestMove E) {c : FixedPart} {o : Allocation E}
     {d : E} {amt : Coins}
     (hf : net.chain.finalOutcome c.address = some (.allocation o))
     (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
-    ∃ o' amt', (net.applyHonest apps m).chain.finalOutcome c.address = some (.allocation o') ∧
+    ∃ o' amt', (net.applyHonest m).chain.finalOutcome c.address = some (.allocation o') ∧
       o'.total ≤ o.total ∧
       o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
       net.chain.balances.get (.external d) + amt ≤
-        (net.applyHonest apps m).chain.balances.get (.external d) + amt' := by
+        (net.applyHonest m).chain.balances.get (.external d) + amt' := by
   cases m with
-  | chain op =>
-    cases hm : net.chain.apply apps p op with
-    | none => exact ⟨o, amt, by simp only [NetworkState.applyHonest, hm]; exact hf, le_refl _,
-        hd, by simp only [NetworkState.applyHonest, hm]; exact le_refl _⟩
-    | some s' =>
-      obtain ⟨o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_step hf hd hm
-      exact ⟨o1, amt1, by simp only [NetworkState.applyHonest, hm]; exact hf1, htot1, hd1,
-        by simp only [NetworkState.applyHonest, hm]; exact hle1⟩
-  | send st =>
-    exact ⟨o, amt, by simp only [NetworkState.applyHonest]; exact hf, le_refl _, hd,
-      by simp only [NetworkState.applyHonest]; exact le_refl _⟩
+  | react r =>
+    exact ⟨o, amt, by simp only [NetworkState.applyHonest]; exact hf, le_refl _, hd, le_refl _⟩
   | wait dt =>
     refine ⟨o, amt, ?_, le_refl _, hd, ?_⟩
     · simpa [NetworkState.applyHonest, FixedPart.address_eq] using
@@ -2956,28 +2882,19 @@ theorem funded_entry_honest_step {apps : Apps E} {p : Participant}
           (Nat.le_add_right net.chain.now dt)
     · simp [NetworkState.applyHonest]
 
-/-- One round of adversary play keeps an honest move feasible: `.send`/
-    `.wait` are always feasible; a non-`deposit` `.chain op`'s feasibility is
-    "every proof state is held", and a round only grows `received` while
-    leaving `sent` unchanged (`Threat.FeasibleSeq.sent_eq`,
-    `Threat.FeasibleSeq.received_subset`), so `NetworkState.Holds.mono`
-    carries it forward; `deposit` is infeasible either way. Used by
-    `funded_entry_unbeatable`: the committed move's own feasibility (checked
-    before the round) still holds at the state it is actually applied to
-    (after the round). -/
-theorem HonestMove.Feasible.round {apps : Apps E} {p : Participant} {T : Threat E p}
-    {net net' : NetworkState E p} {advs : List (AdvMove E)}
-    (hseq : T.FeasibleSeq apps net advs net') {m : HonestMove E} (hfeas : m.Feasible net) :
-    m.Feasible net' := by
+
+/-- One round of adversary play keeps an honest move feasible: `.wait` is
+    always feasible; a `.react r`'s feasibility is "every call in `r.calls`
+    is `Op.HonestFeasible`", each carried forward by `Op.HonestFeasible.round`.
+    Used by `funded_entry_unbeatable`: the committed move's own feasibility
+    (checked before the round) still holds at the state it is actually
+    applied to (after the round). -/
+theorem HonestMove.Feasible.round {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    {pending : List (Op E)} {net net' : NetworkState E p}
+    (hseq : Threat.RoundSeq apps T t pending net net') {m : HonestMove E}
+    (hfeas : m.Feasible net) : m.Feasible net' := by
   cases m with
-  | chain op =>
-    cases op with
-    | deposit a e x => exact hfeas
-    | transfer _ _ | reclaim _ _ | challenge _ _ _ | checkpoint _ _ _ | conclude _ _ =>
-      exact fun ss hss => NetworkState.Holds.mono (Threat.FeasibleSeq.sent_eq hseq).symm
-        (Threat.FeasibleSeq.received_subset hseq) (hfeas ss hss)
-    | tick dt => exact fun ss hss => nomatch hss
-  | send st => trivial
+  | react r => exact fun op hop => Op.HonestFeasible.round hseq (hfeas op hop)
   | wait dt => trivial
 
 /-- A `FundedFor`-shaped `UnbeatableIn` tree, run from a state where `c` is
@@ -3013,12 +2930,13 @@ theorem funded_entry_unbeatable {apps : Apps E} {p : Participant} {T : Threat E 
   | move m hm hfeas _ ih =>
     intro hR o amt hf hd
     refine .move m hm hfeas ?_
-    intro advs net' hround
-    obtain ⟨hR1, o1, amt1, hf1, htot1, hd1, hle1⟩ := funded_entry_round c d hround.1 hR hf hd
-    have hR2 : (Nitro.participant apps T).Reachable (net'.applyHonest apps m) :=
+    intro net' hround
+    obtain ⟨hR1, o1, amt1, hf1, htot1, hd1, hle1⟩ :=
+      funded_entry_round c d hround.1 hfeas.calls hR hf hd
+    have hR2 : (Nitro.participant apps T).Reachable (net'.applyHonest m) :=
       Machine.Reachable.tail hR1 (Or.inl ⟨m, HonestMove.Feasible.round hround.1 hfeas, rfl⟩)
     obtain ⟨o2, amt2, hf2, htot2, hd2, hle2⟩ := funded_entry_honest_step m hf1 hd1
-    refine UnbeatableIn.imp ?_ (ih advs net' hround hR2 hf2 hd2)
+    refine UnbeatableIn.imp ?_ (ih net' hround hR2 hf2 hd2)
     rintro net'' ⟨hR3, o3, amt3, hf3, htot3, hG3, hd3, hle3⟩
     exact ⟨hR3, o3, amt3, hf3, le_trans htot3 (le_trans htot2 htot1), hG3, hd3,
       le_trans hle1 (le_trans hle2 hle3)⟩
@@ -3058,20 +2976,14 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
   exact le_trans hle' hle''
 
 
-/-- One round of adversary play keeps `ConsensusSafe`. Any candidate on
-    channel `c` that carries `p`'s genuine signature (`ByAll`, consensus app,
-    `p ∈ c.participants`) is, via `hbounds.unforgeable`, a state `p` itself
-    sent, so `hsent` bounds it: below `ss.state.turnNum`, exactly
-    `ss.state`, or at outcome `Ω2` — and, if final, at outcome `Ω1` or `Ω2`
-    outright. A `conclude` on `c` always needs a final candidate, so it
-    always lands on `Ω1` or `Ω2`. A `checkpoint` on `c` always clears to
-    `.open`, safe regardless of its candidate. A fresh `challenge`/
-    re-`challenge` on `c` lands at a candidate that is itself safe, or
-    strictly below `ss.state.turnNum` with a deadline `c.challengeDuration
-    ≥ 2 * T.ε` past the round's own clock — enough to survive this round
-    (`hεbound`) with a full round `T.ε` to spare for `p` to answer it.
-    Used by `consensus_enabled_outcomes`. -/
-theorem consensus_round_safe {apps : Apps E} {p : Participant} {T : Threat E p}
+/-- `ConsensusSafe` over a round's play with nothing of `p`'s own still
+    pending: every operation that reaches channel `c` here is an adversary
+    one, not `p`'s own checkpoint, so the invariant carries exactly as
+    `hsupp`/`hconclude`/`hcheckpoint`/`hchallenge` bound it, with no land
+    case to handle (`pending = []` rules it out structurally). Used by
+    `consensus_round_safe` for the adversary play before `p`'s own
+    checkpoint call lands, and after. -/
+theorem consensus_round_safe_nil {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω1 Ω2 : Outcome E}
     (hc : apps c.appDef = consensusRules) (hp : p ∈ c.participants) (hΩ1 : ss.state.outcome = Ω1)
     (hdur : 2 * T.ε ≤ c.challengeDuration) :
