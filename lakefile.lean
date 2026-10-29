@@ -10,3 +10,9 @@ require mathlib from git
 
 @[default_target]
 lean_lib «ArmadaLean» where
+  -- `ArmadaLean.Machines` (`ArmadaLean/Machines.lean`) is a second root, not
+  -- an import of `ArmadaLean`: it imports `ArmadaLean` itself, to scan the
+  -- whole checked environment for `Machine` values, so `lake build` must
+  -- build it independently (`ArmadaLean.lean` cannot import it back without
+  -- a cycle). See `ArmadaLean/Machines.lean`'s own doc comment.
+  roots := #[`ArmadaLean, `ArmadaLean.Machines]

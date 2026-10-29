@@ -14,8 +14,9 @@
 # vacuous acceptance predicate (any no-op program returns exit 0); this
 # gives a pebble a field to name instead. Fields: build_ok, sorry (the
 # fully-qualified name of every theorem whose own proof body still carries
-# sorry), sorry_count, axioms_ok, signatures_ok, nonvacuity_ok, and
-# theorem_under_test (the optional THEOREM_NAME argument, echoed back
+# sorry), sorry_count, axioms_ok, signatures_ok, nonvacuity_ok, reach_ok (the
+# reachability gate, check 7 below), and theorem_under_test (the optional
+# THEOREM_NAME argument, echoed back
 # unconditionally — not a lookup — so a `then` predicate can pair it with
 # `sorry` via `{"op": "not_member", "elem": "theorem_under_test",
 # "collection": "sorry"}`, exophial `then_ops.py`'s member-family shape),
@@ -54,7 +55,14 @@
 #      `python3 scripts/sigs.py $(find ArmadaLean -name '*.lean' | sort) > scripts/sigs-baseline.tsv`.
 #   6. The Nitro non-vacuity witness module (ArmadaLean/Nitro/NonVacuity.lean)
 #      builds with no sorry (verification.md section 5a).
-#   7. Prints `SORRY <fully.qualified.name>` for every theorem whose own
+#   7. Reachability (operator rulings 2026-10-29, `armada-laconic`
+#      labbook/2026-10-29-nitro-reachability-ruling.md and
+#      labbook/2026-10-29-machine-types-for-approval.md): every approved
+#      theorem (outside NonVacuity.lean) whose statement names a system
+#      state type (ArmadaLean/Machines.lean's scanned registry) also names
+#      a reachability predicate, or scripts/reach-exempt.tsv exempts it by
+#      reviewed reason. scripts/reach.py carries the full rule.
+#   8. Prints `SORRY <fully.qualified.name>` for every theorem whose own
 #      proof body still carries a literal `sorry`, then `SORRY_COUNT <n>`.
 set -u
 
@@ -168,7 +176,23 @@ if [ -f ArmadaLean/Nitro/NonVacuity.lean ]; then
   say "NonVacuity examples: $nv"
 fi
 
-# 7. SORRY report: one observable line per theorem that still carries
+# 7. Reachability: every approved theorem outside NonVacuity.lean whose
+#    signature names a system state type also names a reachability
+#    predicate, or scripts/reach-exempt.tsv exempts it.
+"$LAKE" env lean ArmadaLean/Machines.lean > "$OUT/machines.txt" 2>"$OUT/machines.err"
+machines_rc=$?
+if [ "$machines_rc" -ne 0 ] || ! grep -q "^MACHINE " "$OUT/machines.txt"; then
+  say "FAIL reach ArmadaLean/Machines.lean did not produce a machine registry (see $OUT/machines.err)"
+  fail=1; reach_ok=false
+else
+  python3 scripts/reach.py scripts/sigs-baseline.tsv "$OUT/sigs-now.tsv" "$OUT/machines.txt" \
+    scripts/reach-exempt.tsv > "$OUT/reach.txt" 2>&1
+  reach_rc=$?
+  if [ "$JSON_MODE" -eq 1 ]; then cat "$OUT/reach.txt" >&2; else cat "$OUT/reach.txt"; fi
+  if [ "$reach_rc" -ne 0 ]; then fail=1; reach_ok=false; else say "PASS reach"; reach_ok=true; fi
+fi
+
+# 8. SORRY report: one observable line per theorem that still carries
 #    sorry, plus a count. See the file header note above.
 python3 scripts/sorry_report.py $LEAN_FILES > "$OUT/sorry-report.txt"
 if [ "$JSON_MODE" -eq 1 ]; then
@@ -177,18 +201,18 @@ else
   cat "$OUT/sorry-report.txt"
 fi
 
-# 8. Line counts (report only; current tree — the gate container carries no
+# 9. Line counts (report only; current tree — the gate container carries no
 #    .git to diff a baseline against, see section 5's note).
 for f in ArmadaLean/PoolSafety.lean ArmadaLean/PoolOwned.lean ArmadaLean/Nitro/Liveness.lean; do
   n=$(wc -l < "$f"); say "LINES $f now=$n"
 done
 
 if [ "$JSON_MODE" -eq 1 ]; then
-  python3 - "$OUT/sorry-report.txt" "$build_ok" "$axioms_ok" "$signatures_ok" "$nonvacuity_ok" "$THEOREM_UNDER_TEST" <<'PY'
+  python3 - "$OUT/sorry-report.txt" "$build_ok" "$axioms_ok" "$signatures_ok" "$nonvacuity_ok" "$reach_ok" "$THEOREM_UNDER_TEST" <<'PY'
 import json
 import sys
 
-sorry_report_path, build_ok, axioms_ok, signatures_ok, nonvacuity_ok, theorem = sys.argv[1:7]
+sorry_report_path, build_ok, axioms_ok, signatures_ok, nonvacuity_ok, reach_ok, theorem = sys.argv[1:8]
 names = []
 count = 0
 for line in open(sorry_report_path, encoding="utf-8"):
@@ -205,6 +229,7 @@ obj = {
     "axioms_ok": axioms_ok == "true",
     "signatures_ok": signatures_ok == "true",
     "nonvacuity_ok": nonvacuity_ok == "true",
+    "reach_ok": reach_ok == "true",
     "theorem_under_test": theorem,
     "theorem_in_sorry": bool(theorem) and any(
         n == theorem or n.endswith("." + theorem) for n in names

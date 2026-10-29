@@ -1,0 +1,86 @@
+# Reachability-gate exemptions (scripts/reach.py). FULLNAME<TAB>REASON.
+# A row names an in-scope theorem (ArmadaLean.Nitro.Safety.lean, PoolSafety.lean,
+# ArmadaLean.Nitro.Liveness.lean) whose statement is universally quantified over its
+# machine's state type with no Reachable* hypothesis, reviewed and found to hold for
+# every value of that type, not only reachable ones. Two source audits, both dated
+# 2026-10-29: armada-laconic .scratch/reach-exempt-pool-lemmas.tsv (Pool.machine rows,
+# the four can-happen theorems dropped -- PoolSafety.lean now states them over
+# Pool.machine.Reachable, so they are REACH, not exempt) and
+# armada-laconic .scratch/safety-reach-audit.md (the 55 STRONGER-OK rows, of which 40
+# take an Adjudicator E argument and so are in scope; the other 15 take none and are
+# out of scope -- not listed here, per reach.py's own scope rule). Four Liveness.lean
+# theorems hold for every Adjudicator E by the same review (reason: "reads no network
+# state; one operation or arithmetic"); the other two Liveness theorems in that review
+# take no Adjudicator E argument and are out of scope.
+step_preserves_invariant	one-step preservation; holds for every state
+spent_monotone	one-step monotonicity; holds for every state
+spend_live_exact	one-step frame on live; holds for every state
+transact_unshield_exact	constructs one Step.transact from its own hypotheses; holds for every state
+shield_creates_exactly	constructs one Step.shield from its own hypotheses; holds for every state
+step_rootsAt_shape	one-step frame on rootsAt'; holds for every state
+step_leavesAt_rootsAt_matches	one-step frame, wraps insertLeaves_rootsAt_matches_leavesAt; holds for every state
+step_leavesAt_capacity_preserved	one-step preservation; holds for every state
+step_leavesAt_stable	one-step frame on a fixed leaf position; holds for every state
+step_preserves_live_spent_invariant	one-step preservation; holds for every state
+step_live_leaf_matches	one-step preservation; holds for every state
+step_preserves_live_values_spendable	one-step preservation; holds for every state
+step_feeRatio	one-step preservation (no Step writes feeRatio); holds for every state
+ArmadaLean.Nitro.Adjudicator.statusOf_of_status	consequence of s.status = t.status; holds for every state
+ArmadaLean.Nitro.Adjudicator.mode_eq	rfl-level unfolding of mode; holds for every state
+ArmadaLean.Nitro.Adjudicator.deposit_some	the exact effect of one successful deposit; holds for every state
+ArmadaLean.Nitro.Adjudicator.transfer_some	the exact effect of one successful transfer; holds for every state
+ArmadaLean.Nitro.Adjudicator.reclaim_some	the exact effect of one successful reclaim; holds for every state
+ArmadaLean.Nitro.Adjudicator.challenge_some	the exact effect of one successful challenge; holds for every state
+ArmadaLean.Nitro.Adjudicator.checkpoint_some	the exact effect of one successful checkpoint; holds for every state
+ArmadaLean.Nitro.Adjudicator.conclude_some	the exact effect of one successful conclude; holds for every state
+ArmadaLean.Nitro.Adjudicator.applyAll_append	fold-append law for applyAll; holds for every state
+ArmadaLean.Nitro.Adjudicator.applyAll_singleton_of_some	one-op applyAll unfolding; holds for every state
+ArmadaLean.Nitro.Adjudicator.apply_now_le	one-step monotonicity of the clock; holds for every state
+ArmadaLean.Nitro.Adjudicator.finalizedWith_apply	one-step preservation of a finalized outcome; holds for every state
+ArmadaLean.Nitro.Adjudicator.finalizedWith_stable	multi-step preservation from an arbitrary start state (ReflTransGen, not chain genesis); holds for every state
+ArmadaLean.Nitro.Adjudicator.heldInv_genesis	holds of the one concrete genesis state; the base case Reachable's own induction needs
+ArmadaLean.Nitro.Adjudicator.heldInv_step	one-step preservation; holds for every state
+ArmadaLean.Nitro.deposit_effects	Hypothesis is `s.deposit c.address e x = some s'` directly; `Adjudicator.deposit` (`Adjudicator.lean:104-112`) is a pure match on `a`, so the conclusion follows from the definition for any `s`, reachable or not.
+ArmadaLean.Nitro.deposit_can_happen	`simp [Adjudicator.deposit, hk]`: unfolds the deposit definition directly for any `s`; `hk : c.kind = .ledger` is an explicit premise, not a derived invariant.
+ArmadaLean.Nitro.deposit_requires_expectedHeld	Direct unfold of `Adjudicator.deposit`'s guard (`Adjudicator.lean:108`); holds for any `s`.
+ArmadaLean.Nitro.deposits_in_order_succeed	Hypothesis is `s.balances.get c.address = 0` for an arbitrary `s`, not `Reachable`; proved by `deposit_can_happen` (a universal fact) applied repeatedly by induction on `k`.
+ArmadaLean.Nitro.deposit_to_external_fails	`rfl`: `Adjudicator.deposit` always returns `none` on `.external` (`Adjudicator.lean:112`); holds for every `s`.
+ArmadaLean.Nitro.channel_balance_falls_only_by_redistribution	Case split on `op`; deposit case derives a contradiction purely from `Adjudicator.deposit`'s effect on `balances.get` (always adds or leaves unchanged, `Adjudicator.lean:104-112`); no invariant used.
+ArmadaLean.Nitro.paid_out_monotone	Hypothesis `h : Step apps s s'` only, no `Reachable`; each `Op` case is proved by unfolding `payTo`/`transfer`/`reclaim` (`Adjudicator.lean:119-203`), a deterministic syntactic effect true from any starting `s`.
+ArmadaLean.Nitro.transfer_can_happen	Direct computation from `Adjudicator.transfer` (`Adjudicator.lean:140-152`) given its own preconditions (`ha`, `hbf`, `hf`, `hb`) as explicit hypotheses on an arbitrary `s`; true whether or not `s` is reachable.
+ArmadaLean.Nitro.transfer_fails_otherwise	By cases on `s.transfer a b`; the `some` branch is refuted purely from `Adjudicator.transfer_some`'s destructuring, for any `s`.
+ArmadaLean.Nitro.transfer_zero_moves_nothing	Hypotheses are `s.transfer a b = some s'` and a `paidTo = 0` side-condition on `s`, both explicit on an arbitrary `s`, not `Reachable`; the "operator ruling 2026-10-27" doc-comment note already explains the channel-kind guard is enforced inside `Adjudicator.transfer` itself, so no separate reachability hypothesis is needed.
+ArmadaLean.Nitro.transfer_requires_finalized	Direct unfold of `Adjudicator.transfer`'s branch on `s.finalOutcome` (`Adjudicator.lean:143-144`); true for any `s`.
+ArmadaLean.Nitro.redistribution_ignores_caller	`transfer`/`reclaim` read no `caller` argument at all (`Adjudicator.lean:140-203`); true for any `s`, `c1`, `c2`.
+ArmadaLean.Nitro.FinalizedTwoWays.mono	A monotonicity helper on the `FinalizedTwoWays` predicate (`Safety.lean:504-509`), which already carries its own `Reachable apps s0` existential; the lemma itself needs no extra reachability hypothesis on `s`/`s'`, it only threads the one already inside `h`.
+ArmadaLean.Nitro.statusOrigin_of_eq	A transport lemma along `s'.statusOf c = s.statusOf c`; inherits whatever `StatusOrigin` fact `ho` already supplies, adds no new reachability assumption.
+ArmadaLean.Nitro.statusOrigin_redistribute	Same pattern as `statusOrigin_of_eq`: transports an existing `StatusOrigin` fact `ho` through a redistribution step; no independent reachability hypothesis.
+ArmadaLean.Nitro.finalized_permanent	Hypothesis `h : Step apps s s'`, no `Reachable`; every case unfolds `ChannelStatus.mode`'s guard logic (challenge/checkpoint/conclude all refuse a finalized channel, `Adjudicator.lean:215-254`), true from any starting `s`.
+ArmadaLean.Nitro.finalized_outcome_only_redistributed	Hypothesis `h : Step apps s s'`, no `Reachable`; a structural fact about one step's effect on `finalOutcome`, proved case-by-case from the operation definitions, true from any `s`.
+ArmadaLean.Nitro.challenge_requires	`exact (Adjudicator.challenge_some h).1`: direct unfold of `Adjudicator.challenge`'s guard (`Adjudicator.lean:215-223`); true for any `s`.
+ArmadaLean.Nitro.challenge_fails_when_finalized	By cases, refuted from `Adjudicator.challenge`'s finalized-exclusion guard; true for any `s`.
+ArmadaLean.Nitro.rechallenge_equal_turn_fails	Direct unfold of the turn-number guard in `Adjudicator.challenge`; true for any `s`.
+ArmadaLean.Nitro.challenge_can_happen	`simp only [Adjudicator.challenge, if_pos …]`: exact computation from the definition given its own explicit preconditions; true for any `s`.
+ArmadaLean.Nitro.challenge_effects	Direct destructuring of `Adjudicator.challenge_some h`; true for any `s`.
+ArmadaLean.Nitro.checkpoint_requires	Direct unfold of `Adjudicator.checkpoint`'s guard (`Adjudicator.lean:232-239`); true for any `s`.
+ArmadaLean.Nitro.checkpoint_can_happen	Exact computation from the definition given its own explicit preconditions; true for any `s`.
+ArmadaLean.Nitro.turnNumRecord_monotone	Hypothesis `h : Step apps s s'`, no `Reachable`; the disjunction's second disjunct already accounts for the one case (`conclude`) that can lower the stored turn, so the fact holds unconditionally from any `s` (the doc-comment's "operator ruling 2026-10-27" note documents that this except-clause was the fix, already present in the signature).
+ArmadaLean.Nitro.conclude_requires	Direct unfold of `Adjudicator.conclude`'s guard (`Adjudicator.lean:249-254`); true for any `s`.
+ArmadaLean.Nitro.conclude_needs_all	Direct unfold of `ConclusionProof`/`SignedState.ByAll`; true for any `s`.
+ArmadaLean.Nitro.conclude_can_happen	Exact computation from the definition given its own explicit preconditions; true for any `s`.
+ArmadaLean.Nitro.conclude_moves_no_value	`Adjudicator.conclude` only writes `status` (`Adjudicator.lean:249-254`); true for any `s`.
+ArmadaLean.Nitro.timeout_finalizes	Direct unfold of `ChannelStatus.mode`/`finalOutcome` on a `.challenged` status past its deadline; pure function of the given `s.statusOf c` value, true for any `s`.
+ArmadaLean.Nitro.challenge_in_progress_before_deadline	Same pattern, before the deadline; true for any `s`.
+ArmadaLean.Nitro.tick_moves_only_time	`Adjudicator.tick` only writes `now` (`Adjudicator.lean:259-260`); `rfl` for any `s`.
+ArmadaLean.Nitro.failed_op_no_effect	`Adjudicator.applyAll` on a failed head op returns `s` unchanged by definition (`Adjudicator.lean:337-339`); true for any `s`.
+ArmadaLean.Nitro.funding_decoupled_from_rules	Explicitly compares `s` against `{ s with balances := b }` for an *arbitrary* `b` (possibly describing a balances list no real history ever produces); the theorem's point is exactly that the dispute operations (`challenge`/`checkpoint`/`conclude`/`tick`) never read `balances`, so the comparison is sound and meaningful by construction, not vacuous.
+ArmadaLean.Nitro.reclaim_requires	Direct unfold of `Adjudicator.reclaim`'s guard (`Adjudicator.lean:187-203`); true for any `s`.
+ArmadaLean.Nitro.reclaim_effects	Hypotheses `hlr`, `hlv`, `hrv`, `hne`, `hdedup` are explicit premises on an arbitrary `s` (not derived from `Reachable`); the doc-comment names the exact counterexamples (a self-guaranteeing ledger, a duplicate `v` entry) these premises rule out, so the stated theorem is strictly more general than a `Reachable`-gated version and holds for any `s` meeting them.
+ArmadaLean.Nitro.reclaim_can_happen	Exact computation from the definition given its own explicit preconditions; true for any `s`.
+ArmadaLean.Nitro.reclaim_fails_without_entries	By cases, refuted from `Adjudicator.reclaim`'s guard; true for any `s`.
+ArmadaLean.Nitro.mode_of_absent	Direct unfold of `Adjudicator.statusOf`'s default (`Adjudicator.lean:40-41`); true for any `s` (reachable or hand-built) whose `status` list omits `c`.
+ArmadaLean.Nitro.held_changes_only_by_deposit_payout	Case split on `op`; each non-deposit/non-redistribution case derives `s'.held = s.held` purely from the operation's definition (`challenge`/`checkpoint`/`conclude`/`tick` never write `held`); true for any `s`.
+ArmadaLean.Nitro.turbo_order_independent	reads no network state; one operation or arithmetic
+ArmadaLean.Nitro.turbo_value_exists_unique	reads no network state; one operation or arithmetic
+ArmadaLean.Nitro.ledger_topup_deposit_funds	reads no network state; one operation or arithmetic
+ArmadaLean.Nitro.satp_reclaim_credits_intermediary	reads no network state; one operation or arithmetic
