@@ -1,0 +1,91 @@
+{
+  "id": "derived-aln-c03",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `satp_intermediary_before_round2` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json satp_intermediary_before_round2` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `satp_intermediary_before_round2`'s proof body is `sorry`. `scripts/check.sh --json satp_intermediary_before_round2` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json satp_intermediary_before_round2` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem satp_intermediary_before_round2",
+  "restatement": "The theorem satp_intermediary_before_round2 in ArmadaLean/Nitro/Liveness.lean has a proof body that is only `sorry`, so Lean accepts the file but the claim stays unproved. The project's own gate, run as `scripts/check.sh --json satp_intermediary_before_round2`, confirms this today: it prints theorem_in_sorry as true. The requirement is to replace that `sorry` with a real, complete proof, so the same command instead prints theorem_in_sorry as false, matching the stated predicate {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. While closing the proof, the theorem's statement \u2014 its name and its full list of arguments and conclusion \u2014 must stay exactly as it reads now. Only the proof body may change.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "satp_intermediary_before_round2's proof body must no longer be sorry. scripts/check.sh --json satp_intermediary_before_round2 must print theorem_in_sorry as false, matching {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's declared statement, exactly as it reads now in ArmadaLean/Nitro/Liveness.lean, must not change."
+    }
+  ],
+  "goal": "Replace the sorry proof body of satp_intermediary_before_round2 with a complete proof, without changing the theorem's stated claim.",
+  "acceptance_criteria": [
+    "Running the project's check command on this theorem shows its proof no longer uses the sorry placeholder.",
+    "The theorem's full declared statement, word for word, still appears in the file, unchanged."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check command on this theorem shows its proof no longer uses the sorry placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's full declared statement, word for word, still appears in the file, unchanged."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check command on this theorem shows its proof no longer uses the sorry placeholder.",
+      "proves": "Proves satp_intermediary_before_round2 now has a real, complete proof instead of a sorry placeholder.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_intermediary_before_round2"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The theorem's full declared statement, word for word, still appears in the file, unchanged.",
+      "proves": "Proves the theorem's claim was not altered while its proof was being completed.",
+      "restatement_clause_id": "c2",
+      "type": "grep",
+      "pattern": "theorem satp_intermediary_before_round2 \\(apps : Apps E\\) \\{P : Participant\\} \\(T : Threat E P\\)",
+      "additional_patterns": [
+        "\\(A : Assumptions apps P T\\) \\(r : Route E\\) \\(hr : r\\.WellFormed apps\\) \\(i : Nat\\) \\(hi : 1 \u2264 i\\)",
+        "\\(hin : i \\+ 1 < r\\.peers\\.length\\) \\(hP : r\\.peers\\[i\\]\\? = some P\\)",
+        "\\(Lm Lp : FixedPart\\) \\(hLm : r\\.ledgers\\[i - 1\\]\\? = some Lm\\) \\(hLp : r\\.ledgers\\[i\\]\\? = some Lp\\)",
+        "\\(hdur : 2 \\* T\\.\u03b5 \u2264 Lm\\.challengeDuration \u2227 2 \\* T\\.\u03b5 \u2264 Lp\\.challengeDuration\\)",
+        "\\(om op : Allocation E\\) \\(balm balp : Coins\\)",
+        "\\(hom : r\\.LedgerBeforeRound2 om P balm\\) \\(hop : r\\.LedgerBeforeRound2 op P balp\\)",
+        "\\(net : NetworkState E P\\) \\(hHm : HoldsLatestLedger net Lm om\\) \\(hHp : HoldsLatestLedger net Lp op\\)",
+        "\\(hpend : net\\.DeadlineAfter Lm T\\.\u03b5 \u2227 net\\.DeadlineAfter Lp T\\.\u03b5\\)",
+        "\\(hchain : net\\.chain\\.finalizedWith Lm\\.address = none \u2227",
+        "net\\.chain\\.finalizedWith Lp\\.address = none\\) :",
+        "Unbeatable apps T \\(IntermediaryRecovered r Lm Lp balm balp",
+        "\\(net\\.chain\\.balances\\.get \\(\\.external \\(r\\.dest P\\)\\)\\)\\) net := by"
+      ],
+      "files": [
+        "ArmadaLean/Nitro/Liveness.lean"
+      ],
+      "count": {
+        "unit": "patterns",
+        "op": "eq",
+        "value": 13
+      },
+      "clause_id": "c2"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
