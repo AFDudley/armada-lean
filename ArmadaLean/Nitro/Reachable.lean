@@ -299,15 +299,25 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
 
 /-- The network game: at each step, some participant `p` makes one of its
     own feasible honest moves, or `p`'s own adversary `Ts.T p` makes one
-    feasible move against `p`, gated by `Network.Sendable` for a
-    delivery. Operator ruling 2026-10-29: `ReachableViews`
-    (`Nitro.network apps Ts).Reachable`, not a separate predicate. -/
+    feasible move against `p`. `Network.Sendable` gates both a `.deliver`
+    and every `.chain` operation's proof states (honest and adversary
+    alike): SATP:168 "forging cryptographic signatures is infeasible" is
+    a system-wide fact, already encoded on the chain side by
+    `ReachableSigned`'s own hypothesis (`Adjudicator.lean:331`,
+    `SignedStep`'s `hsig`); this is the same fact for the network's own
+    `sent` record, so every signature a proof state carries is genuine,
+    not only the acting view's own. Operator ruling 2026-10-29:
+    `ReachableViews` is `(Nitro.network apps Ts).Reachable`, not a
+    separate predicate. -/
 def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) where
   init := fun n => n = ⟨Adjudicator.genesis, fun _ => [], fun _ => []⟩
   step := fun n n' => ∃ p : Participant,
-    (∃ m : HonestMove E, m.Feasible (n.view p) ∧ n' = Network.applyHonest apps n p m) ∨
+    (∃ m : HonestMove E, m.Feasible (n.view p) ∧
+      (∀ op, m = .chain op → ∀ ss ∈ op.proofStates, n.Sendable ss) ∧
+      n' = Network.applyHonest apps n p m) ∨
     (∃ m : AdvMove E, (Ts.T p).feasible (n.view p) m ∧
       (∀ ss, m = .deliver ss → n.Sendable ss) ∧
+      (∀ caller op, m = .chain caller op → ∀ ss ∈ op.proofStates, n.Sendable ss) ∧
       n' = Network.applyAdv apps n p m)
 
 /-- **The chain of a reachable `Network` is reachable.** By
@@ -320,51 +330,316 @@ theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n :
     rw [hinit]
     exact Relation.ReflTransGen.refl
   · intro n n' hP hstep
-    obtain ⟨p, ⟨m, -, rfl⟩ | ⟨m, -, -, rfl⟩⟩ := hstep
+    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨m, -, -, -, rfl⟩⟩ := hstep
     · exact Network.applyHonest_chain_reachable n p m hP
     · exact Network.applyAdv_chain_reachable n p m hP
 
-/- **Finding (not proved, and not provable with the structures this draft
-    has): `(Nitro.network apps Ts).Reachable n` does not give
-    `(Network.views n).Consistent`.** `Views.Consistent`'s first conjunct
-    (`Network.views_chain_eq`) holds unconditionally. The other two do not:
+/-- **`Views.Consistent`'s third conjunct holds for every reachable
+    `Network`.** A state `p` received that names `q` as a signer is a
+    state `q` really sent. By `Machine.invariant`: at genesis every
+    `received` is empty (vacuous); a step leaves `received` untouched
+    (`.send`, `.wait`, `.tick`), touches only the mover's own `received`
+    through a `Network.Sendable`-gated `.deliver` (whose statement is
+    exactly this conjunct for the one new entry), or broadcasts a
+    `.chain` operation's `Network.Sendable`-gated proof states (same
+    argument, for every new entry at once). -/
+theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) :
+    ∀ p q : Participant, p ≠ q → ∀ r ∈ (n.views p).received, q ∈ r.signers →
+      ∃ s ∈ (n.views q).sent, s.state = r.state := by
+  refine Machine.invariant (Nitro.network apps Ts)
+    (P := fun n => ∀ p q : Participant, p ≠ q → ∀ r ∈ n.received p, q ∈ r.signers →
+      ∃ s ∈ n.sent q, s.state = r.state) ?_ ?_ n h
+  · intro n hinit p q hpq r hr
+    rw [hinit] at hr
+    simp at hr
+  · intro n n' hP hstep p q hpq r hr hqr
+    obtain ⟨p₀, ⟨m, -, hgate, rfl⟩ | ⟨m, -, hdgate, hcgate, rfl⟩⟩ := hstep
+    · cases m with
+      | chain op =>
+        cases hop : n.chain.apply apps p₀ op with
+        | none =>
+          have hsent : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
+            simp [Network.applyHonest, hop]
+          have hrecv : (Network.applyHonest apps n p₀ (.chain op)).received p = n.received p := by
+            simp [Network.applyHonest, hop]
+          rw [hsent]
+          rw [hrecv] at hr
+          exact hP p q hpq r hr hqr
+        | some s' =>
+          have hsent : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
+            simp [Network.applyHonest, hop]
+          have hrecv : (Network.applyHonest apps n p₀ (.chain op)).received p =
+              if p = p₀ then n.received p else op.proofStates ++ n.received p := by
+            simp [Network.applyHonest, hop]
+          rw [hsent]
+          rw [hrecv] at hr
+          by_cases hpp0 : p = p₀
+          · rw [if_pos hpp0] at hr
+            exact hP p q hpq r hr hqr
+          · rw [if_neg hpp0] at hr
+            rcases List.mem_append.mp hr with hnew | hold
+            · exact (hgate op rfl r hnew).1 q hqr
+            · exact hP p q hpq r hold hqr
+      | send st =>
+        have hrecv : (Network.applyHonest apps n p₀ (.send st)).received p = n.received p := by
+          simp [Network.applyHonest]
+        have hsent : (Network.applyHonest apps n p₀ (.send st)).sent q =
+            if q = p₀ then ⟨st, [p₀]⟩ :: n.sent q else n.sent q := by
+          simp [Network.applyHonest]
+        rw [hrecv] at hr
+        obtain ⟨s, hs, hseq⟩ := hP p q hpq r hr hqr
+        refine ⟨s, ?_, hseq⟩
+        rw [hsent]
+        by_cases hqp0 : q = p₀
+        · rw [if_pos hqp0]; exact List.mem_cons_of_mem _ hs
+        · rw [if_neg hqp0]; exact hs
+      | wait dt =>
+        have hrecv : (Network.applyHonest apps n p₀ (.wait dt)).received p = n.received p := by
+          simp [Network.applyHonest]
+        have hsent : (Network.applyHonest apps n p₀ (.wait dt)).sent = n.sent := by
+          simp [Network.applyHonest]
+        rw [hrecv] at hr
+        rw [hsent]
+        exact hP p q hpq r hr hqr
+    · cases m with
+      | chain caller op =>
+        cases hop : n.chain.apply apps caller op with
+        | none =>
+          have hsent : (Network.applyAdv apps n p₀ (.chain caller op)).sent = n.sent := by
+            simp [Network.applyAdv, hop]
+          have hrecv : (Network.applyAdv apps n p₀ (.chain caller op)).received p = n.received p := by
+            simp [Network.applyAdv, hop]
+          rw [hsent]
+          rw [hrecv] at hr
+          exact hP p q hpq r hr hqr
+        | some s' =>
+          have hsent : (Network.applyAdv apps n p₀ (.chain caller op)).sent = n.sent := by
+            simp [Network.applyAdv, hop]
+          have hrecv : (Network.applyAdv apps n p₀ (.chain caller op)).received p =
+              op.proofStates ++ n.received p := by
+            simp [Network.applyAdv, hop]
+          rw [hsent]
+          rw [hrecv] at hr
+          rcases List.mem_append.mp hr with hnew | hold
+          · exact (hcgate caller op rfl r hnew).1 q hqr
+          · exact hP p q hpq r hold hqr
+      | deliver ss =>
+        have hsent : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
+          simp [Network.applyAdv]
+        have hrecv : (Network.applyAdv apps n p₀ (.deliver ss)).received p =
+            if p = p₀ then ss :: n.received p else n.received p := by
+          simp [Network.applyAdv]
+        rw [hsent]
+        rw [hrecv] at hr
+        by_cases hpp0 : p = p₀
+        · rw [if_pos hpp0] at hr
+          rcases List.mem_cons.mp hr with rfl | hold
+          · exact (hdgate r rfl).1 q hqr
+          · exact hP p q hpq r hold hqr
+        · rw [if_neg hpp0] at hr
+          exact hP p q hpq r hr hqr
+      | tick dt =>
+        have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received p = n.received p := by
+          simp [Network.applyAdv]
+        have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
+          simp [Network.applyAdv]
+        rw [hrecv] at hr
+        rw [hsent]
+        exact hP p q hpq r hr hqr
 
-    - Conjunct 2 (`∀ p q, p ≠ q → ∀ ss ∈ (v p).sent, ss ∈ (v q).received`,
-      "p sent it, q has it"): false at the one-step reachable `n` built from
-      genesis by a single honest `.send st` move of `p`. `Network.applyHonest`'s
-      `.send` case touches only `n.sent`; no participant's `received`
-      changes. So `st ∈ n'.sent p` and `st ∉ n'.received q` for every `q`.
-      This is not a bug to fix: a sent, undelivered message is exactly the
-      asynchrony (front-running) the whole game models (Nitro:537-539), and
-      the coordinator's own design keeps delivery a separate adversary
-      step, never bundled with send.
-    - Conjunct 3 (`∀ p q, p ≠ q → ∀ r ∈ (v p).received, q ∈ r.signers →
-      ∃ s ∈ (v q).sent, s.state = r.state`, "a claimed signer really
-      signed"): holds for a `received` entry that arrived through
-      `Network.applyAdv`'s `.deliver` case, by `Network.Sendable`'s own
-      statement. It is not provable for an entry that arrived through the
-      `.chain` broadcast case (`Network.applyHonest`/`Network.applyAdv`):
-      that case is gated only by `HonestMove.Feasible`/`Bounds.unforgeable`,
-      which (`Strategy.lean:129-135`, `NetworkState.Unforged`) bound only
-      the acting view's OWN alleged signature, not every signer a proof
-      state names. Closing this needs a network-wide custody invariant —
-      every entry in every participant's `received`, traced back
-      transitively, resolves to a real `sent` entry — which this draft
-      does not state or prove.
+/-- Bigger `signed` lists only reach more: `SignedState.SignedIn` is
+    monotone in `signed`, so a `SignedStep` for `signed` is also one for
+    any `signed' ⊇ signed`, and `ReachableSigned` follows by induction. -/
+theorem ReachableSigned.mono {apps : Apps E} {signed signed' : List (Participant × State E)}
+    (hsub : signed ⊆ signed') {s : Adjudicator E} (h : ReachableSigned apps signed s) :
+    ReachableSigned apps signed' s := by
+  induction h with
+  | refl => exact Relation.ReflTransGen.refl
+  | tail _ hstep ih =>
+    obtain ⟨caller, op, _, _, hsig, happly⟩ := hstep
+    refine ih.tail ⟨caller, op, _, _, ?_, happly⟩
+    intro ss hss
+    obtain ⟨h1, h2⟩ := hsig ss hss
+    refine ⟨fun q hq => hsub (h1 q hq), fun v hv q hq => ?_⟩
+    obtain ⟨st, hst, hv'⟩ := h2 v hv q hq
+    exact ⟨st, hsub hst, hv'⟩
 
-    Both gaps trace to the same cause: the per-participant `Assumptions`
-    (`Strategy.lean:162`) bound only the forgery risk to the one
-    participant being modelled; a second, system-wide assumption
-    (SATP:168, "forging a signature is infeasible", read for every
-    participant at once) is what `Views.Consistent` has always stood in
-    for, and `hv : v.Consistent` stays an independent hypothesis next to
-    `hr : (Nitro.network apps Ts).Reachable n` in every multi-view theorem
-    — reachability does not subsume it. The same cause is why this file
-    does not state "every view of a reachable `Network` is
-    `Nitro.participant`-reachable": the mover's own view always is (the
-    same move `m` with the same feasibility witness the `Network` step
-    already carries), but another participant `q`'s view, when it changes
-    only through the `.chain` broadcast, needs `(Ts.T q).feasible (n.view
-    q) (.chain p op)`, which `Capable.capable` (`Strategy.lean:153`) grants
-    only given `∀ ss ∈ op.proofStates, (n.view q).Unforged ss` — the same
-    missing custody invariant. -/
+/-- **Every reachable `Network`'s chain is `ReachableSigned`**, for a
+    signed-state record that exactly mirrors its own `sent`. `Participant`
+    (`Address.lean:36`, a bare `Nat` wrapper) is infinite, so no single
+    flat list can be "all of `n.sent`" at once; the existential below is
+    the finite record one actual reachability derivation builds, carried
+    along the same induction as `Nitro.network_views_signers`:
+    `Network.Sendable`, gated on every `.chain` operation's proof states
+    by `Nitro.network`'s step, is `SignedState.SignedIn` read against
+    `n.sent` instead of `signed`, so each new chain step is a genuine
+    `SignedStep`. -/
+theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) :
+    ∃ signed : List (Participant × State E),
+      ReachableSigned apps signed n.chain ∧
+      ∀ q st, (q, st) ∈ signed ↔ ∃ s ∈ n.sent q, s.state = st := by
+  refine Machine.invariant (Nitro.network apps Ts)
+    (P := fun n => ∃ signed : List (Participant × State E),
+      ReachableSigned apps signed n.chain ∧
+      ∀ q st, (q, st) ∈ signed ↔ ∃ s ∈ n.sent q, s.state = st) ?_ ?_ n h
+  · intro n hinit
+    refine ⟨[], ?_, ?_⟩
+    · rw [hinit]; exact Relation.ReflTransGen.refl
+    · intro q st; rw [hinit]; simp
+  · intro n n' hP hstep
+    obtain ⟨signed, hreach, hmirror⟩ := hP
+    obtain ⟨p₀, ⟨m, -, hgate, rfl⟩ | ⟨m, -, -, hcgate, rfl⟩⟩ := hstep
+    · cases m with
+      | chain op =>
+        cases hop : n.chain.apply apps p₀ op with
+        | none =>
+          refine ⟨signed, ?_, ?_⟩
+          · have hc : (Network.applyHonest apps n p₀ (.chain op)).chain = n.chain := by
+              simp [Network.applyHonest, hop]
+            rw [hc]; exact hreach
+          · have hs : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
+              simp [Network.applyHonest, hop]
+            rw [hs]; exact hmirror
+        | some s' =>
+          have hc : (Network.applyHonest apps n p₀ (.chain op)).chain = s' := by
+            simp [Network.applyHonest, hop]
+          have hs : (Network.applyHonest apps n p₀ (.chain op)).sent = n.sent := by
+            simp [Network.applyHonest, hop]
+          refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
+          rw [hc]
+          refine hreach.tail ⟨p₀, op, _, _, ?_, hop⟩
+          intro ss hss
+          obtain ⟨hsg, hvoucher⟩ := hgate op rfl ss hss
+          refine ⟨fun q' hq' => ?_, fun v hv q' hq' => ?_⟩
+          · obtain ⟨s, hs', hseq⟩ := hsg q' hq'
+            exact (hmirror q' ss.state).mpr ⟨s, hs', hseq⟩
+          · obtain ⟨s, hs', hseq⟩ := hvoucher v hv q' hq'
+            exact ⟨s.state, (hmirror q' s.state).mpr ⟨s, hs', rfl⟩, hseq⟩
+      | send st =>
+        have hc : (Network.applyHonest apps n p₀ (.send st)).chain = n.chain := by
+          simp [Network.applyHonest]
+        refine ⟨(p₀, st) :: signed, ?_, ?_⟩
+        · rw [hc]; exact ReachableSigned.mono (fun x hx => List.mem_cons_of_mem _ hx) hreach
+        · intro q st'
+          have hs : (Network.applyHonest apps n p₀ (.send st)).sent q =
+              if q = p₀ then ⟨st, [p₀]⟩ :: n.sent q else n.sent q := by
+            simp [Network.applyHonest]
+          rw [hs]
+          by_cases hqp0 : q = p₀
+          · subst hqp0
+            rw [if_pos rfl]
+            simp only [List.mem_cons]
+            constructor
+            · rintro (heq | hmem)
+              · injection heq with h1 h2
+                exact ⟨⟨st, [q]⟩, Or.inl rfl, h2.symm⟩
+              · obtain ⟨s, hs', hseq⟩ := (hmirror q st').mp hmem
+                exact ⟨s, Or.inr hs', hseq⟩
+            · rintro ⟨s, (hs' | hs'), hseq⟩
+              · subst hs'
+                subst hseq
+                exact Or.inl rfl
+              · exact Or.inr ((hmirror q st').mpr ⟨s, hs', hseq⟩)
+          · rw [if_neg hqp0, List.mem_cons]
+            constructor
+            · rintro (heq | hmem)
+              · injection heq with h1 h2
+                exact absurd h1 hqp0
+              · exact (hmirror q st').mp hmem
+            · intro hmem
+              exact Or.inr ((hmirror q st').mpr hmem)
+      | wait dt =>
+        have hc : (Network.applyHonest apps n p₀ (.wait dt)).chain = n.chain.tick dt := by
+          simp [Network.applyHonest]
+        have hs : (Network.applyHonest apps n p₀ (.wait dt)).sent = n.sent := by
+          simp [Network.applyHonest]
+        refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
+        rw [hc]
+        refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
+        simp [Op.proofStates]
+    · cases m with
+      | chain caller op =>
+        cases hop : n.chain.apply apps caller op with
+        | none =>
+          refine ⟨signed, ?_, ?_⟩
+          · have hc : (Network.applyAdv apps n p₀ (.chain caller op)).chain = n.chain := by
+              simp [Network.applyAdv, hop]
+            rw [hc]; exact hreach
+          · have hs : (Network.applyAdv apps n p₀ (.chain caller op)).sent = n.sent := by
+              simp [Network.applyAdv, hop]
+            rw [hs]; exact hmirror
+        | some s' =>
+          have hc : (Network.applyAdv apps n p₀ (.chain caller op)).chain = s' := by
+            simp [Network.applyAdv, hop]
+          have hs : (Network.applyAdv apps n p₀ (.chain caller op)).sent = n.sent := by
+            simp [Network.applyAdv, hop]
+          refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
+          rw [hc]
+          refine hreach.tail ⟨caller, op, _, _, ?_, hop⟩
+          intro ss hss
+          obtain ⟨hsg, hvoucher⟩ := hcgate caller op rfl ss hss
+          refine ⟨fun q' hq' => ?_, fun v hv q' hq' => ?_⟩
+          · obtain ⟨s, hs', hseq⟩ := hsg q' hq'
+            exact (hmirror q' ss.state).mpr ⟨s, hs', hseq⟩
+          · obtain ⟨s, hs', hseq⟩ := hvoucher v hv q' hq'
+            exact ⟨s.state, (hmirror q' s.state).mpr ⟨s, hs', rfl⟩, hseq⟩
+      | deliver ss =>
+        have hc : (Network.applyAdv apps n p₀ (.deliver ss)).chain = n.chain := by
+          simp [Network.applyAdv]
+        have hs : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
+          simp [Network.applyAdv]
+        exact ⟨signed, by rw [hc]; exact hreach, by rw [hs]; exact hmirror⟩
+      | tick dt =>
+        have hc : (Network.applyAdv apps n p₀ (.tick dt)).chain = n.chain.tick dt := by
+          simp [Network.applyAdv]
+        have hs : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
+          simp [Network.applyAdv]
+        refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
+        rw [hc]
+        refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
+        simp [Op.proofStates]
+
+/-- **For a reachable `Network`, `Views.Consistent` means exactly that
+    every sent state has been delivered.** `Views.Consistent`'s first
+    conjunct holds unconditionally (`Network.views_chain_eq`), and its
+    third holds for every reachable `Network` (`Nitro.network_views_signers`).
+    What `hv : v.Consistent` adds, once `v = n.views` and `n` is
+    reachable, is exactly the delivery conjunct — the one synchrony
+    assumption the game does not get for free (Nitro:537-539). -/
+theorem Nitro.network_views_consistent_iff {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) :
+    n.views.Consistent ↔
+      ∀ p q : Participant, p ≠ q → ∀ ss ∈ (n.views p).sent, ss ∈ (n.views q).received :=
+  ⟨fun hc => hc.2.1, fun hdeliv => ⟨Network.views_chain_eq n, hdeliv, Nitro.network_views_signers h⟩⟩
+
+/- **Finding (not proved, and not provable with `Capable`/`Bounds` as they
+    stand): not every view of a reachable `Network` is
+    `Nitro.participant`-reachable.** The mover `p₀`'s own view always is
+    (the same move, with the same feasibility witness the `Network` step
+    already carries). A quiet participant `q ≠ p₀`'s view, when it only
+    changes through a `.chain caller op` broadcast (honest or adversary),
+    is `(n.view q).applyAdv apps (.chain caller op)` — the same value the
+    `Ts.T q`-adversary would produce — and `Capable.capable`
+    (`Strategy.lean:153`) now grants `(Ts.T q).feasible (n.view q) (.chain
+    caller op)` whenever `caller ≠ q`, because `Network.Sendable`
+    (required of every `.chain` operation's proof states, by the gate
+    above) is exactly `Unforged` for every signer, not only `q`'s.
+
+    It is exactly `caller ≠ q` that is not provable in general: an
+    honest move always has `caller = p₀ ≠ q` (fine), but `Nitro.network`'s
+    adversary branch (`Ts.T p₀`'s own adversary, against `p₀`) bounds only
+    `caller ≠ p₀` (`Bounds.notHonest`, `Strategy.lean:146`, read for
+    `Ts.T p₀`); it never bounds `caller` away from any OTHER participant.
+    If that adversary submits `.chain q op` (`q ≠ p₀`, a real possibility:
+    nothing on-chain authenticates `caller`, Nitro:312-313 "There is no
+    restriction on who can trigger the operations"), `q`'s own `Ts.T q`
+    cannot supply this step: `Bounds.notHonest` read for `Ts.T q` forces
+    `(Ts.T q).feasible (n.view q) (.chain q op)` false outright (a valid
+    `Ts.T q` never claims `caller = q`), and `q`'s own `HonestMove.Feasible`
+    needs `(n.view q).Holds` on every proof state, which this step does
+    not establish for `q`. The blocking field is `Bounds.notHonest` itself:
+    it is an assumption about `Ts.T q`, not a gate `Nitro.network`'s step
+    places on `caller`, so nothing stops `caller = q` from occurring under
+    `Ts.T p₀`. -/
