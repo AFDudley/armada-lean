@@ -1,0 +1,87 @@
+{
+  "id": "derived-aln-743",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `satp_lemma_3_1` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json satp_lemma_3_1` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `satp_lemma_3_1`'s proof body is `sorry`. `scripts/check.sh --json satp_lemma_3_1` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json satp_lemma_3_1` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem satp_lemma_3_1",
+  "restatement": "The worker must replace the sorry placeholder in the proof body of theorem satp_lemma_3_1, in file ArmadaLean/Nitro/Liveness.lean, with a complete proof. The worker must not change the theorem's statement: its name, its argument list, and its conclusion must stay exactly as they are now. The repo's acceptance script, scripts/check.sh, run in --json mode with the argument satp_lemma_3_1 from the repo root, is the way to check both facts from one invocation. That script prints one JSON object with two fields that matter here. The theorem_in_sorry field must read false, which happens only when satp_lemma_3_1 no longer carries a literal sorry in its own proof body. The signatures_ok field must read true, which happens only when every approved theorem's statement, including satp_lemma_3_1's, still matches the committed baseline in scripts/sigs-baseline.tsv.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "satp_lemma_3_1 in ArmadaLean/Nitro/Liveness.lean is proved with no sorry in its own proof body, which scripts/check.sh --json satp_lemma_3_1, run from the repo root, confirms by printing a JSON object whose theorem_in_sorry field is false."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement of satp_lemma_3_1 \u2014 its name, its argument list, and its conclusion \u2014 does not change, which scripts/check.sh --json satp_lemma_3_1 confirms by printing a JSON object whose signatures_ok field is true."
+    }
+  ],
+  "goal": "Prove satp_lemma_3_1 in ArmadaLean/Nitro/Liveness.lean, with no sorry in its proof body, without changing the theorem's statement.",
+  "acceptance_criteria": [
+    "Running the project's check script for satp_lemma_3_1 shows the theorem's own proof no longer has an unfinished part.",
+    "Running the project's check script for satp_lemma_3_1 confirms the theorem's name, arguments, and conclusion still match the approved baseline."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check script for satp_lemma_3_1 shows the theorem's own proof no longer has an unfinished part."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check script for satp_lemma_3_1 confirms the theorem's name, arguments, and conclusion still match the approved baseline."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check script for satp_lemma_3_1 shows the theorem's own proof no longer has an unfinished part.",
+      "proves": "Confirms satp_lemma_3_1's proof body no longer contains a sorry placeholder.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_lemma_3_1"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the project's check script for satp_lemma_3_1 confirms the theorem's name, arguments, and conclusion still match the approved baseline.",
+      "proves": "Confirms satp_lemma_3_1's statement did not change from the committed baseline.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_lemma_3_1"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
