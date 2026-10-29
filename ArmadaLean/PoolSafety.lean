@@ -2005,7 +2005,21 @@ theorem transactOwned_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep :
     (hDisjoint : ∀ e ∈ ownedSpentPositions bp.treeNumber pub w, ¬ Spends s s' w.token e) :
     SpendEnabled s' bp.treeNumber pub.merkleRoot w.token
       (ownedSpentPositions bp.treeNumber pub w) (List.ofFn pub.nullifiers) := by
-  sorry
+  have hnulls : List.ofFn pub.nullifiers =
+      (ownedSpentPositions bp.treeNumber pub w).map
+        (fun e => nullifier pub.ownerField e.1.2) := by
+    unfold ownedSpentPositions
+    rw [List.map_ofFn]
+    congr 1
+    funext i
+    exact hC.nullifiers i
+  have hTree : ∀ e ∈ ownedSpentPositions bp.treeNumber pub w, e.1.1 = bp.treeNumber := by
+    intro e he
+    unfold ownedSpentPositions at he
+    obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+    rw [← hi]
+  rw [hnulls] at hEnabled ⊢
+  exact spend_not_blocked hs hstep hTree hEnabled hDisjoint
 
 /-! ### A spend bound to an adapt contract (theorem 2 of the channel design) -/
 
