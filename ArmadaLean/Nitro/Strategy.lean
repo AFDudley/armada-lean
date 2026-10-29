@@ -108,10 +108,16 @@ inductive AdvMove (E : Type)
 
 /-- `op`'s own feasibility as one call of a reaction: `p` does not deposit
     (Nitro:779-781 analyses strategies "ignoring deposits and withdrawals",
-    and `p` has no wallet, so a deposit by `p` would create coins), and every
-    proof state `op` submits is one `p` holds. -/
+    and `p` has no wallet, so a deposit by `p` would create coins), `p`
+    does not submit `.tick` as a call (time advances only through `p`'s own
+    `HonestMove.wait` or the adversary's `Tick`, never as a pending call to
+    land — landing a `.tick` would force the clock past its own deadline
+    just to land it, making `Threat.Round` unsatisfiable for that reaction
+    and every goal vacuously "unbeatable"; soundness finding, this ruling's
+    own review), and every proof state `op` submits is one `p` holds. -/
 def Op.HonestFeasible {p : Participant} (net : NetworkState E p) : Op E → Prop
   | .deposit .. => False
+  | .tick .. => False
   | op => ∀ ss ∈ op.proofStates, net.Holds ss
 
 /-- A reaction is feasible when every one of its calls is. -/
