@@ -7,6 +7,7 @@
   changed type, with its reason) is `docs/nitro-repair-2026-10-27.md`.
 -/
 import ArmadaLean.Nitro.Safety
+import ArmadaLean.Nitro.Reachable
 
 namespace ArmadaLean.Nitro
 
@@ -41,9 +42,16 @@ def SetupPhaseAccepted (vt : State E → State E → Bool) (c : FixedPart) : Pro
     the channel L itself has enough coins in the adjudicator to cover the
     entire allocation ... A will receive all x coins allocated to them in ω."
     The strategy is one transfer. The entry of `d` is an allocation item:
-    go-nitro refuses to transfer a guarantee (MultiAssetHolder.sol:169-170). -/
+    go-nitro refuses to transfer a guarantee (MultiAssetHolder.sol:169-170).
+
+    Operator ruling 2026-10-29: `net` is a reachable network state
+    (`Nitro.participant_chain_reachable`); a reachable chain never pays a
+    virtual-kind channel's own balance out through `d` (the unreachable
+    counterexample put coins in a virtual-kind channel,
+    `Reachable.balances_virtual_zero`). -/
 theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p) (c : FixedPart) (o : Allocation E) (d : E)
+    (A : Assumptions apps p T) (net : NetworkState E p)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
     (hf : net.chain.finalOutcome c.address = some (.allocation o))
     (hfund : net.chain.DirectlyFunded c) (amt : Coins)
     (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
@@ -55,9 +63,13 @@ theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
 /-- Nitro-17, Nitro-21, Nitro-16. Nitro:480-481 and Nitro:590-593: a finalized allocation
     in a channel funded for `p` pays `d` its allocation. The channel is
     finalized already: a strategy to finalize and a strategy to fund do not
-    compose, because the second one starts from `net`. -/
+    compose, because the second one starts from `net`.
+
+    Operator ruling 2026-10-29: `net` is a reachable network state, for the
+    same reason as `directly_funded_pays`. -/
 theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p) (c : FixedPart) (o : Allocation E) (d : E)
+    (A : Assumptions apps p T) (net : NetworkState E p)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
     (hf : net.chain.finalOutcome c.address = some (.allocation o))
     (hfund : FundedFor apps T c o.total net) (amt : Coins)
     (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
@@ -2502,9 +2514,16 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     at `dA` with no wait, and `L'` is funded with `a + b + c` for `A` and
     `B`. `L'` cannot finalize before `L` pays it: no running challenge of
     `L'` ends within `2 * ε`, no participant signed a final state of `L'`,
-    and a challenge of `L'` lasts at least `2 * ε`. -/
+    and a challenge of `L'` lasts at least `2 * ε`.
+
+    Operator ruling 2026-10-29: `v` is a reachable network state
+    (`Nitro.network`); a reachable chain never holds coins in `χ`, a
+    virtual-kind channel (`Reachable.balances_virtual_zero`,
+    `Nitro.network_chain_reachable`), which is the unreachable
+    counterexample's shape. -/
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (A B : Participant) (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
+    (hv : v.Consistent) (hr : (Nitro.network apps Ts).Reachable v) (A B : Participant)
+    (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
     (hL : IsLedgerChannel apps L) (hL' : IsLedgerChannel apps L') (hLp : L.participants = [A, B])
     (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L')
     (hbal : v.HoldsBalance L.address (a + b + c + a'))
