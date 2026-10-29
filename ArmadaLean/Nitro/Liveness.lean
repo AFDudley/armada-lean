@@ -2516,14 +2516,16 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     `L'` ends within `2 * ε`, no participant signed a final state of `L'`,
     and a challenge of `L'` lasts at least `2 * ε`.
 
-    Operator ruling 2026-10-29: `v` is a reachable network state
-    (`Nitro.network`); a reachable chain never holds coins in `χ`, a
+    Operator ruling 2026-10-29: `v` is `n.views` for a reachable `Network`
+    `n` (`Nitro.network`); a reachable chain never holds coins in `χ`, a
     virtual-kind channel (`Reachable.balances_virtual_zero`,
     `Nitro.network_chain_reachable`), which is the unreachable
-    counterexample's shape. -/
+    counterexample's shape. `v` and `hv` stay as they were: the shorter
+    restatement adds `n`, `hr` and the link `hvn`, rather than rewriting
+    every one of this theorem's existing uses of `v` to `n.views`. -/
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (hv : v.Consistent) (hr : (Nitro.network apps Ts).Reachable v) (A B : Participant)
-    (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
+    (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
+    (hvn : v = n.views) (A B : Participant) (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
     (hL : IsLedgerChannel apps L) (hL' : IsLedgerChannel apps L') (hLp : L.participants = [A, B])
     (hL'p : L'.participants = [A, B]) (hLL' : L ≠ L')
     (hbal : v.HoldsBalance L.address (a + b + c + a'))

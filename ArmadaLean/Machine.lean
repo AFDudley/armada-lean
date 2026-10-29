@@ -7,9 +7,12 @@
   `Machine.Reachable` and one invariant principle (`Machine.invariant`)
   serve every machine (`docs/process.md` Stratum 2, and 4.4 on parallel
   inductions). A `System` is a composition of machines; its reachable
-  states are those of the composed machine. `Machine.interleave` below is
-  the one composition this draft needs: independent machines with no
-  shared state, each stepping on its own turn.
+  states are those of the composed machine. No composition operator lives
+  here: `Machine.interleave` (independent machines, no shared state) was
+  the wrong shape for the Nitro network game, whose participants share one
+  chain (coordinator finding 2026-10-29); `ArmadaLean/Nitro/Reachable.lean`
+  states that machine directly, over one `Network` type with one `chain`
+  field.
 -/
 import Mathlib.Logic.Relation
 
@@ -36,32 +39,3 @@ theorem Machine.invariant {S : Type} (M : Machine S) {P : S → Prop}
   induction hsteps with
   | refl => exact hP0
   | tail _ hstep ih => exact hs _ _ ih hstep
-
-/-- Compose a family of machines, one per index `i : I`, with no shared
-    state: the joint state is the dependent product `∀ i, S i`, a step
-    picks one index and lets that component machine step, and every other
-    component's state is unchanged. -/
-def Machine.interleave {I : Type} {S : I → Type} (M : ∀ i, Machine (S i)) :
-    Machine (∀ i, S i) where
-  init := fun s => ∀ i, (M i).init (s i)
-  step := fun s s' => ∃ i, (M i).step (s i) (s' i) ∧ ∀ j, j ≠ i → s j = s' j
-
-/-- A reachable state of the composed machine projects to a reachable state
-    of each component machine: either a step touched component `i`
-    (extend `i`'s own reachability by that step) or it did not (`i`'s state
-    is unchanged, `hother`). -/
-theorem Machine.interleave_reachable_component {I : Type} {S : I → Type}
-    (M : ∀ i, Machine (S i)) {s : ∀ i, S i} (h : (Machine.interleave M).Reachable s) (i : I) :
-    (M i).Reachable (s i) := by
-  obtain ⟨s₀, hinit, hsteps⟩ := h
-  refine ⟨s₀ i, hinit i, ?_⟩
-  induction hsteps with
-  | refl => exact Relation.ReflTransGen.refl
-  | @tail s1 s2 _ hstep ih =>
-    obtain ⟨j, hj, hother⟩ := hstep
-    by_cases hji : j = i
-    · subst hji
-      exact ih.tail hj
-    · have heq : s1 i = s2 i := hother i (Ne.symm hji)
-      rw [← heq]
-      exact ih
