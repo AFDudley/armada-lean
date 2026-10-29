@@ -2200,6 +2200,108 @@ theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T 
     Value apps T d net x ↔ Value apps T d { net with chain := s' } x := by
   sorry
 
+/-- Under the consensus app, a channel's status never moves while its
+    participant `p` has sent nothing: a successful `challenge`, `checkpoint`
+    or `conclude` on `c` needs a state signed by every one of `c`'s
+    participants (`consensusRules.supports`, `ConclusionProof`), so by
+    `p ∈ c.participants` it needs `p`'s genuine signature; `Bounds.unforgeable`
+    then needs a witness in `p`'s `sent`, which starts and stays empty.
+    `deposit` and `tick` never touch `status`; `transfer` and `reclaim` on
+    `c` need `c` already finalized, which it never is. Used by
+    `participant_can_prevent_cycles`. -/
+theorem consensus_channel_stays_open {apps : Apps E} {p : Participant} {T : Threat E p}
+    (hbounds : Bounds apps p T) {c : FixedPart} (hc : apps c.appDef = consensusRules)
+    (hp : p ∈ c.participants) :
+    ∀ {net net' : NetworkState E p} {advs : List (AdvMove E)} {t0 : Nat},
+      T.FeasibleSeq apps net advs net' → net.sent = [] → net.chain.statusOf c = .open t0 →
+      net'.chain.statusOf c = .open t0 := by
+  intro net net' advs t0 hseq
+  induction hseq with
+  | nil => intro _ hbase; exact hbase
+  | @cons net1 net2 m rest hfeas hrest ih =>
+    intro hsent1 hbase1
+    have hsent1' : (net1.applyAdv apps m).sent = [] := by
+      rw [NetworkState.applyAdv_sent]; exact hsent1
+    have step : (net1.applyAdv apps m).chain.statusOf c = .open t0 := by
+      cases m with
+      | deliver ss' => exact hbase1
+      | tick dt => simpa [NetworkState.applyAdv] using hbase1
+      | chain caller op =>
+        simp only [NetworkState.applyAdv]
+        cases h : net1.chain.apply apps caller op with
+        | none => exact hbase1
+        | some s' =>
+          have hfo1 : net1.chain.finalOutcome c.address = none := by
+            simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hbase1,
+              ChannelStatus.finalOutcome_open]
+          have hU : ∀ ss' ∈ op.proofStates, p ∈ ss'.signers →
+              ∃ x ∈ net1.sent, x.state = ss'.state :=
+            fun ss' hmem hsig => (hbounds.unforgeable net1 caller op hfeas ss' hmem).1 hsig
+          cases op with
+          | deposit a e x =>
+            obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
+            rw [Adjudicator.statusOf_of_status hs]; exact hbase1
+          | tick dt' =>
+            have hs' : net1.chain.tick dt' = s' := by simpa using h
+            subst hs'; rw [Adjudicator.tick_statusOf]; exact hbase1
+          | transfer a b =>
+            by_cases hac : a = c
+            · subst hac
+              obtain ⟨o, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
+              rw [hfo1] at hfo; exact absurd hfo (by simp)
+            · obtain ⟨_, _, _, _, _, _, _, _, hs, _, _, _⟩ := Adjudicator.transfer_some h
+              rw [Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus,
+                if_neg (Ne.symm hac)]
+              exact hbase1
+          | reclaim l v =>
+            by_cases hlc : l = c
+            · subst hlc
+              obtain ⟨oL, -, -, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.reclaim_some h
+              rw [hfo1] at hfo; exact absurd hfo (by simp)
+            · obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hsr, _, _⟩ := Adjudicator.reclaim_some h
+              rw [hsr, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hlc)]
+              exact hbase1
+          | challenge c' proof candidate =>
+            by_cases hcc : c' = c
+            · exfalso; subst hcc
+              obtain ⟨⟨-, hs, -, -⟩, -⟩ := Adjudicator.challenge_some h
+              rw [hc] at hs
+              match proof, hs with
+              | [ss'], hs =>
+                simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hs
+                obtain ⟨⟨-, hch⟩, hall⟩ := hs
+                obtain ⟨x, hx, -⟩ := hU ss' (List.mem_singleton_self _) (hall p (hch ▸ hp))
+                rw [hsent1] at hx; exact absurd hx List.not_mem_nil
+            · obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+              rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
+              exact hbase1
+          | checkpoint c' proof candidate =>
+            by_cases hcc : c' = c
+            · exfalso; subst hcc
+              obtain ⟨⟨-, hs, -, -⟩, -⟩ := Adjudicator.checkpoint_some h
+              rw [hc] at hs
+              match proof, hs with
+              | [ss'], hs =>
+                simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hs
+                obtain ⟨⟨-, hch⟩, hall⟩ := hs
+                obtain ⟨x, hx, -⟩ := hU ss' (List.mem_singleton_self _) (hall p (hch ▸ hp))
+                rw [hsent1] at hx; exact absurd hx List.not_mem_nil
+            · obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+              rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
+              exact hbase1
+          | conclude c' ss' =>
+            by_cases hcc : c' = c
+            · exfalso; subst hcc
+              obtain ⟨⟨-, hproof'⟩, -⟩ := Adjudicator.conclude_some h
+              have hp' : p ∈ ss'.signers := hproof'.2.2 p (hproof'.1 ▸ hp)
+              have hmem : ss' ∈ (Op.conclude c' ss').proofStates := by simp [Op.proofStates]
+              obtain ⟨x, hx, -⟩ := hU ss' hmem hp'
+              rw [hsent1] at hx; exact absurd hx List.not_mem_nil
+            · obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
+              rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]
+              exact hbase1
+    exact ih hsent1' step
+
 /-- Nitro-32. Nitro:792-794: "While it is technically possible to create outcomes
     with cycles, it is also possible for any participant in the channel to
     prevent this from happening." Under the consensus app a participant who
@@ -2211,7 +2313,30 @@ theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Th
     (hdag : net.chain.IsDAG) (hsent : net.sent = []) :
     Prevents apps T (fun net' => ∃ c : FixedPart, p ∈ c.participants ∧
       Relation.TransGen net'.chain.Edge c.address c.address) net := by
-  sorry
+  have hinv : ∀ {m : NetworkState E p}, Run apps T (fun _ => .wait 0) net m →
+      m.sent = [] ∧ ∀ c' : FixedPart, p ∈ c'.participants → ∀ t,
+        net.chain.statusOf c' = .open t → m.chain.statusOf c' = .open t := by
+    intro m hm
+    induction hm with
+    | refl => exact ⟨hsent, fun c' _ t ht => ht⟩
+    | @round n1 n2 advs hrun hround ih =>
+      obtain ⟨ihsent, ihopen⟩ := ih
+      obtain ⟨hseq, -⟩ := hround
+      have hsent2 : n2.sent = [] := hseq.sent_eq.trans ihsent
+      refine ⟨by simpa [NetworkState.applyHonest] using hsent2, fun c' hpc' t ht => ?_⟩
+      have hopen2 := consensus_channel_stays_open A.toBounds (hc c' hpc') hpc' hseq ihsent
+        (ihopen c' hpc' t ht)
+      simpa [NetworkState.applyHonest, Adjudicator.tick_statusOf] using hopen2
+  refine ⟨fun _ => .wait 0, fun _ => trivial, fun n1 advs n2 hrun hround hcyc => ?_⟩
+  obtain ⟨c, hpc, hcyc⟩ := hcyc
+  obtain ⟨t, ht⟩ := hopen c hpc
+  obtain ⟨hsent1, hopen1⟩ := hinv hrun
+  obtain ⟨hseq, -⟩ := hround
+  have hopenN2 : n2.chain.statusOf c = .open t :=
+    consensus_channel_stays_open A.toBounds (hc c hpc) hpc hseq hsent1 (hopen1 c hpc t ht)
+  obtain ⟨y, hey, -⟩ := Relation.TransGen.head'_iff.1 hcyc
+  obtain ⟨-, e, he, -⟩ := hey
+  simp [Adjudicator.allocationOf, hopenN2, ChannelStatus.finalOutcome_open] at he
 
 /-- Nitro-33, Nitro-34, Nitro-32. Nitro:836-837: "it is impossible to find a strategy
     that gives any node a value higher than allocated by this algorithm."
