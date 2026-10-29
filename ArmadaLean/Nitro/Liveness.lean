@@ -2812,7 +2812,7 @@ theorem funded_entry_round {apps : Apps E} {p : Participant} {T : Threat E p} (c
   | @tick pending net1 net2 dt hfeas hgate hrest ih =>
     intro hpfeas hR o amt hf hd
     have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps (.tick dt)) :=
-      Machine.Reachable.tail hR (Or.inr (Or.inr ⟨.tick dt, hfeas, rfl⟩))
+      Machine.Reachable.tail hR (Or.inr (Or.inr (Or.inl ⟨.tick dt, hfeas, rfl⟩)))
     have hpfeas' : ∀ op' ∈ pending, op'.HonestFeasible (net1.applyAdv apps (.tick dt)) :=
       fun op' hop' => Op.HonestFeasible.applyAdv (.tick dt) (hpfeas op' hop')
     refine ih hpfeas' hR1 ?_ ?_
@@ -2825,7 +2825,7 @@ theorem funded_entry_round {apps : Apps E} {p : Participant} {T : Threat E p} (c
   | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     intro hpfeas hR o amt hf hd
     have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps m) :=
-      Machine.Reachable.tail hR (Or.inr (Or.inr ⟨m, hfeas, rfl⟩))
+      Machine.Reachable.tail hR (Or.inr (Or.inr (Or.inl ⟨m, hfeas, rfl⟩)))
     have hpfeas' : ∀ op' ∈ pending, op'.HonestFeasible (net1.applyAdv apps m) :=
       fun op' hop' => Op.HonestFeasible.applyAdv m (hpfeas op' hop')
     cases m with
