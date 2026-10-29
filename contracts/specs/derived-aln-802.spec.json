@@ -1,0 +1,89 @@
+{
+  "id": "derived-aln-802",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `participant_can_prevent_cycles` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json participant_can_prevent_cycles` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `participant_can_prevent_cycles`'s proof body is `sorry`. `scripts/check.sh --json participant_can_prevent_cycles` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json participant_can_prevent_cycles` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem participant_can_prevent_cycles",
+  "restatement": "The theorem `participant_can_prevent_cycles` in `ArmadaLean/Nitro/Liveness.lean` must carry a complete Lean proof, not a `sorry` placeholder. The theorem currently compiles only because its proof body is the literal term `sorry`, so the liveness claim it names is not actually verified. A worker must replace that `sorry` with a real proof of the stated theorem, without altering the theorem's statement (its name, its hypotheses, or its conclusion). The fix is verified by running the repo's own acceptance script and reading two fields back from its JSON output: the field that reports whether this theorem still carries a `sorry`, and the field that reports whether every approved theorem's statement still matches the frozen baseline.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof body of theorem `participant_can_prevent_cycles` in `ArmadaLean/Nitro/Liveness.lean` must contain no `sorry`, observed by running `scripts/check.sh --json participant_can_prevent_cycles` from the repo root and reading `theorem_in_sorry` as `false` in the printed JSON object."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement `theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Threat E p)` must not change while the proof is fixed, observed by the same run's `signatures_ok` field reading `true`."
+    }
+  ],
+  "goal": "Replace the `sorry` proof body of theorem `participant_can_prevent_cycles` in `ArmadaLean/Nitro/Liveness.lean` with a complete proof, leaving its statement unchanged, and prove this via `scripts/check.sh --json participant_can_prevent_cycles`.",
+  "acceptance_criteria": [
+    "After the fix, running the project's own check script and asking it about this one theorem reports that the theorem's proof no longer contains a placeholder.",
+    "The same check confirms every approved theorem's wording, including this one's, still matches the project's frozen record of theorem statements, so the fix did not change what the theorem claims."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, running the project's own check script and asking it about this one theorem reports that the theorem's proof no longer contains a placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "The same check confirms every approved theorem's wording, including this one's, still matches the project's frozen record of theorem statements, so the fix did not change what the theorem claims."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, running the project's own check script and asking it about this one theorem reports that the theorem's proof no longer contains a placeholder.",
+      "proves": "Clause c1: the proof body of participant_can_prevent_cycles carries no sorry.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "participant_can_prevent_cycles"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The same check confirms every approved theorem's wording, including this one's, still matches the project's frozen record of theorem statements, so the fix did not change what the theorem claims.",
+      "proves": "Clause c2: the theorem's statement is unchanged by the proof fix.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "participant_can_prevent_cycles"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
