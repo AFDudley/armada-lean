@@ -1,0 +1,53 @@
+{
+  "id": "derived-aln-1d9",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `owned_merge_can_happen` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json owned_merge_can_happen` reports `owned_merge_can_happen` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `owned_merge_can_happen`'s proof body is `sorry`. `scripts/check.sh --json owned_merge_can_happen` reports `owned_merge_can_happen` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json owned_merge_can_happen` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem owned_merge_can_happen",
+  "restatement": "ArmadaLean/PoolSafety.lean states the theorem owned_merge_can_happen. The theorem describes an owner who holds 1 to 8 live notes of one token. The notes sit at distinct leaf positions in one tree. The owner can spend all the notes in one owned transact step. The step produces one output note. The output note holds the summed value of the input notes. The circuit's range check must accept the sum. After the step, no input note stays live. The output note is live. The pool's custody of the token stays the same. So the step conserves value. The theorem's proof body is currently the placeholder word `sorry`. The proof does not yet exist. This request asks the worker to complete the proof. The finished proof must carry no `sorry` in its own body. The repository already has a deterministic check for this fact. `scripts/check.sh --json <theorem-name>` builds the project. The script lists every theorem whose proof body still carries `sorry`. The script echoes back the queried theorem name. A predicate can then confirm that name is absent from the list. The proof counts as complete when this check, run for owned_merge_can_happen, reports the theorem absent from the list of unfinished proofs.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`owned_merge_can_happen` in `ArmadaLean/PoolSafety.lean` must be proved with no `sorry` in its own proof body. `scripts/check.sh --json owned_merge_can_happen` must then report `owned_merge_can_happen` absent from its `sorry` array. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}."
+    }
+  ],
+  "goal": "Complete the Lean proof of the theorem owned_merge_can_happen in ArmadaLean/PoolSafety.lean, removing its `sorry` placeholder.",
+  "acceptance_criteria": [
+    "After the project's proof check runs for the owned-merge theorem, that theorem no longer appears on the list of theorems with an unfinished proof."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the project's proof check runs for the owned-merge theorem, that theorem no longer appears on the list of theorems with an unfinished proof."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "type": "behavior",
+      "description": "After the project's proof check runs for the owned-merge theorem, that theorem no longer appears on the list of theorems with an unfinished proof.",
+      "proves": "This proves clause c1. The theorem owned_merge_can_happen has a real, complete proof. The project's own check reports the theorem absent from its list of unfinished proofs.",
+      "restatement_clause_id": "c1",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_theorem_sorry_absent.py",
+        "args": [
+          "owned_merge_can_happen"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "contains_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_theorem_sorry_absent.py"
+  ]
+}
