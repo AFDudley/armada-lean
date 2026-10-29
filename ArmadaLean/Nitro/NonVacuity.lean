@@ -2349,7 +2349,7 @@ example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : FixedPart) (o
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, ⟨S0, [p0]⟩, List.mem_cons_self, rfl⟩
-      · exact .inr ⟨⟨S0, [q0]⟩, List.mem_cons_self, rfl, List.mem_cons_self⟩
+      · exact .inr ⟨⟨S0, [q0]⟩, List.mem_cons_of_mem _ List.mem_cons_self, rfl, List.mem_cons_self⟩
     · simp [S0, State.voucher?] at hv
   · intro t ht hc
     simp only [netE, List.mem_cons, List.not_mem_nil, or_false] at ht
