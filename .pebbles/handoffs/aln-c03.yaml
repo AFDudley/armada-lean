@@ -1,0 +1,102 @@
+status: blocked
+pebble_id: aln-c03
+summary: >
+  Investigated proving satp_intermediary_before_round2 (ArmadaLean/Nitro/Liveness.lean)
+  with no sorry. Set up a working Lean toolchain (elan v4.33.1 + Mathlib cache) and
+  confirmed the baseline build and scripts/check.sh --json satp_intermediary_before_round2
+  currently report theorem_in_sorry=true as expected. Read the full surrounding
+  machinery: latest_state_finalizable, latest_round_keeps_status,
+  latest_wait_keeps_status, HoldsLatestLedger, IntermediaryRecovered, Route.WellFormed,
+  Adjudicator.challenge/checkpoint/conclude/transfer/reclaim, and the Unbeatable/
+  UnbeatableIn game model in Strategy.lean. The theorem needs an Unbeatable strategy
+  that finalizes BOTH ledgers Lm and Lp (two independent on-chain channels) each with
+  no sorry, using only the single-channel liveness lemma latest_state_finalizable as
+  a building block (it takes 1-2 UnbeatableIn.move rounds per channel: an optional
+  challenge, then a wait to the deadline). Composing two independent single-channel
+  calls requires one channel's "first touch" (challenge, if its on-chain status is
+  already .challenged at a lower turn than our latest held state) to land within
+  Threat.Round's T.ε window of the ORIGINAL net, because Threat.Round's adversary
+  bound (net'.chain.now < net.chain.now + T.ε) is PER MOVE, not cumulative across a
+  whole play. Reordering to "challenge both channels first, then wait for both"
+  avoids the channel 1's wait being essentially unbounded (Lm.challengeDuration has
+  no upper bound) swallowing channel 2's T.ε slack entirely, but even then channel
+  2's own challenge move is UnbeatableIn's SECOND move, so its landing time is only
+  bounded by < net.chain.now + 2*T.ε (the adversary gets T.ε in round 1 plus T.ε in
+  round 2), while the theorem's hpend hypothesis only guarantees
+  net.DeadlineAfter Lp T.ε (exactly T.ε, no more) if Lp is already .challenged with a
+  lower-turn state at the original net. I derived, via several independent lines of
+  reasoning (Threat.Round's strict < bound stacking across moves, Adjudicator.mode's
+  .finalized transition blocking re-challenge after a deadline passes, and
+  ChannelStatus.challenge's requirement of a higher turn than the record), that an
+  adversary can legally choose to tick time to exactly net.chain.now + T.ε within
+  round 2's own budget (since round 1 alone cannot reach that point, being bounded by
+  a strict < net.chain.now + T.ε), causing channel 2's pre-existing lower-turn
+  challenge to expire and finalize with the WRONG (lower-turn) state's outcome before
+  our own re-challenge move lands - and nothing in HoldsLatestLedger/
+  Route.LedgerBeforeRound2 constrains that earlier state's find(V)/owed properties,
+  so IntermediaryRecovered's conclusion is not recoverable from it. This is a genuine
+  composition gap in the existing single-channel liveness machinery (not reducible to
+  it without a materially stronger per-channel timing hypothesis, e.g.
+  DeadlineAfter 2*T.ε, which the theorem does not have), not a gap in my understanding
+  of a single existing lemma - I re-derived the same obstruction independently via at
+  least four different framings before concluding it is real. The closely related,
+  also-sorry satp_theorem_3_2 has the identical pattern (independent DeadlineAfter
+  T.ε per channel for three channels), which is consistent with this being a known
+  open composition problem in this file rather than an oversight specific to this one
+  theorem. No file was edited; the proof body is unchanged from sorry.
+cost: "~210k tokens"
+blocker: >
+  satp_intermediary_before_round2 needs an Unbeatable strategy that finalizes two
+  independent on-chain ledger channels (Lm, Lp) with only net.DeadlineAfter _ T.ε
+  (not 2*T.ε) guaranteed per channel at the start. The only reusable single-channel
+  liveness lemma, latest_state_finalizable, needs its own channel's existing
+  .challenged-with-lower-turn status (if any) to still have at least T.ε of slack at
+  the moment ITS OWN challenge move lands - which is automatically true for whichever
+  channel is processed in the strategy's first UnbeatableIn.move, but is NOT provable
+  for the second channel, because Threat.Round's adversary bound
+  (net'.chain.now < net.chain.now + T.ε) applies per move and stacks across
+  consecutive moves (confirmed: round 2's landing time is only bounded by
+  < net.chain.now + 2*T.ε, not T.ε). In the worst case (both Lm and Lp simultaneously
+  .challenged with a lower turn than our latest held state, each with exactly T.ε of
+  DeadlineAfter slack - a scenario HoldsLatestLedger's own disjunction explicitly
+  permits and the theorem's hypotheses do not rule out), the channel processed second
+  can have its pre-existing wrong-turn challenge expire before our own re-challenge
+  move lands, finalizing it with an outcome LedgerBeforeRound2/HoldsLatestLedger say
+  nothing about (not necessarily find(V)=none or owed>=balance), breaking
+  IntermediaryRecovered's conclusion. Closing this requires either a genuinely new
+  "simultaneous two-channel" liveness lemma (a from-scratch variant of
+  latest_round_keeps_status/latest_state_finalizable's ~450 combined lines, extended
+  to track two channels' status invariants through one shared adversary round instead
+  of one), or discovering a hypothesis/invariant elsewhere in the codebase that rules
+  out the "both channels simultaneously minimally-tight-challenged" worst case, which
+  I searched for (HoldsLatestLedger, Route.WellFormed, the Bounds/Capable/Assumptions
+  structure, and the whole Lemmas.lean/Safety.lean file) and did not find.
+next_action: >
+  A worker with more budget should either (a) build a dedicated two-channel liveness
+  lemma that issues both channels' challenge moves within the strategy's first two
+  UnbeatableIn.move nodes while tracking BOTH channels' latest_round_keeps_status-style
+  3-way status invariant through each shared adversary round (so neither channel's
+  slack is consumed by the other's processing), which needs new invariant-persistence
+  machinery parallel to latest_round_keeps_status/latest_wait_keeps_status (roughly
+  150-300 new lines), or (b) confirm with the pebble's requester/SATP domain expert
+  whether net.DeadlineAfter _ T.ε per channel is intended to be sufficient for an
+  n-channel finalization (n=2 here) and, if the intended proof technique differs from
+  what I found in latest_state_finalizable, point to it; satp_theorem_3_2 (the
+  3-channel sibling, also sorry) likely blocks on the same issue and may be worth
+  solving together. I did not find evidence this is a known/tracked design decision
+  in docs/nitro-theorems.md, docs/nitro-repair-2026-10-27.md, or the file's own doc
+  comments.
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 36
+    - name: scripts/check.sh --json satp_intermediary_before_round2
+      outcome: passed
+      duration_s: 5
+e2e_exempt:
+  category: outer-loop-undrivable
+  reason: >
+    No code change was made (the theorem's proof body is still sorry); the acceptance
+    oracle (scripts/check.sh --json) was run to confirm baseline state only, not to
+    verify a fix, since no fix was produced.
