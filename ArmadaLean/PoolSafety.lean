@@ -1937,7 +1937,37 @@ theorem spend_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s 
     (hEnabled : SpendEnabled s tn root token entries (entries.map fun e => nullifier nk e.1.2))
     (hDisjoint : ∀ e ∈ entries, ¬ Spends s s' token e) :
     SpendEnabled s' tn root token entries (entries.map fun e => nullifier nk e.1.2) := by
-  sorry
+  obtain ⟨hRoot, ⟨rest, hRemove⟩, spent', hNullify⟩ := hEnabled
+  have hs' : Reachable s' := hs.step hstep
+  have hRoot' : root ∈ s'.rootsAt' tn := by
+    rcases step_rootsAt_shape hstep tn with heq | ⟨r, heq⟩
+    · exact heq ▸ hRoot
+    · exact heq ▸ List.mem_cons_of_mem r hRoot
+  have hentries_s : ∀ e ∈ entries, e ∈ s.live token :=
+    fun e he => (removeAll_perm hRemove).mem_iff.mpr (List.mem_append_left _ he)
+  have hentries_s' : ∀ e ∈ entries, e ∈ s'.live token := by
+    intro e he
+    by_cases hmem : e ∈ s'.live token
+    · exact hmem
+    · exact absurd ⟨hentries_s e he, hmem⟩ (hDisjoint e he)
+  have hNodupPool : (s.live token).Nodup :=
+    (reachable_live_spent_invariant hs).2.2.2.2 token
+  have hNodupPool' : (s'.live token).Nodup :=
+    (reachable_live_spent_invariant hs').2.2.2.2 token
+  have hentriesNodup : entries.Nodup := removeAll_wanted_nodup hNodupPool hRemove
+  obtain ⟨rest', hRemove'⟩ := removeAll_of_subset hNodupPool' hentriesNodup hentries_s'
+  obtain ⟨hnullsPairwise, _⟩ := owned_no_double_spend hNullify
+  have hnullsFresh' : ∀ n ∈ entries.map (fun e => nullifier nk e.1.2), n ∉ s'.spent tn := by
+    intro n hn
+    obtain ⟨e, he, hen⟩ := List.mem_map.mp hn
+    have heTn : e.1.1 = tn := hTree e he
+    have heLive : e ∈ s'.live token := hentries_s' e he
+    have hfresh := (reachable_live_spent_invariant hs').2.2.2.1 token e.1.1 e.1.2 e.2 heLive nk
+    rw [heTn] at hfresh
+    rw [← hen]
+    exact hfresh
+  obtain ⟨spent'', hNullify'⟩ := markSpent_succeeds hnullsPairwise hnullsFresh'
+  exact ⟨hRoot', ⟨rest', hRemove'⟩, spent'', hNullify'⟩
 
 /-- `spend_not_blocked` for a pending `Step.transact`: its state checks stay true across
     any step that spends none of its input notes. -/

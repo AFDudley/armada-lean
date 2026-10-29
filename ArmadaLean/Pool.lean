@@ -208,6 +208,73 @@ theorem removeAll_disjoint {α : Type} [DecidableEq α] {pool wanted pool' : Lis
     · rw [if_neg hmem] at h
       exact absurd h (by simp)
 
+/-- `removeAll` cannot find an element that is absent from `pool`: wherever `wanted`
+    names it, that occurrence's lookup fails, so the whole call returns `none`. The
+    subtractive half of `removeAll`'s completeness story; `removeAll_of_subset` is the
+    additive converse, and `removeAll_wanted_nodup` below uses this to show a repeated
+    `wanted` entry cannot survive a `Nodup` `pool`. -/
+theorem removeAll_none_of_not_mem {α : Type} [DecidableEq α] {pool wanted : List α}
+    {w : α} (hpool : w ∉ pool) (hwanted : w ∈ wanted) : removeAll pool wanted = none := by
+  induction wanted generalizing pool with
+  | nil => exact absurd hwanted (by simp)
+  | cons w0 ws ih =>
+    unfold removeAll
+    rcases List.eq_or_mem_of_mem_cons hwanted with heq | hw
+    · subst heq
+      exact if_neg (fun hmem => hpool (List.elem_iff.mp hmem))
+    · by_cases hmem : pool.elem w0
+      · rw [if_pos hmem]
+        exact ih (fun hc => hpool (List.mem_of_mem_erase hc)) hw
+      · rw [if_neg hmem]
+
+/-- A successful `removeAll`'s `wanted` list has no duplicate entries: a repeated entry
+    would need two matching copies in `pool`, but `pool.Nodup` leaves none once the
+    first copy is erased (`removeAll_none_of_not_mem` on `Nodup.not_mem_erase`). Needed
+    by `PoolSafety.spend_not_blocked` to re-run `removeAll` against a later pool state
+    via `removeAll_of_subset`, which itself needs `wanted.Nodup`. -/
+theorem removeAll_wanted_nodup {α : Type} [DecidableEq α] {pool wanted pool' : List α}
+    (hpool : pool.Nodup) (h : removeAll pool wanted = some pool') : wanted.Nodup := by
+  induction wanted generalizing pool with
+  | nil => exact List.nodup_nil
+  | cons w ws ih =>
+    unfold removeAll at h
+    by_cases hmem : pool.elem w
+    · rw [if_pos hmem] at h
+      have hnotin : w ∉ ws := by
+        intro hw
+        rw [removeAll_none_of_not_mem (List.Nodup.not_mem_erase hpool) hw] at h
+        exact absurd h (by simp)
+      exact List.nodup_cons.mpr ⟨hnotin, ih (List.Nodup.erase w hpool) h⟩
+    · rw [if_neg hmem] at h
+      exact absurd h (by simp)
+
+/-- **`removeAll` completeness: every `wanted` sublist of a `Nodup` pool can be
+    removed.** The converse of `removeAll_perm`'s membership half
+    (`removeAll_subset`/`removeAll_disjoint`): given enough distinct copies, the
+    recursion that fails only when an occurrence is missing never does. Needed by
+    `PoolSafety.spend_not_blocked`, which only has (via `Spends`) that `entries` stays
+    pointwise live after a disjoint step — not the step's own `removeAll` structure. -/
+theorem removeAll_of_subset {α : Type} [DecidableEq α] {pool wanted : List α}
+    (hpool : pool.Nodup) (hwanted : wanted.Nodup) (hsub : ∀ w ∈ wanted, w ∈ pool) :
+    ∃ pool', removeAll pool wanted = some pool' := by
+  induction wanted generalizing pool with
+  | nil => exact ⟨pool, rfl⟩
+  | cons w ws ih =>
+    have hmem : w ∈ pool := hsub w List.mem_cons_self
+    have hwne : w ∉ ws := (List.nodup_cons.mp hwanted).1
+    have hsub' : ∀ x ∈ ws, x ∈ pool.erase w := by
+      intro x hx
+      have hxne : x ≠ w := by
+        intro heq
+        rw [heq] at hx
+        exact hwne hx
+      exact (List.mem_erase_of_ne hxne).mpr (hsub x (List.mem_cons_of_mem w hx))
+    obtain ⟨pool', hpool'⟩ := ih (List.Nodup.erase w hpool) (List.nodup_cons.mp hwanted).2 hsub'
+    refine ⟨pool', ?_⟩
+    unfold removeAll
+    rw [if_pos (List.elem_iff.mpr hmem)]
+    exact hpool'
+
 /-! ### Tagging a batch of new notes with the leaf positions they land at
 
 `MerkleModule.insertLeaves` assigns a batch's leaf positions in insertion order,
