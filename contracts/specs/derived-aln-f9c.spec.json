@@ -1,0 +1,66 @@
+{
+  "id": "derived-aln-f9c",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `spend_bound_to_adapt` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json spend_bound_to_adapt` reports `spend_bound_to_adapt` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `spend_bound_to_adapt`'s proof body is `sorry`. `scripts/check.sh --json spend_bound_to_adapt` reports `spend_bound_to_adapt` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json spend_bound_to_adapt` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem spend_bound_to_adapt",
+  "restatement": "The theorem spend_bound_to_adapt in ArmadaLean/PoolSafety.lean states a fund-safety guarantee. A transaction bound to one adapt contract and one set of adapt parameters can only execute through that same contract and those same parameters. A deposit spend cannot move to another contract or another channel. Today the proof body is the placeholder word sorry. The project's check script lists spend_bound_to_adapt as an unfinished theorem. This request asks for a complete proof of this theorem, with the placeholder removed. After the fix, running scripts/check.sh --json spend_bound_to_adapt from the repo root must show the build still succeeds. The same command must show spend_bound_to_adapt is no longer in the list of unfinished theorems.",
+  "restatement_clauses": [
+    {
+      "id": "spend_bound_to_adapt_proved",
+      "text": "spend_bound_to_adapt in ArmadaLean/PoolSafety.lean is proved with no sorry in its own proof body, and scripts/check.sh --json spend_bound_to_adapt reports spend_bound_to_adapt absent from its sorry array."
+    }
+  ],
+  "goal": "Write a complete Lean proof for the theorem spend_bound_to_adapt in ArmadaLean/PoolSafety.lean, replacing its sorry placeholder, so the project's verification script reports it as proved.",
+  "acceptance_criteria": [
+    "After the fix, running the project's check command for spend_bound_to_adapt shows the build still succeeds, and shows this theorem is no longer on the list of unfinished proofs."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, running the project's check command for spend_bound_to_adapt shows the build still succeeds, and shows this theorem is no longer on the list of unfinished proofs."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, running the project's check command for spend_bound_to_adapt shows the build still succeeds, and shows this theorem is no longer on the list of unfinished proofs.",
+      "proves": "Proves the theorem spend_bound_to_adapt is proved without a sorry placeholder, as reported by the project's own verification command.",
+      "restatement_clause_id": "spend_bound_to_adapt_proved",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "spend_bound_to_adapt"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_under_test",
+          "op": "eq",
+          "value": "spend_bound_to_adapt"
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
