@@ -1,0 +1,89 @@
+{
+  "id": "derived-aln-069",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `concluded_universally_finalizable` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json concluded_universally_finalizable` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `concluded_universally_finalizable`'s proof body is `sorry`. `scripts/check.sh --json concluded_universally_finalizable` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json concluded_universally_finalizable` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem concluded_universally_finalizable",
+  "restatement": "ArmadaLean/Nitro/Liveness.lean states the theorem concluded_universally_finalizable, with arguments apps, Ts, v, hv, c, \u03a9, hc, h, hsent, hchain, hdur, hpend, concluding UniversallyFinalizable apps Ts v c \u03a9. The theorem's proof body is currently the placeholder word sorry, so the theorem has no real proof yet. This request asks a worker to write a complete, real proof for this exact theorem, removing the sorry placeholder from its proof body. The repository already has a deterministic check for this fact: running `scripts/check.sh --json concluded_universally_finalizable` from the repo root builds the project and prints one JSON object. That object's theorem_in_sorry field must read false once the proof is real; today it reads true because the proof body is sorry. The predicate that decides this is exactly {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. Separately, the theorem's own statement \u2014 its name, its arguments, and its conclusion \u2014 must stay exactly as written now. Only the proof body may change. The project's check script independently confirms no approved theorem's statement text changed, by comparing against a frozen baseline file; that same check run must report this signature check as passing for the whole project, which covers this theorem.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "concluded_universally_finalizable in ArmadaLean/Nitro/Liveness.lean must be proved with no sorry in its own proof body, such that `scripts/check.sh --json concluded_universally_finalizable` prints a JSON object where {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false} holds."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's statement does not change: the project's own signature-baseline check, run as part of the same `scripts/check.sh --json concluded_universally_finalizable` invocation, must report signatures_ok as true."
+    }
+  ],
+  "goal": "Write a complete, real Lean proof for the theorem concluded_universally_finalizable in ArmadaLean/Nitro/Liveness.lean, removing its sorry placeholder, without changing the theorem's stated signature.",
+  "acceptance_criteria": [
+    "After the project's check runs for this theorem, it reports the theorem as no longer having an unfinished (sorry) proof.",
+    "The same check confirms that no theorem's stated claim, including this one, changed from the project's frozen record of approved statements."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the project's check runs for this theorem, it reports the theorem as no longer having an unfinished (sorry) proof."
+    },
+    {
+      "id": "c2",
+      "text": "The same check confirms that no theorem's stated claim, including this one, changed from the project's frozen record of approved statements."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the project's check runs for this theorem, it reports the theorem as no longer having an unfinished (sorry) proof.",
+      "proves": "This proves clause c1: the theorem concluded_universally_finalizable has a complete, real proof, confirmed by the project's own check reporting theorem_in_sorry as false.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "concluded_universally_finalizable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The same check confirms that no theorem's stated claim, including this one, changed from the project's frozen record of approved statements.",
+      "proves": "This proves clause c2: the theorem's statement is unchanged, confirmed by the project's own signature-baseline check reporting signatures_ok as true.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "concluded_universally_finalizable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
