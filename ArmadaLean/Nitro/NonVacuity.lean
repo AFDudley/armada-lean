@@ -409,66 +409,6 @@ section Game
 
 variable {E : Type} [DecidableEq E]
 
-theorem applyAdv_now_le (apps : Apps E) {p : Participant} (m : AdvMove E) (n : NetworkState E p) :
-    n.chain.now ≤ (n.applyAdv apps m).chain.now := by
-  cases m with
-  | chain caller op =>
-    simp only [NetworkState.applyAdv]
-    cases h : n.chain.apply apps caller op with
-    | none => exact le_rfl
-    | some s' => exact Adjudicator.apply_now_le h
-  | deliver ss => exact le_rfl
-  | tick dt => simp [NetworkState.applyAdv]
-
-theorem applyAdv_sent (apps : Apps E) {p : Participant} (m : AdvMove E) (n : NetworkState E p) :
-    (n.applyAdv apps m).sent = n.sent := by
-  cases m with
-  | chain caller op => simp only [NetworkState.applyAdv]; cases n.chain.apply apps caller op <;> rfl
-  | deliver ss => rfl
-  | tick dt => rfl
-
-theorem FeasibleSeq.now_le {apps : Apps E} {p : Participant} {T : Threat E p}
-    {n n' : NetworkState E p} {advs : List (AdvMove E)} (h : T.FeasibleSeq apps n advs n') :
-    n.chain.now ≤ n'.chain.now := by
-  induction h with
-  | nil => exact le_rfl
-  | cons _ _ ih => exact le_trans (applyAdv_now_le _ _ _) ih
-
-theorem FeasibleSeq.sent_eq {apps : Apps E} {p : Participant} {T : Threat E p}
-    {n n' : NetworkState E p} {advs : List (AdvMove E)} (h : T.FeasibleSeq apps n advs n') :
-    n'.sent = n.sent := by
-  induction h with
-  | nil => rfl
-  | cons _ _ ih => rw [ih, applyAdv_sent]
-
-/-- An invariant of the adversary's steps that holds while the clock is
-    below `t1` holds at the end of a prefix that ends below `t1`. -/
-theorem FeasibleSeq.inv {apps : Apps E} {p : Participant} {T : Threat E p}
-    (P : NetworkState E p → Prop) (t1 : Time)
-    (hstep : ∀ n m, T.feasible n m → P n → (n.applyAdv apps m).chain.now < t1 →
-      P (n.applyAdv apps m))
-    {n n' : NetworkState E p} {advs : List (AdvMove E)} (h : T.FeasibleSeq apps n advs n')
-    (hP : P n) (ht : n'.chain.now < t1) : P n' := by
-  induction h with
-  | nil => exact hP
-  | cons hm hrest ih =>
-    exact ih (hstep _ _ hm hP (lt_of_le_of_lt (FeasibleSeq.now_le hrest) ht)) ht
-
-/-- An invariant of the adversary's steps holds at the end of a prefix. -/
-theorem FeasibleSeq.inv0 {apps : Apps E} {p : Participant} {T : Threat E p}
-    (P : NetworkState E p → Prop) (hstep : ∀ n m, T.feasible n m → P n → P (n.applyAdv apps m))
-    {n n' : NetworkState E p} {advs : List (AdvMove E)} (h : T.FeasibleSeq apps n advs n')
-    (hP : P n) : P n' := by
-  induction h with
-  | nil => exact hP
-  | cons hm _ ih => exact ih (hstep _ _ hm hP)
-
-/-- Applying a chain operation, as `applyAdv` and `applyHonest` do. -/
-theorem chain_applyAdv (apps : Apps E) {p : Participant} (caller : Participant) (op : Op E)
-    (n : NetworkState E p) :
-    (n.applyAdv apps (.chain caller op)).chain = (n.chain.apply apps caller op).getD n.chain := by
-  simp only [NetworkState.applyAdv]; cases n.chain.apply apps caller op <;> rfl
-
 /-- The chain part of the invariant of `conclude_strategy`. -/
 def ConcludeInv (c : FixedPart) (Ω : Outcome E) (t1 : Time) (s : Adjudicator E) : Prop :=
   s.finalizedWith c.address = some Ω ∨ (∃ t, s.statusOf c = .open t) ∨
@@ -549,6 +489,106 @@ theorem concludeInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
         exact .inl (by simp [this])
     · exact .inr (.inr (by rw [statusOf_apply_of_not_on h hon]; exact hc))
 
+/-- One round's worth of adversary/land play, for a reaction whose only pending
+    call is `conclude c ss`, carries `ConcludeInv` forward (reusing
+    `concludeInv_apply` for every ordinary adversary step) and resolves it
+    deterministically at the landing step (`conclude_can_happen`, since a
+    known `ConclusionProof` needs no `Bounds.unforgeable` detour: `op` is
+    `p`'s own known call, not a claim that could be forged). -/
+theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
+    (B : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω : Outcome E}
+    (hp : p ∈ c.participants) (hproof : ConclusionProof c ss) (hΩ : ss.state.outcome = Ω)
+    (hdur : T.ε ≤ c.challengeDuration) (t : Time) (sent0 : List (SignedState E))
+    {net net' : NetworkState E p} (hseq : Threat.RoundSeq apps T t [Op.conclude c ss] net net')
+    (ht0 : t ≤ net.chain.now) (hsent0 : net.sent = sent0) :
+    net'.chain.now < t + T.ε →
+    (∀ t0 ∈ sent0, t0.state.channel = c → t0.state.isFinal = true → t0.state.outcome = Ω) →
+    ConcludeInv c Ω (t + T.ε) net.chain →
+    net'.chain.finalizedWith c.address = some Ω := by
+  generalize heq : ([Op.conclude c ss] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => cases heq
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    cases heq
+    rcases l1 with _ | ⟨a, l1⟩
+    · rcases l2 with _ | ⟨b, l2⟩
+      · simp only [List.nil_append, List.cons.injEq] at hsplit
+        obtain ⟨hopeq, -⟩ := hsplit
+        subst hopeq
+        intro hεbound hsent hk
+        have hn1 : net1.chain.now < t + T.ε :=
+          lt_of_le_of_lt
+            (le_trans (NetworkState.applyAdv_now_le apps net1 (.land (Op.conclude c ss)))
+              hrest.now_le)
+            hεbound
+        have hland : (net1.applyAdv apps (AdvMove.land (Op.conclude c ss))).chain.finalizedWith
+            c.address = some Ω := by
+          rcases hk with hf | ⟨t1, ho⟩ | ⟨t1, ch, ht1, hd⟩
+          · cases hop : net1.chain.apply apps p (Op.conclude c ss) with
+            | none => simpa [NetworkState.applyAdv, hop] using hf
+            | some s' => simpa [NetworkState.applyAdv, hop] using finalizedWith_apply hop hf
+          · have hm : net1.chain.mode c ≠ .finalized := by rw [Adjudicator.mode_eq, ho]; simp
+            have hop : net1.chain.apply apps p (Op.conclude c ss) =
+                some (net1.chain.setStatus c
+                  (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
+              rw [Adjudicator.apply_conclude]; exact (conclude_can_happen _ _ _ hm hproof).1
+            simp only [NetworkState.applyAdv, hop]
+            simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+              Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ]
+          · have hm : net1.chain.mode c ≠ .finalized := by
+              rw [Adjudicator.mode_eq, ht1]
+              simp only [ChannelStatus.mode_challenged, ne_eq]
+              split
+              · rename_i h'
+                exact absurd (lt_of_le_of_lt (le_trans hd h') hn1) (lt_irrefl _)
+              · simp
+            have hop : net1.chain.apply apps p (Op.conclude c ss) =
+                some (net1.chain.setStatus c
+                  (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
+              rw [Adjudicator.apply_conclude]; exact (conclude_can_happen _ _ _ hm hproof).1
+            simp only [NetworkState.applyAdv, hop]
+            simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+              Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ]
+        exact hrest.finalizedWith_mono hland
+      · simp at hsplit
+    · simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hεbound hsent hk
+    have ht0' : t ≤ (net1.applyAdv apps (AdvMove.tick dt)).chain.now :=
+      le_trans ht0 (NetworkState.applyAdv_now_le apps net1 (.tick dt))
+    have hsent0' : (net1.applyAdv apps (AdvMove.tick dt)).sent = sent0 := by
+      rw [NetworkState.applyAdv_sent]; exact hsent0
+    have happ : net1.chain.apply apps p (.tick dt) = some (net1.chain.tick dt) := rfl
+    have hlt1 : (net1.chain.tick dt).now < t + T.ε :=
+      lt_of_le_of_lt hrest.now_le hεbound
+    have hk' : ConcludeInv c Ω (t + T.ε) (net1.applyAdv apps (AdvMove.tick dt)).chain := by
+      show ConcludeInv c Ω (t + T.ε) (net1.chain.tick dt)
+      exact concludeInv_apply happ sent0 hp (by simp [Op.proofStates]) hsent hdur ht0 hlt1 hk
+    exact ih ht0' hsent0' heq hεbound hsent hk'
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hεbound hsent hk
+    have ht0' : t ≤ (net1.applyAdv apps m).chain.now :=
+      le_trans ht0 (NetworkState.applyAdv_now_le apps net1 m)
+    have hsent0' : (net1.applyAdv apps m).sent = sent0 := by
+      rw [NetworkState.applyAdv_sent]; exact hsent0
+    have hk' : ConcludeInv c Ω (t + T.ε) (net1.applyAdv apps m).chain := by
+      cases m with
+      | deliver ss' => exact hk
+      | tick dt => exact absurd rfl (hnotick dt)
+      | land op => exact absurd rfl (hnoland op)
+      | chain caller op =>
+        simp only [NetworkState.applyAdv]
+        cases happ : net1.chain.apply apps caller op with
+        | none => exact hk
+        | some s' =>
+          have hlt1 : s'.now < t + T.ε := by
+            have := hrest.now_le
+            simpa [NetworkState.applyAdv, happ] using lt_of_le_of_lt this hεbound
+          exact concludeInv_apply happ sent0 hp
+            (fun ss' hss' hp' => hsent0 ▸ (B.unforgeable net1 caller op hfeas ss' hss').1 hp')
+            hsent hdur ht0 hlt1 hk
+    exact ih ht0' hsent0' heq hεbound hsent hk'
+
 /-- The strategy "conclude now". The adversary cannot finalize another
     outcome before the conclude lands: a conclude needs a final state `p`
     signed, and no challenge ends within `ε`. -/
@@ -570,46 +610,16 @@ theorem conclude_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
       | finalized t f o => rw [hs] at hn; simp at hn
     · exact .inl hn
   refine .move (.chain (.conclude c ss)) hal
-    (by simpa [HonestMove.Feasible, Op.proofStates] using hh) fun advs n' ⟨hseq, htime⟩ => .done ?_
-  have hK : n'.sent = net.sent ∧ net.chain.now ≤ n'.chain.now ∧
-      ConcludeInv c Ω (net.chain.now + T.ε) n'.chain := by
-    refine FeasibleSeq.inv (fun n => n.sent = net.sent ∧ net.chain.now ≤ n.chain.now ∧
-      ConcludeInv c Ω (net.chain.now + T.ε) n.chain) (net.chain.now + T.ε) ?_ hseq
-      ⟨rfl, le_rfl, hK0⟩ htime
-    intro n m hm ⟨hs0, ht0, hk⟩ hlt
-    refine ⟨by rw [applyAdv_sent]; exact hs0, le_trans ht0 (applyAdv_now_le _ _ _), ?_⟩
-    cases m with
-    | deliver ss' => exact hk
-    | tick dt =>
-      have happ : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
-      exact concludeInv_apply happ n.sent hp (by simp [Op.proofStates]) (hs0 ▸ hsent) hdur ht0
-        hlt hk
-    | chain caller op =>
-      rw [chain_applyAdv]
-      cases happ : n.chain.apply apps caller op with
-      | none => exact hk
-      | some s' =>
-        rw [chain_applyAdv, happ] at hlt
-        exact concludeInv_apply happ n.sent hp
-          (fun ss' hss' => (B.unforgeable n caller op hm ss' hss').1) (hs0 ▸ hsent) hdur ht0 hlt hk
-  obtain ⟨-, -, hk⟩ := hK
-  show (n'.applyHonest apps (.chain (.conclude c ss))).chain.finalizedWith c.address = some Ω
-  simp only [NetworkState.applyHonest]
-  rcases hk with hf | ⟨t, ho⟩ | ⟨t, ch, ht, hd⟩
-  · cases happ : n'.chain.apply apps p (.conclude c ss) with
-    | none => simpa using hf
-    | some s' => simpa using finalizedWith_apply happ hf
-  · have hm : n'.chain.mode c ≠ .finalized := by rw [Adjudicator.mode_eq, ho]; simp
-    rw [Adjudicator.apply_conclude, (conclude_can_happen _ _ _ hm hproof).1]
-    simp [hΩ]
-  · have hm : n'.chain.mode c ≠ .finalized := by
-      rw [Adjudicator.mode_eq, ht]
-      simp only [ChannelStatus.mode_challenged, ne_eq]
-      split
-      · rename_i h'; exact absurd (lt_of_le_of_lt (le_trans hd h') htime) (lt_irrefl _)
-      · simp
-    rw [Adjudicator.apply_conclude, (conclude_can_happen _ _ _ hm hproof).1]
-    simp [hΩ]
+    (by simpa [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates] using hh) ?_
+  intro n' hround
+  apply UnbeatableIn.done
+  show (n'.applyHonest (.chain (.conclude c ss))).Finalized c Ω
+  rw [NetworkState.applyHonest_chain]
+  show n'.chain.finalizedWith c.address = some Ω
+  obtain ⟨hseq, htime⟩ := hround
+  simp only [HonestMove.calls_chain] at hseq
+  exact concludeRound B hp hproof hΩ hdur net.chain.now net.sent hseq (le_refl _) rfl htime hsent
+    hK0
 
 /-- The chain part of the invariant of `wait_strategy`. -/
 def WaitInv (c : FixedPart) (T0 : Nat) (ch : Challenge E) (s : Adjudicator E) : Prop :=
@@ -673,6 +683,48 @@ theorem waitInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
     · exact .inl (by rw [statusOf_apply_of_not_on h hon]; exact hst)
   · exact .inr (finalizedWith_apply h hf)
 
+/-- Every `tick`/`other` step preserves `WaitInv`; no `land` case since
+    `wait`'s own `calls = []` holds the round's `pending` empty throughout
+    (`Threat.RoundSeq.land` can never fire when `pending = []`). -/
+theorem waitRound {apps : Apps E} {p : Participant} {T : Threat E p} (B : Bounds apps p T)
+    {c : FixedPart} {T0 : Nat} {ch : Challenge E} (hc : apps c.appDef = consensusRules)
+    (hp : p ∈ c.participants) (t : Time) (sent0 : List (SignedState E))
+    {net net' : NetworkState E p} (hseq : Threat.RoundSeq apps T t [] net net')
+    (hsent0 : net.sent = sent0) :
+    (∀ t0 ∈ sent0, t0.state.channel = c → t0.state.turnNum ≤ T0 ∧ t0.state.isFinal = false) →
+    WaitInv c T0 ch net.chain → WaitInv c T0 ch net'.chain := by
+  generalize hpnil : ([] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => intro _ hk; exact hk
+  | land hsplit _ _ => rw [← hpnil] at hsplit; simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hsent hk
+    have hsent0' : (net1.applyAdv apps (AdvMove.tick dt)).sent = sent0 := by
+      rw [NetworkState.applyAdv_sent]; exact hsent0
+    have happ : net1.chain.apply apps p (.tick dt) = some (net1.chain.tick dt) := rfl
+    have hk' : WaitInv c T0 ch (net1.applyAdv apps (AdvMove.tick dt)).chain := by
+      show WaitInv c T0 ch (net1.chain.tick dt)
+      exact waitInv_apply happ sent0 hc hp (by simp [Op.proofStates]) hsent hk
+    exact ih hsent0' hpnil hsent hk'
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hsent hk
+    have hsent0' : (net1.applyAdv apps m).sent = sent0 := by
+      rw [NetworkState.applyAdv_sent]; exact hsent0
+    have hk' : WaitInv c T0 ch (net1.applyAdv apps m).chain := by
+      cases m with
+      | deliver ss' => exact hk
+      | tick dt => exact absurd rfl (hnotick dt)
+      | land op => exact absurd rfl (hnoland op)
+      | chain caller op =>
+        simp only [NetworkState.applyAdv]
+        cases happ : net1.chain.apply apps caller op with
+        | none => exact hk
+        | some s' =>
+          exact waitInv_apply happ sent0 hc hp
+            (fun ss' hss' hp' => hsent0 ▸ (B.unforgeable net1 caller op hfeas ss' hss').1 hp')
+            hsent hk
+    exact ih hsent0' hpnil hsent hk'
+
 /-- The strategy "wait until the deadline". `c` is challenged with `ch`, and
     `p` signed no state of `c` above the record and no final state. -/
 theorem wait_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
@@ -682,27 +734,18 @@ theorem wait_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
     (hp : p ∈ c.participants) (hst : net.chain.statusOf c = .challenged T0 ch)
     (hsent : ∀ t ∈ net.sent, t.state.channel = c → t.state.turnNum ≤ T0 ∧ t.state.isFinal = false) :
     UnbeatableIn apps T allowed (fun n => n.Finalized c ch.state.outcome) net := by
-  refine .move (.wait (ch.deadline - net.chain.now)) hal trivial fun advs n' ⟨hseq, _⟩ => .done ?_
-  have hK : n'.sent = net.sent ∧ WaitInv c T0 ch n'.chain := by
-    refine FeasibleSeq.inv0 (fun n => n.sent = net.sent ∧ WaitInv c T0 ch n.chain) ?_ hseq
-      ⟨rfl, .inl hst⟩
-    intro n m hm ⟨hs0, hk⟩
-    refine ⟨by rw [applyAdv_sent]; exact hs0, ?_⟩
-    cases m with
-    | deliver ss' => exact hk
-    | tick dt =>
-      have happ : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
-      exact waitInv_apply happ n.sent hc hp (by simp [Op.proofStates]) (hs0 ▸ hsent) hk
-    | chain caller op =>
-      rw [chain_applyAdv]
-      cases happ : n.chain.apply apps caller op with
-      | none => exact hk
-      | some s' =>
-        exact waitInv_apply happ n.sent hc hp
-          (fun ss' hss' => (B.unforgeable n caller op hm ss' hss').1) (hs0 ▸ hsent) hk
-  obtain ⟨-, hk⟩ := hK
-  have hle := FeasibleSeq.now_le hseq
-  show (n'.chain.tick (ch.deadline - net.chain.now)).finalizedWith c.address = some ch.state.outcome
+  refine .move (.wait (ch.deadline - net.chain.now)) hal trivial ?_
+  intro n' hround
+  apply UnbeatableIn.done
+  obtain ⟨hseq, -⟩ := hround
+  rw [HonestMove.calls_wait] at hseq
+  have hk : WaitInv c T0 ch n'.chain := waitRound B hc hp net.chain.now net.sent hseq rfl hsent
+    (.inl hst)
+  have hle : net.chain.now ≤ n'.chain.now := hseq.now_le
+  show (n'.applyHonest (.wait (ch.deadline - net.chain.now))).chain.finalizedWith c.address =
+    some ch.state.outcome
+  show (n'.chain.tick (ch.deadline - net.chain.now)).finalizedWith c.address =
+    some ch.state.outcome
   rcases hk with hst' | hf
   · simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, Adjudicator.tick_statusOf,
       hst', Adjudicator.tick_now, ChannelStatus.finalizedWith_challenged]
@@ -731,9 +774,58 @@ theorem zeroBal_apply {apps : Apps E} {caller : Participant} {op : Op E} {s s' :
   | checkpoint c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp [hz]
   | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp [hz]
 
+/-- Landing every call of a reaction, one at a time, with no adversary noise:
+    keeps every balance zero and the clock unmoved, since every call a
+    feasible reaction issues excludes both `deposit` and `tick`
+    (`Op.HonestFeasible`). -/
+theorem zeroBalRound {apps : Apps E} {p : Participant} (T : Threat E p) (t : Time) :
+    ∀ (pending : List (Op E)), (∀ op ∈ pending, ∀ a e x, op ≠ Op.deposit a e x) →
+      (∀ op ∈ pending, ∀ dt, op ≠ Op.tick dt) →
+      ∀ (net : NetworkState E p), (∀ a, net.chain.balances.get a = 0) →
+      ∃ net', Threat.RoundSeq apps T t pending net net' ∧
+        (∀ a, net'.chain.balances.get a = 0) ∧ net'.chain.now = net.chain.now := by
+  intro pending
+  induction pending with
+  | nil => intro _ _ net hz; exact ⟨net, Threat.RoundSeq.nil, hz, rfl⟩
+  | cons op rest ih =>
+    intro hnodep hnotick net hz
+    have hop : ∀ a e x, op ≠ .deposit a e x := hnodep op List.mem_cons_self
+    have hopt : ∀ dt, op ≠ Op.tick dt := hnotick op List.mem_cons_self
+    have hz1 : ∀ a, (net.applyAdv apps (AdvMove.land op)).chain.balances.get a = 0 := by
+      intro a
+      simp only [NetworkState.applyAdv]
+      cases h : net.chain.apply apps p op with
+      | none => exact hz a
+      | some s' => exact zeroBal_apply h hop hz a
+    have hnow1 : (net.applyAdv apps (AdvMove.land op)).chain.now = net.chain.now := by
+      simp only [NetworkState.applyAdv]
+      cases h : net.chain.apply apps p op with
+      | none => rfl
+      | some s' => exact Adjudicator.apply_now_eq_of_not_tick hopt h
+    obtain ⟨net', hrest, hz', hnow'⟩ :=
+      ih (fun op' hop' => hnodep op' (List.mem_cons_of_mem op hop'))
+        (fun op' hop' => hnotick op' (List.mem_cons_of_mem op hop'))
+        (net.applyAdv apps (AdvMove.land op)) hz1
+    exact ⟨net', Threat.RoundSeq.land (l1 := []) (l2 := rest) rfl hrest, hz', by rw [hnow', hnow1]⟩
+
+/-- Appending one more `RoundSeq` derivation (from whatever state the first
+    one ends at) onto the first: the round's own `pending` is unaffected by
+    what plays out after it closes. -/
+theorem Threat.RoundSeq.append {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    {pending : List (Op E)} {net net1 net2 : NetworkState E p}
+    (h1 : Threat.RoundSeq apps T t pending net net1)
+    (h2 : Threat.RoundSeq apps T t [] net1 net2) :
+    Threat.RoundSeq apps T t pending net net2 := by
+  induction h1 with
+  | nil => exact h2
+  | land hsplit _ ih => exact Threat.RoundSeq.land hsplit (ih h2)
+  | tick hfeas hgate _ ih => exact Threat.RoundSeq.tick hfeas hgate (ih h2)
+  | other hfeas hnotick hnoland _ ih => exact Threat.RoundSeq.other hfeas hnotick hnoland (ih h2)
+
 /-- The empty round: the adversary does nothing. -/
 theorem round_nil (apps : Apps E) {p : Participant} (T : Threat E p) (n : NetworkState E p) :
-    T.Round apps n [] n := ⟨.nil, Nat.lt_add_of_pos_right T.ε_pos⟩
+    T.Round apps (HonestMove.wait 0) n n :=
+  ⟨by simpa using Threat.RoundSeq.nil, Nat.lt_add_of_pos_right T.ε_pos⟩
 
 /-- With no coins anywhere, `p` obtains nothing at `d`: the value is 0. -/
 theorem value_zero (apps : Apps E) {p : Participant} (T : Threat E p) (net : NetworkState E p)
@@ -745,19 +837,31 @@ theorem value_zero (apps : Apps E) {p : Participant} (T : Threat E p) (net : Net
   intro n hn
   induction hn with
   | done hg => intro hz'; rw [hz'] at hg; exact hg
-  | @move n m _ hfeas _ ih =>
+  | @move n m _ hfeas ih1 ih =>
     intro hz'
-    refine ih [] n (round_nil apps T n) ?_
     cases m with
-    | chain op =>
-      simp only [NetworkState.applyHonest]
-      cases happ : n.chain.apply apps p op with
-      | none => exact hz'
-      | some s' =>
-        refine zeroBal_apply happ (fun a e x hd => ?_) hz'
-        subst hd; exact hfeas
-    | send st => exact hz'
-    | wait dt => exact hz'
+    | react r =>
+      have hnodep : ∀ op ∈ r.calls, ∀ a e x, op ≠ .deposit a e x := by
+        intro op hop a e x heq
+        have := hfeas op hop
+        rw [heq] at this
+        exact this
+      have hnotick : ∀ op ∈ r.calls, ∀ dt, op ≠ Op.tick dt := by
+        intro op hop dt heq
+        have := hfeas op hop
+        rw [heq] at this
+        exact this
+      obtain ⟨net', hrseq, hz1, heqnow⟩ := zeroBalRound T n.chain.now r.calls hnodep hnotick n hz'
+      refine ih net' ⟨hrseq, by rw [heqnow]; exact Nat.lt_add_of_pos_right T.ε_pos⟩ ?_
+      show ∀ a, (net'.applyHonest (.react r)).chain.balances.get a = 0
+      simpa [NetworkState.applyHonest] using hz1
+    | wait dt =>
+      refine ih n (round_nil apps T n) ?_
+      show ∀ a, (n.applyHonest (.wait dt)).chain.balances.get a = 0
+      intro a
+      have happ : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
+      simpa [NetworkState.applyHonest] using
+        zeroBal_apply happ (fun a e x h => by cases h) hz' a
 
 /-- The outcome of finalization survives every adversary move. -/
 theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
@@ -766,25 +870,27 @@ theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
     (n.applyAdv apps m).chain.finalizedWith c.address = some f := by
   cases m with
   | chain caller op =>
-    rw [chain_applyAdv]
+    simp only [NetworkState.applyAdv]
     cases happ : n.chain.apply apps caller op with
     | none => exact hf
     | some s' => exact finalizedWith_apply happ hf
   | deliver ss => exact hf
   | tick dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
-
-/-- The outcome of finalization survives every honest move. -/
-theorem finalizedWith_applyHonest (apps : Apps E) {p : Participant} (m : HonestMove E)
-    (n : NetworkState E p) {c : FixedPart} {f : Outcome E}
-    (hf : n.chain.finalizedWith c.address = some f) :
-    (n.applyHonest apps m).chain.finalizedWith c.address = some f := by
-  cases m with
-  | chain op =>
-    show ((n.chain.apply apps p op).getD n.chain).finalizedWith c.address = some f
+  | land op =>
+    simp only [NetworkState.applyAdv]
     cases happ : n.chain.apply apps p op with
     | none => exact hf
     | some s' => exact finalizedWith_apply happ hf
-  | send st => exact hf
+
+/-- The outcome of finalization survives every honest move: a reaction never
+    touches the chain (`NetworkState.applyHonest`'s `.react` case only
+    writes `sent`), and `wait` only ticks. -/
+theorem finalizedWith_applyHonest (apps : Apps E) {p : Participant} (m : HonestMove E)
+    (n : NetworkState E p) {c : FixedPart} {f : Outcome E}
+    (hf : n.chain.finalizedWith c.address = some f) :
+    (n.applyHonest m).chain.finalizedWith c.address = some f := by
+  cases m with
+  | react r => simpa [NetworkState.applyHonest] using hf
   | wait dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
 
 /-- A channel finalized with `Ω` is never finalized with another outcome:
@@ -792,29 +898,26 @@ theorem finalizedWith_applyHonest (apps : Apps E) {p : Participant} (m : HonestM
 theorem prevents_other_outcome (apps : Apps E) {p : Participant} (T : Threat E p)
     (net : NetworkState E p) (c : FixedPart) (Ω Ω' : Outcome E) (hf : net.Finalized c Ω)
     (hne : Ω' ≠ Ω) : Prevents apps T (fun n => n.Finalized c Ω') net := by
-  refine ⟨fun _ => .wait 0, fun _ => trivial, fun n1 advs n2 hrun hround => ?_⟩
+  refine ⟨fun _ => .wait 0, fun _ => trivial, fun n1 n2 hrun hround => ?_⟩
   have h1 : n1.Finalized c Ω := by
     clear hround
     induction hrun with
     | refl => exact hf
-    | round _ hr ih =>
-      exact finalizedWith_applyHonest apps _ _
-        (FeasibleSeq.inv0 (fun n => n.Finalized c Ω)
-          (fun n m _ h => finalizedWith_applyAdv apps m n h) hr.1 ih)
-  have h2 := FeasibleSeq.inv0 (fun n => n.Finalized c Ω)
-    (fun n m _ h => finalizedWith_applyAdv apps m n h) hround.1 h1
+    | round _ hr ih => exact finalizedWith_applyHonest apps _ _ (hr.1.finalizedWith_mono ih)
+  have h2 := hround.1.finalizedWith_mono h1
   intro h3
   simp only [NetworkState.Finalized] at h2 h3
-  rw [h2] at h3; exact hne (Option.some.inj h3).symm
+  rw [h2] at h3
+  exact hne (Option.some.inj h3).symm
 
 end Game
 
 /-! ## Reachability helpers (`ArmadaLean/Machine.lean`, `ArmadaLean/Nitro/Reachable.lean`)
 
     Every witness below that supports a theorem taking `(Nitro.participant apps T).Reachable net`
-    or `(Nitro.network apps Ts).Reachable n` proves it by a short chain of these three helpers per
+    or `(Nitro.network apps Ts).Reachable n` proves it by a short chain of these helpers per
     machine, mirroring the real move sequence that reaches the witness state: one honest move, one
-    adversary move, or the genesis state itself. -/
+    landed call of `p`'s own, one adversary move, or the genesis state itself. -/
 
 section Reachability
 
@@ -826,13 +929,19 @@ theorem participant_reachable_init {p : Participant} (apps : Apps E) (T : Threat
 
 theorem participant_reachable_honest {apps : Apps E} {p : Participant} {T : Threat E p}
     {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) (m : HonestMove E)
-    (hm : m.Feasible net) : (Nitro.participant apps T).Reachable (net.applyHonest apps m) :=
+    (hm : m.Feasible net) : (Nitro.participant apps T).Reachable (net.applyHonest m) :=
   h.tail (Or.inl ⟨m, hm, rfl⟩)
+
+theorem participant_reachable_land {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) (op : Op E)
+    (hop : op.HonestFeasible net) :
+    (Nitro.participant apps T).Reachable (net.applyAdv apps (.land op)) :=
+  h.tail (Or.inr (Or.inl ⟨op, hop, rfl⟩))
 
 theorem participant_reachable_adv {apps : Apps E} {p : Participant} {T : Threat E p}
     {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) (m : AdvMove E)
     (hm : T.feasible net m) : (Nitro.participant apps T).Reachable (net.applyAdv apps m) :=
-  h.tail (Or.inr ⟨m, hm, rfl⟩)
+  h.tail (Or.inr (Or.inr ⟨m, hm, rfl⟩))
 
 theorem network_reachable_init (apps : Apps E) (Ts : Threats E apps) :
     (Nitro.network apps Ts).Reachable
@@ -842,17 +951,22 @@ theorem network_reachable_init (apps : Apps E) (Ts : Threats E apps) :
 theorem network_reachable_honest {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) (p : Participant) (m : HonestMove E)
     (hm : m.Feasible (n.view p))
-    (hgate : ∀ op, m = .chain op → ∀ ss ∈ op.proofStates, n.Sendable ss)
-    (hvgate : ∀ st, m = .send st → n.VoucherSendable st) :
-    (Nitro.network apps Ts).Reachable (Network.applyHonest apps n p m) :=
-  h.tail ⟨p, Or.inl ⟨m, hm, hgate, hvgate, rfl⟩⟩
+    (hvgate : ∀ r : Reaction E, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) :
+    (Nitro.network apps Ts).Reachable (Network.applyHonest n p m) :=
+  h.tail ⟨p, Or.inl ⟨m, hm, hvgate, rfl⟩⟩
+
+theorem network_reachable_land {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) (p : Participant) (op : Op E)
+    (hop : op.HonestFeasible (n.view p)) (hgate : ∀ ss ∈ op.proofStates, n.Sendable ss) :
+    (Nitro.network apps Ts).Reachable (Network.land apps n p op) :=
+  h.tail ⟨p, Or.inr (Or.inl ⟨op, hop, hgate, rfl⟩)⟩
 
 theorem network_reachable_adv {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) (p : Participant) (m : AdvMove E)
     (hm : (Ts.T p).feasible (n.view p) m) (hdgate : ∀ ss, m = .deliver ss → n.Sendable ss)
-    (hnochain : ∀ caller op, m ≠ .chain caller op) :
+    (hnochain : ∀ caller op, m ≠ .chain caller op) (hnoland : ∀ op, m ≠ .land op) :
     (Nitro.network apps Ts).Reachable (Network.applyAdv apps n p m) :=
-  h.tail ⟨p, Or.inr ⟨m, hm, hdgate, hnochain, rfl⟩⟩
+  h.tail ⟨p, Or.inr (Or.inr ⟨m, hm, hdgate, hnochain, hnoland, rfl⟩)⟩
 
 end Reachability
 
@@ -866,6 +980,7 @@ def canon (p : Participant) : Threat Nat p where
     | .chain caller op => caller ≠ p ∧ ∀ ss ∈ op.proofStates, net.Unforged ss
     | .deliver ss => net.Unforged ss
     | .tick _ => True
+    | .land _ => True
   ε := 1
   ε_pos := Nat.one_pos
 
@@ -952,13 +1067,16 @@ theorem netF_reach : (Nitro.participant apps0 (canon p0)).Reachable netF :=
   participant_reachable_honest
     (participant_reachable_adv (participant_reachable_init apps0 (canon p0))
       (.chain q0 (.deposit c1.address 0 1)) ⟨by decide, fun ss h => absurd h List.not_mem_nil⟩)
-    (.send stF) trivial
+    (.send stF) (by simp)
 
-/-- `⟨sCon, [], [ssF]⟩` is reachable: `netF_reach`, then `p0`'s own honest conclude with `ssF`
-    (`Holds` needs `ssF` in `net.sent`, already there from the `.send` `netF_reach` ends with). -/
+/-- `⟨sCon, [ssF], [ssF]⟩` is reachable: `netF_reach`, then `p0`'s own call landing (the
+    explicit-time game lands a call separately from issuing it, `participant_reachable_land`),
+    conclude with `ssF` (`Holds` needs `ssF` in `net.sent`, already there from the `.send`
+    `netF_reach` ends with; the land also broadcasts `ssF` into `received`,
+    `NetworkState.applyAdv`'s `.land` case). -/
 theorem netC_reach :
-    (Nitro.participant apps0 (canon p0)).Reachable (⟨sCon, [], [ssF]⟩ : NetworkState Nat p0) :=
-  participant_reachable_honest netF_reach (.chain (.conclude c1 ssF))
+    (Nitro.participant apps0 (canon p0)).Reachable (⟨sCon, [ssF], [ssF]⟩ : NetworkState Nat p0) :=
+  participant_reachable_land netF_reach (.conclude c1 ssF)
     (fun ss h => by
       simp only [Op.proofStates, List.mem_singleton] at h; subst h; exact netF_holds)
 
@@ -967,7 +1085,7 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     net.chain.finalOutcome c.address = some (.allocation o) ∧
     net.chain.DirectlyFunded c ∧ o.find (.external d) = some ⟨.external d, .alloc amt⟩ :=
-  ⟨⟨sCon, [], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl, ⟨o1, rfl, by decide⟩, by decide⟩
+  ⟨⟨sCon, [ssF], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl, ⟨o1, rfl, by decide⟩, by decide⟩
 
 /-- `finalizable_funded_pays`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
@@ -975,7 +1093,7 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (
     net.chain.finalOutcome c.address = some (.allocation o) ∧
     FundedFor apps0 (canon p0) c o.total net ∧
     o.find (.external d) = some ⟨.external d, .alloc amt⟩ :=
-  ⟨⟨sCon, [], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl,
+  ⟨⟨sCon, [ssF], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl,
     .done (show o1.total ≤ _ by decide), by decide⟩
 
 /-- `conclusion_proof_finalizable`. -/
@@ -1014,20 +1132,20 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat)
 def stO0 : State Nat := ⟨c1, 0, .allocation o1, false, .opaque 0⟩
 def ssO0 : SignedState Nat := ⟨stO0, [p0]⟩
 def sCh0 : Adjudicator Nat := g0.setStatus c1 (.challenged 0 ⟨stO0, 2⟩)
-def netO : NetworkState Nat p0 := ⟨sCh0, [], [ssO, ssO0]⟩
+def netO : NetworkState Nat p0 := ⟨sCh0, [ssO0], [ssO, ssO0]⟩
 
 theorem g0_challengeO0 : g0.apply apps0 p0 (.challenge c1 [ssO0] stO0) = some sCh0 := rfl
 
 theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
   participant_reachable_honest
-    (participant_reachable_honest
+    (participant_reachable_land
       (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stO0)
-        trivial)
-      (.chain (.challenge c1 [ssO0] stO0))
+        (by simp))
+      (.challenge c1 [ssO0] stO0)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h
         exact holds_intro _ _ (by decide) (fun _ h => by cases h)))
-    (.send stO) trivial
+    (.send stO) (by simp)
 
 /-- `late_observer_can_checkpoint`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat) (t : Nat)
@@ -1057,33 +1175,33 @@ theorem stF_voucher : stF.voucher? = none := rfl
     send). Defined as the reachability derivation's own result, not a
     hand-written record, so `nFU_reach` needs no further unification. -/
 def nFU : Network Nat :=
-  Network.applyHonest apps0
-    (Network.applyHonest apps0 (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send stF))
-    p0 (.chain (.conclude c1 ssF))
+  Network.land apps0
+    (Network.applyHonest (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send stF))
+    p0 (.conclude c1 ssF)
 
 theorem nFU_reach : (Nitro.network apps0 (Ts apps0)).Reachable nFU :=
-  network_reachable_honest
+  network_reachable_land
     (network_reachable_honest (network_reachable_init apps0 (Ts apps0))
-      p0 (.send stF) trivial (fun op h => by cases h)
-      (fun st h => by
-        injection h with h; subst h; intro v hv; rw [stF_voucher] at hv; cases hv))
-    p0 (.chain (.conclude c1 ssF))
+      p0 (.send stF) (by simp)
+      (fun r hr st hst => by
+        injection hr with hr; subst hr
+        simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+        intro v hv; rw [stF_voucher] at hv; cases hv))
+    p0 (.conclude c1 ssF)
     (fun ss hss => by
       simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
       exact holds_intro _ _ (by decide) (fun _ h => by cases h))
-    (fun op h => by
-      injection h with h; subst h
-      intro ss hss; simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
+    (fun ss hss => by
+      simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
       refine ⟨fun q hq => ?_, fun v hv q hq => by simp [ssF, stF, State.voucher?] at hv⟩
       simp only [ssF, List.mem_singleton] at hq; subst hq
       exact ⟨⟨stF, [p0]⟩, by decide, rfl⟩)
-    (fun st h => by cases h)
 
 theorem nFU_chain : nFU.chain = gCon := rfl
 
 theorem nFU_views_chain (r : Participant) : (nFU.views r).chain = gCon := rfl
 
-theorem nFU_views_p0 : nFU.views p0 = ⟨gCon, [], [⟨stF, [p0]⟩]⟩ := rfl
+theorem nFU_views_p0 : nFU.views p0 = ⟨gCon, [ssF], [⟨stF, [p0]⟩]⟩ := rfl
 
 theorem nFU_views_q0 : nFU.views q0 = ⟨gCon, [ssF], []⟩ := rfl
 
@@ -1118,7 +1236,7 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart),
       by decide, rfl⟩, by decide⟩
 
 /-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
-    is enabled and is the only enabled outcome. `net` is `⟨sCon, [], [ssF]⟩`: `netC_reach`. -/
+    is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `netC_reach`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     p0 ∈ c.participants ∧
@@ -1126,12 +1244,17 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
       (apps0 c.appDef).supports c proof t.state = true) ∧
     2 * (canon p0).ε ≤ c.challengeDuration ∧ Enabled apps0 (canon p0) c Ω net ∧
     (∀ Ω', Enabled apps0 (canon p0) c Ω' net → Ω' = Ω) :=
-  ⟨⟨sCon, [], [ssF]⟩, c1, .allocation o1, canon_ok _ _, netC_reach, by decide,
+  ⟨⟨sCon, [ssF], [ssF]⟩, c1, .allocation o1, canon_ok _ _, netC_reach, by decide,
     (fun t h _ => by
       rw [List.mem_singleton] at h; subst h
-      exact ⟨[ssF], fun ss h' => by rw [List.mem_singleton] at h'; subst h'; exact netF_holds,
+      exact ⟨[ssF], fun ss h' => by
+        rw [List.mem_singleton] at h'; subst h'
+        exact holds_intro _ _ (by decide) (fun _ h => by cases h),
         by decide⟩),
-    by decide, fun ⟨_, _, hσ⟩ => hσ _ [] _ .refl (round_nil _ _ _) rfl,
+    by decide, fun ⟨σ, hfeas, hσ⟩ => by
+      obtain ⟨n2, hround⟩ := Threat.Round.exists (canon p0)
+        (hfeas (⟨sCon, [ssF], [ssF]⟩ : NetworkState Nat p0))
+      exact hσ _ n2 .refl hround (hround.1.finalizedWith_mono rfl),
     fun Ω' hen => by
       by_contra hne
       exact hen (prevents_other_outcome _ _ _ _ _ _ rfl hne)⟩
@@ -1145,15 +1268,16 @@ def apps1 : Apps Nat := fun _ => forceMoveRules vtAll
 def st0 : State Nat := ⟨c1, 0, .allocation o1, false, .opaque 0⟩
 
 def nFP : Network Nat :=
-  Network.applyHonest apps1 (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send st0)
+  Network.applyHonest (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send st0)
 
 theorem st0_voucher : st0.voucher? = none := rfl
 
 theorem nFP_reach : (Nitro.network apps1 (Ts apps1)).Reachable nFP :=
-  network_reachable_honest (network_reachable_init apps1 (Ts apps1)) p0 (.send st0) trivial
-    (fun op h => by cases h)
-    (fun st h => by
-      injection h with h; subst h; intro v hv; rw [st0_voucher] at hv; cases hv)
+  network_reachable_honest (network_reachable_init apps1 (Ts apps1)) p0 (.send st0) (by simp)
+    (fun r hr st hst => by
+      injection hr with hr; subst hr
+      simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+      intro v hv; rw [st0_voucher] at hv; cases hv)
 
 theorem nFP_views_p0 : nFP.views p0 = ⟨g0, [], [⟨st0, [p0]⟩]⟩ := rfl
 
@@ -1190,13 +1314,14 @@ example : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (Ω : Outcome Na
     on-chain, so `c1`'s on-chain status stays `.open 0`
     (`deadlineAfter_open`, the `.inl` branch of `hchain`). -/
 def nCF : Network Nat :=
-  Network.applyHonest apps0 (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send stF)
+  Network.applyHonest (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send stF)
 
 theorem nCF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nCF :=
-  network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send stF) trivial
-    (fun op h => by cases h)
-    (fun st h => by
-      injection h with h; subst h; intro v hv; rw [stF_voucher] at hv; cases hv)
+  network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send stF) (by simp)
+    (fun r hr st hst => by
+      injection hr with hr; subst hr
+      simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+      intro v hv; rw [stF_voucher] at hv; cases hv)
 
 theorem nCF_views_p0 : nCF.views p0 = ⟨g0, [], [ssF]⟩ := rfl
 
@@ -1226,7 +1351,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (Ω : Outcome Na
     · exfalso
       have : (nCF.views r).sent = [] := by
         rw [Network.views, Network.view]
-        simp only [nCF, Network.applyHonest, if_neg hrp0]
+        simp only [nCF, Network.applyHonest, HonestMove.send, if_neg hrp0]
       rw [this] at ht
       exact absurd ht List.not_mem_nil
 
@@ -1242,7 +1367,7 @@ def mC2 : AdvMove Nat := .chain q0 (.conclude c2 ⟨stF2, [p0, q0]⟩)
 theorem netC2_reach : (Nitro.participant apps0 (canon p0)).Reachable netC2 :=
   participant_reachable_adv
     (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stF2)
-      trivial)
+      (by simp))
     (.deliver ⟨stF2, [q0]⟩) (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
       NetworkState.Unforged _ ⟨stF2, [q0]⟩)
 
@@ -1263,10 +1388,41 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat)
     canon_ok _ _, netC2_reach, rfl, by decide,
     holds_intro _ _ (by decide) (fun _ h => by cases h), by decide,
     rfl, rfl, by decide, by decide, .inl ⟨0, rfl, le_rfl⟩, ?_⟩
-  rintro ⟨σ, -, hσ⟩
-  refine hσ netC2 [mC2] _ .refl ⟨.cons ⟨by decide, fun ss hss => ?_⟩ .nil, by decide⟩ rfl
-  simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
-  exact unforged_intro _ _ (by decide) (fun _ h => by cases h)
+  rintro ⟨σ, hfeas, hσ⟩
+  have hmC2feas : (canon p0).feasible netC2 mC2 :=
+    ⟨by decide, fun ss hss => by
+      simp only [mC2, Op.proofStates, List.mem_singleton] at hss; subst hss
+      exact unforged_intro _ _ (by decide) (fun _ h => by cases h)⟩
+  have hfin1 : (netC2.applyAdv apps0 mC2).chain.finalizedWith c2.address = some (.allocation o1) :=
+    rfl
+  have hnow1 : (netC2.applyAdv apps0 mC2).chain.now = netC2.chain.now := rfl
+  cases hm : σ netC2 with
+  | react r =>
+    have hnotick : ∀ op ∈ r.calls, ∀ dt, op ≠ Op.tick dt := by
+      intro op hop dt heq
+      have h := hfeas netC2
+      rw [hm] at h
+      subst heq
+      exact h _ hop
+    obtain ⟨net2, hland, heqnow⟩ :=
+      Threat.RoundSeq.landAll apps0 (canon p0) netC2.chain.now r.calls hnotick
+        (netC2.applyAdv apps0 mC2)
+    have hseq : Threat.RoundSeq apps0 (canon p0) netC2.chain.now (σ netC2).calls netC2 net2 := by
+      rw [hm, HonestMove.calls]
+      exact Threat.RoundSeq.other hmC2feas (by simp [mC2]) (by simp [mC2]) hland
+    have hfin2 : net2.chain.finalizedWith c2.address = some (.allocation o1) :=
+      hland.finalizedWith_mono hfin1
+    have htime : net2.chain.now < netC2.chain.now + (canon p0).ε := by
+      rw [heqnow, hnow1]; exact Nat.lt_add_of_pos_right (canon p0).ε_pos
+    exact hσ netC2 net2 .refl ⟨hseq, htime⟩ hfin2
+  | wait dt =>
+    have hseq : Threat.RoundSeq apps0 (canon p0) netC2.chain.now (σ netC2).calls netC2
+        (netC2.applyAdv apps0 mC2) := by
+      rw [hm, HonestMove.calls_wait]
+      exact Threat.RoundSeq.other hmC2feas (by simp [mC2]) (by simp [mC2]) Threat.RoundSeq.nil
+    have htime : (netC2.applyAdv apps0 mC2).chain.now < netC2.chain.now + (canon p0).ε := by
+      rw [hnow1]; exact Nat.lt_add_of_pos_right (canon p0).ε_pos
+    exact hσ netC2 _ .refl ⟨hseq, htime⟩ hfin1
 
 /-- `turbo_redistribution_unbeatable`. `net` is the genesis state itself: `Nitro.participant`'s own
     initial state. -/
@@ -1306,10 +1462,10 @@ def sP : Adjudicator Nat :=
 theorem g0_concludeP : g0.apply apps0 p0 (.conclude c1 ssP) = some sP := rfl
 
 theorem sP_reach : (Nitro.participant apps0 (canon p0)).Reachable
-    (⟨sP, [], [ssP]⟩ : NetworkState Nat p0) :=
-  participant_reachable_honest
-    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stP) trivial)
-    (.chain (.conclude c1 ssP))
+    (⟨sP, [ssP], [ssP]⟩ : NetworkState Nat p0) :=
+  participant_reachable_land
+    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stP) (by simp))
+    (.conclude c1 ssP)
     (fun ss h => by
       simp only [Op.proofStates, List.mem_singleton] at h; subst h
       exact holds_intro _ _ (by decide) (fun _ h => by cases h))
@@ -1317,7 +1473,7 @@ theorem sP_reach : (Nitro.participant apps0 (canon p0)).Reachable
 example : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     q ≠ d ∧ net.chain.transfer a (.external q) = some s' :=
-  ⟨⟨sP, [], [ssP]⟩, 0, 1, c1, _, canon_ok _ _, sP_reach, by decide, rfl⟩
+  ⟨⟨sP, [ssP], [ssP]⟩, 0, 1, c1, _, canon_ok _ _, sP_reach, by decide, rfl⟩
 
 /-- `participant_can_prevent_cycles`. `net` is the genesis state itself. -/
 example : ∃ net : NetworkState Nat p0,
@@ -1386,19 +1542,21 @@ def stLW : State Nat := ⟨cLW, 0, wLS.outcome, true, .opaque 0⟩
 theorem stLW_voucher : stLW.voucher? = none := rfl
 
 def nLW : Network Nat :=
-  Network.applyHonest apps0
-    (Network.applyHonest apps0 (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send stLW))
+  Network.applyHonest
+    (Network.applyHonest (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send stLW))
     q0 (.send stLW)
 
 theorem nLW_reach : (Nitro.network apps0 (Ts apps0)).Reachable nLW :=
   network_reachable_honest
-    (network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send stLW) trivial
-      (fun op h => by cases h)
-      (fun st h => by
-        injection h with h; subst h; intro v hv; rw [stLW_voucher] at hv; cases hv))
-    q0 (.send stLW) trivial (fun op h => by cases h)
-    (fun st h => by
-      injection h with h; subst h; intro v hv; rw [stLW_voucher] at hv; cases hv)
+    (network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send stLW) (by simp)
+      (fun r hr st hst => by
+        injection hr with hr; subst hr
+        simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+        intro v hv; rw [stLW_voucher] at hv; cases hv))
+    q0 (.send stLW) (by simp) (fun r hr st hst => by
+      injection hr with hr; subst hr
+      simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+      intro v hv; rw [stLW_voucher] at hv; cases hv)
 
 theorem nLW_views_p0 : nLW.views p0 = ⟨g0, [⟨stLW, [q0]⟩], [⟨stLW, [p0]⟩]⟩ := rfl
 theorem nLW_views_q0 : nLW.views q0 = ⟨g0, [⟨stLW, [p0]⟩], [⟨stLW, [q0]⟩]⟩ := rfl
@@ -1454,7 +1612,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
       · exfalso
         have : (nLW.views r).sent = [] := by
           rw [Network.views, Network.view]
-          simp only [nLW, Network.applyHonest, if_neg hrp0, if_neg hrq0]
+          simp only [nLW, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
         rw [this] at ht
         exact absurd ht List.not_mem_nil
 
@@ -1462,29 +1620,34 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     (a two-participant channel), giving each the other's signature with
     no adversary move. -/
 def nOneCh (st : State Nat) : Network Nat :=
-  Network.applyHonest apps0
-    (Network.applyHonest apps0 (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send st))
+  Network.applyHonest
+    (Network.applyHonest (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send st))
     q0 (.send st)
 
 theorem nOneCh_reach {st : State Nat} (hv : st.voucher? = none) :
     (Nitro.network apps0 (Ts apps0)).Reachable (nOneCh st) :=
   network_reachable_honest
-    (network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send st) trivial
-      (fun op h => by cases h)
-      (fun st' h => by injection h with h; subst h; intro v hv'; rw [hv] at hv'; cases hv'))
-    q0 (.send st) trivial (fun op h => by cases h)
-    (fun st' h => by injection h with h; subst h; intro v hv'; rw [hv] at hv'; cases hv')
+    (network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send st) (by simp)
+      (fun r hr st' hst => by
+        injection hr with hr; subst hr
+        simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+        intro v hv'; rw [hv] at hv'; cases hv'))
+    q0 (.send st) (by simp)
+    (fun r hr st' hst => by
+      injection hr with hr; subst hr
+      simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+      intro v hv'; rw [hv] at hv'; cases hv')
 
 theorem nOneCh_chain (st : State Nat) : (nOneCh st).chain = g0 := rfl
 
 theorem nOneCh_views_p0 {st : State Nat} (hst : st.channel.participants = [p0, q0]) :
     (nOneCh st).views p0 = ⟨g0, [⟨st, [q0]⟩], [⟨st, [p0]⟩]⟩ := by
-  simp [nOneCh, Network.views, Network.view, Network.applyHonest, State.recipients, hst,
+  simp [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
     show p0 ≠ q0 from by decide]
 
 theorem nOneCh_views_q0 {st : State Nat} (hst : st.channel.participants = [p0, q0]) :
     (nOneCh st).views q0 = ⟨g0, [⟨st, [p0]⟩], [⟨st, [q0]⟩]⟩ := by
-  simp [nOneCh, Network.views, Network.view, Network.applyHonest, State.recipients, hst,
+  simp [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
     show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide]
 
 theorem g0_open (c : FixedPart) : g0.statusOf c = .open 0 := rfl
@@ -1531,10 +1694,10 @@ theorem nOneCh_finalizable {c : FixedPart} {Ω : Outcome Nat} (hcp : c.participa
 /-- Two rounds of `nOneCh`: `p0` and `q0` each send `st1`, then each
     send `st2`, both synchronously delivered to the other. -/
 def nTwoCh (st1 st2 : State Nat) : Network Nat :=
-  Network.applyHonest apps0
-    (Network.applyHonest apps0
-      (Network.applyHonest apps0
-        (Network.applyHonest apps0 (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send st1))
+  Network.applyHonest
+    (Network.applyHonest
+      (Network.applyHonest
+        (Network.applyHonest (⟨g0, fun _ => [], fun _ => []⟩ : Network Nat) p0 (.send st1))
         q0 (.send st1))
       p0 (.send st2))
     q0 (.send st2)
@@ -1544,28 +1707,39 @@ theorem nTwoCh_reach {st1 st2 : State Nat} (hv1 : st1.voucher? = none) (hv2 : st
   network_reachable_honest
     (network_reachable_honest
       (network_reachable_honest
-        (network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send st1) trivial
-          (fun op h => by cases h)
-          (fun st' h => by injection h with h; subst h; intro v hv'; rw [hv1] at hv'; cases hv'))
-        q0 (.send st1) trivial (fun op h => by cases h)
-        (fun st' h => by injection h with h; subst h; intro v hv'; rw [hv1] at hv'; cases hv'))
-      p0 (.send st2) trivial (fun op h => by cases h)
-      (fun st' h => by injection h with h; subst h; intro v hv'; rw [hv2] at hv'; cases hv'))
-    q0 (.send st2) trivial (fun op h => by cases h)
-    (fun st' h => by injection h with h; subst h; intro v hv'; rw [hv2] at hv'; cases hv')
+        (network_reachable_honest (network_reachable_init apps0 (Ts apps0)) p0 (.send st1) (by simp)
+          (fun r hr st' hst => by
+            injection hr with hr; subst hr
+            simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+            intro v hv'; rw [hv1] at hv'; cases hv'))
+        q0 (.send st1) (by simp)
+        (fun r hr st' hst => by
+          injection hr with hr; subst hr
+          simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+          intro v hv'; rw [hv1] at hv'; cases hv'))
+      p0 (.send st2) (by simp)
+      (fun r hr st' hst => by
+        injection hr with hr; subst hr
+        simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+        intro v hv'; rw [hv2] at hv'; cases hv'))
+    q0 (.send st2) (by simp)
+    (fun r hr st' hst => by
+      injection hr with hr; subst hr
+      simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
+      intro v hv'; rw [hv2] at hv'; cases hv')
 
 theorem nTwoCh_chain (st1 st2 : State Nat) : (nTwoCh st1 st2).chain = g0 := rfl
 
 theorem nTwoCh_views_p0 {st1 st2 : State Nat} (hst1 : st1.channel.participants = [p0, q0])
     (hst2 : st2.channel.participants = [p0, q0]) :
     (nTwoCh st1 st2).views p0 = ⟨g0, [⟨st2, [q0]⟩, ⟨st1, [q0]⟩], [⟨st2, [p0]⟩, ⟨st1, [p0]⟩]⟩ := by
-  simp [nTwoCh, Network.views, Network.view, Network.applyHonest, State.recipients, hst1, hst2,
+  simp [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
     show p0 ≠ q0 from by decide]
 
 theorem nTwoCh_views_q0 {st1 st2 : State Nat} (hst1 : st1.channel.participants = [p0, q0])
     (hst2 : st2.channel.participants = [p0, q0]) :
     (nTwoCh st1 st2).views q0 = ⟨g0, [⟨st2, [p0]⟩, ⟨st1, [p0]⟩], [⟨st2, [q0]⟩, ⟨st1, [q0]⟩]⟩ := by
-  simp [nTwoCh, Network.views, Network.view, Network.applyHonest, State.recipients, hst1, hst2,
+  simp [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
     show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide]
 
 
@@ -1892,7 +2066,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
       · exfalso
         have : (nPW.views r).sent = [] := by
           rw [Network.views, Network.view]
-          simp only [nPW, nTwoCh, Network.applyHonest, if_neg hrp0, if_neg hrq0]
+          simp only [nPW, nTwoCh, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
         rw [this] at ht; exact absurd ht List.not_mem_nil
   · intro r; simp only [nPW]
     refine ⟨deadlineAfter_open (by rw [nTwoCh_views_chain]; exact g0_open cLW) _,
@@ -1911,7 +2085,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
       · exfalso
         have : (nPW.views r).sent = [] := by
           rw [Network.views, Network.view]
-          simp only [nPW, nTwoCh, Network.applyHonest, if_neg hrp0, if_neg hrq0]
+          simp only [nPW, nTwoCh, Network.applyHonest, HonestMove.send, if_neg hrp0, if_neg hrq0]
         rw [this] at ht; exact absurd ht List.not_mem_nil
 /-! ### SATP: a route of two peers (`p0` Alice, `q0` Bob) and of three. -/
 
@@ -1972,7 +2146,7 @@ def netV : NetworkState Nat p0 := ⟨g0, [⟨stV, [q0]⟩], [⟨stV, [p0]⟩]⟩
 theorem netV_reach : (Nitro.participant apps2 (canon p0)).Reachable netV :=
   participant_reachable_adv
     (participant_reachable_honest (participant_reachable_init apps2 (canon p0)) (.send stV)
-      trivial)
+      (by simp))
     (.deliver ⟨stV, [q0]⟩) (⟨fun h => absurd h (by decide),
       fun v h hp => by cases h; exact absurd hp (by decide)⟩ :
       NetworkState.Unforged _ ⟨stV, [q0]⟩)
@@ -2038,9 +2212,9 @@ theorem net3_reach : (Nitro.participant apps2 (canon q0)).Reachable net3 :=
       (participant_reachable_honest
         (participant_reachable_honest
           (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send V0)
-            trivial)
-          (.send Sp) trivial)
-        (.send Sm) trivial)
+            (by simp))
+          (.send Sp) (by simp))
+        (.send Sm) (by simp))
       (.deliver ⟨Sp, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩))
     (.deliver ⟨Sm, [p0]⟩)
@@ -2087,8 +2261,8 @@ theorem netB_reach : (Nitro.participant apps2 (canon q0)).Reachable netB :=
     (participant_reachable_adv
       (participant_reachable_honest
         (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send SpB)
-          trivial)
-        (.send SmB) trivial)
+          (by simp))
+        (.send SmB) (by simp))
       (.deliver ⟨SpB, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
         NetworkState.Unforged _ ⟨SpB, [w0]⟩))
@@ -2125,24 +2299,24 @@ def V0r : State Nat := ⟨Vr, 0, originalOutcome 0 1 1 0, false, .satpVirtual �
 def ΩV : Outcome Nat := .allocation [alloc (.external 0) 1, alloc (.external 1) 0]
 def sE : Adjudicator Nat := (g0.setStatus Vr (.challenged 0 ⟨V0r, 0 + Vr.challengeDuration⟩)).tick 2
 def netE : NetworkState Nat p0 :=
-  ⟨sE, [⟨S0, [q0]⟩, ⟨V0r, [q0]⟩], [⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]⟩
+  ⟨sE, [⟨V0r, [p0, q0]⟩, ⟨S0, [q0]⟩, ⟨V0r, [q0]⟩], [⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]⟩
 
 theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
   participant_reachable_honest
-    (participant_reachable_honest
+    (participant_reachable_land
       (participant_reachable_adv
         (participant_reachable_honest
           (participant_reachable_adv
             (participant_reachable_honest (participant_reachable_init apps2 (canon p0))
-              (.send V0r) trivial)
+              (.send V0r) (by simp))
             (.deliver ⟨V0r, [q0]⟩) (by
               refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
               cases h; exact absurd hp (by decide)))
-          (.send S0) trivial)
+          (.send S0) (by simp))
         (.deliver ⟨S0, [q0]⟩) (by
           refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
           cases h))
-      (.chain (.challenge Vr [⟨V0r, [p0, q0]⟩] V0r))
+      (.challenge Vr [⟨V0r, [p0, q0]⟩] V0r)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h
         refine ⟨fun q hq => ?_, fun v hv => ?_⟩
