@@ -1,0 +1,50 @@
+status: completed
+pebble_id: aln-1d9
+summary: >
+  Proved owned_merge_can_happen in ArmadaLean/PoolSafety.lean with no sorry.
+  Added a new helper theorem reachable_live_token (split into
+  step_preserves_live_token + reachable_live_token, mirroring the file's
+  existing step/reachable invariant style) establishing that a live entry's
+  recorded token always equals its own CommitmentPreimage.token field --
+  needed because owned_merge_can_happen is handed hLive alone, with no
+  separate hToken hypothesis the way owned_spend_witness_exists is. The main
+  proof builds a TransactOwnedWitness/TransactOwnedPublic (N inputs, M=1
+  output) directly from live-state facts already proved elsewhere in the
+  file: live_leaf_matches for each input's Merkle leaf,
+  reachable_rootAt_matches_leavesAt for the root,
+  reachable_leavesAt_capacity for the path-index bound, live_note_unspent
+  for nullifier freshness, live_values_spendable for the input range check,
+  and the theorem's own hSum for the output range check. removeAll_of_subset
+  turns the per-position hLive membership into the removeAll success
+  Step.transactOwned requires; removeAll_disjoint shows the spent positions
+  are gone from the post-step live set; withTreePositionsFrom_pos_ge/
+  _treeNumber rule out the freshly-inserted output note colliding with an
+  old spent position in the same tree. Custody preservation
+  (s'.held token = s.held token) is rfl since Step.transactOwned never
+  touches held. Verified by running scripts/check_theorem_sorry_absent.py
+  owned_merge_can_happen (the exact acceptance oracle script named in the
+  linked spec), which reported {"contains_sorry": false}, and by running
+  the full scripts/check.sh gate, which exited 0 with PASS on build, sorry
+  count, vacuous-body, axioms, signatures and NonVacuity checks (sorry
+  count dropped from the prior 31 lines/BASELINE_SORRY-tracked declarations
+  to 30, with owned_merge_can_happen no longer in the SORRY list). Lean
+  toolchain (elan/lake, pinned leanprover/lean4:v4.33.1) and mathlib were
+  installed fresh into an isolated prefix under /pebble/agent-home (never
+  touching any shared install) since none was present in the environment.
+cost: "~140k tokens"
+commits:
+  - "16d250e"
+verify_transcript:
+  hooks:
+    - name: "scripts/check_theorem_sorry_absent.py owned_merge_can_happen"
+      outcome: passed
+      duration_s: 3
+    - name: "scripts/check.sh (full gate: lake build + sorry/axioms/signatures/NonVacuity)"
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: scripts/check_theorem_sorry_absent.py
+  command: "python3 scripts/check_theorem_sorry_absent.py owned_merge_can_happen"
+  result: passed
+  ran_at_sha: "16d250e"
+  mocks_in_path: false
