@@ -1979,7 +1979,21 @@ theorem transact_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step
     (hDisjoint : ∀ e ∈ transactSpentPositions bp.treeNumber w, ¬ Spends s s' w.token e) :
     SpendEnabled s' bp.treeNumber pub.merkleRoot w.token
       (transactSpentPositions bp.treeNumber w) (List.ofFn pub.nullifiers) := by
-  sorry
+  have hnulls : List.ofFn pub.nullifiers =
+      (transactSpentPositions bp.treeNumber w).map
+        (fun e => nullifier (Term.val w.nullifyingKey) e.1.2) := by
+    unfold transactSpentPositions
+    rw [List.map_ofFn]
+    congr 1
+    funext i
+    exact hC.nullifiers i
+  have hTree : ∀ e ∈ transactSpentPositions bp.treeNumber w, e.1.1 = bp.treeNumber := by
+    intro e he
+    unfold transactSpentPositions at he
+    obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+    rw [← hi]
+  rw [hnulls] at hEnabled ⊢
+  exact spend_not_blocked hs hstep hTree hEnabled hDisjoint
 
 /-- `spend_not_blocked` for a pending `Step.transactOwned`: its state checks stay true
     across any step that spends none of its input notes. -/
