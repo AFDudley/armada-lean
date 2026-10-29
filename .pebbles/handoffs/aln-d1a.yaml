@@ -1,0 +1,62 @@
+status: blocked
+pebble_id: aln-d1a
+summary: >
+  Investigated completing ledger_partial_withdrawal (ArmadaLean/Nitro/Liveness.lean)
+  with no sorry, under the frozen signature (scripts/sigs-baseline.tsv) that the
+  task forbids changing. The proof's "conclude L, then transfer to L'" strategy
+  is sound for the first conjunct (UnbeatableNoWait ... dA ...), which reuses the
+  already-proved directly_funded_pays/conclusion_proof_finalizable machinery, but
+  the second and third conjuncts (FundedFor apps (Ts.T _) L' (a + b + c) (v _))
+  need L'.kind = .ledger, which nothing in the given hypotheses derives:
+  IsLedgerChannel apps L' unfolds to only `apps L'.appDef = consensusRules`
+  (ArmadaLean/Nitro/Constructions.lean); `kind` is an independent FixedPart
+  field that Apps (a bare function AppId -> Rules), consensusRules.supports, and
+  Reachable never constrain together. I cross-checked this is a known, named
+  distinction in this codebase: SATP.lean's Route.WellFormed states
+  `IsLedgerChannel apps L ∧ L.kind = .ledger` as two separate conjuncts
+  everywhere a route needs both, confirming they are independent facts here, not
+  one implying the other. If L'.kind = .virtual, Reachable.balances_virtual_zero
+  pins L'.address's on-chain balance at 0 in every reachable state forever (the
+  only operations that ever raise any address's balance, deposit and transfer,
+  both require `.kind = .ledger` on the funded side: Adjudicator.deposit_some,
+  Address.fundable), so FundedFor ... L' (a + b + c) ... needs a + b + c <= 0 --
+  false whenever a + b + c > 0. I verified this constructively (outside this
+  commit, not checked in, to keep the tree clean) by adapting the theorem's own
+  existing non-vacuity witness at NonVacuity.lean:1467 with
+  L' := <[p0, q0], 9, <0>, 2, .virtual> instead of .ledger, one deposit of 1 into
+  L's balance (a=1, b=c=a'=0) instead of 0, and L''s own challenge-state outcome
+  amounts likewise at (1, 0, 0) for (dA, dB, chi): every one of the theorem's 15
+  non-n/hr/hvn hypotheses still compiled with lake env lean (zero errors, zero
+  sorry), while L'.address's balance was provably 0 throughout. This is the same
+  shape of gap the operator ruling of 2026-10-29 already fixed once in this exact
+  theorem, for chi, by adding the n/hr/hvn hypotheses recorded in the doc comment
+  above the theorem -- the fix here needs the same kind of operator-approved
+  restatement (an hLk : L.kind = .ledger / hL'k : L'.kind = .ledger pair, or
+  equivalent), which a worker cannot add unilaterally since this exact signature
+  is frozen in scripts/sigs-baseline.tsv and the task explicitly forbids changing
+  it. I documented the finding, the exact counterexample construction, and the
+  needed fix in the theorem's own doc comment (no behavior change, signatures_ok
+  still passes) and left the proof body as sorry rather than submit an unsound
+  or incomplete proof. Verified via `scripts/check.sh --json ledger_partial_withdrawal`
+  (theorem_in_sorry still true, unchanged from base) and `scripts/check.sh`
+  (exit 0, sorry_count 23, same as base -- doc-only change).
+cost: "~950k tokens"
+blocker: >
+  ledger_partial_withdrawal's frozen signature (scripts/sigs-baseline.tsv) has
+  no hypothesis pinning L'.kind = .ledger, and IsLedgerChannel apps L' does not
+  entail it. Without that fact the theorem's FundedFor conjuncts for L' are
+  false whenever L'.kind = .virtual and a + b + c > 0 (Reachable.balances_virtual_zero
+  permanently caps a virtual channel's own balance at 0, and no on-chain
+  operation can raise it). A worker cannot add the missing hypothesis: it would
+  change the frozen statement scripts/sigs-baseline.tsv and this pebble both
+  require to stay fixed.
+next_action: >
+  An operator/coordinator needs to approve a restatement of
+  ledger_partial_withdrawal's signature (mirroring the 2026-10-29 ruling already
+  recorded in the theorem's doc comment, which added n/hr/hvn for the analogous
+  chi gap): add hLk : L.kind = .ledger and hL'k : L'.kind = .ledger (or an
+  equivalent fact), re-baseline scripts/sigs-baseline.tsv for the new statement,
+  and re-dispatch a worker pebble to complete the proof under the restated
+  signature. The doc comment above the theorem (ArmadaLean/Nitro/Liveness.lean,
+  committed this run) carries the full counterexample construction needed to
+  reconstruct the non-vacuity check quickly.
