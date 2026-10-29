@@ -115,9 +115,11 @@ Counts: proved 4, sound 11, unknown 14, false 5, removed 1 (§6.1).
 - **G17. Reclaim griefing.** go-nitro `reclaim` requires `o_target[0] + o_target[1] = x` on the stored outcome of
   the target (MultiAssetHolder.sol:365), and `transfer` rewrites that outcome (`_updateFingerprint`). Anyone can
   deposit into a finalized virtual channel and pay out of it; then the sum is below the guarantee amount and the
-  reclaim reverts for ever `[INFERENCE: checked in the model; the go-nitro contract reading is from the cited
-  lines]`. Theorems 32 and 34 depend on it. A repair is a protocol question: reclaim against the outcome of
-  finalization (`finalizedWith`) instead of the stored outcome.
+  reclaim reverts for ever. Reproduced against go-nitro `64c4ee9a1` (armada-laconic
+  `labbook/2026-10-27-gonitro-reclaim-dos.md`). Theorems 32 and 34 depended on it. **Repaired by §6.3** (operator
+  ruling 2026-10-27): `deposit` and `transfer` succeed only for a ledger channel, and `reclaim` reads the target's
+  `finalizedWith` outcome (SATP:335-338). The 2026-10-29 re-audit found 32 and 34 true under the current model
+  (argument, not proved).
 - **G14.** `finalizable_funded_pays` composed a finalize strategy and a fund strategy from the same start
   (applied: the channel is finalized already). **G14b.** `LedgerAfterRound2 om Pprev P` debited `Pprev`, while
   the goal read `P`'s entry (applied).
