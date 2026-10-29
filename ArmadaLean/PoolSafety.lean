@@ -2042,6 +2042,70 @@ theorem spend_bound_to_adapt {boundHash : Term} {bp₀ bp : BoundParams} {a call
   rw [hbp] at hA
   exact ⟨hAdapt a hA, hbp.symm⟩
 
+/-- Every entry recorded under `s.live t` in a reachable state carries token `t` in its
+    own `CommitmentPreimage.token` field: the state's bookkeeping key and the note's own
+    field never drift apart. True at every insertion site by construction
+    (`Step.shield`'s `note`, `Step.transact`'s `newNotes` via `UnshieldRefines`/
+    `unshieldRefines_mem`, `Step.transactOwned`'s `ownedNewNotes`, all built with the
+    same token as the `live` key they are inserted under) and carried across the
+    surviving `rest` of a spend by the induction hypothesis (`removeAll_perm`).
+    `owned_merge_can_happen` needs this to carry a live note's claimed token into the
+    circuit witness it builds from `hLive` alone, with no separate `hToken` hypothesis
+    (unlike `owned_spend_witness_exists`, which is handed one). -/
+theorem step_preserves_live_token {s s' : PoolState}
+    (ih : ∀ t p, p ∈ s.live t → p.2.token = t) (hstep : Step s s') :
+    ∀ t p, p ∈ s'.live t → p.2.token = t := by
+  cases hstep with
+  | shield token x npk' hValue hSpendable =>
+    intro t p hp
+    by_cases ht : t = token
+    · subst t
+      simp only at hp
+      rcases List.eq_or_mem_of_mem_cons hp with heq | hp
+      · subst heq; rfl
+      · exact ih token p hp
+    · simp only [if_neg ht] at hp
+      exact ih t p hp
+  | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
+      openings hRoot hRemove hNullify hRecords =>
+    intro t p hp
+    by_cases ht : t = w.token
+    · subst ht
+      simp only at hp
+      rcases List.mem_append.mp hp with hnew | hrest
+      · have hqnew : p.2 ∈ newNotes := withTreePositionsFrom_snd_mem _ _ _ _ hnew
+        have hmemall := unshieldRefines_mem hOutputs p.2 hqnew
+        unfold transactAllOutputs at hmemall
+        obtain ⟨j, hj⟩ := List.mem_ofFn.mp hmemall
+        rw [← hj]
+      · have hmemold : p ∈ s.live w.token :=
+          (removeAll_perm hRemove).mem_iff.mpr (List.mem_append_right _ hrest)
+        exact ih w.token p hmemold
+    · simp only [if_neg ht] at hp
+      exact ih t p hp
+  | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
+      openings hRoot hRemove hNullify =>
+    intro t p hp
+    by_cases ht : t = w.token
+    · subst ht
+      simp only at hp
+      rcases List.mem_append.mp hp with hnew | hrest
+      · have hqnew : p.2 ∈ ownedNewNotes w := withTreePositionsFrom_snd_mem _ _ _ _ hnew
+        unfold ownedNewNotes at hqnew
+        obtain ⟨j, hj⟩ := List.mem_ofFn.mp hqnew
+        rw [← hj]
+      · have hmemold : p ∈ s.live w.token :=
+          (removeAll_perm hRemove).mem_iff.mpr (List.mem_append_right _ hrest)
+        exact ih w.token p hmemold
+    · simp only [if_neg ht] at hp
+      exact ih t p hp
+
+theorem reachable_live_token {s : PoolState} (h : Reachable s) :
+    ∀ t p, p ∈ s.live t → p.2.token = t := by
+  induction h with
+  | genesis r => intro t p hp; simp [genesis] at hp
+  | step _ hstep ih => exact step_preserves_live_token ih hstep
+
 /-! ### An owned merge (theorem 3 of the channel design) -/
 
 /--
@@ -2074,4 +2138,146 @@ theorem owned_merge_can_happen {s : PoolState} (hs : Reachable s) {N : Nat}
         (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage))
           ∈ s'.live token) ∧
       s'.held token = s.held token := by
-  sorry
+  have hi0 : Fin N := ⟨0, hN0⟩
+  have hLenLt : ∀ i, pos i < (s.leavesAt' bp.treeNumber).length := fun i =>
+    (reachable_live_spent_invariant hs).1 token bp.treeNumber (pos i) (pre i) (hLive i)
+  have hleavesNe : s.leavesAt' bp.treeNumber ≠ [] := by
+    intro hnil; rw [hnil] at hLenLt; simpa using hLenLt hi0
+  have hRootMem : treeRoot TreeDepth (s.leavesAt' bp.treeNumber) ∈ s.rootsAt' bp.treeNumber :=
+    (reachable_rootAt_matches_leavesAt hs bp.treeNumber).resolve_left hleavesNe
+  have hCap : (s.leavesAt' bp.treeNumber).length ≤ 2 ^ TreeDepth :=
+    reachable_leavesAt_capacity hs bp.treeNumber
+  have hLeafIndex : ∀ i, pos i < 2 ^ TreeDepth := fun i => by
+    have h1 := hLenLt i
+    omega
+  have hLeafValue : ∀ i, (s.leavesAt' bp.treeNumber)[pos i]? = some (hashCommitment (pre i)) :=
+    fun i => live_leaf_matches hs token bp.treeNumber (pos i) (pre i) (hLive i)
+  have hTokenEq : ∀ i, (pre i).token = token :=
+    fun i => reachable_live_token hs token ((bp.treeNumber, pos i), pre i) (hLive i)
+  have hSpendIn : ∀ i, RangeChecked120 (pre i).value :=
+    fun i => live_values_spendable hs token ((bp.treeNumber, pos i), pre i) (hLive i)
+  have hFresh : ∀ i, nullifier owner (pos i) ∉ s.spent bp.treeNumber :=
+    fun i => live_note_unspent hs token bp.treeNumber (pos i) (pre i) (hLive i) owner
+  let w : TransactOwnedWitness N 1 :=
+    { token := token, randomIn := random,
+      valueIn := fun i => (pre i).value,
+      pathElements := fun i => treePath TreeDepth (s.leavesAt' bp.treeNumber) (pos i),
+      leavesIndices := pos,
+      npkOut := fun _ => npkOut,
+      valueOut := fun _ => listSum (List.ofFn fun i => (pre i).value) }
+  let pub : TransactOwnedPublic N 1 :=
+    { merkleRoot := treeRoot TreeDepth (s.leavesAt' bp.treeNumber),
+      boundParamsHash := hashBoundParams bp,
+      nullifiers := fun i => nullifier owner (pos i),
+      commitmentsOut := fun _ =>
+        commitment npkOut token (listSum (List.ofFn fun i => (pre i).value)),
+      ownerField := owner }
+  have hConstrained : OwnedConstrained w pub :=
+    { pathLen := fun i => treePath_length TreeDepth (s.leavesAt' bp.treeNumber) (pos i),
+      merkle := fun i => by
+        have hcommit : commitment (npk owner (random i)) token ((pre i).value) =
+            hashCommitment (pre i) := by
+          unfold hashCommitment
+          rw [hOpen i, hTokenEq i]
+        show merkleRoot (commitment (npk owner (random i)) token ((pre i).value))
+            (treePath TreeDepth (s.leavesAt' bp.treeNumber) (pos i)) =
+            treeRoot TreeDepth (s.leavesAt' bp.treeNumber)
+        rw [hcommit]
+        exact treePath_correct_of_getElem? TreeDepth (s.leavesAt' bp.treeNumber) (pos i)
+          (hLeafIndex i) (hLeafValue i)
+      nullifiers := fun _ => rfl
+      outputs := fun _ => rfl
+      rangeIn := fun i => hSpendIn i
+      rangeOut := fun _ => hSum
+      balance := by
+        have hBalanceEq : listSum (List.ofFn fun i => (pre i).value) =
+            listSum (List.ofFn fun _ : Fin 1 =>
+              listSum (List.ofFn fun i => (pre i).value)) := by
+          simp [listSum]
+        exact congrArg (· % p) hBalanceEq }
+  have hwantedEq : (List.ofFn fun i => ((bp.treeNumber, pos i), pre i) :
+      List ((Nat × Nat) × CommitmentPreimage)) = ownedSpentPositions bp.treeNumber pub w := by
+    unfold ownedSpentPositions
+    congr 1
+    funext i
+    have hval : (⟨npk owner (random i), token, (pre i).value⟩ : CommitmentPreimage) = pre i := by
+      rw [hOpen i, ← hTokenEq i]
+    rw [hval]
+  have hwantedPairwise :
+      (List.ofFn fun i => ((bp.treeNumber, pos i), pre i) :
+        List ((Nat × Nat) × CommitmentPreimage)).Pairwise (· ≠ ·) := by
+    rw [List.pairwise_iff_getElem]
+    simp only [List.length_ofFn, List.getElem_ofFn]
+    intro a b ha hb hab heq
+    have hposeq : pos ⟨a, ha⟩ = pos ⟨b, hb⟩ := congrArg (fun p => p.1.2) heq
+    have hine : (⟨a, ha⟩ : Fin N) ≠ ⟨b, hb⟩ := fun hc => by
+      have hc' := congrArg Fin.val hc
+      simp only at hc'
+      omega
+    exact ofFn_pairwise_ne pos hDistinct ⟨a, ha⟩ ⟨b, hb⟩ hine hposeq
+  have hsub : ∀ e ∈ (List.ofFn fun i => ((bp.treeNumber, pos i), pre i) :
+      List ((Nat × Nat) × CommitmentPreimage)), e ∈ s.live token := by
+    intro e he
+    obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+    rw [← hi]; exact hLive i
+  have hpoolNodup : (s.live token).Nodup := (reachable_live_spent_invariant hs).2.2.2.2 token
+  obtain ⟨rest, hRemovePre⟩ := removeAll_of_subset hpoolNodup hwantedPairwise hsub
+  have hRemove :
+      removeAll (s.live w.token) (ownedSpentPositions bp.treeNumber pub w) = some rest := by
+    rw [← hwantedEq]; exact hRemovePre
+  obtain ⟨spent', hNullify⟩ :
+      ∃ spent', markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' := by
+    apply markSpent_succeeds
+    · have hmap := distinct_leaves_distinct_nullifiers owner (List.ofFn pos) hDistinct
+      have heq2 : (List.ofFn pos).map (nullifier owner) = List.ofFn pub.nullifiers :=
+        List.map_ofFn
+      rwa [heq2] at hmap
+    · intro n hn
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
+      rw [← hi]
+      exact hFresh i
+  refine ⟨_, Step.transactOwned w pub bp hN (by omega) hConstrained owner rfl rfl hAdapt
+    hNoUnshield rest spent' [] hRootMem hRemove hNullify, ?_, ?_, rfl⟩
+  · intro i
+    show ((bp.treeNumber, pos i), pre i) ∉
+      (if token = w.token then
+        withTreePositionsFrom (insertTree s.trees (ownedNewNotes w).length)
+          (insertStart s.trees (ownedNewNotes w).length) (ownedNewNotes w) ++ rest
+      else s.live token)
+    rw [if_pos rfl]
+    intro hmem
+    rcases List.mem_append.mp hmem with hnew | hrest
+    · have htn := withTreePositionsFrom_treeNumber
+        (insertTree s.trees (ownedNewNotes w).length)
+        (insertStart s.trees (ownedNewNotes w).length) (ownedNewNotes w) _ hnew
+      have hge := withTreePositionsFrom_pos_ge
+        (insertTree s.trees (ownedNewNotes w).length)
+        (insertStart s.trees (ownedNewNotes w).length) (ownedNewNotes w) _ hnew
+      simp only at htn hge
+      have hpos0eq := insertStart_eq s.trees (ownedNewNotes w).length
+      rw [← htn] at hpos0eq
+      have hlt : pos i < insertStart s.trees (ownedNewNotes w).length := by
+        rw [hpos0eq]; exact hLenLt i
+      omega
+    · have hwmem : ((bp.treeNumber, pos i), pre i) ∈ ownedSpentPositions bp.treeNumber pub w := by
+        rw [← hwantedEq]; exact List.mem_ofFn.mpr ⟨i, rfl⟩
+      exact (removeAll_disjoint hpoolNodup hRemove) _ hwmem hrest
+  · refine ⟨insertTree s.trees (ownedNewNotes w).length,
+      insertStart s.trees (ownedNewNotes w).length, ?_⟩
+    show ((insertTree s.trees (ownedNewNotes w).length,
+        insertStart s.trees (ownedNewNotes w).length),
+        (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage)) ∈
+      (if token = w.token then
+        withTreePositionsFrom (insertTree s.trees (ownedNewNotes w).length)
+          (insertStart s.trees (ownedNewNotes w).length) (ownedNewNotes w) ++ rest
+      else s.live token)
+    rw [if_pos rfl]
+    apply List.mem_append_left
+    have hone : ownedNewNotes w =
+        [(⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage)] := by
+      show (List.ofFn fun _ : Fin 1 =>
+          (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage)) = _
+      simp
+    rw [hone]
+    unfold withTreePositionsFrom withPositionsFrom
+    simp
