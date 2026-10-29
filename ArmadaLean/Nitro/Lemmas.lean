@@ -1085,6 +1085,24 @@ theorem apply_now_le {apps : Apps E} {caller : Participant} {op : Op E} {s s' : 
   | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; simp
   | tick dt => simp at h; subst h; simp
 
+/-- Any operation that is not `tick` never moves the clock at all (not just
+    forward, `apply_now_le`): `deposit`, `transfer`, `reclaim`, `challenge`,
+    `checkpoint` and `conclude` each write `balances`/`status` only. Used
+    by `Threat.Round.exists` (`Strategy.lean`): landing a reaction's own
+    calls, none of which may be `.tick` (`Op.HonestFeasible`), never
+    advances the clock, so the round's own bound is trivially met. -/
+theorem apply_now_eq_of_not_tick {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (hop : ∀ dt, op ≠ .tick dt) (h : s.apply apps caller op = some s') :
+    s'.now = s.now := by
+  cases op with
+  | deposit a e x => exact (deposit_some h).2.2.2.2.2
+  | transfer a b => obtain ⟨_, _, _, _, _, _, _, _, _, hn, _, _⟩ := transfer_some h; exact hn
+  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; rfl
+  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; rfl
+  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; rfl
+  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; rfl
+  | tick dt => exact absurd rfl (hop dt)
+
 /-- The outcome of finalization never changes: `transfer` and `reclaim`
     rewrite only the stored outcome, through `withOutcome`, which keeps the
     outcome of finalization; `challenge`, `checkpoint` and `conclude` all

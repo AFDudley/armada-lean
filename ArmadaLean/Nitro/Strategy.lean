@@ -44,6 +44,7 @@
   (`Threat.Round.single`, below).
 -/
 import ArmadaLean.Nitro.Adjudicator
+import ArmadaLean.Nitro.Lemmas
 
 namespace ArmadaLean.Nitro
 
@@ -313,6 +314,62 @@ theorem Threat.Round.single {apps : Apps E} {p : Participant} {T : Threat E p} {
   obtain ⟨hseq, -⟩ := h
   simp only [HonestMove.calls_chain] at hseq
   exact Threat.RoundSeq.peel_one op net net' hseq
+
+/-- Landing every call of `pending`, in order, with no `tick` and no other
+    adversary move, is always a valid way to run a round out to `nil` —
+    `.land` is never gated by `T.feasible` (`Threat.RoundSeq.land`), only
+    by membership in `pending` — and, PROVIDED none of those calls is
+    itself `.tick`, this particular round never moves the clock
+    (`apply_now_eq_of_not_tick`, `Lemmas.lean`): landing an op that is not
+    `.tick` only ever writes `balances`/`status`. This is a fact about the
+    ONE derivation this theorem builds, not every `Threat.RoundSeq`
+    derivation — the adversary's own `tick`/`other` steps genuinely do
+    move the clock in other derivations; this one simply never uses them.
+    Used by `Threat.Round.exists`. -/
+theorem Threat.RoundSeq.landAll (apps : Apps E) {p : Participant} (T : Threat E p) (t : Time) :
+    ∀ (pending : List (Op E)), (∀ op ∈ pending, ∀ dt, op ≠ Op.tick dt) →
+      ∀ (net : NetworkState E p),
+        ∃ net', Threat.RoundSeq apps T t pending net net' ∧ net'.chain.now = net.chain.now := by
+  intro pending
+  induction pending with
+  | nil => intro _ net; exact ⟨net, Threat.RoundSeq.nil, rfl⟩
+  | cons op rest ih =>
+    intro hnotick net
+    have hop : ∀ dt, op ≠ Op.tick dt := hnotick op List.mem_cons_self
+    have heq1 : (net.applyAdv apps (.land op)).chain.now = net.chain.now := by
+      simp only [NetworkState.applyAdv]
+      cases h : net.chain.apply apps p op with
+      | none => rfl
+      | some s' => exact Adjudicator.apply_now_eq_of_not_tick hop h
+    obtain ⟨net', hrest, heq2⟩ := ih (fun op' hop' => hnotick op' (List.mem_cons_of_mem op hop'))
+      (net.applyAdv apps (.land op))
+    exact ⟨net', Threat.RoundSeq.land (l1 := []) (l2 := rest) rfl hrest, by rw [heq2, heq1]⟩
+
+/-- **Every feasible reaction admits a round.** Landing every call of `m`
+    at once, with no `tick`, never moves the clock
+    (`Threat.RoundSeq.landAll`): every call `p` may issue excludes `.tick`
+    (`Op.HonestFeasible`), precisely so this holds — a reaction that could
+    only close by landing a `.tick` call would force the clock past its
+    own deadline just to land it, making `Threat.Round` unsatisfiable for
+    that move and every `UnbeatableIn` goal past it vacuously "unbeatable"
+    (soundness finding, this ruling's own review). With the clock
+    unmoved, the round's own bound (`net'.chain.now < net.chain.now +
+    T.ε`) is `T.ε_pos`. -/
+theorem Threat.Round.exists {apps : Apps E} {p : Participant} (T : Threat E p)
+    {m : HonestMove E} {net : NetworkState E p} (hfeas : m.Feasible net) :
+    ∃ net', T.Round apps m net net' := by
+  have hnotick : ∀ op ∈ m.calls, ∀ dt, op ≠ Op.tick dt := by
+    cases m with
+    | react r =>
+      intro op hop dt heq
+      have := hfeas op hop
+      rw [heq] at this
+      exact this
+    | wait dt' => intro op hop; simp [HonestMove.calls] at hop
+  obtain ⟨net', hseq, heq⟩ := Threat.RoundSeq.landAll apps T net.chain.now m.calls hnotick net
+  refine ⟨net', hseq, ?_⟩
+  rw [heq]
+  exact Nat.lt_add_of_pos_right T.ε_pos
 
 /-- The signatures of `p` that a state carries are genuine: `p` signed the
     state, and `p` signed a state that carries the state's voucher, if `p` is
