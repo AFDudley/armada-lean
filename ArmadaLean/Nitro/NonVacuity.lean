@@ -809,6 +809,52 @@ theorem prevents_other_outcome (apps : Apps E) {p : Participant} (T : Threat E p
 
 end Game
 
+/-! ## Reachability helpers (`ArmadaLean/Machine.lean`, `ArmadaLean/Nitro/Reachable.lean`)
+
+    Every witness below that supports a theorem taking `(Nitro.participant apps T).Reachable net`
+    or `(Nitro.network apps Ts).Reachable n` proves it by a short chain of these three helpers per
+    machine, mirroring the real move sequence that reaches the witness state: one honest move, one
+    adversary move, or the genesis state itself. -/
+
+section Reachability
+
+variable {E : Type} [DecidableEq E]
+
+theorem participant_reachable_init {p : Participant} (apps : Apps E) (T : Threat E p) :
+    (Nitro.participant apps T).Reachable (⟨Adjudicator.genesis, [], []⟩ : NetworkState E p) :=
+  ⟨_, rfl, .refl⟩
+
+theorem participant_reachable_honest {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) (m : HonestMove E)
+    (hm : m.Feasible net) : (Nitro.participant apps T).Reachable (net.applyHonest apps m) :=
+  h.tail (Or.inl ⟨m, hm, rfl⟩)
+
+theorem participant_reachable_adv {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) (m : AdvMove E)
+    (hm : T.feasible net m) : (Nitro.participant apps T).Reachable (net.applyAdv apps m) :=
+  h.tail (Or.inr ⟨m, hm, rfl⟩)
+
+theorem network_reachable_init (apps : Apps E) (Ts : Threats E apps) :
+    (Nitro.network apps Ts).Reachable
+      (⟨Adjudicator.genesis, fun _ => [], fun _ => []⟩ : Network E) :=
+  ⟨_, rfl, .refl⟩
+
+theorem network_reachable_honest {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) (p : Participant) (m : HonestMove E)
+    (hm : m.Feasible (n.view p))
+    (hgate : ∀ op, m = .chain op → ∀ ss ∈ op.proofStates, n.Sendable ss) :
+    (Nitro.network apps Ts).Reachable (Network.applyHonest apps n p m) :=
+  h.tail ⟨p, Or.inl ⟨m, hm, hgate, rfl⟩⟩
+
+theorem network_reachable_adv {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) (p : Participant) (m : AdvMove E)
+    (hm : (Ts.T p).feasible (n.view p) m) (hdgate : ∀ ss, m = .deliver ss → n.Sendable ss)
+    (hnochain : ∀ caller op, m ≠ .chain caller op) :
+    (Nitro.network apps Ts).Reachable (Network.applyAdv apps n p m) :=
+  h.tail ⟨p, Or.inr ⟨m, hm, hdgate, hnochain, rfl⟩⟩
+
+end Reachability
+
 /-! ## Threats and helpers for the `Liveness.lean` witnesses -/
 
 /-- The adversary of `p` that every rule of `Assumptions` allows: any move of
@@ -940,33 +986,54 @@ def netF : NetworkState Nat p0 := ⟨sDep, [], [ssF]⟩
 theorem netF_holds : netF.Holds ssF :=
   holds_intro _ _ (by decide) (fun _ h => by cases h)
 
+/-- `netF` is reachable: an adversary deposit (`Adjudicator.apply`'s `.deposit` arm does not read
+    `caller`, `Adjudicator.lean:293`, so `q0` depositing reaches the same `sDep` `g0_dep` does for
+    `p0`), then `p0`'s own honest `.send stF`. -/
+theorem netF_reach : (Nitro.participant apps0 (canon p0)).Reachable netF :=
+  participant_reachable_honest
+    (participant_reachable_adv (participant_reachable_init apps0 (canon p0))
+      (.chain q0 (.deposit c1.address 0 1)) ⟨by decide, fun ss h => absurd h List.not_mem_nil⟩)
+    (.send stF) trivial
+
+/-- `⟨sCon, [], [ssF]⟩` is reachable: `netF_reach`, then `p0`'s own honest conclude with `ssF`
+    (`Holds` needs `ssF` in `net.sent`, already there from the `.send` `netF_reach` ends with). -/
+theorem netC_reach :
+    (Nitro.participant apps0 (canon p0)).Reachable (⟨sCon, [], [ssF]⟩ : NetworkState Nat p0) :=
+  participant_reachable_honest netF_reach (.chain (.conclude c1 ssF))
+    (fun ss h => by
+      simp only [Op.proofStates, List.mem_singleton] at h; subst h; exact netF_holds)
+
 /-- `directly_funded_pays`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
-    Assumptions apps0 p0 (canon p0) ∧ net.chain.finalOutcome c.address = some (.allocation o) ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    net.chain.finalOutcome c.address = some (.allocation o) ∧
     net.chain.DirectlyFunded c ∧ o.find (.external d) = some ⟨.external d, .alloc amt⟩ :=
-  ⟨⟨sCon, [], []⟩, c1, o1, 0, 1, canon_ok _ _, rfl, ⟨o1, rfl, by decide⟩, by decide⟩
+  ⟨⟨sCon, [], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl, ⟨o1, rfl, by decide⟩, by decide⟩
 
 /-- `finalizable_funded_pays`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
-    Assumptions apps0 p0 (canon p0) ∧ net.chain.finalOutcome c.address = some (.allocation o) ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    net.chain.finalOutcome c.address = some (.allocation o) ∧
     FundedFor apps0 (canon p0) c o.total net ∧
     o.find (.external d) = some ⟨.external d, .alloc amt⟩ :=
-  ⟨⟨sCon, [], []⟩, c1, o1, 0, 1, canon_ok _ _, rfl, .done (show o1.total ≤ _ by decide),
-    by decide⟩
+  ⟨⟨sCon, [], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl,
+    .done (show o1.total ≤ _ by decide), by decide⟩
 
 /-- `conclusion_proof_finalizable`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat) (Ω : Outcome Nat),
-    Assumptions apps0 p0 (canon p0) ∧ apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
     net.Holds ss ∧ ConclusionProof c ss ∧ ss.state.outcome = Ω ∧
     (∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = Ω) ∧
     (net.chain.finalizedWith c.address = none ∨ net.Finalized c Ω) ∧
     2 * (canon p0).ε ≤ c.challengeDuration ∧ net.DeadlineAfter c (canon p0).ε :=
-  ⟨netF, c1, ssF, _, canon_ok _ _, rfl, by decide, netF_holds, by decide, rfl, by decide,
-    .inl (by decide), by decide, deadlineAfter_open (t := 0) rfl _⟩
+  ⟨netF, c1, ssF, _, canon_ok _ _, netF_reach, rfl, by decide, netF_holds, by decide, rfl,
+    by decide, .inl (by decide), by decide, deadlineAfter_open (t := 0) rfl _⟩
 
 /-- `latest_state_finalizable`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat),
-    Assumptions apps0 p0 (canon p0) ∧ apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
     net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = c ∧
     (∀ t ∈ net.sent, t.state.channel = c →
       t.state.turnNum < ss.state.turnNum ∨ t.state = ss.state) ∧
@@ -977,24 +1044,43 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat)
       (∃ t, net.chain.statusOf c = .open t ∧ t ≤ ss.state.turnNum) ∨
       (∃ t ch, net.chain.statusOf c = .challenged t ch ∧
         (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.chain.now + (canon p0).ε ≤ ch.deadline)) :=
-  ⟨netF, c1, ssF, canon_ok _ _, rfl, by decide, netF_holds, by decide, rfl, by decide, by decide,
-    by decide, .inr (.inl ⟨0, rfl, le_rfl⟩)⟩
+  ⟨netF, c1, ssF, canon_ok _ _, netF_reach, rfl, by decide, netF_holds, by decide, rfl, by decide,
+    by decide, by decide, .inr (.inl ⟨0, rfl, le_rfl⟩)⟩
 
-/-- `c1` challenged at turn 0 with deadline 5; `p0` sent `ssO` at turn 1. -/
+/-- `c1` challenged at turn 0, deadline 2 (`g0.now + c1.challengeDuration`): reached by `p0`
+    sending `stO0`, then `p0`'s own honest challenge with it (only `c1`'s own participant may
+    challenge it, `Adjudicator.lean:217`, so this cannot be an adversary move the way a deposit
+    can). `p0` then sends `ssO` at turn 1, the later state `late_observer_can_checkpoint`
+    checkpoints with. -/
 def stO0 : State Nat := ⟨c1, 0, .allocation o1, false, .opaque 0⟩
-def sCh5 : Adjudicator Nat := g0.setStatus c1 (.challenged 0 ⟨stO0, 5⟩)
-def netO : NetworkState Nat p0 := ⟨sCh5, [], [ssO]⟩
+def ssO0 : SignedState Nat := ⟨stO0, [p0]⟩
+def sCh0 : Adjudicator Nat := g0.setStatus c1 (.challenged 0 ⟨stO0, 2⟩)
+def netO : NetworkState Nat p0 := ⟨sCh0, [], [ssO, ssO0]⟩
+
+theorem g0_challengeO0 : g0.apply apps0 p0 (.challenge c1 [ssO0] stO0) = some sCh0 := rfl
+
+theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
+  participant_reachable_honest
+    (participant_reachable_honest
+      (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stO0)
+        trivial)
+      (.chain (.challenge c1 [ssO0] stO0))
+      (fun ss h => by
+        simp only [Op.proofStates, List.mem_singleton] at h; subst h
+        exact holds_intro _ _ (by decide) (fun _ h => by cases h)))
+    (.send stO) trivial
 
 /-- `late_observer_can_checkpoint`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat) (t : Nat)
     (ch : Challenge Nat),
-    Assumptions apps0 p0 (canon p0) ∧ apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
     net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = c ∧
     (∀ u ∈ net.sent, u.state.channel = c →
       (u.state.turnNum < ss.state.turnNum ∨ u.state = ss.state) ∧ u.state.isFinal = false) ∧
     net.chain.statusOf c = .challenged t ch ∧ t < ss.state.turnNum ∧
     net.chain.now + (canon p0).ε ≤ ch.deadline ∧ 2 * (canon p0).ε ≤ c.challengeDuration :=
-  ⟨netO, c1, ssO, 0, ⟨stO0, 5⟩, canon_ok _ _, rfl, by decide,
+  ⟨netO, c1, ssO, 0, ⟨stO0, 2⟩, canon_ok _ _, netO_reach, rfl, by decide,
     holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, by decide, rfl, by decide,
     by decide, by decide⟩
 
@@ -1009,25 +1095,30 @@ example : ∃ v : Views Nat, v.Consistent := ⟨views0 g0, views0_consistent _�
 
 /-- `finalizable_or_two_enabled`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart),
-    Assumptions apps0 p0 (canon p0) ∧ p0 ∈ c.participants ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    p0 ∈ c.participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 c.appDef).supports c proof candidate = true ∧ candidate.channel = c) ∧
     2 * (canon p0).ε ≤ c.challengeDuration :=
-  ⟨netF, c1, canon_ok _ _, by decide,
+  ⟨netF, c1, canon_ok _ _, netF_reach, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
       by decide, rfl⟩, by decide⟩
 
 /-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
-    is enabled and is the only enabled outcome. -/
+    is enabled and is the only enabled outcome. `net` is `⟨sCon, [], [ssF]⟩`: `netC_reach`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
-    Assumptions apps0 p0 (canon p0) ∧ p0 ∈ c.participants ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    p0 ∈ c.participants ∧
     (∀ t ∈ net.sent, t.state.channel = c → ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 c.appDef).supports c proof t.state = true) ∧
     2 * (canon p0).ε ≤ c.challengeDuration ∧ Enabled apps0 (canon p0) c Ω net ∧
     (∀ Ω', Enabled apps0 (canon p0) c Ω' net → Ω' = Ω) :=
-  ⟨⟨sCon, [], []⟩, c1, .allocation o1, canon_ok _ _, by decide,
-    fun _ h => absurd h List.not_mem_nil, by decide,
-    fun ⟨_, _, hσ⟩ => hσ _ [] _ .refl (round_nil _ _ _) rfl,
+  ⟨⟨sCon, [], [ssF]⟩, c1, .allocation o1, canon_ok _ _, netC_reach, by decide,
+    (fun t h _ => by
+      rw [List.mem_singleton] at h; subst h
+      exact ⟨[ssF], fun ss h' => by rw [List.mem_singleton] at h'; subst h'; exact netF_holds,
+        by decide⟩),
+    by decide, fun ⟨_, _, hσ⟩ => hσ _ [] _ .refl (round_nil _ _ _) rfl,
     fun Ω' hen => by
       by_contra hne
       exact hen (prevents_other_outcome _ _ _ _ _ _ rfl hne)⟩
@@ -1093,9 +1184,20 @@ def stF2 : State Nat := ⟨c2, 0, .allocation o1, true, .opaque 0⟩
 def netC2 : NetworkState Nat p0 := ⟨g0, [⟨stF2, [q0]⟩], [⟨stF2, [p0]⟩]⟩
 def mC2 : AdvMove Nat := .chain q0 (.conclude c2 ⟨stF2, [p0, q0]⟩)
 
+/-- `netC2` is reachable: `p0` sends its own signature on `stF2`, then an adversary `.deliver`
+    of `q0`'s claimed signature (never genuineness-checked for a non-`p0` signer, `Unforged`'s own
+    definition cares only about `p0`'s alleged signature). -/
+theorem netC2_reach : (Nitro.participant apps0 (canon p0)).Reachable netC2 :=
+  participant_reachable_adv
+    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stF2)
+      trivial)
+    (.deliver ⟨stF2, [q0]⟩) (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
+      NetworkState.Unforged _ ⟨stF2, [q0]⟩)
+
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat)
     (Ω1 Ω2 Ω : Outcome Nat),
-    Assumptions apps0 p0 (canon p0) ∧ apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
     net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = c ∧ ss.state.outcome = Ω1 ∧
     (∀ t ∈ net.sent, t.state.channel = c →
       (t.state.turnNum < ss.state.turnNum ∨ t.state = ss.state ∨ t.state.outcome = Ω2) ∧
@@ -1106,68 +1208,98 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat)
         (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.chain.now + (canon p0).ε ≤ ch.deadline)) ∧
     Enabled apps0 (canon p0) c Ω net := by
   refine ⟨netC2, c2, ⟨stF2, [p0, q0]⟩, .allocation o1, .allocation o1, .allocation o1,
-    canon_ok _ _, rfl, by decide, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide,
+    canon_ok _ _, netC2_reach, rfl, by decide,
+    holds_intro _ _ (by decide) (fun _ h => by cases h), by decide,
     rfl, rfl, by decide, by decide, .inl ⟨0, rfl, le_rfl⟩, ?_⟩
   rintro ⟨σ, -, hσ⟩
   refine hσ netC2 [mC2] _ .refl ⟨.cons ⟨by decide, fun ss hss => ?_⟩ .nil, by decide⟩ rfl
   simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
   exact unforged_intro _ _ (by decide) (fun _ h => by cases h)
 
-/-- `turbo_redistribution_unbeatable`. -/
+/-- `turbo_redistribution_unbeatable`. `net` is the genesis state itself: `Nitro.participant`'s own
+    initial state. -/
 example : ∃ (net : NetworkState Nat p0) (ops : List (Participant × Op Nat)) (d : Nat) (x : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
+    (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsDAG ∧ OnlyTransfers ops ∧
     x ≤ (Adjudicator.applyAll apps0 ops net.chain).balances.get (.external d) :=
-  ⟨⟨g0, [], []⟩, [], 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _, g0_dag,
+  ⟨⟨g0, [], []⟩, [], 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
+    participant_reachable_init apps0 (turboT p0), g0_dag,
     fun _ h => absurd h List.not_mem_nil, Nat.zero_le _⟩
 
 theorem zero_g0 : ∀ a : Address Nat, g0.balances.get a = 0 := fun _ => rfl
 
-/-- `deposit_bounds_value`: a deposit of 0 into an empty chain. -/
+/-- `deposit_bounds_value`: a deposit of 0 into an empty chain. `net` is the genesis state
+    itself. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (d : Nat) (y x x' : Coins)
     (s' : Adjudicator Nat) (e : Coins),
-    Assumptions apps0 p0 (canon p0) ∧ net.chain.deposit c.address e y = some s' ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    net.chain.deposit c.address e y = some s' ∧
     Value apps0 (canon p0) d net x ∧ Value apps0 (canon p0) d { net with chain := s' } x' := by
-  refine ⟨⟨g0, [], []⟩, c1, 0, 0, 0, 0, _, 0, canon_ok _ _, rfl, value_zero _ _ _ zero_g0 0,
+  refine ⟨⟨g0, [], []⟩, c1, 0, 0, 0, 0, _, 0, canon_ok _ _,
+    participant_reachable_init apps0 (canon p0), rfl, value_zero _ _ _ zero_g0 0,
     value_zero _ _ _ (fun a => ?_) 0⟩
   show Balances.get (((c1.address : Address Nat), 0 + 0) :: []) a = 0
   rw [Balances.get_cons]; split <;> rfl
 
-/-- `payout_to_other_affects_only_owner`. -/
+/-- `payout_to_other_affects_only_owner`. `sP` is `c1` concluded with outcome `[alloc d1 0]`:
+    reached by `p0` sending the final state `stP`, then honestly concluding with it (`Holds`
+    needs `p0`'s own signature in `net.sent`, so the send comes first; `Adjudicator.lean:249-254`'s
+    `conclude` does not read `caller`, so no deposit is needed for an all-zero outcome). -/
+def stP : State Nat := ⟨c1, 0, .allocation [alloc d1 0], true, .opaque 0⟩
+def ssP : SignedState Nat := ⟨stP, [p0]⟩
 def sP : Adjudicator Nat :=
   g0.setStatus c1 (.finalized 0 (.allocation [alloc d1 0]) (.allocation [alloc d1 0]))
 
-example : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
-    Assumptions apps0 p0 (canon p0) ∧ q ≠ d ∧ net.chain.transfer a (.external q) = some s' :=
-  ⟨⟨sP, [], []⟩, 0, 1, c1, _, canon_ok _ _, by decide, rfl⟩
+theorem g0_concludeP : g0.apply apps0 p0 (.conclude c1 ssP) = some sP := rfl
 
-/-- `participant_can_prevent_cycles`. -/
+theorem sP_reach : (Nitro.participant apps0 (canon p0)).Reachable
+    (⟨sP, [], [ssP]⟩ : NetworkState Nat p0) :=
+  participant_reachable_honest
+    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stP) trivial)
+    (.chain (.conclude c1 ssP))
+    (fun ss h => by
+      simp only [Op.proofStates, List.mem_singleton] at h; subst h
+      exact holds_intro _ _ (by decide) (fun _ h => by cases h))
+
+example : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    q ≠ d ∧ net.chain.transfer a (.external q) = some s' :=
+  ⟨⟨sP, [], [ssP]⟩, 0, 1, c1, _, canon_ok _ _, sP_reach, by decide, rfl⟩
+
+/-- `participant_can_prevent_cycles`. `net` is the genesis state itself. -/
 example : ∃ net : NetworkState Nat p0,
-    Assumptions apps0 p0 (canon p0) ∧
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     (∀ c : FixedPart, p0 ∈ c.participants → apps0 c.appDef = consensusRules) ∧
     (∀ c : FixedPart, p0 ∈ c.participants → ∃ t, net.chain.statusOf c = .open t) ∧
     net.chain.IsDAG ∧ net.sent = [] :=
-  ⟨⟨g0, [], []⟩, canon_ok _ _, fun _ _ => rfl, fun _ _ => ⟨0, rfl⟩, g0_dag, rfl⟩
+  ⟨⟨g0, [], []⟩, canon_ok _ _, participant_reachable_init apps0 (canon p0), fun _ _ => rfl,
+    fun _ _ => ⟨0, rfl⟩, g0_dag, rfl⟩
 
-/-- `turbo_value_upper_bound`. -/
+/-- `turbo_value_upper_bound`. `net` is the genesis state itself. -/
 example : ∃ (net : NetworkState Nat p0) (n : Address Nat) (v x : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
+    (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsDAG ∧ net.chain.TurboValue n v ∧
     CanObtainIn apps0 (turboT p0) HonestMove.IsTransfer n x net :=
-  ⟨⟨g0, [], []⟩, d0, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _, g0_dag, g0_turbo _,
-    .done (Nat.zero_le _)⟩
+  ⟨⟨g0, [], []⟩, d0, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
+    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _, .done (Nat.zero_le _)⟩
 
-/-- `turbo_value_achievable`. -/
+/-- `turbo_value_achievable`. `net` is the genesis state itself. -/
 example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
+    (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsDAG ∧ net.chain.TurboValue (.external d) v :=
-  ⟨⟨g0, [], []⟩, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _, g0_dag, g0_turbo _⟩
+  ⟨⟨g0, [], []⟩, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
+    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _⟩
 
-/-- `turbo_value_is_value`. -/
+/-- `turbo_value_is_value`. `net` is the genesis state itself. -/
 example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
+    (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsDAG ∧ net.chain.TurboValue (.external d) v :=
-  ⟨⟨g0, [], []⟩, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _, g0_dag, g0_turbo _⟩
+  ⟨⟨g0, [], []⟩, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
+    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _⟩
 
 theorem g0_exhausted : g0.TransferExhausted := by
   intro a b s' h
@@ -1437,14 +1569,24 @@ example : ∃ (r : Route Nat) (alice bob : Participant) (signed : List (Particip
   subst this
   exact .inl ⟨by decide, rfl⟩
 
-/-- `satp_peers_can_finalize`. -/
+/-- `satp_peers_can_finalize`. `netV` is reachable the same way `netC2` is: `p0`'s own send,
+    then an adversary deliver of `q0`'s claimed signature. -/
 def netV : NetworkState Nat p0 := ⟨g0, [⟨stV, [q0]⟩], [⟨stV, [p0]⟩]⟩
+
+theorem netV_reach : (Nitro.participant apps2 (canon p0)).Reachable netV :=
+  participant_reachable_adv
+    (participant_reachable_honest (participant_reachable_init apps2 (canon p0)) (.send stV)
+      trivial)
+    (.deliver ⟨stV, [q0]⟩) (⟨fun h => absurd h (by decide),
+      fun v h hp => by cases h; exact absurd hp (by decide)⟩ :
+      NetworkState.Unforged _ ⟨stV, [q0]⟩)
 
 example : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat p0)
     (s1 : SignedState Nat),
     Assumptions apps2 p0 (canon p0) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
     p0 ∈ r.peers ∧ r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧
-    2 * (canon p0).ε ≤ r.V.challengeDuration ∧ net.Holds s1 ∧ s1.ByAll ∧
+    2 * (canon p0).ε ≤ r.V.challengeDuration ∧
+    (Nitro.participant apps2 (canon p0)).Reachable net ∧ net.Holds s1 ∧ s1.ByAll ∧
     s1.state.channel = r.V ∧ s1.state.turnNum = 1 ∧
     s1.state.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0 ∧
     (∀ t ∈ net.sent, t.state.channel = r.V →
@@ -1453,8 +1595,9 @@ example : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat 
       (∃ a b, PairOutcome (r.dest alice) (r.dest bob) t.state.outcome a b ∧ a + b = r.a0 + r.b0)) ∧
     (∃ t, net.chain.statusOf r.V = .open t ∧ t ≤ 1) :=
   ⟨r2, p0, q0, netV, ⟨stV, [p0, q0]⟩, canon_ok _ _, r2_wf, rfl, by decide, rfl, rfl, by decide,
-    holds_intro _ _ (by decide) (fun v hv => by cases hv; rfl), by decide, rfl, rfl, rfl,
-    fun t ht _ => by simp [netV] at ht; subst ht; exact .inl ⟨by decide, rfl⟩, ⟨0, rfl, by decide⟩⟩
+    netV_reach, holds_intro _ _ (by decide) (fun v hv => by cases hv; rfl), by decide, rfl, rfl,
+    rfl, fun t ht _ => by simp [netV] at ht; subst ht; exact .inl ⟨by decide, rfl⟩,
+    ⟨0, rfl, by decide⟩⟩
 
 /-- Three peers `p0`, `q0`, `w0`; `q0` is the intermediary. -/
 def w0 : Participant := ⟨2⟩
@@ -1490,6 +1633,23 @@ theorem net3_latest_p : HoldsLatestLedger net3 Lp3 op3 :=
   ⟨⟨Sp, [q0, w0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
     by decide, .inl ⟨0, rfl, by decide⟩⟩
 
+/-- `net3` is reachable: `q0`'s own three honest sends (`V0`, then `Sp`, then `Sm`, the order
+    `.send` prepends into `net3`'s own `sent`), then two adversary delivers of `p0`'s and `w0`'s
+    claimed signatures (delivered in reverse order, for the same prepend reason). -/
+theorem net3_reach : (Nitro.participant apps2 (canon q0)).Reachable net3 :=
+  participant_reachable_adv
+    (participant_reachable_adv
+      (participant_reachable_honest
+        (participant_reachable_honest
+          (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send V0)
+            trivial)
+          (.send Sp) trivial)
+        (.send Sm) trivial)
+      (.deliver ⟨Sp, [w0]⟩)
+      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩))
+    (.deliver ⟨Sm, [p0]⟩)
+    (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
+
 /-- `satp_theorem_3_2`. -/
 example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) (Lm Lp : FixedPart)
     (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
@@ -1500,6 +1660,7 @@ example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) 
     (2 * (canon P).ε ≤ Lm.challengeDuration ∧ 2 * (canon P).ε ≤ Lp.challengeDuration ∧
       2 * (canon P).ε ≤ r.V.challengeDuration) ∧
     r.LedgerAfterRound2 om Pprev P P balm r.b0 ∧ r.LedgerAfterRound2 op P Pnext P balp r.a0 ∧
+    (Nitro.participant apps2 (canon P)).Reachable net ∧
     HoldsLatestLedger net Lm om ∧ HoldsLatestLedger net Lp op ∧
     HoldsVirtualSetup net r alice bob true ∧
     (net.DeadlineAfter Lm (canon P).ε ∧ net.DeadlineAfter Lp (canon P).ε ∧
@@ -1509,7 +1670,7 @@ example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) 
   ⟨r3, p0, w0, q0, p0, w0, 1, Lm3, Lp3, om3, op3, 1, 1, net3, canon_ok _ _, r3_wf, rfl, rfl, rfl,
     le_rfl, by decide, rfl, rfl, rfl, rfl, rfl, ⟨by decide, by decide, by decide⟩,
     by unfold Route.LedgerAfterRound2; decide, by unfold Route.LedgerAfterRound2; decide,
-    net3_latest_m, net3_latest_p,
+    net3_reach, net3_latest_m, net3_latest_p,
     ⟨fun t ht hc => by
         simp [net3] at ht
         rcases ht with rfl | rfl | rfl <;>
@@ -1518,11 +1679,25 @@ example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) 
     ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _,
       deadlineAfter_open (t := 0) rfl _⟩, by decide⟩
 
-/-- `satp_intermediary_before_round2`. -/
+/-- `satp_intermediary_before_round2`. `netB` is reachable the same way `net3` is, with two sends
+    and two delivers instead of three and two. -/
 def omB : Allocation Nat := [alloc (.external 1) 1]
 def SmB : State Nat := ⟨Lm3, 1, .allocation omB, false, .opaque 0⟩
 def SpB : State Nat := ⟨Lp3, 1, .allocation omB, false, .opaque 0⟩
 def netB : NetworkState Nat q0 := ⟨g0, [⟨SmB, [p0]⟩, ⟨SpB, [w0]⟩], [⟨SmB, [q0]⟩, ⟨SpB, [q0]⟩]⟩
+
+theorem netB_reach : (Nitro.participant apps2 (canon q0)).Reachable netB :=
+  participant_reachable_adv
+    (participant_reachable_adv
+      (participant_reachable_honest
+        (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send SpB)
+          trivial)
+        (.send SmB) trivial)
+      (.deliver ⟨SpB, [w0]⟩)
+      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
+        NetworkState.Unforged _ ⟨SpB, [w0]⟩))
+    (.deliver ⟨SmB, [p0]⟩)
+    (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨SmB, [p0]⟩)
 
 example : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : FixedPart)
     (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
@@ -1530,25 +1705,59 @@ example : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : FixedPart)
     r.peers[i]? = some P ∧ r.ledgers[i - 1]? = some Lm ∧ r.ledgers[i]? = some Lp ∧
     (2 * (canon P).ε ≤ Lm.challengeDuration ∧ 2 * (canon P).ε ≤ Lp.challengeDuration) ∧
     r.LedgerBeforeRound2 om P balm ∧ r.LedgerBeforeRound2 op P balp ∧
+    (Nitro.participant apps2 (canon P)).Reachable net ∧
     HoldsLatestLedger net Lm om ∧ HoldsLatestLedger net Lp op ∧
     (net.DeadlineAfter Lm (canon P).ε ∧ net.DeadlineAfter Lp (canon P).ε) ∧
     (net.chain.finalizedWith Lm.address = none ∧ net.chain.finalizedWith Lp.address = none) :=
   ⟨r3, q0, 1, Lm3, Lp3, omB, omB, 1, 1, netB, canon_ok _ _, r3_wf, le_rfl, by decide, rfl, rfl, rfl,
-    ⟨by decide, by decide⟩, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩,
+    ⟨by decide, by decide⟩, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, netB_reach,
     ⟨⟨SmB, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
       by decide, .inl ⟨0, rfl, by decide⟩⟩,
     ⟨⟨SpB, [q0, w0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
       by decide, .inl ⟨0, rfl, by decide⟩⟩,
     ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _⟩, by decide⟩
 
-/-- `satp_end_user_recovers`: Alice `p0` in the two-peer route; `V` is
-    finalized with `(A : 1, B : 0)`. -/
+/-- `satp_end_user_recovers`: Alice `p0` in the two-peer route; `V` is finalized with
+    `(A : 1, B : 0)` by TIMEOUT, not an explicit final state: `p0` challenges `Vr` with its own
+    setup state `V0r` (turn 0, not final — `originalOutcome 0 1 1 0` computes to exactly `ΩV`,
+    `SATP.lean:111-112`), then waits out the deadline (`timeout_finalizes`, `Safety.lean:986-989`).
+    This keeps every `Vr`-channel state `p0` ever sends non-final, as `HoldsVirtualSetup` requires;
+    an explicit final conclude would need `p0` to sign a final state, breaking that. -/
 def o0 : Allocation Nat := [alloc (.external 0) 0, alloc (.external 1) 0, r2.guarantee p0 q0]
 def S0 : State Nat := ⟨Lr, 1, .allocation o0, false, .opaque 0⟩
 def V0r : State Nat := ⟨Vr, 0, originalOutcome 0 1 1 0, false, .satpVirtual ⟨.none, vch⟩⟩
 def ΩV : Outcome Nat := .allocation [alloc (.external 0) 1, alloc (.external 1) 0]
-def sE : Adjudicator Nat := g0.setStatus Vr (.finalized 0 ΩV ΩV)
-def netE : NetworkState Nat p0 := ⟨sE, [⟨S0, [q0]⟩], [⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]⟩
+def sE : Adjudicator Nat := (g0.setStatus Vr (.challenged 0 ⟨V0r, 0 + Vr.challengeDuration⟩)).tick 2
+def netE : NetworkState Nat p0 :=
+  ⟨sE, [⟨S0, [q0]⟩, ⟨V0r, [q0]⟩], [⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]⟩
+
+theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
+  participant_reachable_honest
+    (participant_reachable_honest
+      (participant_reachable_adv
+        (participant_reachable_honest
+          (participant_reachable_adv
+            (participant_reachable_honest (participant_reachable_init apps2 (canon p0))
+              (.send V0r) trivial)
+            (.deliver ⟨V0r, [q0]⟩) (by
+              refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
+              cases h; exact absurd hp (by decide)))
+          (.send S0) trivial)
+        (.deliver ⟨S0, [q0]⟩) (by
+          refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
+          cases h))
+      (.chain (.challenge Vr [⟨V0r, [p0, q0]⟩] V0r))
+      (fun ss h => by
+        simp only [Op.proofStates, List.mem_singleton] at h; subst h
+        refine ⟨fun q hq => ?_, fun v hv => ?_⟩
+        · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+          rcases hq with rfl | rfl
+          · exact .inl ⟨rfl, ⟨V0r, [p0]⟩, List.mem_cons_of_mem _ List.mem_cons_self, rfl⟩
+          · exact .inr ⟨⟨V0r, [q0]⟩, List.mem_cons_of_mem _ List.mem_cons_self, rfl,
+              List.mem_cons_self⟩
+        · cases hv
+          exact fun q hq => absurd hq List.not_mem_nil))
+    (.wait 2) trivial
 
 example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : FixedPart) (o : Allocation Nat)
     (bal a b : Coins) (net : NetworkState Nat P),
@@ -1556,21 +1765,35 @@ example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : FixedPart) (o
     r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧ P = alice ∧ r.peers[1]? = some P1 ∧
     r.ledgers[0]? = some L0 ∧
     (2 * (canon P).ε ≤ L0.challengeDuration ∧ 2 * (canon P).ε ≤ r.V.challengeDuration) ∧
-    r.LedgerAfterRound2 o P P1 P bal r.a0 ∧ HoldsLatestLedger net L0 o ∧
+    r.LedgerAfterRound2 o P P1 P bal r.a0 ∧
+    (Nitro.participant apps2 (canon P)).Reachable net ∧
+    HoldsLatestLedger net L0 o ∧
     HoldsVirtualSetup net r alice bob true ∧ a + b = r.a0 + r.b0 ∧
     net.chain.finalOutcome r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
-    net.DeadlineAfter L0 (canon P).ε ∧ net.chain.finalizedWith L0.address = none :=
-  ⟨r2, p0, q0, p0, q0, Lr, o0, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl, rfl, rfl, rfl, rfl, rfl,
-    ⟨by decide, by decide⟩, by unfold Route.LedgerAfterRound2; decide,
-    ⟨⟨S0, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
-      by decide, .inl ⟨0, rfl, by decide⟩⟩,
-    ⟨fun t ht hc => by
-        simp [netE] at ht
-        rcases ht with rfl | rfl <;>
-          first | exact ⟨rfl, rfl, .inl rfl⟩ | exact absurd hc (by decide),
-      ⟨⟨V0r, [p0]⟩, by simp [netE], rfl, rfl⟩⟩, rfl, rfl,
-    deadlineAfter_open (t := 0) rfl _, by decide⟩
+    net.DeadlineAfter L0 (canon P).ε ∧ net.chain.finalizedWith L0.address = none := by
+  refine ⟨r2, p0, q0, p0, q0, Lr, o0, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl, rfl, rfl, rfl, rfl,
+    rfl, ⟨by decide, by decide⟩, by unfold Route.LedgerAfterRound2; decide, netE_reach,
+    ⟨⟨S0, [p0, q0]⟩, ?_, by decide, rfl, rfl, rfl, ?_, ?_⟩, ⟨?_, ?_⟩, rfl, by decide, ?_, by decide⟩
+  · refine ⟨fun q hq => ?_, fun v hv => ?_⟩
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+      rcases hq with rfl | rfl
+      · exact .inl ⟨rfl, ⟨S0, [p0]⟩, List.mem_cons_self, rfl⟩
+      · exact .inr ⟨⟨S0, [q0]⟩, List.mem_cons_self, rfl, List.mem_cons_self⟩
+    · simp [S0, State.voucher?] at hv
+  · intro t ht hc
+    simp only [netE, List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · exact ⟨Or.inr rfl, rfl⟩
+    · exact absurd hc (by decide)
+  · exact .inl ⟨0, rfl, by decide⟩
+  · intro t ht hc
+    simp only [netE, List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · exact absurd hc (by decide)
+    · exact ⟨rfl, rfl, .inl rfl⟩
+  · exact ⟨⟨V0r, [p0]⟩, List.mem_cons_of_mem _ List.mem_cons_self, rfl, rfl⟩
+  · exact deadlineAfter_open (t := 0) rfl _
 
 /-- `satp_reclaim_credits_intermediary`. -/
 def sRC : Adjudicator Nat :=
