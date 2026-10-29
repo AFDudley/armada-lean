@@ -1652,6 +1652,21 @@ theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
   | done hG => exact .done hG
   | move m hm hfeas _ ih => exact .move m (hsub m hm) hfeas ih
 
+/-- `UnbeatableIn` composes sequentially: an unbeatable strategy reaching a
+    goal `G1`, followed from every state that reaches `G1` by an unbeatable
+    strategy reaching `G2`, is itself an unbeatable strategy for `G2`. The
+    standard "play strategy one, then strategy two" combinator the
+    `conclude, then transfer` theorems (`ledger_partial_withdrawal`) build
+    on. -/
+theorem UnbeatableIn.bind {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G1 G2 : NetworkState E p → Prop} {net : NetworkState E p}
+    (h1 : UnbeatableIn apps T allowed G1 net)
+    (h2 : ∀ net', G1 net' → UnbeatableIn apps T allowed G2 net') :
+    UnbeatableIn apps T allowed G2 net := by
+  induction h1 with
+  | done hG1 => exact h2 _ hG1
+  | move m hm hfeas _ ih => exact .move m hm hfeas ih
+
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
@@ -2861,6 +2876,32 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     refine (Allocation.paidTo_of_getElem? hd2 (j := 0) (f := alloc A (a + a')) rfl).trans ?_
     simp [alloc, Allocation.total, Entry.amount]; grind
 
+/-- Generalizes `directly_funded_pays` from an external destination to any
+    fundable one: a channel with a conclusion proof already in hand, whose
+    current balance already covers its concluded outcome's total, pays
+    every fundable destination named in that outcome in full, with no
+    wait, regardless of adversary play — "conclude, then transfer"
+    (`ledger_partial_withdrawal`'s design note, `docs/nitro-repair-2026-10-27.md`
+    row 28: "Conclude L, then transfer: two rounds without wait"), stated
+    for an arbitrary channel/destination pair so `ledger_partial_withdrawal`
+    can use it for both the external destination `dA` and the channel
+    destination `L'.address`. -/
+theorem concluded_pays_dest (apps : Apps E) {p : Participant} (T : Threat E p)
+    (A : Assumptions apps p T) (net : NetworkState E p)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (ss : SignedState E)
+    (Ω : Outcome E) (hc : apps c.appDef = consensusRules) (hck : c.kind = .ledger)
+    (hp : p ∈ c.participants)
+    (hh : net.Holds ss) (hproof : ConclusionProof c ss) (hΩ : ss.state.outcome = Ω)
+    (hsent : ∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = Ω)
+    (hchain : net.chain.finalizedWith c.address = none ∨ net.Finalized c Ω)
+    (hdur : 2 * T.ε ≤ c.challengeDuration) (hpend : net.DeadlineAfter c T.ε)
+    (d : Address E) (hdf : d.fundable = true) (amt : Coins)
+    (hd : Ω.entries.find d = some ⟨d, .alloc amt⟩)
+    (hfund : Ω.entries.total ≤ net.chain.balances.get c.address) :
+    UnbeatableNoWait apps T
+      (fun net' => net.chain.balances.get d + amt ≤ net'.chain.balances.get d) net := by
+  sorry
+
 /-- Nitro-49 (Nitro:997-1047, §5.4.4 Partial Withdrawal from a Ledger Channel).
     Nitro:1046-1047: "A was able to withdraw their funds instantly, without
     having to wait for the channel timeout." With the conclusion proof for
@@ -2876,7 +2917,19 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     `Nitro.network_chain_reachable`), which is the unreachable
     counterexample's shape. `v` and `hv` stay as they were: the shorter
     restatement adds `n`, `hr` and the link `hvn`, rather than rewriting
-    every one of this theorem's existing uses of `v` to `n.views`. -/
+    every one of this theorem's existing uses of `v` to `n.views`.
+
+    `IsLedgerChannel` (`apps c.appDef = consensusRules`) does not, by
+    itself, entail `c.kind = .ledger` — `kind` is an independent
+    `FixedPart` field (`docs/nitro-repair-2026-10-27.md` §6.3) — and only a
+    `kind = .ledger` channel's `transfer`/`deposit` can move its balance, or
+    credit a channel destination (`Address.fundable`). `hbal` pins `L`'s
+    balance but not `L'`'s, so the existing `n`/`hr` reachability closes
+    only the gap that rules out `χ` (above); it does not, by itself, pin
+    either `L`'s or `L'`'s `kind`. `hLk`/`hL'k` state the fact directly,
+    the same way the repair's kind pass added a plain `kind` hypothesis to
+    every other transfer-dependent theorem (`deposit_can_happen`,
+    `transfer_can_happen`, …) rather than deriving it. -/
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (A B : Participant) (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
@@ -2892,13 +2945,46 @@ theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Vie
     (hL'open : ∀ p, (v p).chain.finalOutcome L'.address = none)
     (hL'sent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = L' → t.state.isFinal = false)
     (hL'out : v.FinalizableBy apps Ts L'
-      (.allocation [alloc (.external dA) a, alloc (.external dB) b, alloc χ.address c]) [A, B]) :
+      (.allocation [alloc (.external dA) a, alloc (.external dB) b, alloc χ.address c]) [A, B])
+    (hLk : L.kind = .ledger) (hL'k : L'.kind = .ledger) :
     UnbeatableNoWait apps (Ts.T A)
       (fun net' => (v A).chain.balances.get (.external dA) + a' ≤
         net'.chain.balances.get (.external dA))
       (v A) ∧
     FundedFor apps (Ts.T A) L' (a + b + c) (v A) ∧ FundedFor apps (Ts.T B) L' (a + b + c) (v B) := by
-  sorry
+  set Ω : Outcome E := .allocation [alloc L'.address (a + b + c), alloc (.external dA) a'] with hΩdef
+  have hfind1 : Ω.entries.find L'.address = some (⟨L'.address, .alloc (a + b + c)⟩ : Entry E) := by
+    simp [Ω, Outcome.entries, Allocation.find, alloc]
+  have hfind2 : Ω.entries.find (.external dA) =
+      some (⟨(.external dA : Address E), .alloc a'⟩ : Entry E) := by
+    simp [Ω, Outcome.entries, Allocation.find, alloc]
+  have htotal : Ω.entries.total = a + b + c + a' := by
+    simp [Ω, Outcome.entries, Allocation.total, Entry.amount, Item.amount, alloc]
+  have hrp : ∀ p, (Nitro.participant apps (Ts.T p)).Reachable (v p) := by
+    intro p; rw [hvn]; exact Nitro.network_views_participant_reachable hr p
+  have hAmem : A ∈ L.participants := by rw [hLp]; simp
+  have hBmem : B ∈ L.participants := by rw [hLp]; simp
+  have hmain : ∀ p, p ∈ L.participants → ∀ (d : Address E), d.fundable = true → ∀ amt,
+      Ω.entries.find d = some (⟨d, .alloc amt⟩ : Entry E) →
+      UnbeatableNoWait apps (Ts.T p)
+        (fun net' => (v p).chain.balances.get d + amt ≤ net'.chain.balances.get d) (v p) := by
+    intro p hp d hdf amt hd
+    obtain ⟨ss, hh, hproof, hΩeq⟩ := hconc p hp
+    have hfundp : Ω.entries.total ≤ (v p).chain.balances.get L.address := by
+      rw [htotal, hbal p]
+    exact concluded_pays_dest apps (Ts.T p) (Ts.ok p) (v p) (hrp p) L ss Ω hL hLk hp hh hproof hΩeq
+      (hsent p) (Or.inl (hopen p)) (hdur p).1 (hpend p).1 d hdf amt hd hfundp
+  have hA1 := hmain A hAmem L'.address (by simpa [Address.fundable] using hL'k) (a + b + c) hfind1
+  have hA2 := hmain A hAmem (.external dA) rfl a' hfind2
+  have hB1 := hmain B hBmem L'.address (by simpa [Address.fundable] using hL'k) (a + b + c) hfind1
+  have hshrink : ∀ q : Participant, UnbeatableNoWait apps (Ts.T q)
+      (fun net' => (v q).chain.balances.get L'.address + (a + b + c) ≤
+        net'.chain.balances.get L'.address) (v q) →
+      FundedFor apps (Ts.T q) L' (a + b + c) (v q) := by
+    intro q hq
+    refine UnbeatableIn.mono (fun _ _ => trivial) (hq.bind (fun net' h => .done ?_))
+    exact Nat.le_trans (Nat.le_add_left _ _) h
+  exact ⟨hA2, hshrink A hA1, hshrink B hB1⟩
 
 /-- SATP-19, SATP-18. SATP:707-709, SATP:734: "The following two requirements
     guarantee that intermediary's funds are invariant:
