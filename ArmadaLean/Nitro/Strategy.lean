@@ -9,16 +9,39 @@
   Modelling choice (the game). Nitro:460-461: "we assume that all other
   participants are controlled by a single adversary, pooling their resources
   and commitments." The honest participant `p` plays against that adversary.
-  One round is: `p` chooses one move, the adversary applies any finite list
-  of feasible moves, then `p`'s move is applied. This encodes Nitro:540-542:
-  "Transactions can be front-run". The clock follows Nitro:537-539:
-  "Transactions are unimpeded: given that the current time is t and ε > 0,
-  then it is possible for any party to apply any operation, O, on-chain before
-  time t + ε." The adversary may move the clock, but in each round `p`'s move
-  lands before `ε` has passed since `p` chose it (`Threat.Round`). The
-  liveness theorems assume challenge durations of at least `2 * ε`: a
-  challenge that the adversary registers just after `p` chose a move is seen
-  at the next round, and `p`'s answer lands before `2 * ε` has passed.
+  One round is: `p` issues a reaction (`Reaction`, possibly several on-chain
+  calls and sends), the adversary plays a feasible sequence of its own moves
+  and lands every call of that reaction, in whatever order it chooses
+  (front-running, Nitro:540-542), then the round ends. The clock follows
+  Nitro:537-539: "Transactions are unimpeded: given that the current time is
+  t and ε > 0, then it is possible for any party to apply any operation, O,
+  on-chain before time t + ε."
+
+  Time bounds per pending action (operator ruling 2026-10-29,
+  `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`, "Time
+  bounds per pending action"). The earlier game bounded the adversary's
+  clock advance per honest MOVE: a strategy needing two on-chain calls spent
+  two rounds, and the second call could land almost `2 * ε` after the round
+  started (`aln-c03`'s finding). Lamport's explicit-time form fixes this:
+  each call `p` issues at time `t` is pending with deadline `t + ε`
+  (`Reaction`, `Threat.RoundSeq.land`); the clock's `tick` is disabled while
+  it would pass a pending deadline, an enabling condition on `Tick`
+  (Lamport, "Real-Time Model Checking is Really Simple", CHARME 2005: "An
+  upper-bound timing constraint on when an action A must occur is expressed
+  by an enabling condition on the Tick action"; the same explicit-time
+  encoding is Abadi and Lamport, "An Old-Fashioned Recipe for Real Time",
+  TOPLAS 1994, and the per-task upper bound is Merritt, Modugno and Tuttle's
+  `boundmap`, 1991 — time-constrained automata, MIT 6.852 lecture 25; the
+  on-chain round that bounds every published response while the adversary
+  reorders and front-runs is the Sprites payment-channel network, arXiv
+  1702.05812v2 §I, `∆`). A reaction's calls still land one at a time, each
+  wherever the adversary orders it among its own moves, so two calls issued
+  together (SATP Protocol 3.3 and Theorem 3.1, SATP:480-493, challenge both
+  ledgers of an intermediary together) share one deadline, not two
+  (`satp_intermediary_before_round2`'s argument, `Liveness.lean`). The old
+  per-move bound (one call, `net'.chain.now < net.chain.now + T.ε`,
+  evaluated once the round ends) is the special case of one call
+  (`Threat.Round.single`, below).
 -/
 import ArmadaLean.Nitro.Adjudicator
 
@@ -49,49 +72,78 @@ def NetworkState.Holds {p : Participant} (net : NetworkState E p) (ss : SignedSt
     (q = p ∧ ∃ s ∈ net.sent, s.state.voucher? = some v) ∨
     (∃ r ∈ net.received, r.state.voucher? = some v ∧ q ∈ r.signers)
 
-/-- A move of the honest participant. Nitro:485-488: "signing commitments,
-    refusing to sign commitments, launching/responding to on-chain challenges
-    and calling on-chain operations". SATP:393-399 (Definition 3.1): a peer
-    commits by signing and sending a state. `wait` lets the chain clock
-    advance. -/
+/-- One honest reaction (Nitro:485-488: "signing commitments, refusing to
+    sign commitments, launching/responding to on-chain challenges and
+    calling on-chain operations"): the on-chain calls `p` submits and the
+    states `p` signs and sends, issued together at one time `t`. Each call
+    in `calls` becomes pending with deadline `t + ε` (`Threat.RoundSeq.land`);
+    `sends` carry no deadline, SATP:393-399's commit step, and take effect
+    at once (`NetworkState.applyHonest`). A strategy may put calls to two
+    different channels in one reaction (SATP Protocol 3.3). -/
+structure Reaction (E : Type) where
+  calls : List (Op E)
+  sends : List (State E)
+
+/-- A move of the honest participant: issue a reaction, or let the clock
+    advance unilaterally. `wait` is `p`'s own choice, not subject to the
+    adversary's `Tick` enabling condition below, which bounds only the
+    adversary's own clock advances against `p`'s pending calls. -/
 inductive HonestMove (E : Type)
-  | chain (op : Op E)
-  | send (st : State E)
+  | react (r : Reaction E)
   | wait (dt : Time)
 
 /-- A move of the adversary: an on-chain operation by some other participant,
-    a signed state delivered to `p`, or the clock moving. -/
+    a signed state delivered to `p`, the clock moving, or landing one of
+    `p`'s own pending calls (front-running: Nitro:540-542, "Transactions can
+    be front-run"; the adversary chooses where `land` falls among its own
+    moves). `land`'s caller is always `p`: it is `p`'s own already-issued
+    call reaching the chain, not a forgery, so it needs no `Bounds`
+    hypothesis (`Threat.RoundSeq.land` below gates it structurally instead:
+    only a call `p` actually issued, every other listed as still pending). -/
 inductive AdvMove (E : Type)
   | chain (caller : Participant) (op : Op E)
   | deliver (ss : SignedState E)
   | tick (dt : Time)
+  | land (op : Op E)
 
-/-- The honest participant may submit only states it holds. It does not
-    deposit: Nitro:779-781 analyses strategies "ignoring deposits and
-    withdrawals", and `p` has no wallet, so a deposit by `p` would create
-    coins. -/
+/-- `op`'s own feasibility as one call of a reaction: `p` does not deposit
+    (Nitro:779-781 analyses strategies "ignoring deposits and withdrawals",
+    and `p` has no wallet, so a deposit by `p` would create coins), and every
+    proof state `op` submits is one `p` holds. -/
+def Op.HonestFeasible {p : Participant} (net : NetworkState E p) : Op E → Prop
+  | .deposit .. => False
+  | op => ∀ ss ∈ op.proofStates, net.Holds ss
+
+/-- A reaction is feasible when every one of its calls is. -/
+def Reaction.Feasible {p : Participant} (net : NetworkState E p) (r : Reaction E) : Prop :=
+  ∀ op ∈ r.calls, op.HonestFeasible net
+
+/-- The honest participant may play a reaction only when every one of its
+    calls is feasible; `wait` is always feasible. -/
 def HonestMove.Feasible {p : Participant} (net : NetworkState E p) : HonestMove E → Prop
-  | .chain (.deposit ..) => False
-  | .chain op => ∀ ss ∈ op.proofStates, net.Holds ss
-  | .send _ => True
+  | .react r => r.Feasible net
   | .wait _ => True
 
-/-- Apply an honest move. A failed on-chain operation changes nothing
-    (ForceMove:685-686). -/
-def NetworkState.applyHonest (apps : Apps E) {p : Participant}
-    (m : HonestMove E) (net : NetworkState E p) : NetworkState E p :=
+/-- Apply an honest move, once its round has landed every call (`Threat.Round`
+    below runs the round first; this only ever touches `sent`/`chain` for
+    the parts of a move that are NOT a pending call — a reaction's calls are
+    already reflected in the chain by the time this runs, through
+    `Threat.RoundSeq.land`). `wait` still moves the clock directly: it is
+    `p`'s own move, not the adversary's gated `Tick`. -/
+def NetworkState.applyHonest {p : Participant} (m : HonestMove E) (net : NetworkState E p) :
+    NetworkState E p :=
   match m with
-  | .chain op => { net with chain := (net.chain.apply apps p op).getD net.chain }
-  | .send st => { net with sent := ⟨st, [p]⟩ :: net.sent }
+  | .react r => { net with sent := r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent }
   | .wait dt => { net with chain := net.chain.tick dt }
 
 /-- Apply an adversary move. D9 repair (`docs/nitro-repair-2026-10-27.md`):
     go-nitro emits the signed states of a challenge (`ChallengeRegistered`)
     and a checkpoint is calldata, so every on-chain call makes its proof
-    states public. A successful chain operation adds `op.proofStates` to
-    `received`: the honest participant can then answer a challenge or
-    checkpoint it did not see delivered, closing the gap that let the
-    adversary register an undeliverable state (theorems
+    states public. A successful chain operation (`.chain`, by another
+    participant, or `.land`, `p`'s own pending call landing) adds
+    `op.proofStates` to `received`: the honest participant can then answer a
+    challenge or checkpoint it did not see delivered, closing the gap that
+    let the adversary register an undeliverable state (theorems
     `funding_point_universally_finalizable`, `satp_peers_can_finalize`,
     `satp_theorem_3_2` in the re-audit). -/
 def NetworkState.applyAdv (apps : Apps E) {p : Participant}
@@ -103,28 +155,158 @@ def NetworkState.applyAdv (apps : Apps E) {p : Participant}
     | none => net
   | .deliver ss => { net with received := ss :: net.received }
   | .tick dt => { net with chain := net.chain.tick dt }
+  | .land op =>
+    match net.chain.apply apps p op with
+    | some s' => { net with chain := s', received := op.proofStates ++ net.received }
+    | none => net
 
 /-- What the adversary can do. `feasible net m` holds when the adversary can
     play `m` from `net`. `ε` is the inclusion bound of Nitro:537-539: a
     transaction lands before `ε` has passed; the type carries `0 < ε`
-    (Nitro:537 "ε > 0"). The structures `Bounds` and `Capable` bound it. -/
+    (Nitro:537 "ε > 0"). `feasible` is never consulted for `.land`
+    (`Threat.RoundSeq.land` gates it structurally, by membership in the
+    reaction's own pending calls, not by the adversary's say-so: Nitro's
+    "unimpeded" assumption is a chain guarantee, not a favour the adversary
+    grants). The structures `Bounds` and `Capable` bound `.chain`/`.deliver`;
+    `Capable.capableTick` bounds `.tick` subject to `Threat.Round`. -/
 structure Threat (E : Type) (p : Participant) where
   feasible : NetworkState E p → AdvMove E → Prop
   ε : Time
   ε_pos : 0 < ε
 
-/-- A list of adversary moves, each feasible where it is applied. -/
-inductive Threat.FeasibleSeq (apps : Apps E) {p : Participant} (T : Threat E p) :
-    NetworkState E p → List (AdvMove E) → NetworkState E p → Prop
-  | nil {net} : T.FeasibleSeq apps net [] net
-  | cons {net net' m rest} : T.feasible net m →
-      T.FeasibleSeq apps (net.applyAdv apps m) rest net' → T.FeasibleSeq apps net (m :: rest) net'
+/-- One round's adversary play while `p`'s reaction, issued at the round's
+    own start time `t`, still has `pending` calls unlanded (Lamport's
+    explicit-time form, CHARME 2005, quoted in this file's header). Three
+    kinds of step: `land` takes one call out of `pending` — chosen anywhere
+    among the adversary's own moves, in any order (front-running); `tick` is
+    disabled once it would push the clock past `t + T.ε` while any call is
+    still pending — the one new constraint this ruling adds, read literally
+    off "an enabling condition on the Tick action"; every other adversary
+    move (`.chain`, `.deliver`) is unconstrained by `pending`, exactly as in
+    the one-move game (`other`). The round closes (`nil`) only once
+    `pending` is empty: every call a reaction issues is, structurally,
+    landed before the round can end. -/
+inductive Threat.RoundSeq (apps : Apps E) {p : Participant} (T : Threat E p) (t : Time) :
+    List (Op E) → NetworkState E p → NetworkState E p → Prop
+  | nil {net} : Threat.RoundSeq apps T t [] net net
+  | land {pending net net' op l1 l2} (hsplit : pending = l1 ++ op :: l2)
+      (hrest : Threat.RoundSeq apps T t (l1 ++ l2) (net.applyAdv apps (.land op)) net') :
+      Threat.RoundSeq apps T t pending net net'
+  | tick {pending net net' dt} (hfeas : T.feasible net (.tick dt))
+      (hgate : pending = [] ∨ net.chain.now + dt < t + T.ε)
+      (hrest : Threat.RoundSeq apps T t pending (net.applyAdv apps (.tick dt)) net') :
+      Threat.RoundSeq apps T t pending net net'
+  | other {pending net net' m} (hfeas : T.feasible net m)
+      (hnotick : ∀ dt, m ≠ .tick dt) (hnoland : ∀ op, m ≠ .land op)
+      (hrest : Threat.RoundSeq apps T t pending (net.applyAdv apps m) net') :
+      Threat.RoundSeq apps T t pending net net'
 
-/-- The adversary's part of one round: a feasible prefix that ends before `ε`
-    has passed since the round began (Nitro:537-539, "before time t + ε"). -/
-def Threat.Round (apps : Apps E) {p : Participant} (T : Threat E p) (net : NetworkState E p)
-    (advs : List (AdvMove E)) (net' : NetworkState E p) : Prop :=
-  T.FeasibleSeq apps net advs net' ∧ net'.chain.now < net.chain.now + T.ε
+/-- The on-chain calls a move puts up for landing this round: a reaction's
+    own `calls`, or none for `wait`. -/
+def HonestMove.calls : HonestMove E → List (Op E)
+  | .react r => r.calls
+  | .wait _ => []
+
+/-- One round: `p`'s move `m`, issued at `net`'s clock, has every one of its
+    calls landed (`Threat.RoundSeq`), and the round itself ends before
+    `t + T.ε` has passed (Nitro:537-539, "before time t + ε") — the same
+    bound `Threat.Round` always had, now read against the round's start
+    rather than against a single call in isolation. `Threat.Round.single`
+    shows the one-call case is exactly the old bound. -/
+def Threat.Round (apps : Apps E) {p : Participant} (T : Threat E p) (m : HonestMove E)
+    (net net' : NetworkState E p) : Prop :=
+  Threat.RoundSeq apps T net.chain.now m.calls net net' ∧
+  net'.chain.now < net.chain.now + T.ε
+
+/-- A reaction with one call and no sends — today's single on-chain move. -/
+def Reaction.one (op : Op E) : Reaction E := ⟨[op], []⟩
+
+/-- Today's single on-chain move, as a reaction (`Reaction.one`). Dot
+    notation resolves `.chain op`, written where a `HonestMove E` is
+    expected, to this definition, so a one-call reaction is written exactly
+    as the old game's single `.chain` move was. -/
+def HonestMove.chain (op : Op E) : HonestMove E := .react (Reaction.one op)
+
+/-- Today's single send move, as a reaction with no calls. Dot notation
+    resolves `.send st` to this definition. -/
+def HonestMove.send (st : State E) : HonestMove E := .react ⟨[], [st]⟩
+
+omit [DecidableEq E] in
+@[simp] theorem HonestMove.calls_chain (op : Op E) : (HonestMove.chain op).calls = [op] := rfl
+
+omit [DecidableEq E] in
+@[simp] theorem HonestMove.calls_send (st : State E) : (HonestMove.send st).calls = [] := rfl
+
+omit [DecidableEq E] in
+@[simp] theorem HonestMove.calls_wait (dt : Time) : (HonestMove.wait (E := E) dt).calls = [] := rfl
+
+omit [DecidableEq E] in
+@[simp] theorem HonestMove.Feasible_chain {p : Participant} (net : NetworkState E p) (op : Op E) :
+    (HonestMove.chain op).Feasible net ↔ op.HonestFeasible net := by
+  simp [HonestMove.Feasible, HonestMove.chain, Reaction.Feasible, Reaction.one]
+
+omit [DecidableEq E] in
+@[simp] theorem HonestMove.Feasible_send {p : Participant} (net : NetworkState E p) (st : State E) :
+    (HonestMove.send st).Feasible net := by
+  simp [HonestMove.Feasible, HonestMove.send, Reaction.Feasible]
+
+omit [DecidableEq E] in
+@[simp] theorem NetworkState.applyHonest_chain {p : Participant} (net : NetworkState E p)
+    (op : Op E) : net.applyHonest (HonestMove.chain op) = net := by
+  simp [NetworkState.applyHonest, HonestMove.chain, Reaction.one]
+
+omit [DecidableEq E] in
+@[simp] theorem NetworkState.applyHonest_send {p : Participant} (net : NetworkState E p)
+    (st : State E) : net.applyHonest (HonestMove.send st) = { net with sent := ⟨st, [p]⟩ :: net.sent } := by
+  simp [NetworkState.applyHonest, HonestMove.send]
+
+/-- One call always peels off a `RoundSeq` as the LAST pending-clearing
+    step: `[op]` has only one way to split, so every `land` step on
+    `pending = [op]` consumes it whole, leaving `[]`. Stated over fresh
+    state names (not the caller's), so `induction` builds the right
+    motive. -/
+theorem Threat.RoundSeq.peel_one {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    (op : Op E) (n0 n2 : NetworkState E p) (hseq : Threat.RoundSeq apps T t [op] n0 n2) :
+    ∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
+      Threat.RoundSeq apps T t [] (n1.applyAdv apps (.land op)) n2 := by
+  generalize hp : ([op] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => cases hp
+  | @land pending n net' op' l1 l2 hsplit hrest ih =>
+    cases hp
+    rcases l1 with _ | ⟨a, l1⟩
+    · rcases l2 with _ | ⟨b, l2⟩
+      · simp only [List.nil_append, List.cons.injEq] at hsplit
+        obtain ⟨heq, -⟩ := hsplit
+        subst heq
+        exact ⟨n, Threat.RoundSeq.nil, hrest⟩
+      · simp at hsplit
+    · simp at hsplit
+  | tick hfeas hgate hrest ih =>
+    obtain ⟨n1, h1, h2⟩ := ih hp
+    refine ⟨n1, Threat.RoundSeq.tick hfeas (Or.inr ?_) h1, h2⟩
+    rcases hgate with h | h
+    · cases hp.trans h
+    · exact h
+  | other hfeas hnotick hnoland hrest ih =>
+    obtain ⟨n1, h1, h2⟩ := ih hp
+    exact ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
+
+/-- **The old per-move bound is `Threat.Round`'s one-call special case.**
+    For a reaction with one call (`HonestMove.chain op`, `pending = [op]`),
+    `Threat.RoundSeq.peel_one` splits the round into ordinary adversary
+    moves, the single step that lands `op`, then more ordinary adversary
+    moves — exactly the old game's shape (a feasible prefix, `op` applied
+    once, a feasible suffix), except the new game also lets a strategy
+    proof move suffix moves to the OTHER side of the landing: it is a
+    genuinely more adversarial game, not merely a restatement. -/
+theorem Threat.Round.single {apps : Apps E} {p : Participant} {T : Threat E p} {op : Op E}
+    {net net' : NetworkState E p} (h : T.Round apps (HonestMove.chain op) net net') :
+    ∃ net1, Threat.RoundSeq apps T net.chain.now [] net net1 ∧
+      Threat.RoundSeq apps T net.chain.now [] (net1.applyAdv apps (.land op)) net' := by
+  obtain ⟨hseq, -⟩ := h
+  simp only [HonestMove.calls_chain] at hseq
+  exact Threat.RoundSeq.peel_one op net net' hseq
 
 /-- The signatures of `p` that a state carries are genuine: `p` signed the
     state, and `p` signed a state that carries the state's voucher, if `p` is
@@ -173,8 +355,8 @@ inductive UnbeatableIn (apps : Apps E) {p : Participant} (T : Threat E p)
     (allowed : HonestMove E → Prop) (G : NetworkState E p → Prop) : NetworkState E p → Prop
   | done {net} : G net → UnbeatableIn apps T allowed G net
   | move {net} (m : HonestMove E) : allowed m → m.Feasible net →
-      (∀ advs net', T.Round apps net advs net' →
-        UnbeatableIn apps T allowed G (net'.applyHonest apps m)) →
+      (∀ net', T.Round apps m net net' →
+        UnbeatableIn apps T allowed G (net'.applyHonest m)) →
       UnbeatableIn apps T allowed G net
 
 /-- `UnbeatableIn` with every honest move allowed. -/
@@ -186,13 +368,13 @@ def Unbeatable (apps : Apps E) {p : Participant} (T : Threat E p)
 def Strategy (E : Type) (p : Participant) := NetworkState E p → HonestMove E
 
 /-- The states at the start of each round of a play of `σ`: each round is an
-    adversary prefix (`Threat.Round`) followed by the move `σ` chose at the
+    adversary round (`Threat.Round`) landing the move `σ` chose at the
     start of the round. -/
 inductive Run (apps : Apps E) {p : Participant} (T : Threat E p) (σ : Strategy E p) :
     NetworkState E p → NetworkState E p → Prop
   | refl {net} : Run apps T σ net net
-  | round {net n1 n2 advs} : Run apps T σ net n1 → T.Round apps n1 advs n2 →
-      Run apps T σ net (n2.applyHonest apps (σ n1))
+  | round {net n1 n2} : Run apps T σ net n1 → T.Round apps (σ n1) n1 n2 →
+      Run apps T σ net (n2.applyHonest (σ n1))
 
 /-- Nitro:641-644: `p` "has a strategy to prevent" `G`: a strategy whose
     every move is feasible keeps every state of every play outside `G`,
@@ -200,7 +382,7 @@ inductive Run (apps : Apps E) {p : Participant} (T : Threat E p) (σ : Strategy 
 def Prevents (apps : Apps E) {p : Participant} (T : Threat E p)
     (G : NetworkState E p → Prop) (net : NetworkState E p) : Prop :=
   ∃ σ : Strategy E p, (∀ n, (σ n).Feasible n) ∧
-    ∀ n1 advs n2, Run apps T σ net n1 → T.Round apps n1 advs n2 → ¬ G n2
+    ∀ n1 n2, Run apps T σ net n1 → T.Round apps (σ n1) n1 n2 → ¬ G n2
 
 /-- Nitro:602-603 `⟦χ ↦ Ω⟧`: `χ` finalized with the outcome `Ω`. A later
     payout does not change it. -/
@@ -264,16 +446,12 @@ def Value (apps : Apps E) {p : Participant} (T : Threat E p) (d : E) (net : Netw
     of a channel is finalizable by all its participants". -/
 def Views (E : Type) := ∀ p : Participant, NetworkState E p
 
-/-- The views agree: they share one chain, a state `p` sends reaches its
-    channel's other participants (operator ruling 2026-10-29: the network
-    is synchronous by construction, `State.recipients`), and a signature
-    of `q` that `p` received is on a state `q` sent (SATP:168). The
-    asynchronous system — where sending and delivery are separate steps,
-    so a sent state need not yet have reached its recipients — is future
-    work; this file models only the synchronous one. -/
+/-- The views agree: they share one chain, what one participant sent the
+    others received, and a signature of `q` that `p` received is on a state
+    `q` sent (SATP:168). -/
 def Views.Consistent (v : Views E) : Prop :=
   (∀ p q, (v p).chain = (v q).chain) ∧
-  (∀ p, ∀ ss ∈ (v p).sent, ∀ q ∈ ss.state.recipients p, ss ∈ (v q).received) ∧
+  (∀ p q, p ≠ q → ∀ ss ∈ (v p).sent, ss ∈ (v q).received) ∧
   (∀ p q, p ≠ q → ∀ r ∈ (v p).received, q ∈ r.signers → ∃ s ∈ (v q).sent, s.state = r.state)
 
 /-- A family of threats, one per participant, and their assumptions. -/
