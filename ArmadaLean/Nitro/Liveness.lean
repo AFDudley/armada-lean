@@ -2876,7 +2876,38 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     `Nitro.network_chain_reachable`), which is the unreachable
     counterexample's shape. `v` and `hv` stay as they were: the shorter
     restatement adds `n`, `hr` and the link `hvn`, rather than rewriting
-    every one of this theorem's existing uses of `v` to `n.views`. -/
+    every one of this theorem's existing uses of `v` to `n.views`.
+
+    BLOCKED (worker aln-d1a, 2026-10-29): the conclusion's second and third
+    conjuncts (`FundedFor apps (Ts.T _) L' (a + b + c) (v _)`) need
+    `L'.kind = .ledger`, which nothing here derives. `IsLedgerChannel apps L'`
+    is only `apps L'.appDef = consensusRules` (`Constructions.lean`) — `kind`
+    is an independent `FixedPart` field `Apps`/`consensusRules`/`Reachable`
+    never constrain (confirmed against `SATP.Route.WellFormed`, Safety.lean,
+    which states `IsLedgerChannel apps L ∧ L.kind = .ledger` as two
+    INDEPENDENT conjuncts everywhere a route needs both). `FundedFor`
+    unfolds to `net'.chain.DirectlyFundedWith L' (a+b+c)`, i.e. raising
+    `L'.address`'s own on-chain BALANCE — the only operations that ever do
+    that are `deposit` and `transfer`, and both require `.kind = .ledger`
+    on the funded side (`Adjudicator.deposit_some`, `Address.fundable`); if
+    `L'.kind = .virtual`, `Reachable.balances_virtual_zero` pins
+    `L'.address`'s balance at `0` in EVERY reachable state forever, so
+    `FundedFor … L' (a+b+c) …` needs `a+b+c ≤ 0` — false whenever
+    `a+b+c > 0`. Counterexample (machine-checked outside this file, not
+    committed — reconstructible from the existing `ledger_partial_withdrawal`
+    witness at `NonVacuity.lean`:1467): the SAME witness shape with `L' :=
+    ⟨[p0, q0], 9, ⟨0⟩, 2, .virtual⟩` instead of `.ledger`, one `deposit` of
+    `1` into `L`'s balance instead of `0` (so `a=1, b=c=a'=0`), and
+    `L'`'s own challenge-state outcome's amounts likewise at `(1, 0, 0)` for
+    `(dA, dB, χ)` — every one of this theorem's 15 non-`n`/`hr`/`hvn`
+    hypotheses still holds (compiles with no `sorry`, no error), while
+    `L'.address`'s balance is provably `0` throughout, so `1 ≤
+    L'.address`'s balance is unprovable. Like the `χ`/`n`/`hr`/`hvn` repair
+    above, this needs an operator-approved restatement (a new `hLk :
+    L.kind = .ledger`/`hL'k : L'.kind = .ledger` pair, or equivalent) before
+    it is provable; a worker may not add that hypothesis unilaterally
+    (`scripts/sigs-baseline.tsv` freezes this exact signature). Left as
+    `sorry`. -/
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (hv : v.Consistent) (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (A B : Participant) (dA dB : E) (L L' χ : FixedPart) (a b c a' : Coins)
