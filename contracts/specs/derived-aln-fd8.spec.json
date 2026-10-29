@@ -1,0 +1,72 @@
+{
+  "id": "derived-aln-fd8",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `consensus_enabled_outcomes` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json consensus_enabled_outcomes` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `consensus_enabled_outcomes`'s proof body is `sorry`. `scripts/check.sh --json consensus_enabled_outcomes` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json consensus_enabled_outcomes` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem consensus_enabled_outcomes",
+  "restatement": "The theorem consensus_enabled_outcomes in ArmadaLean/Nitro/Liveness.lean must have a complete proof, with no sorry anywhere in its proof body. Today the proof body is the placeholder sorry, so the theorem is not actually proven. The project's check script, run as scripts/check.sh --json consensus_enabled_outcomes, must report theorem_in_sorry as false once the proof is complete; today it reports theorem_in_sorry as true. The fix must complete the proof only. It must not change the theorem's stated signature: theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat E p), so the claim being proven stays the one already on record.",
+  "restatement_clauses": [
+    {
+      "id": "clause-1",
+      "text": "consensus_enabled_outcomes in ArmadaLean/Nitro/Liveness.lean is proved with no sorry in its own proof body, such that running scripts/check.sh --json consensus_enabled_outcomes prints theorem_in_sorry false."
+    },
+    {
+      "id": "clause-2",
+      "text": "The theorem statement does not change: consensus_enabled_outcomes keeps the exact signature theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat E p)."
+    }
+  ],
+  "goal": "Complete the proof of consensus_enabled_outcomes in ArmadaLean/Nitro/Liveness.lean so it has no sorry, while keeping its stated theorem signature unchanged.",
+  "acceptance_criteria": [
+    "Running the project's check script against this theorem shows the proof no longer relies on a placeholder.",
+    "The theorem's name and parameters in the source file stay exactly as they were, so completing the proof does not change what is being claimed."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check script against this theorem shows the proof no longer relies on a placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's name and parameters in the source file stay exactly as they were, so completing the proof does not change what is being claimed."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check script against this theorem shows the proof no longer relies on a placeholder.",
+      "proves": "Confirms the proof of consensus_enabled_outcomes is complete, satisfying the requirement that it holds with no sorry.",
+      "restatement_clause_id": "clause-1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "consensus_enabled_outcomes"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The theorem's name and parameters in the source file stay exactly as they were, so completing the proof does not change what is being claimed.",
+      "proves": "Confirms the theorem statement for consensus_enabled_outcomes is unchanged while its proof is completed.",
+      "restatement_clause_id": "clause-2",
+      "type": "grep",
+      "pattern": "theorem consensus_enabled_outcomes \\(apps : Apps E\\) \\{p : Participant\\} \\(T : Threat E p\\)",
+      "files": [
+        "ArmadaLean/Nitro/Liveness.lean"
+      ],
+      "clause_id": "c2"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
