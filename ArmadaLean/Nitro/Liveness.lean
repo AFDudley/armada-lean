@@ -257,64 +257,91 @@ theorem directly_funded_step {apps : Apps E} {s s' : Adjudicator E} {caller : Pa
     · simpa using ht
     · simp
 
-/-- Over a whole adversary round (any finite feasible sequence), `c`'s
-    fully-funded slack at `d` (`directly_funded_step`) only grows: `deliver`
-    never touches the chain at all (`NetworkState.applyAdv`); `tick` only
-    advances the clock (`ChannelStatus.finalOutcome_mono`); a successful
-    `chain` operation is `directly_funded_step`; a failed one changes
-    nothing. Used by `directly_funded_pays`. -/
+/-- Over a round that lands `p`'s one pending call, the transfer to `d`
+    (`Threat.RoundSeq`, `pending = [Op.transfer c d]`): `c`'s fully-funded
+    slack at `d` (`directly_funded_step`) only grows up to the moment the
+    transfer lands — `other` (an adversary `.chain`/`.deliver`) follows
+    `directly_funded_step`, or leaves everything unchanged on failure;
+    `tick` only advances the clock (`ChannelStatus.finalOutcome_mono`).
+    `land` is forced, exactly once (`pending` is a singleton): at that
+    point the slack invariant, carried this far, is exactly
+    `transfer_can_happen`'s own hypothesis, so the transfer itself
+    succeeds and pays `d` at least `amt`; after that, `d`'s raw balance
+    (not the slack) only grows for the rest of the round
+    (`Threat.RoundSeq.balances_external_mono`). Used by
+    `directly_funded_pays`. -/
 theorem directly_funded_round {apps : Apps E} {p : Participant} {T : Threat E p} (c : FixedPart)
-    (d : E) :
-    ∀ {net net' : NetworkState E p} {advs : List (AdvMove E)},
-      T.FeasibleSeq apps net advs net' →
+    (d : E) (hk : c.kind = .ledger) :
+    ∀ {net net' : NetworkState E p},
+      Threat.RoundSeq apps T net.chain.now [Op.transfer c (.external d)] net net' →
       ∀ {o : Allocation E} {amt : Coins},
         net.chain.finalOutcome c.address = some (.allocation o) →
         o.total ≤ net.chain.balances.get c.address →
         o.find (.external d) = some ⟨.external d, .alloc amt⟩ →
-        ∃ o' amt', net'.chain.finalOutcome c.address = some (.allocation o') ∧
-          o'.total ≤ net'.chain.balances.get c.address ∧
-          o'.find (.external d) = some ⟨.external d, .alloc amt'⟩ ∧
-          net.chain.balances.get (.external d) + amt ≤
-            net'.chain.balances.get (.external d) + amt' := by
-  intro net net' advs hseq
+        net.chain.balances.get (.external d) + amt ≤ net'.chain.balances.get (.external d) := by
+  intro n0 n1 hseq
+  generalize hp : ([Op.transfer c (.external d)] : List (Op E)) = pending at hseq
   induction hseq with
-  | nil => intro o amt hf ht hd; exact ⟨o, amt, hf, ht, hd, le_refl _⟩
-  | @cons net1 net2 m rest hfeas hrest ih =>
+  | nil => intro o amt hf ht hd; cases hp
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
     intro o amt hf ht hd
-    have hstep : ∃ o1 amt1, (net1.applyAdv apps m).chain.finalOutcome c.address =
-        some (.allocation o1) ∧
-        o1.total ≤ (net1.applyAdv apps m).chain.balances.get c.address ∧
-        o1.find (.external d) = some ⟨.external d, .alloc amt1⟩ ∧
-        net1.chain.balances.get (.external d) + amt ≤
-          (net1.applyAdv apps m).chain.balances.get (.external d) + amt1 := by
-      cases m with
-      | chain caller op =>
-        cases hm : net1.chain.apply apps caller op with
-        | none => exact ⟨o, amt, by simp only [NetworkState.applyAdv, hm]; exact hf,
-            by simp only [NetworkState.applyAdv, hm]; exact ht, hd,
-            by simp only [NetworkState.applyAdv, hm]; exact le_refl _⟩
-        | some s' =>
-          obtain ⟨o1, amt1, hf1, ht1, hd1, hle1⟩ := directly_funded_step hf ht hd hm
-          exact ⟨o1, amt1, by simp only [NetworkState.applyAdv, hm]; exact hf1,
-            by simp only [NetworkState.applyAdv, hm]; exact ht1,
-            hd1,
-            by simp only [NetworkState.applyAdv, hm]; exact hle1⟩
-      | deliver ss =>
-        exact ⟨o, amt, by simp only [NetworkState.applyAdv]; exact hf,
-          by simp only [NetworkState.applyAdv]; exact ht,
-          hd, by simp only [NetworkState.applyAdv]; exact le_refl _⟩
-      | tick dt =>
-        refine ⟨o, amt, ?_, ?_, hd, ?_⟩
-        · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
-            ChannelStatus.finalOutcome_mono
-              (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
-                simpa [FixedPart.address_eq] using hf)
-              (Nat.le_add_right net1.chain.now dt)
-        · simpa [NetworkState.applyAdv] using ht
-        · simp [NetworkState.applyAdv]
-    obtain ⟨o1, amt1, hf1, ht1, hd1, hle1⟩ := hstep
-    obtain ⟨o2, amt2, hf2, ht2, hd2, hle2⟩ := ih hf1 ht1 hd1
-    exact ⟨o2, amt2, hf2, ht2, hd2, le_trans hle1 hle2⟩
+    cases hp
+    rcases l1 with _ | ⟨a, l1⟩
+    · rcases l2 with _ | ⟨b, l2⟩
+      · cases hsplit
+        have hbf : (Address.external d : Address E).fundable = true := rfl
+        obtain ⟨s', hs', hbal⟩ := transfer_can_happen net1.chain c (.external d) o amt hk hbf hf hd
+        have happly : net1.chain.apply apps p (.transfer c (.external d)) = some s' := by
+          rw [Adjudicator.apply_transfer]; exact hs'
+        have hchain : (net1.applyAdv apps (.land (Op.transfer c (.external d)))).chain = s' := by
+          simp [NetworkState.applyAdv, happly]
+        have hmono := hrest.balances_external_mono d
+        rw [hchain] at hmono
+        have hcne : (Address.external d : Address E) ≠ c.address := by
+          rw [FixedPart.address_eq]; intro hh; cases hh
+        rw [hbal, if_neg hcne] at hmono
+        have hpaid : amt ≤ o.paidTo (net1.chain.balances.get c.address) (Address.external d) := by
+          have hsub : o.dedup.total ≤ o.total :=
+            Allocation.total_le_of_sublist (Allocation.dedupFrom_sublist [] o)
+          have hdedup_le : o.dedup.total ≤ net1.chain.balances.get c.address := le_trans hsub ht
+          have howed1 : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
+          have hdedup_owed : o.dedup.owed (Address.external d) = amt := by
+            rw [Allocation.owed_dedup]; exact howed1
+          have hle := Allocation.owed_le_payout_get hdedup_le (Address.external d)
+          rw [hdedup_owed] at hle
+          rwa [Allocation.paidTo_eq_get]
+        grind
+      · simp at hsplit
+    · simp at hsplit
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro o amt hf ht hd
+    refine ih ?_ ?_ hd
+    · simpa [NetworkState.applyAdv, FixedPart.address_eq] using
+        ChannelStatus.finalOutcome_mono
+          (show (net1.chain.statusOf c).finalOutcome net1.chain.now = some (.allocation o) by
+            simpa [FixedPart.address_eq] using hf)
+          (Nat.le_add_right net1.chain.now dt)
+    · simpa [NetworkState.applyAdv] using ht
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro o amt hf ht hd
+    cases m with
+    | chain caller op =>
+      cases hm : net1.chain.apply apps caller op with
+      | none =>
+        refine ih ?_ ?_ hd
+        · simp only [NetworkState.applyAdv, hm]; exact hf
+        · simp only [NetworkState.applyAdv, hm]; exact ht
+      | some s' =>
+        obtain ⟨o1, amt1, hf1, ht1, hd1, hle1⟩ := directly_funded_step hf ht hd hm
+        have := ih (by simp only [NetworkState.applyAdv, hm]; exact hf1)
+          (by simp only [NetworkState.applyAdv, hm]; exact ht1) hd1
+        exact le_trans hle1 this
+    | deliver ss =>
+      refine ih ?_ ?_ hd
+      · simp only [NetworkState.applyAdv]; exact hf
+      · simp only [NetworkState.applyAdv]; exact ht
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
 
 /-- Nitro-16, Nitro-21, ForceMove-B01, ForceMove-C03, docs-0070-05, docs-0080-06. Nitro:395-398: "where
     the channel L itself has enough coins in the adjudicator to cover the
@@ -359,34 +386,12 @@ theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
   | ledger =>
     refine UnbeatableIn.move (.chain (.transfer c (.external d))) trivial
       (by simp [HonestMove.Feasible, Op.proofStates]) ?_
-    intro advs net' hround
+    intro net' hround
     obtain ⟨hseq, -⟩ := hround
-    obtain ⟨o1, amt1, hf1, ht1, hd1, hle1⟩ := directly_funded_round c d hseq hf htot' hd
+    simp only [HonestMove.calls_chain] at hseq
+    have hle := directly_funded_round c d hk hseq hf htot' hd
     apply UnbeatableIn.done
-    show net.chain.balances.get (Address.external d) + amt ≤
-      (net'.applyHonest apps (.chain (.transfer c (.external d)))).chain.balances.get
-        (Address.external d)
-    have hbf : (Address.external d : Address E).fundable = true := rfl
-    obtain ⟨s', hs', hbal⟩ := transfer_can_happen net'.chain c (.external d) o1 amt1 hk hbf hf1 hd1
-    have happly : net'.chain.apply apps p (.transfer c (.external d)) = some s' := by
-      rw [Adjudicator.apply_transfer]; exact hs'
-    have hchain : (net'.applyHonest apps (.chain (.transfer c (.external d)))).chain = s' := by
-      simp [NetworkState.applyHonest, happly]
-    rw [hchain, hbal]
-    have hcne : (Address.external d : Address E) ≠ c.address := by
-      rw [FixedPart.address_eq]; intro hh; cases hh
-    rw [if_neg hcne]
-    have hpaid : amt1 ≤ o1.paidTo (net'.chain.balances.get c.address) (Address.external d) := by
-      have hsub : o1.dedup.total ≤ o1.total :=
-        Allocation.total_le_of_sublist (Allocation.dedupFrom_sublist [] o1)
-      have hdedup_le : o1.dedup.total ≤ net'.chain.balances.get c.address := le_trans hsub ht1
-      have howed1 : o1.owed (Address.external d) = amt1 := by simp [Allocation.owed, hd1]
-      have hdedup_owed : o1.dedup.owed (Address.external d) = amt1 := by
-        rw [Allocation.owed_dedup]; exact howed1
-      have hle := Allocation.owed_le_payout_get hdedup_le (Address.external d)
-      rw [hdedup_owed] at hle
-      rwa [Allocation.paidTo_eq_get]
-    grind
+    simpa using hle
 
 /-- `UnbeatableIn` is monotone in its allowed-move set: a strategy built from
     a more restrictive `allowed1` is still a strategy under any looser
@@ -410,6 +415,9 @@ theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
     cases net.chain.apply apps caller op <;> rfl
   | deliver ss => rfl
   | tick dt => rfl
+  | land op =>
+    simp only [NetworkState.applyAdv]
+    cases net.chain.apply apps p op <;> rfl
 
 /-- An adversary move never moves the chain's clock backward: only `tick`
     touches it, and only forward (`Adjudicator.apply_now_le`). -/
@@ -424,27 +432,74 @@ theorem NetworkState.applyAdv_now_le (apps : Apps E) {p : Participant}
     | some s' => simpa using Adjudicator.apply_now_le h
   | deliver ss => exact le_refl _
   | tick dt => simp only [NetworkState.applyAdv, Adjudicator.tick_now]; exact Nat.le_add_right _ _
+  | land op =>
+    simp only [NetworkState.applyAdv]
+    cases h : net.chain.apply apps p op with
+    | none => exact le_refl _
+    | some s' => simpa using Adjudicator.apply_now_le h
 
-/-- Over a feasible sequence of adversary moves, the chain's clock only
-    advances (`NetworkState.applyAdv_now_le`, by induction). -/
-theorem Threat.FeasibleSeq.now_le {apps : Apps E} {p : Participant} {T : Threat E p}
-    {net net' : NetworkState E p} {advs : List (AdvMove E)}
-    (h : T.FeasibleSeq apps net advs net') : net.chain.now ≤ net'.chain.now := by
+/-- Over a round's adversary play (`Threat.RoundSeq`, any pending calls),
+    the chain's clock only advances (`NetworkState.applyAdv_now_le`, by
+    induction over `land`/`tick`/`other`: each is one `NetworkState.applyAdv`
+    step). -/
+theorem Threat.RoundSeq.now_le {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    {pending : List (Op E)} {net net' : NetworkState E p}
+    (h : T.RoundSeq apps t pending net net') : net.chain.now ≤ net'.chain.now := by
   induction h with
   | nil => exact le_refl _
-  | cons _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
+  | land _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
+  | tick _ _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
+  | other _ _ _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
 
-/-- Over a feasible sequence of adversary moves, `p`'s own sent list never
-    changes: only `p`'s own honest moves touch it (`NetworkState.applyAdv_sent`,
-    by induction). Used by `latest_state_finalizable` to carry `hlatest`/
+/-- Over a round's adversary play, `p`'s own sent list never changes: only
+    `p`'s own honest moves touch it (`NetworkState.applyAdv_sent`, by
+    induction). Used by `latest_state_finalizable` to carry `hlatest`/
     `hfinal` from the original network state to the state reached after `p`'s
     own challenge move. -/
-theorem Threat.FeasibleSeq.sent_eq {apps : Apps E} {p : Participant} {T : Threat E p}
-    {net net' : NetworkState E p} {advs : List (AdvMove E)}
-    (h : T.FeasibleSeq apps net advs net') : net'.sent = net.sent := by
+theorem Threat.RoundSeq.sent_eq {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    {pending : List (Op E)} {net net' : NetworkState E p}
+    (h : T.RoundSeq apps t pending net net') : net'.sent = net.sent := by
   induction h with
   | nil => rfl
-  | cons _ _ ih => rw [ih, NetworkState.applyAdv_sent]
+  | land _ _ ih => rw [ih, NetworkState.applyAdv_sent]
+  | tick _ _ _ ih => rw [ih, NetworkState.applyAdv_sent]
+  | other _ _ _ _ ih => rw [ih, NetworkState.applyAdv_sent]
+
+/-- **An external destination's paid-out balance only grows over a whole
+    round.** Every step of `Threat.RoundSeq` (`land`, `tick`, `other`) is one
+    `NetworkState.applyAdv`, which never touches the chain except through
+    one `Adjudicator.apply` (a `Step`, or a no-op on failure); `Step`-level
+    monotonicity is `paid_out_monotone`. Used by `directly_funded_round` to
+    carry a balance fact from the moment `p`'s own transfer lands to the
+    round's end `net'`. -/
+theorem Threat.RoundSeq.balances_external_mono {apps : Apps E} {p : Participant} {T : Threat E p}
+    {t : Time} {pending : List (Op E)} {net net' : NetworkState E p}
+    (h : T.RoundSeq apps t pending net net') (d : E) :
+    net.chain.balances.get (.external d) ≤ net'.chain.balances.get (.external d) := by
+  induction h with
+  | nil => exact le_refl _
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    refine le_trans ?_ ih
+    simp only [NetworkState.applyAdv]
+    cases hop : net1.chain.apply apps p op with
+    | none => exact le_refl _
+    | some s' => exact paid_out_monotone apps net1.chain s' (Step.mk p op net1.chain s' hop) d
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    refine le_trans ?_ ih
+    simpa [NetworkState.applyAdv] using
+      paid_out_monotone apps net1.chain (net1.chain.tick dt)
+        (Step.mk p (Op.tick dt) net1.chain (net1.chain.tick dt) rfl) d
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    refine le_trans ?_ ih
+    cases m with
+    | chain caller op =>
+      simp only [NetworkState.applyAdv]
+      cases hop : net1.chain.apply apps caller op with
+      | none => exact le_refl _
+      | some s' => exact paid_out_monotone apps net1.chain s' (Step.mk caller op net1.chain s' hop) d
+    | deliver ss => simp [NetworkState.applyAdv]
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
 
 /-- Within one round, channel `c` stays either finalized with `Ω` or open
     at the round's eventual end `net'`, given it starts that way. Once
