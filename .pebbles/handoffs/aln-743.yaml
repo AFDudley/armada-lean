@@ -1,0 +1,54 @@
+status: completed
+pebble_id: aln-743
+summary: >
+  Proved satp_lemma_3_1 in ArmadaLean/Nitro/Liveness.lean with no sorry in
+  its proof body, without changing its statement. The theorem needed a
+  genuinely new induction: the existing StatusOrigin/finalized_two_ways
+  machinery (Safety.lean) traces a finalized channel's origin through plain
+  Reachable, which discards which signatures are genuine, but satp_lemma_3_1
+  needs exactly that (hsigned's membership premise). Added a specialized
+  invariant SatpOrigin and its preservation theorem
+  satpOrigin_reachableSigned, which inducts directly on ReachableSigned
+  (threading SignedStep's hsig field through every step) and is vacuous for
+  deposit/tick/transfer/reclaim and for a checkpoint or non-r.V
+  challenge/conclude of r.V (transfer/reclaim are excluded from touching
+  r.V's own status since r.V.kind = .virtual while their channel arguments
+  require .kind = .ledger). The two real cases (a conclude of r.V, or a
+  challenge of r.V that later reveals a finalized outcome) establish
+  ByAll + SignedIn genuineness and invoke hsigned, routed through six small
+  helper lemmas (satp_pairOutcome_of_hsigned, satp_signed_membership,
+  satp_validStart_byAll, satp_validChallenge_start, satp_validResponse_start,
+  satp_consensus_pairOutcome, satp_validateOutcomeChange_pairOutcome), the
+  last reusing the already-proved satp_outcome_change_keeps_total to carry
+  the genuinely-signed start state's total to the challenge candidate.
+  satp_lemma_3_1 itself combines satpOrigin_reachableSigned with hfin by
+  casing on s.statusOf r.V, always discharging the goal's second disjunct
+  (PairOutcome), using that the original-outcome branch of hsigned's own
+  disjunction is itself a PairOutcome instance (a = a0, b = b0), so no case
+  split on turnNumRecord is needed. Verified by installing elan + lake (none
+  were present on the worker), fetching the mathlib cache, running
+  `lake build` (full project, exit 0, no new sorry anywhere else) and
+  `scripts/check.sh --json satp_lemma_3_1`, which printed
+  theorem_in_sorry=false and signatures_ok=true (both required fields), and
+  `scripts/check.sh` in default mode, which exited 0 with sorry_count 23
+  (down from 24 before this change), below the baseline of 46.
+cost: "~340k tokens"
+commits:
+  - "4c05b3d"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 27
+    - name: scripts/check.sh --json satp_lemma_3_1
+      outcome: passed
+      duration_s: 3
+    - name: scripts/check.sh
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-743.spec.json
+  command: scripts/check.sh --json satp_lemma_3_1
+  result: passed
+  ran_at_sha: "4c05b3d"
+  mocks_in_path: false
