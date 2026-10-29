@@ -1,0 +1,59 @@
+status: completed
+pebble_id: aln-91b
+summary: >
+  Proved transact_not_blocked in ArmadaLean/PoolSafety.lean with no sorry in
+  its own proof body, statement unchanged. The theorem reduces directly to
+  the already-proved spend_not_blocked: Constrained.nullifiers gives
+  pub.nullifiers i = nullifier (Term.val w.nullifyingKey) (w.leavesIndices i)
+  for every input i, so List.ofFn pub.nullifiers rewrites, via
+  List.map_ofFn, to (transactSpentPositions bp.treeNumber w).map (fun e =>
+  nullifier nk e.1.2) with nk := Term.val w.nullifyingKey — exactly
+  spend_not_blocked's nullifier shape. transactSpentPositions bp.treeNumber w
+  also satisfies spend_not_blocked's hTree hypothesis (every entry's tree
+  tag is bp.treeNumber by construction, since List.ofFn's index function
+  fixes it). With hEnabled/the goal rewritten along that equation, the
+  theorem is exactly spend_not_blocked hs hstep hTree hEnabled hDisjoint.
+  The derived spec (contracts/specs/derived-aln-91b.spec.json) names a new
+  entrypoint, scripts/check_theorem_sorry_free.py, which did not exist; I
+  authored it mirroring the repo's existing
+  scripts/check_theorem_sorry_absent.py/verify_transact_can_happen_sorry_closed.py
+  probes — it runs the real scripts/check.sh --json THEOREM_NAME and relays
+  its theorem_in_sorry/build_ok fields as {"sorry_free", "build_ok"},
+  judging nothing itself. Verified by installing a scratch elan/lake/mathlib
+  toolchain in this sandbox (the repo's normal elan install at /root is not
+  readable by the worker user) and running the project's real build and the
+  spec's own acceptance command: `lake build ArmadaLean.PoolSafety` (clean,
+  no new sorry warnings at the theorem's lines) and `python3
+  scripts/check_theorem_sorry_free.py transact_not_blocked`, which prints
+  {"sorry_free": true, "build_ok": true} — the spec's exact `then`
+  predicates. scripts/check.sh --json transact_not_blocked independently
+  confirms transact_not_blocked is absent from the sorry array. scripts/check.sh
+  with no arguments also exits 0 (build, sorry-count-vs-baseline,
+  no-vacuous-body, axioms, signatures, NonVacuity all PASS); sorry count
+  dropped from the baseline 46 to 34. No other theorem's statement or proof
+  was touched; scripts/sigs.py's baseline comparison (inside check.sh)
+  confirms every approved theorem's statement text is still byte-identical
+  to scripts/sigs-baseline.tsv.
+cost: "~55k tokens"
+commits:
+  - "36496cc"
+verify_transcript:
+  hooks:
+    - name: "lake build ArmadaLean.PoolSafety"
+      outcome: passed
+      duration_s: 68
+    - name: "scripts/check_theorem_sorry_free.py transact_not_blocked"
+      outcome: passed
+      duration_s: 3
+    - name: "scripts/check.sh --json transact_not_blocked"
+      outcome: passed
+      duration_s: 79
+    - name: "scripts/check.sh (full, no args)"
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-91b.spec.json
+  command: "python3 scripts/check_theorem_sorry_free.py transact_not_blocked"
+  result: passed
+  ran_at_sha: "36496cc"
+  mocks_in_path: false
