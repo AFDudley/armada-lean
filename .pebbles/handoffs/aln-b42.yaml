@@ -1,0 +1,54 @@
+status: completed
+pebble_id: aln-b42
+summary: >
+  Replaced the sorry placeholder in late_observer_can_checkpoint
+  (ArmadaLean/Nitro/Liveness.lean) with a complete proof. Added a new
+  helper theorem late_round_keeps_status, mirroring the existing
+  latest_round_keeps_status one-round adversary invariant but excluding
+  finalization entirely: under the theorem's hsent hypothesis (p has sent
+  nothing of channel c above ss.state.turnNum except ss.state itself, and
+  nothing final at all), a conclude on c is impossible outright (it would
+  need p's own genuine signature on a final state of c, which
+  Bounds.unforgeable ties to a state in net.sent, contradicting
+  isFinal = false), so the one-round invariant stays a clean two-way
+  open/challenged disjunction instead of the three-way
+  open/challenged/finalized one latest_round_keeps_status returns (which
+  is fine for latest_state_finalizable, whose goal IS finalization, but
+  wrong for this theorem, whose goal explicitly excludes it).
+  late_observer_can_checkpoint then plays p's single checkpoint move
+  (candidate ss.state) against the net1 state produced by one adversary
+  round: when the invariant's turn record is strictly below
+  ss.state.turnNum, checkpoint_can_happen fires and the resulting status
+  satisfies the goal; otherwise the checkpoint call is shown to be a
+  structural no-op (net1.chain.apply returns none, since the turn-record
+  guard already fails) and the goal is already satisfied by the preserved
+  invariant without any state change. No axiom was added and the theorem
+  statement was not touched (scripts/check.sh's signature-baseline check
+  confirms this). Verified by installing a local elan/lean4 v4.33.1
+  toolchain (the shared /root/.elan was not writable by this worker) into
+  $HOME/.elan, running `lake build` for the whole project (595 jobs, no
+  errors), and running `scripts/check.sh --json late_observer_can_checkpoint`,
+  which printed theorem_in_sorry: false and build_ok: true. Also ran the
+  full `scripts/check.sh` (no args): exit 0, sorry count 28 (down from
+  baseline 46, one fewer than before this change), signatures_ok,
+  axioms_ok, nonvacuity_ok all true.
+cost: ~210k tokens
+commits:
+  - "ef5f195"
+verify_transcript:
+  hooks:
+    - name: lake build (project-wide)
+      outcome: passed
+      duration_s: 5
+    - name: scripts/check.sh --json late_observer_can_checkpoint
+      outcome: passed
+      duration_s: 3
+    - name: scripts/check.sh (full gate, no args)
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-b42.spec.json
+  command: scripts/check.sh --json late_observer_can_checkpoint
+  result: passed
+  ran_at_sha: "ef5f195"
+  mocks_in_path: false
