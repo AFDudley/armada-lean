@@ -1,0 +1,54 @@
+{
+  "id": "derived-aln-809",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `latest_state_finalizable` in `ArmadaLean/Nitro/Liveness.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json latest_state_finalizable` prints `theorem_in_sorry` false.\nWhat holds now? Describe the current, observed state. `latest_state_finalizable`'s proof body is `sorry`. `scripts/check.sh --json latest_state_finalizable` prints `theorem_in_sorry` true.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json latest_state_finalizable` from the repo root. Read `theorem_in_sorry` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"field\": \"theorem_in_sorry\", \"op\": \"eq\", \"value\": false}. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem latest_state_finalizable",
+  "restatement": "The theorem latest_state_finalizable, declared in ArmadaLean/Nitro/Liveness.lean, needs a complete proof. Its proof body today holds only the placeholder sorry. The theorem states that a participant who holds a supported, fully-signed state, has seen no later or conflicting state on the network, and sees no chain record above that state, can finalize that state's outcome. The fix replaces the sorry placeholder with a real proof of that statement. The theorem's statement does not change; only the proof body changes. The repository already owns a check for this fact: scripts/check.sh --json latest_state_finalizable builds the project and reports, for the named theorem, a field called theorem_in_sorry. This field is true when the theorem's proof still carries the sorry placeholder, and false when it does not. The fix is complete when this field reads false for latest_state_finalizable.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem latest_state_finalizable in ArmadaLean/Nitro/Liveness.lean is proved with no sorry in its own proof body, and running scripts/check.sh --json latest_state_finalizable prints the field theorem_in_sorry as false for it."
+    }
+  ],
+  "goal": "Finish the proof of the Lean theorem latest_state_finalizable in ArmadaLean/Nitro/Liveness.lean so its own proof body carries no sorry, confirmed by scripts/check.sh --json latest_state_finalizable reporting theorem_in_sorry as false.",
+  "acceptance_criteria": [
+    "A person runs the project's own proof-check script and asks it about latest_state_finalizable. The script reports that the proof no longer carries an unfinished placeholder."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "A person runs the project's own proof-check script and asks it about latest_state_finalizable. The script reports that the proof no longer carries an unfinished placeholder."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "A person runs the project's own proof-check script and asks it about latest_state_finalizable. The script reports that the proof no longer carries an unfinished placeholder.",
+      "proves": "Proves that the theorem's proof body no longer contains the sorry placeholder, using the repository's own check script and its theorem_in_sorry field.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "latest_state_finalizable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
