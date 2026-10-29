@@ -1,0 +1,59 @@
+{
+  "id": "derived-aln-ef3",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `transactOwned_not_blocked` in `ArmadaLean/PoolSafety.lean` is proved with no `sorry` in its own proof body. `scripts/check.sh --json transactOwned_not_blocked` reports `transactOwned_not_blocked` absent from its `sorry` array.\nWhat holds now? Describe the current, observed state. `transactOwned_not_blocked`'s proof body is `sorry`. `scripts/check.sh --json transactOwned_not_blocked` reports `transactOwned_not_blocked` present in its `sorry` array.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json transactOwned_not_blocked` from the repo root. Read `sorry` and `theorem_under_test` in the printed JSON object.\nWhat constraints apply? State them in plain prose. The predicate is {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/PoolSafety.lean, theorem transactOwned_not_blocked",
+  "restatement": "The pool-safety proof catalog in ArmadaLean/PoolSafety.lean names the theorem transactOwned_not_blocked, which states that if a pending transactOwned step spends none of a given spend's input notes, that spend's eligibility to be spent stays true across the step. The theorem's proof body is currently a placeholder (`sorry`), so no real proof exists yet. The request asks that this proof be completed for real, with no `sorry` left in the theorem's own proof body. The repository already carries a deterministic check for this: `scripts/check.sh --json <theorem-name>` builds the project, lists every theorem whose own proof body still carries `sorry`, and echoes back the queried theorem name so a predicate can confirm that name is absent from that list. Completing the proof means that running this check for transactOwned_not_blocked reports the theorem absent from the list of unfinished proofs.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`transactOwned_not_blocked` in `ArmadaLean/PoolSafety.lean` must be proved with no `sorry` in its own proof body. `scripts/check.sh --json transactOwned_not_blocked` must then report `transactOwned_not_blocked` absent from its `sorry` array, per the predicate {\"observe\": \"stdout_json\", \"op\": \"not_member\", \"elem\": \"theorem_under_test\", \"collection\": \"sorry\"}."
+    }
+  ],
+  "goal": "Complete the Lean proof of the theorem transactOwned_not_blocked in ArmadaLean/PoolSafety.lean, removing its `sorry` placeholder.",
+  "acceptance_criteria": [
+    "After the project's proof-completeness check runs for the theorem named transactOwned_not_blocked, that theorem no longer appears on the list of theorems still missing their proofs."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the project's proof-completeness check runs for the theorem named transactOwned_not_blocked, that theorem no longer appears on the list of theorems still missing their proofs."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the project's proof-completeness check runs for the theorem named transactOwned_not_blocked, that theorem no longer appears on the list of theorems still missing their proofs.",
+      "proves": "Proves clause c1: transactOwned_not_blocked has a real, complete proof, because the project's own check reports the theorem absent from the list of theorems whose proof is still a placeholder.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_theorem_sorry_absent.py",
+        "args": [
+          "transactOwned_not_blocked"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "exit_code",
+          "observe": "exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "contains_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_theorem_sorry_absent.py"
+  ]
+}
