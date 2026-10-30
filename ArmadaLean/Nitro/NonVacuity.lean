@@ -530,14 +530,14 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
             c.address = some Ω := by
           rcases hk with hf | ⟨t1, ho⟩ | ⟨t1, ch, ht1, hd⟩
           · cases hop : net1.chain.apply apps p (Op.conclude c ss) with
-            | none => simpa [NetworkState.applyAdv, hop] using hf
-            | some s' => simpa [NetworkState.applyAdv, hop] using finalizedWith_apply hop hf
+            | none => simpa [NetworkState.applyAdv_land_none apps hop] using hf
+            | some s' => simpa [NetworkState.applyAdv_land_some apps hop] using finalizedWith_apply hop hf
           · have hm : net1.chain.mode c ≠ .finalized := by rw [Adjudicator.mode_eq, ho]; simp
             have hop : net1.chain.apply apps p (Op.conclude c ss) =
                 some (net1.chain.setStatus c
                   (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
               rw [Adjudicator.apply_conclude]; exact (conclude_can_happen _ _ _ hm hproof).1
-            simp only [NetworkState.applyAdv, hop]
+            simp only [NetworkState.applyAdv_land_some apps hop]
             simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
               Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ]
           · have hm : net1.chain.mode c ≠ .finalized := by
@@ -551,7 +551,7 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
                 some (net1.chain.setStatus c
                   (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
               rw [Adjudicator.apply_conclude]; exact (conclude_can_happen _ _ _ hm hproof).1
-            simp only [NetworkState.applyAdv, hop]
+            simp only [NetworkState.applyAdv_land_some apps hop]
             simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
               Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ]
         exact hrest.finalizedWith_mono hland
@@ -582,13 +582,15 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
       | tick dt => exact absurd rfl (hnotick dt)
       | land op => exact absurd rfl (hnoland op)
       | chain caller op =>
-        simp only [NetworkState.applyAdv]
         cases happ : net1.chain.apply apps caller op with
-        | none => exact hk
+        | none =>
+          simp only [NetworkState.applyAdv_chain_none apps happ]
+          exact hk
         | some s' =>
           have hlt1 : s'.now < t + T.ε := by
             have := hrest.now_le
-            simpa [NetworkState.applyAdv, happ] using lt_of_le_of_lt this hεbound
+            simpa [NetworkState.applyAdv_chain_some apps happ] using lt_of_le_of_lt this hεbound
+          simp only [NetworkState.applyAdv_chain_some apps happ]
           exact concludeInv_apply happ sent0 hp
             (fun ss' hss' hp' => hsent0 ▸ (B.unforgeable net1 caller op hfeas ss' hss').1 hp')
             hsent hdur ht0 hlt1 hk
@@ -721,10 +723,12 @@ theorem waitRound {apps : Apps E} {p : Participant} {T : Threat E p} (B : Bounds
       | tick dt => exact absurd rfl (hnotick dt)
       | land op => exact absurd rfl (hnoland op)
       | chain caller op =>
-        simp only [NetworkState.applyAdv]
         cases happ : net1.chain.apply apps caller op with
-        | none => exact hk
+        | none =>
+          simp only [NetworkState.applyAdv_chain_none apps happ]
+          exact hk
         | some s' =>
+          simp only [NetworkState.applyAdv_chain_some apps happ]
           exact waitInv_apply happ sent0 hc hp
             (fun ss' hss' hp' => hsent0 ▸ (B.unforgeable net1 caller op hfeas ss' hss').1 hp')
             hsent hk
@@ -798,15 +802,20 @@ theorem zeroBalRound {apps : Apps E} {p : Participant} (T : Threat E p) (t : Tim
     have hopt : ∀ dt, op ≠ Op.tick dt := hnotick op List.mem_cons_self
     have hz1 : ∀ a, (net.applyAdv apps (AdvMove.land op)).chain.balances.get a = 0 := by
       intro a
-      simp only [NetworkState.applyAdv]
       cases h : net.chain.apply apps p op with
-      | none => exact hz a
-      | some s' => exact zeroBal_apply h hop hz a
+      | none =>
+        simp only [NetworkState.applyAdv_land_none apps h]
+        exact hz a
+      | some s' =>
+        simp only [NetworkState.applyAdv_land_some apps h]
+        exact zeroBal_apply h hop hz a
     have hnow1 : (net.applyAdv apps (AdvMove.land op)).chain.now = net.chain.now := by
-      simp only [NetworkState.applyAdv]
       cases h : net.chain.apply apps p op with
-      | none => rfl
-      | some s' => exact Adjudicator.apply_now_eq_of_not_tick hopt h
+      | none =>
+        simp only [NetworkState.applyAdv_land_none apps h]
+      | some s' =>
+        simp only [NetworkState.applyAdv_land_some apps h]
+        exact Adjudicator.apply_now_eq_of_not_tick hopt h
     obtain ⟨net', hrest, hz', hnow'⟩ :=
       ih (fun op' hop' => hnodep op' (List.mem_cons_of_mem op hop'))
         (fun op' hop' => hnotick op' (List.mem_cons_of_mem op hop'))
@@ -875,17 +884,23 @@ theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
     (n.applyAdv apps m).chain.finalizedWith c.address = some f := by
   cases m with
   | chain caller op =>
-    simp only [NetworkState.applyAdv]
     cases happ : n.chain.apply apps caller op with
-    | none => exact hf
-    | some s' => exact finalizedWith_apply happ hf
+    | none =>
+      simp only [NetworkState.applyAdv_chain_none apps happ]
+      exact hf
+    | some s' =>
+      simp only [NetworkState.applyAdv_chain_some apps happ]
+      exact finalizedWith_apply happ hf
   | deliver ss => exact hf
   | tick dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
   | land op =>
-    simp only [NetworkState.applyAdv]
     cases happ : n.chain.apply apps p op with
-    | none => exact hf
-    | some s' => exact finalizedWith_apply happ hf
+    | none =>
+      simp only [NetworkState.applyAdv_land_none apps happ]
+      exact hf
+    | some s' =>
+      simp only [NetworkState.applyAdv_land_some apps happ]
+      exact finalizedWith_apply happ hf
 
 /-- The outcome of finalization survives every honest move: a reaction never
     touches the chain (`NetworkState.applyHonest`'s `.react` case only
