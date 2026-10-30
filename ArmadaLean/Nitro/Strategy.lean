@@ -299,6 +299,60 @@ theorem Threat.RoundSeq.peel_one {apps : Apps E} {p : Participant} {T : Threat E
     obtain ⟨n1, h1, h2⟩ := ih hp
     exact ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
 
+
+/-- Two calls peel off a `RoundSeq` one at a time, in whichever order the
+    adversary front-runs them (Nitro:540-542): `pending = [opA, opB]` splits
+    at a `land` step either on `opA` (leaving `[opB]` still pending) or on
+    `opB` (leaving `[opA]`), with ordinary adversary play (`tick`/`other`)
+    before that first `land`, exactly as `peel_one`'s singleton case.
+    `peel_one`, applied to the returned singleton `RoundSeq`, splits the
+    rest into its own ordinary-play-then-land shape.
+    `satp_intermediary_before_round2`'s two-call reaction peels through
+    this, independently of which of its two calls the adversary lands
+    first. -/
+theorem Threat.RoundSeq.peel_two {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    (opA opB : Op E) (n0 n3 : NetworkState E p)
+    (hseq : Threat.RoundSeq apps T t [opA, opB] n0 n3) :
+    (∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
+      Threat.RoundSeq apps T t [opB] (n1.applyAdv apps (.land opA)) n3) ∨
+    (∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
+      Threat.RoundSeq apps T t [opA] (n1.applyAdv apps (.land opB)) n3) := by
+  generalize hp : ([opA, opB] : List (Op E)) = pending at hseq
+  induction hseq with
+  | nil => cases hp
+  | @land pending n net' op l1 l2 hsplit hrest ih =>
+    cases hp
+    rcases l1 with _ | ⟨a, l1⟩
+    · rcases l2 with _ | ⟨b, l2⟩
+      · simp at hsplit
+      · rcases l2 with _ | ⟨c, l2⟩
+        · simp only [List.nil_append, List.cons.injEq] at hsplit
+          obtain ⟨hoA, hoB, -⟩ := hsplit
+          subst hoA; subst hoB
+          exact Or.inl ⟨n, Threat.RoundSeq.nil, hrest⟩
+        · simp at hsplit
+    · rcases l1 with _ | ⟨a1, l1⟩
+      · rcases l2 with _ | ⟨c, l2⟩
+        · simp only [List.cons_append, List.nil_append, List.cons.injEq] at hsplit
+          obtain ⟨haA, hoB, -⟩ := hsplit
+          subst haA; subst hoB
+          exact Or.inr ⟨n, Threat.RoundSeq.nil, hrest⟩
+        · simp at hsplit
+      · simp at hsplit
+  | tick hfeas hgate hrest ih =>
+    rcases ih hp with ⟨n1, h1, h2⟩ | ⟨n1, h1, h2⟩
+    · refine Or.inl ⟨n1, Threat.RoundSeq.tick hfeas (Or.inr ?_) h1, h2⟩
+      rcases hgate with h | h
+      · cases hp.trans h
+      · exact h
+    · refine Or.inr ⟨n1, Threat.RoundSeq.tick hfeas (Or.inr ?_) h1, h2⟩
+      rcases hgate with h | h
+      · cases hp.trans h
+      · exact h
+  | other hfeas hnotick hnoland hrest ih =>
+    rcases ih hp with ⟨n1, h1, h2⟩ | ⟨n1, h1, h2⟩
+    · exact Or.inl ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
+    · exact Or.inr ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
 /-- **The old per-move bound is `Threat.Round`'s one-call special case.**
     For a reaction with one call (`HonestMove.chain op`, `pending = [op]`),
     `Threat.RoundSeq.peel_one` splits the round into ordinary adversary
