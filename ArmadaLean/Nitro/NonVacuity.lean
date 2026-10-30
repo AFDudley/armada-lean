@@ -2287,7 +2287,7 @@ def stV : State Nat :=
 theorem r2_wf : r2.WellFormed apps2 := by
   refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | i
-    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩, rfl⟩
+    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
     · simp [r2] at h
   · rcases i with _ | i
     · simp [r2] at h; subst h; decide
@@ -2366,8 +2366,8 @@ def r3 : Route Nat := ⟨[p0, q0, w0], [Lm3, Lp3], V3, 1, 1, fun p => p.key⟩
 theorem r3_wf : r3.WellFormed apps2 := by
   refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | _ | i
-    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩, rfl⟩
-    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, ⟨rfl, rfl⟩, rfl⟩
+    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
+    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
     · simp [r3] at h
   · rcases i with _ | _ | i
     · simp [r3] at h; subst h; decide

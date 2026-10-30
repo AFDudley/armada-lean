@@ -8375,8 +8375,8 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
   -- The route facts: both ledgers run the consensus app, `P` is a participant
   -- of each, and the two ledgers are distinct (their left peers differ).
   obtain ⟨-, -, hnodup, -, hled, -, -, -⟩ := hr
-  obtain ⟨Pm, Qm, hPm, hQm, hLmp, ⟨-, hcm⟩, -⟩ := hled (i - 1) Lm hLm
-  obtain ⟨Pp, Qp, hPp, -, hLpp, ⟨-, hcp⟩, -⟩ := hled i Lp hLp
+  obtain ⟨Pm, Qm, hPm, hQm, hLmp, ⟨-, hcm⟩⟩ := hled (i - 1) Lm hLm
+  obtain ⟨Pp, Qp, hPp, -, hLpp, ⟨-, hcp⟩⟩ := hled i Lp hLp
   rw [Nat.sub_add_cancel hi, hP, Option.some.injEq] at hQm
   rw [hP, Option.some.injEq] at hPp
   subst hQm hPp
