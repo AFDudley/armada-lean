@@ -400,6 +400,35 @@ def Network.applyAdv (apps : Apps E) (n : Network E) (p : Participant) (m : AdvM
   | .tick dt => { n with chain := n.chain.tick dt }
   | .land op => Network.land apps n p op
 
+/-- `Network.land` when the call succeeds (`writing-lean.md` rule 3). -/
+@[simp] theorem Network.land_of_some {apps : Apps E} {n : Network E} {p : Participant} {op : Op E}
+    {s' : Adjudicator E} (h : n.chain.apply apps p op = some s') :
+    Network.land apps n p op = { n with chain := s', received := fun q => op.proofStates ++ n.received q } := by
+  simp [Network.land, h]
+
+/-- `Network.land` when the call fails: nothing changes. -/
+@[simp] theorem Network.land_of_none {apps : Apps E} {n : Network E} {p : Participant} {op : Op E}
+    (h : n.chain.apply apps p op = none) : Network.land apps n p op = n := by
+  simp [Network.land, h]
+
+
+@[simp] theorem Network.applyAdv_chain (apps : Apps E) (n : Network E) (p caller : Participant) (op : Op E) :
+    Network.applyAdv apps n p (.chain caller op) = Network.land apps n caller op := by
+  rfl
+
+@[simp] theorem Network.applyAdv_deliver (apps : Apps E) (n : Network E) (p : Participant) (ss : SignedState E) :
+    Network.applyAdv apps n p (.deliver ss) =
+      { n with received := fun q => if q = p then ss :: n.received q else n.received q } := by
+  rfl
+
+@[simp] theorem Network.applyAdv_tick (apps : Apps E) (n : Network E) (p : Participant) (dt : Time) :
+    Network.applyAdv apps n p (.tick dt) = { n with chain := n.chain.tick dt } := by
+  rfl
+
+@[simp] theorem Network.applyAdv_land (apps : Apps E) (n : Network E) (p : Participant) (op : Op E) :
+    Network.applyAdv apps n p (.land op) = Network.land apps n p op := by
+  rfl
+
 theorem Network.applyHonest_chain_reachable {apps : Apps E} (n : Network E) (p : Participant)
     (m : HonestMove E) (hr : Reachable apps n.chain) :
     Reachable apps (Network.applyHonest n p m).chain := by
