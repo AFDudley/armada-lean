@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-6ca",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `finalizable_or_two_enabled` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `finalizable_or_two_enabled`'s proof body is `sorry`. `scripts/check.sh --json finalizable_or_two_enabled` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json finalizable_or_two_enabled` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem finalizable_or_two_enabled",
+  "restatement": "The theorem `finalizable_or_two_enabled`, declared in `ArmadaLean/Nitro/Liveness.lean`, currently has `sorry` as its entire proof body. The worker must write a real Lean proof for this theorem. The repository's own acceptance gate decides when this is done: running `scripts/check.sh --json finalizable_or_two_enabled` from the repo root must print a JSON object showing three things. First, the theorem must no longer appear on the gate's list of theorems whose proof body still contains `sorry`. Second, the whole project must still build without error. Third, the theorem's statement \u2014 its name, arguments, and claim \u2014 must stay exactly as it is now; only the proof body may change.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`finalizable_or_two_enabled` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body."
+    },
+    {
+      "id": "c2",
+      "text": "The project still builds successfully after the proof is completed."
+    },
+    {
+      "id": "c3",
+      "text": "The theorem statement of `finalizable_or_two_enabled` does not change."
+    }
+  ],
+  "goal": "Prove the theorem `finalizable_or_two_enabled` in `ArmadaLean/Nitro/Liveness.lean`, removing its `sorry` placeholder, without changing the theorem's stated claim.",
+  "acceptance_criteria": [
+    "Running the project's check script and asking it specifically about this theorem shows the theorem no longer appears on the list of proofs that are still unfinished.",
+    "Running the project's check script shows the whole project still builds without error once the proof is completed.",
+    "Running the project's check script shows the theorem's stated claim is still identical to the frozen, approved version on file."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check script and asking it specifically about this theorem shows the theorem no longer appears on the list of proofs that are still unfinished."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check script shows the whole project still builds without error once the proof is completed."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check script shows the theorem's stated claim is still identical to the frozen, approved version on file."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check script and asking it specifically about this theorem shows the theorem no longer appears on the list of proofs that are still unfinished.",
+      "proves": "Proves the proof body of `finalizable_or_two_enabled` no longer contains `sorry`.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_or_two_enabled"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the project's check script shows the whole project still builds without error once the proof is completed.",
+      "proves": "Proves the completed proof compiles cleanly and does not break the project build.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_or_two_enabled"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running the project's check script shows the theorem's stated claim is still identical to the frozen, approved version on file.",
+      "proves": "Proves the theorem's statement was not changed while its proof was completed.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_or_two_enabled"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
