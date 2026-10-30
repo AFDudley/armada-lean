@@ -1223,6 +1223,70 @@ theorem apply_now_eq_of_not_tick {apps : Apps E} {caller : Participant} {op : Op
   | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; rfl
   | tick dt => exact absurd rfl (hop dt)
 
+/- Footprint (`writing-lean.md` rule 6): the operations that may write
+    `balances`. go-nitro: `deposit` (MultiAssetHolder.sol:30-56) and `transfer`
+    (MultiAssetHolder.sol:72-100) move holdings; the others do not. -/
+def _root_.ArmadaLean.Nitro.Op.touchesBalances : Op E → Bool
+  | .deposit .. | .transfer .. => true
+  | _ => false
+
+/- Footprint: the operations that may write `held`. -/
+def _root_.ArmadaLean.Nitro.Op.touchesHeld : Op E → Bool
+  | .deposit .. | .transfer .. => true
+  | _ => false
+
+/- Frame lemma: an operation outside the footprint of `balances` leaves it unchanged. -/
+theorem apply_balances_frame {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (hop : op.touchesBalances = false) (h : s.apply apps caller op = some s') :
+    s'.balances = s.balances := by
+  cases op with
+  | deposit a e x =>
+    simp [Op.touchesBalances] at hop
+  | transfer a b =>
+    simp [Op.touchesBalances] at hop
+  | reclaim l v =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h
+    rfl
+  | challenge c proof cand =>
+    obtain ⟨_, rfl⟩ := challenge_some h
+    rfl
+  | checkpoint c proof cand =>
+    obtain ⟨_, rfl⟩ := checkpoint_some h
+    rfl
+  | conclude c ss =>
+    obtain ⟨_, rfl⟩ := conclude_some h
+    rfl
+  | tick dt =>
+    simp only [apply_tick, Option.some.injEq] at h
+    subst h
+    exact tick_balances s dt
+
+/- Frame lemma: an operation outside the footprint of `held` leaves it unchanged. -/
+theorem apply_held_frame {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (hop : op.touchesHeld = false) (h : s.apply apps caller op = some s') :
+    s'.held = s.held := by
+  cases op with
+  | deposit a e x =>
+    simp [Op.touchesHeld] at hop
+  | transfer a b =>
+    simp [Op.touchesHeld] at hop
+  | reclaim l v =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h
+    rfl
+  | challenge c proof cand =>
+    obtain ⟨_, rfl⟩ := challenge_some h
+    rfl
+  | checkpoint c proof cand =>
+    obtain ⟨_, rfl⟩ := checkpoint_some h
+    rfl
+  | conclude c ss =>
+    obtain ⟨_, rfl⟩ := conclude_some h
+    rfl
+  | tick dt =>
+    simp only [apply_tick, Option.some.injEq] at h
+    subst h
+    exact tick_held s dt
+
 /-- The outcome of finalization never changes: `transfer` and `reclaim`
     rewrite only the stored outcome, through `withOutcome`, which keeps the
     outcome of finalization; `challenge`, `checkpoint` and `conclude` all
