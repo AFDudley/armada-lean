@@ -395,12 +395,7 @@ def Network.deposit (n : Network E) (p : Participant) (a : Address E) (expectedH
 def Network.applyAdv (apps : Apps E) (n : Network E) (p : Participant) (m : AdvMove E) :
     Network E :=
   match m with
-  | .chain caller op =>
-    match n.chain.apply apps caller op with
-    | some s' =>
-      { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q,
-        wallet := n.wallet }
-    | none => n
+  | .chain caller op => Network.land apps n caller op
   | .deliver ss => { n with received := fun q => if q = p then ss :: n.received q else n.received q }
   | .tick dt => { n with chain := n.chain.tick dt }
   | .land op => Network.land apps n p op
@@ -435,7 +430,7 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     Reachable apps (Network.applyAdv apps n p m).chain := by
   cases m with
   | chain caller op =>
-    simp only [Network.applyAdv]
+    simp only [Network.applyAdv, Network.land]
     cases h : n.chain.apply apps caller op with
     | none => exact hr
     | some s' => exact hr.tail (Step.mk caller op n.chain s' h)
