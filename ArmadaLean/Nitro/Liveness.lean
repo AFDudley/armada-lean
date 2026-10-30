@@ -3307,16 +3307,661 @@ theorem late_observer_can_checkpoint (apps : Apps E) {p : Participant} (T : Thre
         if_neg (not_le.mpr hdd1)]; decide,
       by rw [hchal1, ChannelStatus.turnNumRecord_challenged]; exact hle1⟩
 
+/-! ### The joint play of two participants (`finalizable_unique`)
+
+`finalizable_unique` plays the strategy tree of `p` and the strategy tree of
+`q` together, each in its own game. One shared chain is not possible: a
+`wait` is atomic, and the adversary moves only at a round's boundary, so a
+wait of `p` and a different wait of `q` cannot occur on one clock.
+
+Thus each participant keeps its own view and its own clock. A reaction of one
+participant lands its calls in its own round (`Threat.RoundSeq.land`), and
+the same calls run in the view of the other participant as adversary
+`.chain` moves, inside the round that is open there (`mirror_land`). A
+`wait` moves only the clock of the participant that waits.
+
+The two chains then can differ in time, but channel `c` keeps one status on
+both, up to the deadline of a running challenge (`ChanAgree`). An operation
+on `c` reads the mode and the turn record of `c`, not the clock, and a
+challenge sets its deadline `challengeDuration` after the clock of its own
+chain (`ChanAgree.apply`). The status of `c` differs only when a wait passes
+a deadline on one chain. The schedule chooses which participant waits
+first: if the running challenge pays `Ω`, `q` waits first, else `p` waits
+first. If the wait of `p` finalizes `c`, the outcome is not `Ω`, and the
+tree of `p` cannot win from there. If the wait of `q` finalizes `c`, the
+outcome is `Ω`, so `Ω' = Ω`. A conclude finalizes `c` on both chains with
+one outcome (`ChanAgreeOrFin`). Each step uses one move of one tree, so the
+play ends (`finalizable_joint`).
+
+The calls of one participant are feasible adversary moves in the view of
+the other, because every signature of `p` or `q` that a view received is
+genuine (`JointGenuine`, from `Nitro.network_received_signers`).
+-/
+
+/-- A single adversary move only ever adds to what `p` has received
+    (`NetworkState.applyAdv`'s `deliver` and successful `chain` cases
+    prepend; `tick` and a failed `chain` call leave it unchanged). -/
+theorem NetworkState.applyAdv_received_subset (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (m : AdvMove E) :
+    ∀ r ∈ net.received, r ∈ (net.applyAdv apps m).received := by
+  cases m with
+  | chain caller op =>
+    simp only [NetworkState.applyAdv]
+    cases net.chain.apply apps caller op with
+    | none => exact fun r hr => hr
+    | some s' => exact fun r hr => List.mem_append_right _ hr
+  | deliver ss => exact fun r hr => List.mem_cons_of_mem _ hr
+  | tick dt => exact fun r hr => hr
+  | land op =>
+    simp only [NetworkState.applyAdv]
+    cases net.chain.apply apps p op with
+    | none => exact fun r hr => hr
+    | some s' => exact fun r hr => List.mem_append_right _ hr
+
+/-- Adversary moves inside one open round: no `tick` and no landing, so the
+    moves fit into a round for any pending calls (`OtherSteps.roundSeq`).
+    In the joint play these are the calls of the other participant. -/
+inductive OtherSteps (apps : Apps E) {p : Participant} (T : Threat E p) :
+    NetworkState E p → NetworkState E p → Prop
+  | refl {net} : OtherSteps apps T net net
+  | tail {net mid m} : OtherSteps apps T net mid → T.feasible mid m → (∀ dt, m ≠ .tick dt) →
+      (∀ op, m ≠ .land op) → OtherSteps apps T net (mid.applyAdv apps m)
+
+namespace OtherSteps
+
+variable {apps : Apps E} {p : Participant} {T : Threat E p}
+
+theorem trans {a b d : NetworkState E p} (h1 : OtherSteps apps T a b)
+    (h2 : OtherSteps apps T b d) : OtherSteps apps T a d := by
+  induction h2 with
+  | refl => exact h1
+  | tail _ hf hnt hnl ih => exact .tail ih hf hnt hnl
+
+/-- The moves come first in a round with any pending calls: each is the
+    round's own `Threat.RoundSeq.other` step. -/
+theorem roundSeq {t : Time} {pending : List (Op E)} {a b d : NetworkState E p}
+    (h1 : OtherSteps apps T a b) (h2 : T.RoundSeq apps t pending b d) :
+    T.RoundSeq apps t pending a d := by
+  induction h1 generalizing d with
+  | refl => exact h2
+  | tail _ hf hnt hnl ih => exact ih (.other hf hnt hnl h2)
+
+theorem sent_eq {a b : NetworkState E p} (h : OtherSteps apps T a b) : b.sent = a.sent := by
+  induction h with
+  | refl => rfl
+  | tail _ _ _ _ ih => rw [NetworkState.applyAdv_sent, ih]
+
+theorem received_subset {a b : NetworkState E p} (h : OtherSteps apps T a b) :
+    ∀ r ∈ a.received, r ∈ b.received := by
+  induction h with
+  | refl => exact fun r hr => hr
+  | tail _ _ _ _ ih => exact fun r hr => NetworkState.applyAdv_received_subset apps _ _ r (ih r hr)
+
+theorem finalizedWith_mono {a b : NetworkState E p} (h : OtherSteps apps T a b) {c : FixedPart}
+    {f : Outcome E} (hf : a.chain.finalizedWith c.address = some f) :
+    b.chain.finalizedWith c.address = some f :=
+  (h.roundSeq (t := a.chain.now) Threat.RoundSeq.nil).finalizedWith_mono hf
+
+end OtherSteps
+
+omit [DecidableEq E] in
+/-- An honest move keeps the outcome of finalization: a reaction does not
+    touch the chain, and a wait only moves the clock. -/
+theorem NetworkState.applyHonest_finalizedWith {p : Participant} (m : HonestMove E)
+    (net : NetworkState E p) {c : FixedPart} {f : Outcome E}
+    (hf : net.chain.finalizedWith c.address = some f) :
+    (net.applyHonest m).chain.finalizedWith c.address = some f := by
+  cases m with
+  | react r => exact hf
+  | wait dt =>
+    simpa [NetworkState.applyHonest, FixedPart.address_eq] using
+      ChannelStatus.finalizedWith_mono (by simpa [FixedPart.address_eq] using hf)
+        (Nat.le_add_right _ dt)
+
+omit [DecidableEq E] in
+theorem Op.HonestFeasible.not_tick {p : Participant} {net : NetworkState E p} {op : Op E}
+    (h : op.HonestFeasible net) : ∀ dt, op ≠ .tick dt := by
+  rintro dt rfl
+  exact h
+
+omit [DecidableEq E] in
+theorem Op.HonestFeasible.holds {p : Participant} {net : NetworkState E p} {op : Op E}
+    (h : op.HonestFeasible net) : ∀ ss ∈ op.proofStates, net.Holds ss := by
+  cases op with
+  | deposit _ _ _ => exact h.elim
+  | tick _ => exact h.elim
+  | transfer _ _ | reclaim _ _ | challenge _ _ _ | checkpoint _ _ _ | conclude _ _ => exact h
+
+/-- A strategy for `Finalized c Ω` from a state where `c` already finalized
+    with `Ω0` shows `Ω0 = Ω`: any play of the strategy (`Threat.Round.exists`)
+    keeps the outcome of finalization and ends at the goal. -/
+theorem UnbeatableIn.finalized_eq {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {c : FixedPart} {Ω Ω0 : Outcome E} {net : NetworkState E p}
+    (hU : UnbeatableIn apps T allowed (fun n => n.Finalized c Ω) net)
+    (hf : net.chain.finalizedWith c.address = some Ω0) : Ω0 = Ω := by
+  induction hU with
+  | done hG => exact Option.some.inj (hf.symm.trans hG)
+  | move m _ hfeas _ ih =>
+    obtain ⟨net1, hround⟩ := Threat.Round.exists T hfeas
+    exact ih net1 hround (NetworkState.applyHonest_finalizedWith m net1 (hround.1.finalizedWith_mono hf))
+
+/-- `UnbeatableIn.finalized_eq` inside an open round: the strategy's next
+    round is these adversary moves, then its own calls, landed with no tick
+    (`Threat.RoundSeq.landAll`). -/
+theorem UnbeatableIn.finalized_eq_of_steps {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {c : FixedPart} {Ω Ω0 : Outcome E} {np Sp : NetworkState E p}
+    (hU : UnbeatableIn apps T allowed (fun n => n.Finalized c Ω) np) (hS : OtherSteps apps T np Sp)
+    (hnow : Sp.chain.now = np.chain.now) (hf : Sp.chain.finalizedWith c.address = some Ω0) :
+    Ω0 = Ω := by
+  cases hU with
+  | done hG => exact Option.some.inj (hf.symm.trans (hS.finalizedWith_mono hG))
+  | move m _ hfeas hcont =>
+    have hnotick : ∀ op ∈ m.calls, ∀ dt, op ≠ Op.tick dt := by
+      cases m with
+      | react r => exact fun op hop => Op.HonestFeasible.not_tick (hfeas op hop)
+      | wait _ => intro op hop; simp [HonestMove.calls] at hop
+    obtain ⟨S', hseq, hnow'⟩ := Threat.RoundSeq.landAll apps T np.chain.now m.calls hnotick Sp
+    have hround : T.Round apps m np S' :=
+      ⟨hS.roundSeq hseq, by rw [hnow', hnow]; exact Nat.lt_add_of_pos_right T.ε_pos⟩
+    exact (hcont S' hround).finalized_eq
+      (NetworkState.applyHonest_finalizedWith m S' (hseq.finalizedWith_mono hf))
+
+/-- Channel `c` has one status on two chains, up to the deadline of a
+    running challenge, and neither chain has finalized it. The clocks of
+    the two chains can differ. -/
+def ChanAgree (c : FixedPart) (s1 s2 : Adjudicator E) : Prop :=
+  (∃ r, s1.statusOf c = .open r ∧ s2.statusOf c = .open r) ∨
+  (∃ r ch1 ch2, s1.statusOf c = .challenged r ch1 ∧ s2.statusOf c = .challenged r ch2 ∧
+    ch1.state = ch2.state ∧ s1.now < ch1.deadline ∧ s2.now < ch2.deadline)
+
+/-- `ChanAgree`, or both chains finalized `c` with one outcome. -/
+def ChanAgreeOrFin (c : FixedPart) (s1 s2 : Adjudicator E) : Prop :=
+  ChanAgree c s1 s2 ∨
+    ∃ Ω0, s1.finalizedWith c.address = some Ω0 ∧ s2.finalizedWith c.address = some Ω0
+
+omit [DecidableEq E] in
+theorem ChanAgree.symm {c : FixedPart} {s1 s2 : Adjudicator E} (h : ChanAgree c s1 s2) :
+    ChanAgree c s2 s1 := by
+  rcases h with ⟨r, h1, h2⟩ | ⟨r, ch1, ch2, h1, h2, hs, hl1, hl2⟩
+  · exact Or.inl ⟨r, h2, h1⟩
+  · exact Or.inr ⟨r, ch2, ch1, h2, h1, hs.symm, hl2, hl1⟩
+
+omit [DecidableEq E] in
+theorem ChanAgreeOrFin.symm {c : FixedPart} {s1 s2 : Adjudicator E} (h : ChanAgreeOrFin c s1 s2) :
+    ChanAgreeOrFin c s2 s1 := by
+  rcases h with h | ⟨Ω0, h1, h2⟩
+  · exact Or.inl h.symm
+  · exact Or.inr ⟨Ω0, h2, h1⟩
+
+omit [DecidableEq E] in
+/-- One chain agrees with itself: `c` is open, or challenged and not yet
+    finalized, or finalized. -/
+theorem ChanAgreeOrFin.refl (c : FixedPart) (s : Adjudicator E) : ChanAgreeOrFin c s s := by
+  cases hst : s.statusOf c with
+  | «open» r => exact Or.inl (Or.inl ⟨r, hst, hst⟩)
+  | challenged r ch =>
+    by_cases hlt : s.now < ch.deadline
+    · exact Or.inl (Or.inr ⟨r, ch, ch, hst, hst, rfl, hlt, hlt⟩)
+    · have hf : s.finalizedWith c.address = some ch.state.outcome := by
+        simp [FixedPart.address_eq, hst, not_lt.mp hlt]
+      exact Or.inr ⟨ch.state.outcome, hf, hf⟩
+  | finalized r f o =>
+    have hf : s.finalizedWith c.address = some f := by simp [FixedPart.address_eq, hst]
+    exact Or.inr ⟨f, hf, hf⟩
+
+omit [DecidableEq E] in
+theorem ChanAgree.finalOutcome_left {c : FixedPart} {s1 s2 : Adjudicator E}
+    (h : ChanAgree c s1 s2) : (s1.statusOf c).finalOutcome s1.now = none := by
+  rcases h with ⟨r, h1, -⟩ | ⟨r, ch1, ch2, h1, -, -, hl1, -⟩
+  · rw [h1]; rfl
+  · rw [h1]; simp [not_le.mpr hl1]
+
+omit [DecidableEq E] in
+theorem ChanAgree.finalizedWith_left {c : FixedPart} {s1 s2 : Adjudicator E}
+    (h : ChanAgree c s1 s2) : s1.finalizedWith c.address = none := by
+  rcases h with ⟨r, h1, -⟩ | ⟨r, ch1, ch2, h1, -, -, hl1, -⟩
+  · simp [FixedPart.address_eq, h1]
+  · simp [FixedPart.address_eq, h1, not_le.mpr hl1]
+
+omit [DecidableEq E] in
+theorem ChanAgree.finalizedWith_right {c : FixedPart} {s1 s2 : Adjudicator E}
+    (h : ChanAgree c s1 s2) : s2.finalizedWith c.address = none :=
+  h.symm.finalizedWith_left
+
+omit [DecidableEq E] in
+theorem ChanAgree.congr {c : FixedPart} {s1 s2 s1' s2' : Adjudicator E} (h : ChanAgree c s1 s2)
+    (h1 : s1'.statusOf c = s1.statusOf c) (h1n : s1'.now = s1.now)
+    (h2 : s2'.statusOf c = s2.statusOf c) (h2n : s2'.now = s2.now) : ChanAgree c s1' s2' := by
+  unfold ChanAgree; rw [h1, h2, h1n, h2n]; exact h
+
+theorem Adjudicator.apply_getD_now {apps : Apps E} {s : Adjudicator E} {x : Participant}
+    {op : Op E} (hop : ∀ dt, op ≠ .tick dt) : ((s.apply apps x op).getD s).now = s.now := by
+  cases h : s.apply apps x op with
+  | none => rfl
+  | some s' => exact Adjudicator.apply_now_eq_of_not_tick hop h
+
+theorem Adjudicator.apply_getD_finalizedWith {apps : Apps E} {s : Adjudicator E}
+    {x : Participant} {op : Op E} {c : FixedPart} {f : Outcome E}
+    (hf : s.finalizedWith c.address = some f) :
+    ((s.apply apps x op).getD s).finalizedWith c.address = some f := by
+  cases h : s.apply apps x op with
+  | none => exact hf
+  | some s' => exact Adjudicator.finalizedWith_apply h hf
+
+/-- An operation that is not a `challenge`, `checkpoint` or `conclude` of
+    `c` keeps the status of `c`, while `c` is not finalized: `transfer` and
+    `reclaim` write only the status of a finalized channel. -/
+theorem Adjudicator.apply_getD_statusOf_neutral {apps : Apps E} {s : Adjudicator E}
+    {x : Participant} {op : Op E} {c : FixedPart}
+    (hnf : (s.statusOf c).finalOutcome s.now = none)
+    (h1 : ∀ proof cand, op ≠ .challenge c proof cand)
+    (h2 : ∀ proof cand, op ≠ .checkpoint c proof cand) (h3 : ∀ ss, op ≠ .conclude c ss) :
+    ((s.apply apps x op).getD s).statusOf c = s.statusOf c := by
+  cases h : s.apply apps x op with
+  | none => rfl
+  | some s' =>
+    simp only [Option.getD_some]
+    cases op with
+    | deposit a e v => exact Adjudicator.statusOf_of_status (Adjudicator.deposit_some h).2.2.2.2.1 c
+    | transfer a b =>
+      obtain ⟨_, _, _, hfa, -, -, -, -, hs, -, -, -⟩ := Adjudicator.transfer_some h
+      rw [Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus, if_neg]
+      rintro rfl
+      simp [FixedPart.address_eq, hnf] at hfa
+    | reclaim l v =>
+      obtain ⟨_, _, _, _, _, hfl, -, -, -, -, -, rfl, -, -⟩ := Adjudicator.reclaim_some h
+      rw [Adjudicator.statusOf_setStatus, if_neg]
+      rintro rfl
+      simp [FixedPart.address_eq, hnf] at hfl
+    | challenge c' proof cand =>
+      obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+      rw [Adjudicator.statusOf_setStatus, if_neg]
+      rintro rfl; exact h1 proof cand rfl
+    | checkpoint c' proof cand =>
+      obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+      rw [Adjudicator.statusOf_setStatus, if_neg]
+      rintro rfl; exact h2 proof cand rfl
+    | conclude c' ss =>
+      obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
+      rw [Adjudicator.statusOf_setStatus, if_neg]
+      rintro rfl; exact h3 ss rfl
+    | tick dt =>
+      simp at h; subst h; rfl
+
+/-- **One operation keeps `ChanAgree`, or finalizes `c` on both chains.**
+    An operation on `c` succeeds on one chain exactly when it succeeds on
+    the other: it reads the mode and the turn record of `c`, which agree. A
+    challenge sets each deadline `challengeDuration` after its own chain's
+    clock, so both deadlines are ahead of their clocks, or (with a zero
+    duration) both chains finalize with the candidate's outcome. A conclude
+    finalizes both chains with one outcome. Any other operation keeps the
+    status of `c` (`Adjudicator.apply_getD_statusOf_neutral`). -/
+theorem ChanAgree.apply {apps : Apps E} {c : FixedPart} {s1 s2 : Adjudicator E}
+    (h : ChanAgree c s1 s2) (x : Participant) {op : Op E} (hop : ∀ dt, op ≠ .tick dt) :
+    ChanAgreeOrFin c ((s1.apply apps x op).getD s1) ((s2.apply apps x op).getD s2) := by
+  have hnf1 := h.finalOutcome_left
+  have hnf2 := h.symm.finalOutcome_left
+  have hmode : s1.mode c = s2.mode c := by
+    rcases h with ⟨r, h1, h2⟩ | ⟨r, ch1, ch2, h1, h2, -, hl1, hl2⟩
+    · simp [Adjudicator.mode_eq, h1, h2]
+    · simp [Adjudicator.mode_eq, h1, h2, not_le.mpr hl1, not_le.mpr hl2]
+  have hrec : (s1.statusOf c).turnNumRecord = (s2.statusOf c).turnNumRecord := by
+    rcases h with ⟨r, h1, h2⟩ | ⟨r, ch1, ch2, h1, h2, -, -, -⟩ <;> simp [h1, h2]
+  have hopen1 : (s1.statusOf c).IsOpen s1.now := by
+    rw [ChannelStatus.isOpen_iff_ne, ne_eq, ChannelStatus.mode_eq_finalized_iff, hnf1]; simp
+  have hopen2 : (s2.statusOf c).IsOpen s2.now := by
+    rw [ChannelStatus.isOpen_iff_ne, ne_eq, ChannelStatus.mode_eq_finalized_iff, hnf2]; simp
+  have hneutral : (∀ proof cand, op ≠ .challenge c proof cand) →
+      (∀ proof cand, op ≠ .checkpoint c proof cand) → (∀ ss, op ≠ .conclude c ss) →
+      ChanAgreeOrFin c ((s1.apply apps x op).getD s1) ((s2.apply apps x op).getD s2) :=
+    fun ha hb hc => Or.inl (h.congr (Adjudicator.apply_getD_statusOf_neutral hnf1 ha hb hc)
+      (Adjudicator.apply_getD_now hop) (Adjudicator.apply_getD_statusOf_neutral hnf2 ha hb hc)
+      (Adjudicator.apply_getD_now hop))
+  cases op with
+  | deposit a e v =>
+    exact hneutral (by intro _ _ he; cases he) (by intro _ _ he; cases he) (by intro _ he; cases he)
+  | transfer a b =>
+    exact hneutral (by intro _ _ he; cases he) (by intro _ _ he; cases he) (by intro _ he; cases he)
+  | reclaim l v =>
+    exact hneutral (by intro _ _ he; cases he) (by intro _ _ he; cases he) (by intro _ he; cases he)
+  | tick dt => exact absurd rfl (hop dt)
+  | challenge c' proof cand =>
+    by_cases hcc : c' = c
+    · subst hcc
+      simp only [Adjudicator.apply_challenge, Adjudicator.challenge, hmode, hrec]
+      split_ifs with hP
+      · simp only [Option.getD_some]
+        by_cases hD : 0 < c'.challengeDuration
+        · refine Or.inl (Or.inr ⟨cand.turnNum, ⟨cand, s1.now + c'.challengeDuration⟩,
+            ⟨cand, s2.now + c'.challengeDuration⟩, ?_, ?_, rfl, ?_, ?_⟩)
+          · simp
+          · simp
+          · simp; omega
+          · simp; omega
+        · have hD0 : c'.challengeDuration = 0 := Nat.eq_zero_of_not_pos hD
+          refine Or.inr ⟨cand.outcome, ?_, ?_⟩ <;> simp [FixedPart.address_eq, hD0]
+      · exact Or.inl h
+    · exact hneutral (fun _ _ he => hcc (Op.challenge.inj he).1) (by intro _ _ he; cases he)
+        (by intro _ he; cases he)
+  | checkpoint c' proof cand =>
+    by_cases hcc : c' = c
+    · subst hcc
+      simp only [Adjudicator.apply_checkpoint, Adjudicator.checkpoint, hrec, hopen1, hopen2,
+        true_and]
+      split_ifs with hP
+      · simp only [Option.getD_some]
+        exact Or.inl (Or.inl ⟨cand.turnNum, by simp, by simp⟩)
+      · exact Or.inl h
+    · exact hneutral (by intro _ _ he; cases he) (fun _ _ he => hcc (Op.checkpoint.inj he).1)
+        (by intro _ he; cases he)
+  | conclude c' ss =>
+    by_cases hcc : c' = c
+    · subst hcc
+      simp only [Adjudicator.apply_conclude, Adjudicator.conclude, hopen1, hopen2, true_and]
+      split_ifs with hP
+      · simp only [Option.getD_some]
+        exact Or.inr ⟨ss.state.outcome, by simp [FixedPart.address_eq],
+          by simp [FixedPart.address_eq]⟩
+      · exact Or.inl h
+    · exact hneutral (by intro _ _ he; cases he) (by intro _ _ he; cases he)
+        (fun _ he => hcc (Op.conclude.inj he).1)
+
+theorem ChanAgreeOrFin.apply {apps : Apps E} {c : FixedPart} {s1 s2 : Adjudicator E}
+    (h : ChanAgreeOrFin c s1 s2) (x : Participant) {op : Op E} (hop : ∀ dt, op ≠ .tick dt) :
+    ChanAgreeOrFin c ((s1.apply apps x op).getD s1) ((s2.apply apps x op).getD s2) := by
+  rcases h with h | ⟨Ω0, h1, h2⟩
+  · exact h.apply x hop
+  · exact Or.inr ⟨Ω0, Adjudicator.apply_getD_finalizedWith h1,
+      Adjudicator.apply_getD_finalizedWith h2⟩
+
+theorem NetworkState.applyAdv_chain_chain (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (x : Participant) (op : Op E) :
+    (net.applyAdv apps (.chain x op)).chain = (net.chain.apply apps x op).getD net.chain := by
+  simp only [NetworkState.applyAdv]
+  cases net.chain.apply apps x op <;> rfl
+
+theorem NetworkState.applyAdv_land_chain (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (op : Op E) :
+    (net.applyAdv apps (.land op)).chain = (net.chain.apply apps p op).getD net.chain := by
+  simp only [NetworkState.applyAdv]
+  cases net.chain.apply apps p op <;> rfl
+
+theorem NetworkState.applyAdv_chain_received (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (x : Participant) (op : Op E) :
+    ∀ r ∈ (net.applyAdv apps (.chain x op)).received, r ∈ op.proofStates ∨ r ∈ net.received := by
+  simp only [NetworkState.applyAdv]
+  cases net.chain.apply apps x op with
+  | none => exact fun r hr => Or.inr hr
+  | some s' => exact fun r hr => List.mem_append.mp hr
+
+theorem NetworkState.applyAdv_land_received (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (op : Op E) :
+    ∀ r ∈ (net.applyAdv apps (.land op)).received, r ∈ op.proofStates ∨ r ∈ net.received := by
+  simp only [NetworkState.applyAdv]
+  cases net.chain.apply apps p op with
+  | none => exact fun r hr => Or.inr hr
+  | some s' => exact fun r hr => List.mem_append.mp hr
+
+/-- The signatures of `p` and of `q` that a signed state carries are on
+    states each of them sent. -/
+def SigOK (p q : Participant) (sp sq : List (SignedState E)) (r : SignedState E) : Prop :=
+  (p ∈ r.signers → ∃ s ∈ sp, s.state = r.state) ∧ (q ∈ r.signers → ∃ s ∈ sq, s.state = r.state)
+
+omit [DecidableEq E] in
+theorem SigOK.swap {p q : Participant} {sp sq : List (SignedState E)} {r : SignedState E}
+    (h : SigOK p q sp sq r) : SigOK q p sq sp r := ⟨h.2, h.1⟩
+
+omit [DecidableEq E] in
+theorem SigOK.mono {p q : Participant} {sp sq sp' sq' : List (SignedState E)}
+    {r : SignedState E} (h : SigOK p q sp sq r) (hp : ∀ s ∈ sp, s ∈ sp')
+    (hq : ∀ s ∈ sq, s ∈ sq') : SigOK p q sp' sq' r := by
+  refine ⟨fun hm => ?_, fun hm => ?_⟩
+  · obtain ⟨s, hs, he⟩ := h.1 hm; exact ⟨s, hp s hs, he⟩
+  · obtain ⟨s, hs, he⟩ := h.2 hm; exact ⟨s, hq s hs, he⟩
+
+/-- Every signature of `p` or of `q` that either view received is on a
+    state its signer sent, in that signer's own view. -/
+def JointGenuine {p q : Participant} (Sp : NetworkState E p) (Sq : NetworkState E q) : Prop :=
+  (∀ r ∈ Sp.received, SigOK p q Sp.sent Sq.sent r) ∧
+  (∀ r ∈ Sq.received, SigOK p q Sp.sent Sq.sent r)
+
+omit [DecidableEq E] in
+theorem JointGenuine.symm {p q : Participant} {Sp : NetworkState E p} {Sq : NetworkState E q}
+    (h : JointGenuine Sp Sq) : JointGenuine Sq Sp :=
+  ⟨fun r hr => (h.2 r hr).swap, fun r hr => (h.1 r hr).swap⟩
+
+omit [DecidableEq E] in
+theorem NetworkState.Unforged.of_sent {p : Participant} {net net' : NetworkState E p}
+    {ss : SignedState E} (hs : net.sent = net'.sent) (h : net.Unforged ss) : net'.Unforged ss := by
+  unfold NetworkState.Unforged at *
+  rw [← hs]
+  exact h
+
+omit [DecidableEq E] in
+/-- A state `x` holds carries genuine signatures of `x` and of `y`, so the
+    adversary of `y` may submit it (`NetworkState.Unforged`). -/
+theorem NetworkState.Holds.sigOK {x y : Participant} (hxy : x ≠ y) {nx Sx : NetworkState E x}
+    {Sy : NetworkState E y} (hrecv : ∀ r ∈ nx.received, r ∈ Sx.received)
+    (hsent : nx.sent = Sx.sent) (hG : ∀ r ∈ Sx.received, SigOK x y Sx.sent Sy.sent r)
+    {ss : SignedState E} (hh : nx.Holds ss) : SigOK x y Sx.sent Sy.sent ss ∧ Sy.Unforged ss := by
+  obtain ⟨h1, h2⟩ := hh
+  have hx : x ∈ ss.signers → ∃ s ∈ Sx.sent, s.state = ss.state := fun hm => by
+    rcases h1 x hm with ⟨-, s, hs, hse⟩ | ⟨r, hr, hre, hrx⟩
+    · exact ⟨s, hsent ▸ hs, hse⟩
+    · obtain ⟨s, hs, hse⟩ := (hG r (hrecv r hr)).1 hrx
+      exact ⟨s, hs, hse.trans hre⟩
+  have hy : y ∈ ss.signers → ∃ s ∈ Sy.sent, s.state = ss.state := fun hm => by
+    rcases h1 y hm with ⟨hyx, -⟩ | ⟨r, hr, hre, hry⟩
+    · exact absurd hyx.symm hxy
+    · obtain ⟨s, hs, hse⟩ := (hG r (hrecv r hr)).2 hry
+      exact ⟨s, hs, hse.trans hre⟩
+  refine ⟨⟨hx, hy⟩, hy, fun v hv hyv => ?_⟩
+  rcases h2 v hv y hyv with ⟨hyx, -⟩ | ⟨r, hr, hrv, hry⟩
+  · exact absurd hyx.symm hxy
+  · obtain ⟨s, hs, hse⟩ := (hG r (hrecv r hr)).2 hry
+    exact ⟨s, hs, by rw [hse]; exact hrv⟩
+
+/-- **One reaction's calls, in both views.** Participant `x` lands its
+    pending `calls` in its own round (`Threat.RoundSeq.land`, in order, with
+    no tick). The same calls run in the view of `y` as the adversary's
+    `.chain x` moves (`OtherSteps`): `Capable.capable` allows each one,
+    because its proof states carry no forged signature of `y`. Both views
+    apply one operation with one caller, so `ChanAgreeOrFin.apply` carries
+    the status of `c`, and each new received entry has genuine signatures. -/
+theorem mirror_land {apps : Apps E} {x y : Participant} (hxy : x ≠ y) {Tx : Threat E x}
+    {Ty : Threat E y} (Cy : Capable apps y Ty) (c : FixedPart) (t : Time)
+    (sx sy : List (SignedState E)) :
+    ∀ (calls : List (Op E)) (Sx : NetworkState E x) (Sy : NetworkState E y),
+      Sx.sent = sx → Sy.sent = sy →
+      (∀ op ∈ calls, (∀ dt, op ≠ .tick dt) ∧
+        ∀ ss ∈ op.proofStates, SigOK x y sx sy ss ∧ Sy.Unforged ss) →
+      ChanAgreeOrFin c Sx.chain Sy.chain →
+      (∀ r ∈ Sx.received, SigOK x y sx sy r) → (∀ r ∈ Sy.received, SigOK x y sx sy r) →
+      ∃ Sx' Sy', Tx.RoundSeq apps t calls Sx Sx' ∧ OtherSteps apps Ty Sy Sy' ∧
+        ChanAgreeOrFin c Sx'.chain Sy'.chain ∧
+        (∀ r ∈ Sx'.received, SigOK x y sx sy r) ∧ (∀ r ∈ Sy'.received, SigOK x y sx sy r) ∧
+        Sx'.chain.now = Sx.chain.now ∧ Sy'.chain.now = Sy.chain.now ∧ Sx'.sent = sx ∧
+        Sy'.sent = sy := by
+  intro calls
+  induction calls with
+  | nil =>
+    intro Sx Sy hsx hsy _ hag hgx hgy
+    exact ⟨Sx, Sy, .nil, .refl, hag, hgx, hgy, rfl, rfl, hsx, hsy⟩
+  | cons op rest ih =>
+    intro Sx Sy hsx hsy hcalls hag hgx hgy
+    obtain ⟨hnt, hss⟩ := hcalls op List.mem_cons_self
+    have hfeas : Ty.feasible Sy (.chain x op) :=
+      Cy.capable Sy x op hxy (fun ss h => (hss ss h).2)
+    have hag1 : ChanAgreeOrFin c (Sx.applyAdv apps (.land op)).chain
+        (Sy.applyAdv apps (.chain x op)).chain := by
+      rw [NetworkState.applyAdv_land_chain, NetworkState.applyAdv_chain_chain]
+      exact hag.apply x hnt
+    have hrest : ∀ op' ∈ rest, (∀ dt, op' ≠ .tick dt) ∧
+        ∀ ss ∈ op'.proofStates, SigOK x y sx sy ss ∧
+          (Sy.applyAdv apps (.chain x op)).Unforged ss := by
+      intro op' hop'
+      obtain ⟨hnt', hss'⟩ := hcalls op' (List.mem_cons_of_mem _ hop')
+      exact ⟨hnt', fun ss h => ⟨(hss' ss h).1,
+        (hss' ss h).2.of_sent (NetworkState.applyAdv_sent apps Sy _).symm⟩⟩
+    obtain ⟨Sx', Sy', hseq, hSy, hag', hgx', hgy', hnx, hny, hsx', hsy'⟩ :=
+      ih (Sx.applyAdv apps (.land op)) (Sy.applyAdv apps (.chain x op))
+        (by rw [NetworkState.applyAdv_sent, hsx]) (by rw [NetworkState.applyAdv_sent, hsy])
+        hrest hag1
+        (fun r hr => (NetworkState.applyAdv_land_received apps Sx op r hr).elim
+          (fun h => (hss r h).1) (hgx r))
+        (fun r hr => (NetworkState.applyAdv_chain_received apps Sy x op r hr).elim
+          (fun h => (hss r h).1) (hgy r))
+    refine ⟨Sx', Sy', .land (l1 := []) (l2 := rest) rfl hseq,
+      (OtherSteps.refl.tail hfeas (fun _ h => by cases h) (fun _ h => by cases h)).trans hSy,
+      hag', hgx', hgy', ?_, ?_, hsx', hsy'⟩
+    · rw [hnx, NetworkState.applyAdv_land_chain, Adjudicator.apply_getD_now hnt]
+    · rw [hny, NetworkState.applyAdv_chain_chain, Adjudicator.apply_getD_now hnt]
+
+/-- **The joint play.** `p` is at a node of its strategy tree for
+    `Finalized c Ω`, with the adversary moves `OtherSteps` already done in
+    its open round; `q` likewise for `Finalized c Ω'`. Then `Ω = Ω'`. By
+    induction on the tree of `p` and, inside it, on the tree of `q`:
+    - a reaction of `p` runs in both views (`mirror_land`), and `p` moves on;
+    - while `p` waits, a reaction of `q` runs in both views, and `q` moves on;
+    - when both wait, one wait runs, in the view of its own participant only:
+      `q`'s wait if the running challenge pays `Ω`, else `p`'s wait. A wait
+      that finalizes `c` gives `Ω = Ω'` (`q` waited), or contradicts the
+      tree of `p` (`p` waited, and the outcome is not `Ω`).
+    When both chains finalize `c` with one outcome `Ω0`, both trees give
+    `Ω0` (`UnbeatableIn.finalized_eq_of_steps`). -/
+theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
+    {Tp : Threat E p} {Tq : Threat E q} (Cp : Capable apps p Tp) (Cq : Capable apps q Tq)
+    {allp allq : HonestMove E → Prop} {c : FixedPart} {Ω Ω' : Outcome E}
+    {np : NetworkState E p}
+    (hp : UnbeatableIn apps Tp allp (fun net => net.Finalized c Ω) np) :
+    ∀ (Sp : NetworkState E p), OtherSteps apps Tp np Sp → Sp.chain.now = np.chain.now →
+    ∀ {nq : NetworkState E q}, UnbeatableIn apps Tq allq (fun net => net.Finalized c Ω') nq →
+    ∀ (Sq : NetworkState E q), OtherSteps apps Tq nq Sq → Sq.chain.now = nq.chain.now →
+    ChanAgreeOrFin c Sp.chain Sq.chain → JointGenuine Sp Sq → Ω = Ω' := by
+  induction hp with
+  | done hGp =>
+    intro Sp hSp _ nq hq Sq hSq hnq hag _
+    have hfp := hSp.finalizedWith_mono hGp
+    rcases hag with hA | ⟨Ω0, h1, h2⟩
+    · rw [hA.finalizedWith_left] at hfp; cases hfp
+    · rw [h1] at hfp
+      exact (Option.some.inj hfp).symm.trans (hq.finalized_eq_of_steps hSq hnq h2)
+  | @move np mp halp hfeasp hcontp ihp =>
+    intro Sp hSp hnp nq hq
+    have hUp : UnbeatableIn apps Tp allp (fun net => net.Finalized c Ω) np :=
+      .move mp halp hfeasp hcontp
+    induction hq generalizing Sp with
+    | done hGq =>
+      intro Sq hSq _ hag _
+      have hfq := hSq.finalizedWith_mono hGq
+      rcases hag with hA | ⟨Ω0, h1, h2⟩
+      · rw [hA.finalizedWith_right] at hfq; cases hfq
+      · rw [h2] at hfq
+        exact (hUp.finalized_eq_of_steps hSp hnp h1).symm.trans (Option.some.inj hfq)
+    | @move nq mq halq hfeasq hcontq ihq =>
+      intro Sq hSq hnq hag hgen
+      have hUq : UnbeatableIn apps Tq allq (fun net => net.Finalized c Ω') nq :=
+        .move mq halq hfeasq hcontq
+      rcases hag with hA | ⟨Ω0, h1, h2⟩
+      swap
+      · exact (hUp.finalized_eq_of_steps hSp hnp h1).symm.trans
+          (hUq.finalized_eq_of_steps hSq hnq h2)
+      cases mp with
+      | react rp =>
+        -- `p` issues its reaction; its calls run in `q`'s view as adversary moves.
+        have hcalls : ∀ op ∈ rp.calls, (∀ dt, op ≠ .tick dt) ∧
+            ∀ ss ∈ op.proofStates, SigOK p q Sp.sent Sq.sent ss ∧ Sq.Unforged ss := by
+          intro op hop
+          have hf : op.HonestFeasible np := hfeasp op hop
+          exact ⟨hf.not_tick, fun ss hss =>
+            (hf.holds ss hss).sigOK hpq hSp.received_subset hSp.sent_eq.symm hgen.1⟩
+        obtain ⟨Sp', Sq', hseq, hSq', hag', hgp', hgq', hnp', hnq', hsp', hsq'⟩ :=
+          mirror_land hpq Cq c np.chain.now Sp.sent Sq.sent rp.calls Sp Sq rfl rfl hcalls
+            (Or.inl hA) hgen.1 hgen.2
+        have hround : Tp.Round apps (.react rp) np Sp' :=
+          ⟨hSp.roundSeq hseq, by rw [hnp', hnp]; exact Nat.lt_add_of_pos_right Tp.ε_pos⟩
+        have hsub : ∀ s ∈ Sp.sent, s ∈ (Sp'.applyHonest (.react rp)).sent := by
+          intro s hs
+          show s ∈ rp.sends.map _ ++ Sp'.sent
+          rw [hsp']
+          exact List.mem_append_right _ hs
+        refine ihp Sp' hround (Sp'.applyHonest (.react rp)) .refl rfl hUq Sq' (hSq.trans hSq')
+          (by rw [hnq', hnq]) hag' ⟨fun r hr => ?_, fun r hr => ?_⟩
+        · exact (hgp' r hr).mono hsub (fun s hs => by rw [hsq']; exact hs)
+        · exact (hgq' r hr).mono hsub (fun s hs => by rw [hsq']; exact hs)
+      | wait dp =>
+        cases mq with
+        | react rq =>
+          -- `q` issues its reaction; its calls run in `p`'s open round.
+          have hcalls : ∀ op ∈ rq.calls, (∀ dt, op ≠ .tick dt) ∧
+              ∀ ss ∈ op.proofStates, SigOK q p Sq.sent Sp.sent ss ∧ Sp.Unforged ss := by
+            intro op hop
+            have hf : op.HonestFeasible nq := hfeasq op hop
+            exact ⟨hf.not_tick, fun ss hss =>
+              (hf.holds ss hss).sigOK (Ne.symm hpq) hSq.received_subset hSq.sent_eq.symm
+                hgen.symm.1⟩
+          obtain ⟨Sq', Sp', hseq, hSp', hag', hgq', hgp', hnq', hnp', hsq', hsp'⟩ :=
+            mirror_land (Ne.symm hpq) Cp c nq.chain.now Sq.sent Sp.sent rq.calls Sq Sp rfl rfl
+              hcalls (Or.inl hA.symm) hgen.symm.1 hgen.symm.2
+          have hround : Tq.Round apps (.react rq) nq Sq' :=
+            ⟨hSq.roundSeq hseq, by rw [hnq', hnq]; exact Nat.lt_add_of_pos_right Tq.ε_pos⟩
+          have hsub : ∀ s ∈ Sq.sent, s ∈ (Sq'.applyHonest (.react rq)).sent := by
+            intro s hs
+            show s ∈ rq.sends.map _ ++ Sq'.sent
+            rw [hsq']
+            exact List.mem_append_right _ hs
+          refine ihq Sq' hround Sp' (hSp.trans hSp') (by rw [hnp', hnp])
+            (Sq'.applyHonest (.react rq)) .refl rfl hag'.symm ⟨fun r hr => ?_, fun r hr => ?_⟩
+          · exact ((hgp' r hr).mono hsub (fun s hs => by rw [hsp']; exact hs)).swap
+          · exact ((hgq' r hr).mono hsub (fun s hs => by rw [hsp']; exact hs)).swap
+        | wait dq =>
+          have hroundp : Tp.Round apps (.wait dp) np Sp :=
+            ⟨hSp.roundSeq .nil, by rw [hnp]; exact Nat.lt_add_of_pos_right Tp.ε_pos⟩
+          have hroundq : Tq.Round apps (.wait dq) nq Sq :=
+            ⟨hSq.roundSeq .nil, by rw [hnq]; exact Nat.lt_add_of_pos_right Tq.ε_pos⟩
+          rcases hA with ⟨r, ho1, ho2⟩ | ⟨r, ch1, ch2, hc1, hc2, hst, hlt1, hlt2⟩
+          · -- `c` is open: `p`'s wait cannot finalize it.
+            exact ihp Sp hroundp (Sp.applyHonest (.wait dp)) .refl rfl hUq Sq hSq hnq
+              (Or.inl (Or.inl ⟨r, by simpa [NetworkState.applyHonest] using ho1, ho2⟩)) hgen
+          · by_cases hout : ch1.state.outcome = Ω
+            · -- The running challenge pays `p`'s outcome: `q` waits first.
+              by_cases hcross : Sq.chain.now + dq < ch2.deadline
+              · exact ihq Sq hroundq Sp hSp hnp (Sq.applyHonest (.wait dq)) .refl rfl
+                  (Or.inl (Or.inr ⟨r, ch1, ch2, hc1,
+                    by simpa [NetworkState.applyHonest] using hc2, hst, hlt1,
+                    by simpa [NetworkState.applyHonest] using hcross⟩)) hgen
+              · have hfin : (Sq.applyHonest (.wait dq)).chain.finalizedWith c.address = some Ω := by
+                  simp only [NetworkState.applyHonest, Adjudicator.finalizedWith_channel,
+                    FixedPart.address_eq, Adjudicator.tick_statusOf, Adjudicator.tick_now, hc2,
+                    ChannelStatus.finalizedWith_challenged, if_pos (not_lt.mp hcross), ← hst, hout]
+                exact (hcontq Sq hroundq).finalized_eq hfin
+            · -- Any other running challenge: `p` waits first.
+              by_cases hcross : Sp.chain.now + dp < ch1.deadline
+              · exact ihp Sp hroundp (Sp.applyHonest (.wait dp)) .refl rfl hUq Sq hSq hnq
+                  (Or.inl (Or.inr ⟨r, ch1, ch2, by simpa [NetworkState.applyHonest] using hc1,
+                    hc2, hst, by simpa [NetworkState.applyHonest] using hcross, hlt2⟩)) hgen
+              · have hfin : (Sp.applyHonest (.wait dp)).chain.finalizedWith c.address =
+                    some ch1.state.outcome := by
+                  simp only [NetworkState.applyHonest, Adjudicator.finalizedWith_channel,
+                    FixedPart.address_eq, Adjudicator.tick_statusOf, Adjudicator.tick_now, hc1,
+                    ChannelStatus.finalizedWith_challenged, if_pos (not_lt.mp hcross)]
+                exact absurd ((hcontp Sp hroundp).finalized_eq hfin) hout
+
 /-- Nitro-22. Nitro:612-614: "The definition of finalizability excludes the case
     where two different finalizable outcomes are held by different
     participants, as in this case at least one participant's strategy would
-    be beatable by the other participant's strategy." -/
+    be beatable by the other participant's strategy." The proof plays the two
+    strategies together, each in its own game (`finalizable_joint`). -/
 theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n) (hvn : v = n.views)
     (c : FixedPart) (p q : Participant) (hpq : p ≠ q) (Ω Ω' : Outcome E)
     (hp : Finalizable apps (Ts.T p) c Ω (v p)) (hq : Finalizable apps (Ts.T q) c Ω' (v q)) :
     Ω = Ω' := by
-  sorry
+  subst hvn
+  have hsig := Nitro.network_received_signers hr
+  exact finalizable_joint hpq (Ts.ok p).toCapable (Ts.ok q).toCapable hp (n.views p) .refl rfl hq
+    (n.views q) .refl rfl (ChanAgreeOrFin.refl c n.chain)
+    ⟨fun r hr' => ⟨hsig p p r hr', hsig p q r hr'⟩, fun r hr' => ⟨hsig q p r hr', hsig q q r hr'⟩⟩
 
 /-- Nitro-22. Nitro:597-611: "exactly one of the following statements is true
     about a channel χ at any point in time: 1. Finalized outcome ... 2. One
@@ -3417,26 +4062,6 @@ def ConsensusSafe {p : Participant} (c : FixedPart) (ss : SignedState E) (Ω1 Ω
      (∃ t ch, statusNet.chain.statusOf c = .challenged t ch ∧
        (ch.state.outcome = Ω1 ∨ ch.state.outcome = Ω2 ∨
         (t < ss.state.turnNum ∧ nowNet.chain.now < ch.deadline)))))
-
-/-- A single adversary move only ever adds to what `p` has received
-    (`NetworkState.applyAdv`'s `deliver` and successful `chain` cases
-    prepend; `tick` and a failed `chain` call leave it unchanged). -/
-theorem NetworkState.applyAdv_received_subset (apps : Apps E) {p : Participant}
-    (net : NetworkState E p) (m : AdvMove E) :
-    ∀ r ∈ net.received, r ∈ (net.applyAdv apps m).received := by
-  cases m with
-  | chain caller op =>
-    simp only [NetworkState.applyAdv]
-    cases net.chain.apply apps caller op with
-    | none => exact fun r hr => hr
-    | some s' => exact fun r hr => List.mem_append_right _ hr
-  | deliver ss => exact fun r hr => List.mem_cons_of_mem _ hr
-  | tick dt => exact fun r hr => hr
-  | land op =>
-    simp only [NetworkState.applyAdv]
-    cases net.chain.apply apps p op with
-    | none => exact fun r hr => hr
-    | some s' => exact fun r hr => List.mem_append_right _ hr
 
 /-- Over a round's adversary play, what `p` has received only grows, by
     induction on `NetworkState.applyAdv_received_subset`. -/

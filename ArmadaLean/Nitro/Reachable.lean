@@ -516,28 +516,31 @@ theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n :
     · exact Network.applyAdv_chain_reachable n p m hP
     · exact Network.deposit_chain_reachable n p (.channel c) e x hP
 
-/-- **`Views.Consistent`'s third conjunct holds for every reachable
+/-- **Every signature a view received is genuine, in every reachable
     `Network`.** A state `p` received that names `q` as a signer is a
-    state `q` really sent. By `Machine.invariant`: at genesis every
-    `received` is empty (vacuous); a step leaves `received` untouched
-    (`wait`), touches only the mover's own `received` through a
-    `Network.Sendable`-gated `.deliver` (whose statement is exactly this
-    conjunct for the one new entry), broadcasts a landed call's
-    `Network.Sendable`-gated proof states (same argument, for every new
-    entry at once), or appends a `.react`'s one-shot recipient batch, each
-    new entry's own signer `p₀` already known-genuine by `hP`. -/
-theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    state `q` really sent. `p` and `q` can be one participant: `p`'s own
+    signature on a state `p` received is on a state `p` sent. By
+    `Machine.invariant`: at genesis every `received` is empty (vacuous); a
+    step leaves `received` untouched (`wait`), touches only the mover's own
+    `received` through a `Network.Sendable`-gated `.deliver` (whose
+    statement is exactly this fact for the one new entry), broadcasts a
+    landed call's `Network.Sendable`-gated proof states (same argument, for
+    every new entry at once), or appends a `.react`'s one-shot recipient
+    batch, each new entry's own signer `p₀` already known-genuine by `hP`.
+    Used by `finalizable_unique` (`Liveness.lean`), whose joint play needs
+    the case `p = q` too. -/
+theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) :
-    ∀ p q : Participant, p ≠ q → ∀ r ∈ (n.views p).received, q ∈ r.signers →
+    ∀ p q : Participant, ∀ r ∈ (n.views p).received, q ∈ r.signers →
       ∃ s ∈ (n.views q).sent, s.state = r.state := by
   refine Machine.invariant (Nitro.network apps Ts)
-    (P := fun n => ∀ p q : Participant, p ≠ q → ∀ r ∈ n.received p, q ∈ r.signers →
+    (P := fun n => ∀ p q : Participant, ∀ r ∈ n.received p, q ∈ r.signers →
       ∃ s ∈ n.sent q, s.state = r.state) ?_ ?_ n h
-  · intro n hinit p q hpq r hr
+  · intro n hinit p q r hr
     obtain ⟨-, -, hrecv⟩ := hinit
     rw [hrecv] at hr
     simp at hr
-  · intro n n' hP hstep p q hpq r hr hqr
+  · intro n n' hP hstep p q r hr hqr
     obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ |
         ⟨c, e, x, -, rfl⟩⟩ :=
       hstep
@@ -553,7 +556,7 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
           refine ⟨⟨st, [p₀]⟩, ?_, by rw [← hseq]⟩
           rw [Network.applyHonest_react_sent, if_pos hqr]
           exact List.mem_append_left _ (List.mem_map.mpr ⟨st, hst', rfl⟩)
-        · obtain ⟨s, hs, hseq⟩ := hP p q hpq r hold hqr
+        · obtain ⟨s, hs, hseq⟩ := hP p q r hold hqr
           refine ⟨s, ?_, hseq⟩
           rw [Network.applyHonest_react_sent]
           by_cases hqp0 : q = p₀
@@ -566,7 +569,7 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
           simp [Network.applyHonest]
         rw [hrecv] at hr
         rw [hsent]
-        exact hP p q hpq r hr hqr
+        exact hP p q r hr hqr
     · cases hop : n.chain.apply apps p₀ op with
       | none =>
         have hsent : (Network.land apps n p₀ op).sent = n.sent := by
@@ -575,7 +578,7 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
           simp [Network.land, hop]
         rw [hsent]
         rw [hrecv] at hr
-        exact hP p q hpq r hr hqr
+        exact hP p q r hr hqr
       | some s' =>
         have hsent : (Network.land apps n p₀ op).sent = n.sent := by
           simp [Network.land, hop]
@@ -585,7 +588,7 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
         rw [hrecv] at hr
         rcases List.mem_append.mp hr with hnew | hold
         · exact (hsgate r hnew).1 q hqr
-        · exact hP p q hpq r hold hqr
+        · exact hP p q r hold hqr
     · cases m with
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss =>
@@ -600,9 +603,9 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
         · rw [if_pos hpp0] at hr
           rcases List.mem_cons.mp hr with rfl | hold
           · exact (hdgate r rfl).1 q hqr
-          · exact hP p q hpq r hold hqr
+          · exact hP p q r hold hqr
         · rw [if_neg hpp0] at hr
-          exact hP p q hpq r hr hqr
+          exact hP p q r hr hqr
       | tick dt =>
         have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received p = n.received p := by
           simp [Network.applyAdv]
@@ -610,11 +613,19 @@ theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : N
           simp [Network.applyAdv]
         rw [hrecv] at hr
         rw [hsent]
-        exact hP p q hpq r hr hqr
+        exact hP p q r hr hqr
       | land op => exact absurd rfl (hnoland op)
     · rw [Network.deposit_received] at hr
       rw [Network.deposit_sent]
-      exact hP p q hpq r hr hqr
+      exact hP p q r hr hqr
+
+/-- **`Views.Consistent`'s third conjunct holds for every reachable
+    `Network`.** The case `p ≠ q` of `Nitro.network_received_signers`. -/
+theorem Nitro.network_views_signers {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.network apps Ts).Reachable n) :
+    ∀ p q : Participant, p ≠ q → ∀ r ∈ (n.views p).received, q ∈ r.signers →
+      ∃ s ∈ (n.views q).sent, s.state = r.state :=
+  fun p q _ => Nitro.network_received_signers h p q
 
 /-- Bigger `signed` lists only reach more: `SignedState.SignedIn` is
     monotone in `signed`, so a `SignedStep` for `signed` is also one for

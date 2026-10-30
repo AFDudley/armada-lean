@@ -69,7 +69,7 @@ Status: **proved** (no `sorry`); **sound** (true by the argument given, not yet 
 | 3 | `conclusion_proof_finalizable` | sound | `NonVacuity.conclude_strategy` proves this goal for any move class that allows the conclude (it is not wired into `Liveness.lean`). |
 | 4 | `latest_state_finalizable` | sound | Challenge with `ss`, then wait. A higher record needs `p`'s signature on a higher state. |
 | 5 | `late_observer_can_checkpoint` | sound | Checkpoint with `ss`; if the adversary registered `ss.state` first, the goal holds already. |
-| 6 | `finalizable_unique` | unknown | Needs a joint play of two games with different threats (and different `ε`). |
+| 6 | `finalizable_unique` | proved | Joint play with one clock per participant (`finalizable_joint`, aln-a14). The calls of each participant run in the view of the other as adversary moves; a `wait` moves only its own clock. The status of `c` agrees on both chains up to the deadline of a running challenge. When both wait, `q` waits first if the running challenge pays `Ω`, else `p` waits first, so the first chain that finalizes `c` gives `Ω = Ω'` or contradicts a strategy. |
 | 7 | `channel_finalizability_cases` | unknown | Follows from 6 by a case split. |
 | 8 | `finalizable_or_two_enabled` | unknown | A determinacy argument; not checked. |
 | 9 | `single_enabled_is_finalizable` | unknown | As 8. |
