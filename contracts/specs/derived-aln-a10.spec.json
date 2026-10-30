@@ -1,0 +1,101 @@
+{
+  "id": "derived-aln-a10",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `turbo_value_exists_unique` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `turbo_value_exists_unique`'s proof body is `sorry`. `scripts/check.sh --json turbo_value_exists_unique` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json turbo_value_exists_unique` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem turbo_value_exists_unique",
+  "restatement": "The theorem `turbo_value_exists_unique`, declared in `ArmadaLean/Nitro/Liveness.lean`, states that for an adjudicator state `s` satisfying `s.IsDAG` and an address `n`, a turbo value for `n` exists and is unique. Its proof body today is the single word `sorry`, so the claim is unverified. The request asks for a real, complete Lean proof of this exact, unchanged statement, with no `sorry` anywhere in the proof's own body. The repository already ships the way to observe this: running `scripts/check.sh --json turbo_value_exists_unique` from the repository root prints one JSON object naming, among other fields, whether the theorem still appears in the list of proofs that say `sorry`, whether the whole project still builds, and whether the theorem's frozen statement text still matches the committed baseline.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`turbo_value_exists_unique` in `ArmadaLean/Nitro/Liveness.lean` ends up with a proof body that contains no `sorry`, and the whole project still builds with that proof in place."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's statement does not change from what it is today."
+    }
+  ],
+  "goal": "Replace the `sorry` proof body of `turbo_value_exists_unique` in `ArmadaLean/Nitro/Liveness.lean` with a complete Lean proof of the theorem's existing, unchanged statement.",
+  "acceptance_criteria": [
+    "Running the project's own check script and asking it about this one theorem shows the theorem is no longer on the list of proofs that still say 'sorry', and shows the whole project still builds without error.",
+    "Running the project's own check script shows the theorem's statement text still matches the frozen, committed copy of what it said before this change."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's own check script and asking it about this one theorem shows the theorem is no longer on the list of proofs that still say 'sorry', and shows the whole project still builds without error."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's own check script shows the theorem's statement text still matches the frozen, committed copy of what it said before this change."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's own check script and asking it about this one theorem shows the theorem is no longer on the list of proofs that still say 'sorry', and shows the whole project still builds without error.",
+      "proves": "Proves the theorem now has a real, complete proof body with no sorry, matching the first restatement clause.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_exists_unique"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the project's own check script shows the theorem's statement text still matches the frozen, committed copy of what it said before this change.",
+      "proves": "Proves the theorem's statement was not altered, matching the second restatement clause.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_exists_unique"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
