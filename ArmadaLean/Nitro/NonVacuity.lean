@@ -1242,11 +1242,11 @@ example : ∃ (v : Views Nat) (n : Network Nat), (Nitro.network apps0 (Ts apps0)
 /-- `finalizable_or_two_enabled`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    p0 ∈ c.participants ∧
+    (apps0 c.appDef).NoUnilateralSupport ∧ p0 ∈ c.participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 c.appDef).supports c proof candidate = true ∧ candidate.channel = c) ∧
     2 * (canon p0).ε ≤ c.challengeDuration :=
-  ⟨netF, c1, canon_ok _ _, netF_reach, by decide,
+  ⟨netF, c1, canon_ok _ _, netF_reach, consensusRules_noUnilateralSupport, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
       by decide, rfl⟩, by decide⟩
 
@@ -1254,12 +1254,13 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart),
     is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `netC_reach`. -/
 example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    p0 ∈ c.participants ∧
+    (apps0 c.appDef).NoUnilateralSupport ∧ p0 ∈ c.participants ∧
     (∀ t ∈ net.sent, t.state.channel = c → ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 c.appDef).supports c proof t.state = true) ∧
     2 * (canon p0).ε ≤ c.challengeDuration ∧ Enabled apps0 (canon p0) c Ω net ∧
     (∀ Ω', Enabled apps0 (canon p0) c Ω' net → Ω' = Ω) :=
-  ⟨⟨sCon, [ssF], [ssF]⟩, c1, .allocation o1, canon_ok _ _, netC_reach, by decide,
+  ⟨⟨sCon, [ssF], [ssF]⟩, c1, .allocation o1, canon_ok _ _, netC_reach,
+    consensusRules_noUnilateralSupport, by decide,
     (fun t h _ => by
       rw [List.mem_singleton] at h; subst h
       exact ⟨[ssF], fun ss h' => by

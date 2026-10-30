@@ -3982,10 +3982,14 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
 /-- Nitro-24. Nitro:653-656: "For any participant, p, in a channel, χ, exactly one
     of the following statements is true at a given point in time: 1. p has at
     least one finalizable outcome. 2. p has at least two enabled outcomes."
-    The channel is past its setup: `p` holds a supported state of it. -/
+    The channel is past its setup: `p` holds a supported state of it. Operator
+    ruling 2026-10-30: the app must carry `Rules.NoUnilateralSupport`; the
+    counterexample `docs/counterexamples/finalizable_or_two_enabled.lean`
+    shows the claim fails for an app that does not. -/
 theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (hp : p ∈ c.participants)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart)
+    (happ : (apps c.appDef).NoUnilateralSupport) (hp : p ∈ c.participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c)
     (hdur : 2 * T.ε ≤ c.challengeDuration) :
@@ -3995,10 +3999,12 @@ theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat
 
 /-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
     that outcome must be finalizable for them." `p` holds a support for every
-    state of `c` it signed. -/
+    state of `c` it signed. Operator ruling 2026-10-30: the app must carry
+    `Rules.NoUnilateralSupport`. -/
 theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (hp : p ∈ c.participants)
+    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart)
+    (happ : (apps c.appDef).NoUnilateralSupport) (hp : p ∈ c.participants)
     (hsupp : ∀ t ∈ net.sent, t.state.channel = c → ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps c.appDef).supports c proof t.state = true)
     (hdur : 2 * T.ε ≤ c.challengeDuration)

@@ -865,6 +865,99 @@ theorem validRun_getElem? {vt : State E → State E → Bool} {l : SupportProof 
         simp only [List.getElem?_cons_succ] at h1 h2
         exact ih h.2 (by simpa using h1) (by simpa using h2)
 
+/-- SATP:262-266: the one signed state of a supported candidate is signed by
+    every participant. Operator ruling 2026-10-30. -/
+theorem consensusRules_noUnilateralSupport :
+    (consensusRules : Rules E).NoUnilateralSupport := by
+  intro c proof candidate hcon q hq
+  match proof, hcon with
+  | [ss], hcon =>
+    simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hcon
+    obtain ⟨⟨-, hchan⟩, hall⟩ := hcon
+    exact ⟨ss, List.mem_singleton_self ss, hall q (by rw [hchan]; exact hq)⟩
+  | [], hcon => simp [consensusRules] at hcon
+  | _ :: _ :: _, hcon => simp [consensusRules] at hcon
+
+/-- `(t0 + i) % n` covers every residue `k < n` as `i` ranges over `0, …,
+    n - 1`: the modular-arithmetic fact `forceMoveRules_noUnilateralSupport`
+    needs. -/
+theorem turn_mod_exists (n t0 k : Nat) (hn : 0 < n) (hk : k < n) :
+    ∃ i, i < n ∧ (t0 + i) % n = k := by
+  have hrlt : t0 % n < n := Nat.mod_lt _ hn
+  have hdm : t0 / n * n + t0 % n = t0 := Nat.div_add_mod' t0 n
+  by_cases hrk : t0 % n ≤ k
+  · refine ⟨k - t0 % n, by omega, ?_⟩
+    have heq : t0 + (k - t0 % n) = (t0 / n) * n + k := by omega
+    rw [heq]
+    exact Nat.mul_add_mod_of_lt hk
+  · refine ⟨n - t0 % n + k, by omega, ?_⟩
+    have hmul : (t0 / n + 1) * n = t0 / n * n + n := Nat.add_one_mul _ _
+    have heq : t0 + (n - t0 % n + k) = (t0 / n + 1) * n + k := by omega
+    rw [heq]
+    exact Nat.mul_add_mod_of_lt hk
+
+/-- ForceMove:1379-1381: each of the `n` moves of a support run increases
+    the turn number by one, so the `n` movers are one full cycle of
+    `c.participants`; every participant signs its own move. Operator ruling
+    2026-10-30. -/
+theorem forceMoveRules_noUnilateralSupport (vt : State E → State E → Bool) :
+    (forceMoveRules vt : Rules E).NoUnilateralSupport := by
+  intro c proof candidate h q hq
+  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+    Option.all_eq_true] at h
+  obtain ⟨⟨⟨⟨hlen, hhead⟩, hrun⟩, hchanAll⟩, hlast⟩ := h
+  obtain ⟨k, hklt, hget⟩ := List.mem_iff_getElem.mp hq
+  have hklt' : k < c.n := hklt
+  have hn : 0 < c.n := by omega
+  cases proof with
+  | nil => simp at hlen; omega
+  | cons m0 rest =>
+    have hm0mover : m0.ByMover := (SignedState.byMover_iff _).1 (hhead m0 rfl)
+    have hm0chan : m0.state.channel = c := hchanAll m0 List.mem_cons_self
+    have hstep : ∀ i, (hbound : i + 1 < (m0 :: rest).length) →
+        ∃ m1 m2, (m0 :: rest)[i]? = some m1 ∧ (m0 :: rest)[i + 1]? = some m2 ∧
+          m2.state.channel = m1.state.channel ∧ m2.state.turnNum = m1.state.turnNum + 1 ∧
+          m2.ByMover := by
+      intro i hbound
+      have h1 : (m0 :: rest)[i]? = some ((m0 :: rest)[i]'(by omega)) :=
+        List.getElem?_eq_getElem (by omega)
+      have h2 : (m0 :: rest)[i + 1]? = some ((m0 :: rest)[i + 1]'hbound) :=
+        List.getElem?_eq_getElem hbound
+      have hm := validRun_getElem? hrun h1 h2
+      simp only [validMove, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
+        Bool.not_eq_true'] at hm
+      obtain ⟨⟨⟨⟨⟨hc, ht⟩, -⟩, -⟩, -⟩, hmv⟩ := hm
+      exact ⟨_, _, h1, h2, hc, ht, (SignedState.byMover_iff _).1 hmv⟩
+    have hind : ∀ i, (hi : i < (m0 :: rest).length) →
+        ∃ m, (m0 :: rest)[i]? = some m ∧ m.state.channel = c ∧
+          m.state.turnNum = m0.state.turnNum + i ∧ m.ByMover := by
+      intro i
+      induction i with
+      | zero => intro _; exact ⟨m0, rfl, hm0chan, by simp, hm0mover⟩
+      | succ i ih =>
+        intro hi
+        obtain ⟨m, hmget, hmchan, hmturn, hmmv⟩ := ih (by omega)
+        obtain ⟨m1, m2, hm1, hm2, hc, ht, hmv⟩ := hstep i (by omega)
+        rw [hmget] at hm1
+        injection hm1 with hm1
+        subst hm1
+        refine ⟨m2, hm2, by rw [hc]; exact hmchan, by omega, hmv⟩
+    have hlenn : (m0 :: rest).length = c.n := hlen
+    obtain ⟨i, hilt, hieq⟩ := turn_mod_exists (m0 :: rest).length m0.state.turnNum k
+      (by omega) (by omega)
+    obtain ⟨m, hmget, hmchan, hmturn, hmmv⟩ := hind i (by omega)
+    have hmover : m.state.mover = some q := by
+      unfold State.mover
+      rw [hmchan, hmturn]
+      have hcn : c.n = (m0 :: rest).length := hlenn.symm
+      rw [hcn, hieq]
+      rw [List.getElem?_eq_getElem hklt, hget]
+    obtain ⟨mv, hmv1, hmv2⟩ := hmmv
+    rw [hmover] at hmv1
+    injection hmv1 with hmv1
+    subst hmv1
+    exact ⟨m, List.mem_of_getElem? hmget, hmv2⟩
+
 /-! ## The adjudicator (`Adjudicator.lean`) -/
 
 namespace Adjudicator
