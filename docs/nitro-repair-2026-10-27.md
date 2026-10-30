@@ -60,47 +60,50 @@ Other definition changes:
 ## 3. Re-audit of the 35 Liveness theorems on the repaired model
 
 Status: **proved** (no `sorry`); **sound** (true by the argument given, not yet proved; `[INFERENCE]`);
-**unknown**; **false** (a counterexample by the argument given, `[INFERENCE]`; none is formalized).
+**unknown**; **false** (a counterexample by the argument given, `[INFERENCE]`, unless a Lean file is named).
+The Status column shows the state on 2026-10-30 (`integrated` `9180670`, `scripts/check.sh --json`). A status that
+changed after 2026-10-27 names the change in its row.
 
 | # | Theorem | Status | Argument or counterexample |
 |---|---|---|---|
-| 1 | `directly_funded_pays` | sound | `p` transfers to `d`. Every adversary step keeps the stored total at or below the holding and keeps `owed d + paid d` at or above its start. |
-| 2 | `finalizable_funded_pays` | sound | Follow the `FundedFor` strategy; at its goal the stored total (a redistribution of the finalized one) is covered; then transfer to `d`. |
-| 3 | `conclusion_proof_finalizable` | sound | `NonVacuity.conclude_strategy` proves this goal for any move class that allows the conclude (it is not wired into `Liveness.lean`). |
-| 4 | `latest_state_finalizable` | sound | Challenge with `ss`, then wait. A higher record needs `p`'s signature on a higher state. |
-| 5 | `late_observer_can_checkpoint` | sound | Checkpoint with `ss`; if the adversary registered `ss.state` first, the goal holds already. |
+| 1 | `directly_funded_pays` | proved | `p` transfers to `d`. Every adversary step keeps the stored total at or below the holding and keeps `owed d + paid d` at or above its start. |
+| 2 | `finalizable_funded_pays` | proved | Follow the `FundedFor` strategy; at its goal the stored total (a redistribution of the finalized one) is covered; then transfer to `d`. |
+| 3 | `conclusion_proof_finalizable` | proved | `NonVacuity.conclude_strategy` proves this goal for any move class that allows the conclude (it is not wired into `Liveness.lean`). |
+| 4 | `latest_state_finalizable` | proved | Challenge with `ss`, then wait. A higher record needs `p`'s signature on a higher state. |
+| 5 | `late_observer_can_checkpoint` | proved | Checkpoint with `ss`; if the adversary registered `ss.state` first, the goal holds already. |
 | 6 | `finalizable_unique` | proved | Joint play with one clock per participant (`finalizable_joint`, aln-a14). The calls of each participant run in the view of the other as adversary moves; a `wait` moves only its own clock. The status of `c` agrees on both chains up to the deadline of a running challenge. When both wait, `q` waits first if the running challenge pays `Ω`, else `p` waits first, so the first chain that finalizes `c` gives `Ω = Ω'` or contradicts a strategy. |
 | 7 | `channel_finalizability_cases` | unknown | Follows from 6 by a case split. |
-| 8 | `finalizable_or_two_enabled` | unknown | A determinacy argument; not checked. |
-| 9 | `single_enabled_is_finalizable` | unknown | As 8. |
+| 8 | `finalizable_or_two_enabled` | unknown | A determinacy argument; not checked. 2026-10-30: false for an arbitrary app (Lean counterexample `docs/counterexamples/finalizable_or_two_enabled.lean`: an app that supports every state lets either side checkpoint in every round). Operator ruling 2026-10-30: the theorem takes `(apps c.appDef).NoUnilateralSupport` (Nitro:631-658 states the result for ForceMove channels). Unknown under the new type. |
+| 9 | `single_enabled_is_finalizable` | unknown | As 8, including the 2026-10-30 type change. |
 | 10 | `finalizable_is_enabled` | removed | `c = [p]`, fresh: `p` finalizes by `send` then `conclude`; `p` also prevents every finalization by signing nothing. "Can force" and "cannot prevent" differ whenever the outcome needs `p`'s signature. Coordinator ruling 2026-10-27 (§6.1): Nitro 2019 §4.4's dichotomy (finalizable or two enabled) never claims finalizable implies enabled; the theorem is removed, not repaired. |
-| 11 | `funding_point_universally_finalizable` | false | New defect D9 below: with `n = 2` and a game library that accepts a move after the setup, the adversary challenges with a state at turn `n` that it never delivers; `p` cannot answer it. |
-| 12 | `concluded_universally_finalizable` | sound | `conclude_strategy` for each participant. |
-| 13 | `consensus_enabled_outcomes` | sound | `p`'s strategy answers every challenge below `ss` with `ss` within `2 * ε`; only `Ω1`, `Ω2` can finalize. |
+| 11 | `funding_point_universally_finalizable` | false | New defect D9 below: with `n = 2` and a game library that accepts a move after the setup, the adversary challenges with a state at turn `n` that it never delivers; `p` cannot answer it. 2026-10-29: true after the D9 repair (argument, armada-laconic `.scratch/false-theorem-reaudit.md` §1). 2026-10-30: false again (Lean counterexample on `worker/aln-cc8` at `3235226`): a participant signs two states at its turn below `c.n` ("alternative moves", ForceMove:782-794), and the next mover picks the one that suits the adversary. The statement waits for the operator. |
+| 12 | `concluded_universally_finalizable` | proved | `conclude_strategy` for each participant. |
+| 13 | `consensus_enabled_outcomes` | proved | `p`'s strategy answers every challenge below `ss` with `ss` within `2 * ε`; only `Ω1`, `Ω2` can finalize. |
 | 14 | `turbo_redistribution_unbeatable` | unknown | Believed true (priority payouts are monotone). |
 | 15 | `deposit_bounds_value` | unknown | Needs a coupling of plays with and without the deposit. |
 | 16 | `payout_to_other_affects_only_owner` | unknown | As 15. |
-| 17 | `participant_can_prevent_cycles` | sound | `p` never signs; under consensus no channel of `p` can leave Open. |
+| 17 | `participant_can_prevent_cycles` | proved | `p` never signs; under consensus no channel of `p` can leave Open. |
 | 18 | `turbo_value_upper_bound` | unknown | Believed true. |
 | 19 | `turbo_value_achievable` | unknown | Believed true. |
 | 20 | `turbo_value_is_value` | unknown | From 18 and 19. |
 | 21 | `turbo_order_independent` | unknown | Believed true; reads no game definition. |
 | 22 | `turbo_value_exists_unique` | unknown | Believed true; reads no game definition. |
-| 23 | `ledger_offload_funds_subchannel` | false | If `χ` is finalized with an outcome that pays elsewhere, the adversary transfers `L → χ` and `χ → q` in one prefix; `χ` never holds `c` at a round boundary. Needs the G16 hypotheses of `ledger_partial_withdrawal` for `χ` (type change; not applied: not in the report). |
+| 23 | `ledger_offload_funds_subchannel` | unknown | If `χ` is finalized with an outcome that pays elsewhere, the adversary transfers `L → χ` and `χ → q` in one prefix; `χ` never holds `c` at a round boundary. Needs the G16 hypotheses of `ledger_partial_withdrawal` for `χ`. 2026-10-27: G16 applied (§6.3). 2026-10-29: true but vacuous, because no reachable network held a deposit (defect D10, re-audit §2). D10 is repaired by wallets (operator, 2026-10-29); not re-audited since. |
 | 24 | `subchannel_open_value_preserving` | unknown | Value equality; not checked. |
 | 25 | `subchannel_close_value_preserving` | unknown | As 24. |
 | 26 | `ledger_topup_reorder_safe` | proved | Priority payout arithmetic. |
 | 27 | `ledger_topup_deposit_funds` | proved | Priority payout arithmetic. |
-| 28 | `ledger_partial_withdrawal` | sound | Conclude `L`, then transfer: two rounds without wait; `L'` cannot finalize within them. |
+| 28 | `ledger_partial_withdrawal` | proved | Conclude `L`, then transfer: two rounds without wait; `L'` cannot finalize within them. |
 | 29 | `satp_outcome_change_keeps_total` | proved | Case split on the proof; helpers `validChallenge_outcome`, `validResponse_outcome`. |
-| 30 | `satp_lemma_3_1` | sound | `finalized_two_ways` over `ReachableSigned`; every all-signed state of `V` is a setup state or a final pair; a challenge or response state pays the start state's destinations with the total. |
-| 31 | `satp_peers_can_finalize` | false | D9: the adversary checkpoints `V` with a response at version 3 that it never delivers; `V` stays Open at record 3 and `p` holds no supported state at version 3 or above. |
-| 32 | `satp_theorem_3_2` | false | D9 as in 31, so `V` may never finalize; and the reclaim griefing G17 below. |
-| 33 | `satp_intermediary_before_round2` | sound | Challenge both ledgers with the latest states, then wait; the goal counts payouts. |
-| 34 | `satp_end_user_recovers` | false | G17: the adversary deposits into `V` and transfers from `V`, which lowers `V`'s stored amounts; `reclaim` then reverts for ever (MultiAssetHolder.sol:365). |
+| 30 | `satp_lemma_3_1` | proved | `finalized_two_ways` over `ReachableSigned`; every all-signed state of `V` is a setup state or a final pair; a challenge or response state pays the start state's destinations with the total. |
+| 31 | `satp_peers_can_finalize` | sound | D9: the adversary checkpoints `V` with a response at version 3 that it never delivers; `V` stays Open at record 3 and `p` holds no supported state at version 3 or above. 2026-10-29: true after the D9 repair (argument, re-audit §3). |
+| 32 | `satp_theorem_3_2` | sound | D9 as in 31, so `V` may never finalize; and the reclaim griefing G17 below. 2026-10-29: true after the D9 and G17 repairs (argument, re-audit §4). |
+| 33 | `satp_intermediary_before_round2` | proved | Challenge both ledgers with the latest states, then wait; the goal counts payouts. |
+| 34 | `satp_end_user_recovers` | sound | G17: the adversary deposits into `V` and transfers from `V`, which lowers `V`'s stored amounts; `reclaim` then reverts for ever (MultiAssetHolder.sol:365). 2026-10-29: true after the G17 repair (argument, re-audit §5). |
 | 35 | `satp_reclaim_credits_intermediary` | proved | `reclaim_can_happen` twice and the `owed` lemmas. |
 
-Counts: proved 4, sound 11, unknown 14, false 5, removed 1 (§6.1).
+Counts on 2026-10-27: proved 4, sound 11, unknown 14, false 5, removed 1 (§6.1). Counts on 2026-10-30: proved 16,
+sound 3, unknown 14, false 1, removed 1. The 18 open theorems are the 3 sound, 14 unknown and 1 false rows.
 
 ### New defects found by the re-audit
 
