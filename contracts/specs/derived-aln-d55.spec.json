@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-d55",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `subchannel_close_value_preserving` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `subchannel_close_value_preserving`'s proof body is `sorry`. `scripts/check.sh --json subchannel_close_value_preserving` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json subchannel_close_value_preserving` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem subchannel_close_value_preserving",
+  "restatement": "Complete the proof of the theorem subchannel_close_value_preserving in ArmadaLean/Nitro/Liveness.lean. Today the proof body is only the placeholder sorry, so no real proof exists yet. The worker must write a real proof term that satisfies three conditions at once. First, the proof body must contain no sorry literal. Second, the proof must actually compile: lake build must succeed on the whole repository with this proof in place. Third, the exact statement (the signature) of subchannel_close_value_preserving must stay the same as it is now; only the proof body may change. The repository already has a deterministic gate script for this, scripts/check.sh. Run it with scripts/check.sh --json subchannel_close_value_preserving from the repo root. It prints one JSON object to stdout. That object's theorem_in_sorry field reports whether the named theorem still carries sorry. Its build_ok field reports whether the build succeeded. Its signatures_ok field reports whether every approved theorem's statement text, including this one, still matches the frozen baseline. The proof is complete only when all three fields show success.",
+  "restatement_clauses": [
+    {
+      "id": "c1-no-sorry",
+      "text": "subchannel_close_value_preserving in ArmadaLean/Nitro/Liveness.lean has a proof with no sorry in its own proof body."
+    },
+    {
+      "id": "c2-builds",
+      "text": "The repository, including this proof, builds successfully with lake build."
+    },
+    {
+      "id": "c3-statement-unchanged",
+      "text": "The theorem statement of subchannel_close_value_preserving does not change."
+    }
+  ],
+  "goal": "Replace the sorry placeholder in the proof of subchannel_close_value_preserving with a real, compiling proof, without changing the theorem's statement.",
+  "acceptance_criteria": [
+    "Ask the project's check script about this one theorem. It reports that the theorem's proof no longer uses the sorry placeholder.",
+    "Ask the project's check script to build the whole repository. It reports that the build succeeded.",
+    "Ask the project's check script to compare every approved theorem's wording against the frozen baseline. It reports that none of them, including this one, changed."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Ask the project's check script about this one theorem. It reports that the theorem's proof no longer uses the sorry placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "Ask the project's check script to build the whole repository. It reports that the build succeeded."
+    },
+    {
+      "id": "c3",
+      "text": "Ask the project's check script to compare every approved theorem's wording against the frozen baseline. It reports that none of them, including this one, changed."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Ask the project's check script about this one theorem. It reports that the theorem's proof no longer uses the sorry placeholder.",
+      "proves": "Proves that subchannel_close_value_preserving's proof body no longer contains sorry.",
+      "restatement_clause_id": "c1-no-sorry",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "subchannel_close_value_preserving"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Ask the project's check script to build the whole repository. It reports that the build succeeded.",
+      "proves": "Proves the repository, including the new proof, compiles with lake build.",
+      "restatement_clause_id": "c2-builds",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "subchannel_close_value_preserving"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Ask the project's check script to compare every approved theorem's wording against the frozen baseline. It reports that none of them, including this one, changed.",
+      "proves": "Proves the statement of subchannel_close_value_preserving was not altered while its proof was written.",
+      "restatement_clause_id": "c3-statement-unchanged",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "subchannel_close_value_preserving"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 1800,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
