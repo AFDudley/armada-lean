@@ -1,0 +1,95 @@
+{
+  "id": "derived-aln-a14",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `finalizable_unique` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `finalizable_unique`'s proof body is `sorry`. `scripts/check.sh --json finalizable_unique` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json finalizable_unique` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem finalizable_unique",
+  "restatement": "The worker must give the theorem `finalizable_unique`, defined in `ArmadaLean/Nitro/Liveness.lean`, a genuine Lean proof that type-checks under the project's build, in place of the `sorry` placeholder it has today. The theorem's stated claim must stay exactly as written; only the proof body changes. The project's own verification command, `scripts/check.sh --json finalizable_unique`, is how to observe whether this holds: it reports whether the project still builds, whether `finalizable_unique` still appears among the theorems that carry a `sorry`, and whether the theorem's stated claim has drifted from the frozen baseline.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`finalizable_unique` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement of `finalizable_unique` does not change."
+    }
+  ],
+  "goal": "Replace the `sorry` in `finalizable_unique`'s proof body with a real, type-checking proof, without altering what the theorem claims.",
+  "acceptance_criteria": [
+    "Run the project's verification command and read its printed result. It must show that the project still builds, and that the theorem named finalizable_unique no longer appears on the list of theorems that still carry a sorry placeholder.",
+    "Run the project's verification command and read its printed result. It must show that no theorem's stated claim, including finalizable_unique's, has changed from the frozen baseline the project keeps on file."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Run the project's verification command and read its printed result. It must show that the project still builds, and that the theorem named finalizable_unique no longer appears on the list of theorems that still carry a sorry placeholder."
+    },
+    {
+      "id": "c2",
+      "text": "Run the project's verification command and read its printed result. It must show that no theorem's stated claim, including finalizable_unique's, has changed from the frozen baseline the project keeps on file."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Run the project's verification command and read its printed result. It must show that the project still builds, and that the theorem named finalizable_unique no longer appears on the list of theorems that still carry a sorry placeholder.",
+      "proves": "Proves that finalizable_unique now has a complete, type-checking proof with no sorry placeholder left in its own body.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_unique"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 900,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Run the project's verification command and read its printed result. It must show that no theorem's stated claim, including finalizable_unique's, has changed from the frozen baseline the project keeps on file.",
+      "proves": "Proves that the wording of what finalizable_unique claims was left unchanged while its proof was completed.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "finalizable_unique"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 900,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
