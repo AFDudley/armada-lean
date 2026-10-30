@@ -459,13 +459,13 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     Reachable apps (Network.applyAdv apps n p m).chain := by
   cases m with
   | chain caller op =>
-    simp only [Network.applyAdv, Network.land]
+    simp only [Network.applyAdv_chain, Network.land]
     cases h : n.chain.apply apps caller op with
     | none => exact hr
     | some s' => exact hr.tail (Step.mk caller op n.chain s' h)
-  | deliver ss => simpa [Network.applyAdv] using hr
+  | deliver ss => simpa [Network.applyAdv_deliver] using hr
   | tick dt =>
-    simp only [Network.applyAdv]
+    simp only [Network.applyAdv_tick]
     have happly : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
     exact hr.tail (Step.mk p (.tick dt) n.chain (n.chain.tick dt) happly)
   | land op => exact Network.land_chain_reachable n p op hr
@@ -596,17 +596,17 @@ theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n 
     · cases hop : n.chain.apply apps p₀ op with
       | none =>
         have hsent : (Network.land apps n p₀ op).sent = n.sent := by
-          simp [Network.land, hop]
+          simp [Network.land_of_none, hop]
         have hrecv : (Network.land apps n p₀ op).received p = n.received p := by
-          simp [Network.land, hop]
+          simp [Network.land_of_none, hop]
         rw [hsent]
         rw [hrecv] at hr
         exact hP p q r hr hqr
       | some s' =>
         have hsent : (Network.land apps n p₀ op).sent = n.sent := by
-          simp [Network.land, hop]
+          simp [Network.land_of_some, hop]
         have hrecv : (Network.land apps n p₀ op).received p = op.proofStates ++ n.received p := by
-          simp [Network.land, hop]
+          simp [Network.land_of_some, hop]
         rw [hsent]
         rw [hrecv] at hr
         rcases List.mem_append.mp hr with hnew | hold
@@ -616,10 +616,10 @@ theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n 
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss =>
         have hsent : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_deliver]
         have hrecv : (Network.applyAdv apps n p₀ (.deliver ss)).received p =
             if p = p₀ then ss :: n.received p else n.received p := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_deliver]
         rw [hsent]
         rw [hrecv] at hr
         by_cases hpp0 : p = p₀
@@ -631,9 +631,9 @@ theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n 
           exact hP p q r hr hqr
       | tick dt =>
         have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received p = n.received p := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_tick]
         have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_tick]
         rw [hrecv] at hr
         rw [hsent]
         exact hP p q r hr hqr
@@ -733,13 +733,13 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
     · cases hop : n.chain.apply apps p₀ op with
       | none =>
         refine ⟨signed, ?_, ?_⟩
-        · have hc : (Network.land apps n p₀ op).chain = n.chain := by simp [Network.land, hop]
+        · have hc : (Network.land apps n p₀ op).chain = n.chain := by simp [Network.land_of_none, hop]
           rw [hc]; exact hreach
-        · have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        · have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_none, hop]
           rw [hs]; exact hmirror
       | some s' =>
-        have hc : (Network.land apps n p₀ op).chain = s' := by simp [Network.land, hop]
-        have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        have hc : (Network.land apps n p₀ op).chain = s' := by simp [Network.land_of_some, hop]
+        have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_some, hop]
         refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
         rw [hc]
         refine hreach.tail ⟨p₀, op, _, _, ?_, hop⟩
@@ -754,15 +754,15 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss =>
         have hc : (Network.applyAdv apps n p₀ (.deliver ss)).chain = n.chain := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_deliver]
         have hs : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_deliver]
         exact ⟨signed, by rw [hc]; exact hreach, by rw [hs]; exact hmirror⟩
       | tick dt =>
         have hc : (Network.applyAdv apps n p₀ (.tick dt)).chain = n.chain.tick dt := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_tick]
         have hs : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_tick]
         refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
         rw [hc]
         refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
@@ -837,16 +837,16 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
         exact hP p ss hss q hq
     · cases hop : n.chain.apply apps p₀ op with
       | none =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_none, hop]
         have hrecv : (Network.land apps n p₀ op).received q = n.received q := by
-          simp [Network.land, hop]
+          simp [Network.land_of_none, hop]
         rw [hsent] at hss
         rw [hrecv]
         exact hP p ss hss q hq
       | some s' =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land, hop]
+        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_some, hop]
         have hrecv : (Network.land apps n p₀ op).received q = op.proofStates ++ n.received q := by
-          simp [Network.land, hop]
+          simp [Network.land_of_some, hop]
         rw [hsent] at hss
         rw [hrecv]
         exact List.mem_append_right _ (hP p ss hss q hq)
@@ -854,10 +854,10 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss' =>
         have hsent : (Network.applyAdv apps n p₀ (.deliver ss')).sent = n.sent := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_deliver]
         have hrecv : (Network.applyAdv apps n p₀ (.deliver ss')).received q =
             if q = p₀ then ss' :: n.received q else n.received q := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_deliver]
         rw [hsent] at hss
         rw [hrecv]
         by_cases hqp0 : q = p₀
@@ -865,9 +865,9 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
         · rw [if_neg hqp0]; exact hP p ss hss q hq
       | tick dt =>
         have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_tick]
         have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received q = n.received q := by
-          simp [Network.applyAdv]
+          simp [Network.applyAdv_tick]
         rw [hsent] at hss
         rw [hrecv]
         exact hP p ss hss q hq
@@ -1016,8 +1016,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         have heq : (Network.applyAdv apps n q m).view q = (n.view q).applyAdv apps m := by
           cases m with
           | chain caller op => exact absurd rfl (hnochain caller op)
-          | deliver ss => simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
-          | tick dt => simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
+          | deliver ss => simp [Network.applyAdv_deliver, Network.view, NetworkState.applyAdv]
+          | tick dt => simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv]
           | land op => exact absurd rfl (hnoland op)
         rw [heq]
         exact hP.tail (Or.inr (Or.inr (Or.inl ⟨m, hfeas, rfl⟩)))
@@ -1025,13 +1025,13 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         | chain caller op => exact absurd rfl (hnochain caller op)
         | deliver ss =>
           have heq : (Network.applyAdv apps n p₀ (.deliver ss)).view q = n.view q := by
-            simp [Network.applyAdv, Network.view, hqp0]
+            simp [Network.applyAdv_deliver, Network.view, hqp0]
           rw [heq]
           exact hP
         | tick dt =>
           have heq : (Network.applyAdv apps n p₀ (.tick dt)).view q =
               (n.view q).applyAdv apps (.tick dt) := by
-            simp [Network.applyAdv, Network.view, NetworkState.applyAdv]
+            simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv]
           rw [heq]
           exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
         | land op => exact absurd rfl (hnoland op)
@@ -1097,11 +1097,13 @@ theorem Nitro.network_conservation {apps : Apps E} {Ts : Threats E apps} {n0 n :
         simp [Op.HonestFeasible] at hopfeas
       cases hop : n1.chain.apply apps p op with
       | none =>
-        have hnc : Network.land apps n1 p op = n1 := by simp [Network.land, hop]
+        have hnc : Network.land apps n1 p op = n1 := by simp [Network.land_of_none, hop]
         exact ⟨deposits, by rw [hnc]; exact hheld, by rw [hnc]; exact hwallet⟩
       | some s' =>
-        have hnc1 : (Network.land apps n1 p op).chain = s' := by simp [Network.land, hop]
-        have hnc2 : (Network.land apps n1 p op).wallet = n1.wallet := by simp [Network.land, hop]
+        have hnc1 : (Network.land apps n1 p op).chain = s' := by
+          simp [Network.land_of_some, hop]
+        have hnc2 : (Network.land apps n1 p op).wallet = n1.wallet := by
+          simp [Network.land_of_some, hop]
         have hhi : n1.chain.HeldInv :=
           Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
         have hstep' := Adjudicator.held_paidOut_step_no_deposit hhi hnodep hop
@@ -1109,11 +1111,11 @@ theorem Nitro.network_conservation {apps : Apps E} {Ts : Threats E apps} {n0 n :
     · cases m with
       | chain caller op => exact absurd rfl (hnochain caller op)
       | deliver ss =>
-        exact ⟨deposits, by simpa [Network.applyAdv] using hheld,
-          by simpa [Network.applyAdv] using hwallet⟩
+        exact ⟨deposits, by simpa [Network.applyAdv_deliver] using hheld,
+          by simpa [Network.applyAdv_deliver] using hwallet⟩
       | tick dt =>
-        exact ⟨deposits, by simpa [Network.applyAdv, Adjudicator.tick] using hheld,
-          by simpa [Network.applyAdv] using hwallet⟩
+        exact ⟨deposits, by simpa [Network.applyAdv_tick, Adjudicator.tick] using hheld,
+          by simpa [Network.applyAdv_tick] using hwallet⟩
       | land op => exact absurd rfl (hnoland op)
     · cases hdep : n1.chain.deposit (.channel c) e x with
       | none =>
