@@ -585,11 +585,17 @@ theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × C
     rw [hcpeq] at hcpval
     exact hashCommitment_inj (hcpval.trans hpval.symm)
 
+/-- The output records of a transact batch: for each output `j`, its commitment paired
+    with its preimage. Shared by `transactOutputRecords` and `ownedOutputRecords`. -/
+def outputRecords {M : Nat} (commitmentsOut : Fin M → Term) (npkOut : Fin M → Term)
+    (token : Token) (valueOut : Fin M → Nat) : List (Term × CommitmentPreimage) :=
+  List.ofFn fun j => (commitmentsOut j, (⟨npkOut j, token, valueOut j⟩ : CommitmentPreimage))
+
 /-- The `(commitment, preimage)` pair a plain `Transact` output would record, if
     disclosed — the full candidate batch `Step.transact`'s `records` is a sublist of. -/
 def transactOutputRecords {N M : Nat} (w : TransactWitness N M)
     (pub : TransactPublic N M) : List (Term × CommitmentPreimage) :=
-  List.ofFn fun j => (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+  outputRecords pub.commitmentsOut w.npkOut w.token w.valueOut
 
 /-- Every candidate record a plain `Transact` could disclose is valid: its commitment
     key is exactly its own `hashCommitment` (`Constrained.outputs`). -/
@@ -607,7 +613,7 @@ theorem transactOutputRecords_valid {N M : Nat} {w : TransactWitness N M} {pub :
     candidate list a caller trims. -/
 def ownedOutputRecords {N M : Nat} (w : TransactOwnedWitness N M)
     (pub : TransactOwnedPublic N M) : List (Term × CommitmentPreimage) :=
-  List.ofFn fun j => (pub.commitmentsOut j, (⟨w.npkOut j, w.token, w.valueOut j⟩ : CommitmentPreimage))
+  outputRecords pub.commitmentsOut w.npkOut w.token w.valueOut
 
 /-- Every owned output's record is valid: its commitment key is exactly its own
     `hashCommitment` (`OwnedConstrained.outputs`). -/
