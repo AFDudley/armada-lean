@@ -336,8 +336,7 @@ theorem Network.applyHonest_react_received_self (n : Network E) (p : Participant
 def Network.land (apps : Apps E) (n : Network E) (p : Participant) (op : Op E) : Network E :=
   match n.chain.apply apps p op with
   | some s' =>
-    { chain := s', sent := n.sent, received := fun q => op.proofStates ++ n.received q,
-      wallet := n.wallet }
+    { n with chain := s', received := fun q => op.proofStates ++ n.received q }
   | none => n
 
 /-- `p` deposits `x` of its own wallet into address `a` (operator ruling
