@@ -1,0 +1,95 @@
+{
+  "id": "derived-aln-a73",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `satp_theorem_3_2` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `satp_theorem_3_2`'s proof body is `sorry`. `scripts/check.sh --json satp_theorem_3_2` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json satp_theorem_3_2` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem satp_theorem_3_2",
+  "restatement": "The theorem `satp_theorem_3_2` in `ArmadaLean/Nitro/Liveness.lean` states a liveness guarantee for SATP (Theorem 3.2, intermediary recovery case). Its proof body is currently the placeholder tactic `sorry`, which fakes the proof and proves nothing. The repository's own acceptance script, `scripts/check.sh --json satp_theorem_3_2`, already detects this: it prints a JSON object whose `theorem_in_sorry` field is true for this theorem. The work is to write a genuine, complete Lean proof for `satp_theorem_3_2`, keeping its stated signature exactly as written now, so that the project still builds and the acceptance script reports this theorem as no longer resting on `sorry`.",
+  "restatement_clauses": [
+    {
+      "id": "no-sorry-proof",
+      "text": "`satp_theorem_3_2` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body."
+    },
+    {
+      "id": "statement-unchanged",
+      "text": "The theorem statement does not change."
+    }
+  ],
+  "goal": "Replace the `sorry` placeholder in `satp_theorem_3_2`'s proof body with a complete Lean proof, leaving the theorem's stated signature unchanged.",
+  "acceptance_criteria": [
+    "Running the project's own check command and reading its printed result shows satp_theorem_3_2 no longer depends on the sorry placeholder, and the project still builds.",
+    "Running the project's own check command and reading its printed result shows the wording of satp_theorem_3_2's statement is unchanged from the approved baseline."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's own check command and reading its printed result shows satp_theorem_3_2 no longer depends on the sorry placeholder, and the project still builds."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's own check command and reading its printed result shows the wording of satp_theorem_3_2's statement is unchanged from the approved baseline."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's own check command and reading its printed result shows satp_theorem_3_2 no longer depends on the sorry placeholder, and the project still builds.",
+      "proves": "The proof body of satp_theorem_3_2 no longer contains sorry, and the change does not break the build.",
+      "restatement_clause_id": "no-sorry-proof",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_theorem_3_2"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_in_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "field": "build_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the project's own check command and reading its printed result shows the wording of satp_theorem_3_2's statement is unchanged from the approved baseline.",
+      "proves": "The theorem's stated signature was not altered while writing the proof.",
+      "restatement_clause_id": "statement-unchanged",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_theorem_3_2"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "signatures_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
