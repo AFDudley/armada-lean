@@ -563,6 +563,177 @@ theorem total_reduceOwed (o : Allocation E) (d : Address E) {x : Coins} (hx : x 
       have := ih hx
       grind
 
+/-! ### `paidTo`, generalized with an explicit "seen" set
+
+`Allocation.paidTo` dedups the whole allocation up front (`Allocation.dedup`).
+To induct on an allocation one entry at a time while tracking which
+destinations an earlier recursive step already paid, `paidToSeen` threads
+`dedupFrom`'s own `seen` list through the same recursion as `payout`
+(`paidToSeen_cons`), so a destination duplicated deeper in the list is
+skipped exactly when `dedupFrom` would skip it, with no `.dedup = ·`
+hypothesis anywhere: the "no duplicates" fact `paidTo_of_getElem?` needs is
+built into this recursion instead of assumed. Used by
+`paidToSeen_reduceOwed_ne` (below) and `turbo_redistribution_unbeatable`
+(`ArmadaLean/Nitro/Liveness.lean`). -/
+def paidToSeen (seen : List (Address E)) (held : Coins) (o : Allocation E)
+    (d : Address E) : Coins :=
+  Balances.get ((Allocation.dedupFrom seen o).payout held) d
+
+@[simp] theorem paidToSeen_nil (seen : List (Address E)) (held : Coins) (d : Address E) :
+    paidToSeen seen held ([] : Allocation E) d = 0 := rfl
+
+theorem paidTo_eq_paidToSeen_nil (held : Coins) (o : Allocation E) (d : Address E) :
+    o.paidTo held d = paidToSeen [] held o d := paidTo_eq_get held o d
+
+/-- `paidToSeen`'s own recursion, matching `dedupFrom_cons` and `payout_cons`:
+    a seen destination is skipped with no change to `held`; an unseen match
+    for `d` is that entry's own affordance (`Balances.get_cons`'s first-match
+    semantics); an unseen non-match consumes its affordance from `held` and
+    joins `seen` before the recursive call. -/
+theorem paidToSeen_cons (seen : List (Address E)) (held : Coins) (e : Entry E) (o : Allocation E)
+    (d : Address E) :
+    paidToSeen seen held (e :: o) d =
+      if e.dest ∈ seen then paidToSeen seen held o d
+      else if e.dest = d then min e.amount held
+      else paidToSeen (e.dest :: seen) (held - min e.amount held) o d := by
+  unfold paidToSeen
+  rw [dedupFrom_cons]
+  split
+  · rfl
+  · rw [payout_cons]
+    by_cases hed : e.dest = d
+    · simp [hed, Balances.get_cons]
+    · simp [hed, Ne.symm hed, Balances.get_cons]
+
+/-- Once `d` is in `seen`, every later entry for `d` is a duplicate
+    `dedupFrom` would drop, so `d` reads as unpaid regardless of `o`.
+    Used by `paidToSeen_reduceOwed_ne`. -/
+theorem paidToSeen_of_mem_seen (d : Address E) (o : Allocation E) :
+    ∀ seen held, d ∈ seen → paidToSeen seen held o d = 0 := by
+  induction o with
+  | nil => intros; simp
+  | cons f t ih =>
+    intro seen held hd
+    rw [paidToSeen_cons]
+    by_cases hf : f.dest ∈ seen
+    · rw [if_pos hf]; exact ih seen held hd
+    · have hne : f.dest ≠ d := fun h => hf (by rw [h]; exact hd)
+      rw [if_neg hf, if_neg hne]
+      exact ih (f.dest :: seen) (held - min f.amount held) (List.mem_cons_of_mem _ hd)
+
+/-- `paidToSeen` never exceeds the `held` it is given, the same bound as
+    `paidTo_le_held`. Used by `paidToSeen_reduceOwed_ne`. -/
+theorem paidToSeen_le_held (seen : List (Address E)) (held : Coins) (o : Allocation E)
+    (d : Address E) : paidToSeen seen held o d ≤ held := by
+  induction o generalizing seen held with
+  | nil => simp
+  | cons f t ih =>
+    rw [paidToSeen_cons]
+    split
+    · exact ih seen held
+    · split
+      · exact Nat.min_le_right _ _
+      · exact le_trans (ih (f.dest :: seen) (held - min f.amount held)) (Nat.sub_le _ _)
+
+/-- Paying `e`'s own current affordance (the honest `transfer` amount,
+    `x = o.paidToSeen seen held e`) never changes what a later call for a
+    different destination `d` would pay. Proved by induction on `o`,
+    carrying `seen`/`held` along: `paidToSeen_cons` and `reduceOwed_cons`
+    agree on which entry (if any) is `e`'s first unseen match; when `e` is
+    already in `seen`, `paidToSeen_of_mem_seen` makes the affordance there
+    `0`, so the stray `reduceOwed` rewrite of a later `e`-entry subtracts
+    `0` and changes nothing; when `e`'s own first unseen entry is `f`
+    itself, `paidToSeen_le_held` bounds what `t` still owes `e` by what is
+    left after `f`'s own cut, which is exactly the slack `omega` needs to
+    show paying `e` first or `f` first lands at the same remaining `held`
+    for whichever of the two is not being queried. Used by
+    `turbo_redistribution_unbeatable` (`Liveness.lean`). -/
+theorem paidToSeen_reduceOwed_ne (seen : List (Address E)) (held : Coins) (o : Allocation E)
+    {e d : Address E} (hed : e ≠ d) :
+    paidToSeen seen (held - paidToSeen seen held o e)
+      (Allocation.reduceOwed o e (paidToSeen seen held o e)) d =
+      paidToSeen seen held o d := by
+  induction o generalizing seen held with
+  | nil => simp
+  | cons f t ih =>
+    by_cases hf : f.dest ∈ seen
+    · have hxe : paidToSeen seen held (f :: t) e = paidToSeen seen held t e := by
+        rw [paidToSeen_cons, if_pos hf]
+      rw [hxe]
+      have hx0 : f.dest = e → paidToSeen seen held t e = 0 := fun h =>
+        paidToSeen_of_mem_seen e t seen held (h ▸ hf)
+      have hrw : Allocation.reduceOwed (f :: t) e (paidToSeen seen held t e) =
+          if f.dest = e then
+            { f with item := .alloc (f.amount - paidToSeen seen held t e) } :: t
+          else f :: Allocation.reduceOwed t e (paidToSeen seen held t e) := reduceOwed_cons ..
+      rw [hrw]
+      split
+      · rename_i hfe
+        rw [hx0 hfe, Nat.sub_zero]
+        have hd1 : ({ f with item := .alloc (f.amount - 0) } : Entry E).dest = f.dest := rfl
+        rw [paidToSeen_cons, hd1, if_pos hf, paidToSeen_cons, if_pos hf]
+      · rw [paidToSeen_cons, if_pos hf, paidToSeen_cons, if_pos hf]
+        exact ih seen held
+    · have hxe : paidToSeen seen held (f :: t) e =
+          if f.dest = e then min f.amount held
+          else paidToSeen (f.dest :: seen) (held - min f.amount held) t e := by
+        rw [paidToSeen_cons, if_neg hf]
+      rw [hxe]
+      split
+      · rename_i hfe
+        have hdne : f.dest ≠ d := hfe ▸ hed
+        have hrw : Allocation.reduceOwed (f :: t) e (min f.amount held) =
+            { f with item := .alloc (f.amount - min f.amount held) } :: t := by
+          rw [reduceOwed_cons, if_pos hfe]
+        rw [hrw]
+        have hm0 : min (f.amount - min f.amount held) (held - min f.amount held) = 0 := by
+          rcases le_total f.amount held with h | h
+          · simp [min_eq_left h]
+          · simp [min_eq_right h]
+        have hL : paidToSeen seen (held - min f.amount held)
+            ({ f with item := .alloc (f.amount - min f.amount held) } :: t) d =
+            paidToSeen (f.dest :: seen) (held - min f.amount held) t d := by
+          rw [paidToSeen_cons]
+          have hd1 : ({ f with item := .alloc (f.amount - min f.amount held) } : Entry E).dest =
+              f.dest := rfl
+          have ha1 : ({ f with item := .alloc (f.amount - min f.amount held) } : Entry E).amount =
+              f.amount - min f.amount held := rfl
+          rw [hd1, if_neg hf, if_neg hdne, ha1, hm0, Nat.sub_zero]
+        rw [hL, paidToSeen_cons, if_neg hf, if_neg hdne]
+      · rename_i hfe
+        set Y := paidToSeen (f.dest :: seen) (held - min f.amount held) t e with hYdef
+        clear_value Y
+        have hrw : Allocation.reduceOwed (f :: t) e Y = f :: Allocation.reduceOwed t e Y := by
+          rw [reduceOwed_cons, if_neg hfe]
+        rw [hrw]
+        rcases le_total f.amount held with h1 | h1
+        · rw [min_eq_left h1] at hYdef
+          have hYb : Y ≤ held - f.amount := by rw [hYdef]; exact paidToSeen_le_held _ _ t e
+          have hge : f.amount ≤ held - Y := by unfold Coins at *; omega
+          by_cases hfd : f.dest = d
+          · rw [paidToSeen_cons, if_neg hf, if_pos hfd, min_eq_left hge,
+              paidToSeen_cons, if_neg hf, if_pos hfd, min_eq_left h1]
+          · rw [paidToSeen_cons, if_neg hf, if_neg hfd, min_eq_left hge]
+            have heq : held - Y - f.amount = held - f.amount - Y := by unfold Coins at *; omega
+            rw [heq, hYdef, paidToSeen_cons, if_neg hf, if_neg hfd, min_eq_left h1]
+            exact ih (f.dest :: seen) (held - f.amount)
+        · rw [min_eq_right h1] at hYdef
+          have hY0 : Y = 0 := by
+            rw [hYdef, Nat.sub_self]; exact Nat.le_zero.mp (paidToSeen_le_held _ _ t e)
+          rw [hY0, Nat.sub_zero]
+          by_cases hfd : f.dest = d
+          · rw [paidToSeen_cons, if_neg hf, if_pos hfd, paidToSeen_cons, if_neg hf, if_pos hfd]
+          · rw [paidToSeen_cons, if_neg hf, if_neg hfd, paidToSeen_cons, if_neg hf, if_neg hfd,
+              min_eq_right h1, Nat.sub_self]
+            have hz1 : paidToSeen (f.dest :: seen) 0 (Allocation.reduceOwed t e 0) d = 0 :=
+              Nat.le_zero.mp (paidToSeen_le_held _ _ _ d)
+            have hz2 : paidToSeen (f.dest :: seen) 0 t d = 0 :=
+              Nat.le_zero.mp (paidToSeen_le_held _ _ t d)
+            rw [hz1, hz2]
+
+
+
+
 /-! ### `addTo` and `remove` -/
 
 theorem addTo_cons (e : Entry E) (o : Allocation E) (d : Address E) (x : Coins) :
