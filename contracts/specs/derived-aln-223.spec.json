@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-223",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `satp_end_user_recovers` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `satp_end_user_recovers`'s proof body is `sorry`. `scripts/check.sh --json satp_end_user_recovers` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json satp_end_user_recovers` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem satp_end_user_recovers",
+  "restatement": "The theorem `satp_end_user_recovers` in `ArmadaLean/Nitro/Liveness.lean` must carry a real, complete proof instead of its current placeholder. Right now its proof body is the single word `sorry`, which means Lean accepts the file without ever checking the claim. The theorem is unproven despite appearing to exist. The fix is to replace that `sorry` with an actual proof. The theorem's stated claim must stay exactly as written today. The whole project must still build cleanly afterward. A clean build is the only way to know the new proof is real, not another disguised shortcut. The existing check tool, `scripts/check.sh --json satp_end_user_recovers`, already reports the three facts needed to confirm this: whether the project builds, whether this theorem still appears in the list of unproven theorems, and whether its stated claim changed.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem `satp_end_user_recovers` in `ArmadaLean/Nitro/Liveness.lean` must have a proof body that no longer contains `sorry`."
+    },
+    {
+      "id": "c2",
+      "text": "The project must still build successfully (`lake build` exits 0) after the proof is written, confirming the new proof actually typechecks rather than merely lacking the word `sorry`."
+    },
+    {
+      "id": "c3",
+      "text": "The theorem statement of `satp_end_user_recovers` must not change from its current wording."
+    }
+  ],
+  "goal": "Replace the `sorry` placeholder in `satp_end_user_recovers`'s proof with a real proof. Do not change what the theorem claims. Do not break the project build.",
+  "acceptance_criteria": [
+    "Running the project's check tool and asking it whether `satp_end_user_recovers` still shows up in the list of unproven theorems should report that it does not.",
+    "Running the project's check tool should report that the whole project still builds without error after the new proof is added.",
+    "Running the project's check tool should report that no approved theorem's stated claim, including this one, changed from the recorded baseline wording."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check tool and asking it whether `satp_end_user_recovers` still shows up in the list of unproven theorems should report that it does not."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check tool should report that the whole project still builds without error after the new proof is added."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check tool should report that no approved theorem's stated claim, including this one, changed from the recorded baseline wording."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "type": "behavior",
+      "description": "Running the project's check tool and asking it whether `satp_end_user_recovers` still shows up in the list of unproven theorems should report that it does not.",
+      "proves": "Confirms clause c1: the theorem's proof body no longer contains `sorry`.",
+      "restatement_clause_id": "c1",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_end_user_recovers"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "type": "behavior",
+      "description": "Running the project's check tool should report that the whole project still builds without error after the new proof is added.",
+      "proves": "Confirms clause c2: the new proof actually typechecks, because the full project build succeeds.",
+      "restatement_clause_id": "c2",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_end_user_recovers"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    },
+    {
+      "type": "behavior",
+      "description": "Running the project's check tool should report that no approved theorem's stated claim, including this one, changed from the recorded baseline wording.",
+      "proves": "Confirms clause c3: `satp_end_user_recovers`'s stated claim is unchanged from before the proof was written.",
+      "restatement_clause_id": "c3",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "satp_end_user_recovers"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
