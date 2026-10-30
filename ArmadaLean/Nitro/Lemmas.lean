@@ -731,6 +731,92 @@ theorem paidToSeen_reduceOwed_ne (seen : List (Address E)) (held : Coins) (o : A
               Nat.le_zero.mp (paidToSeen_le_held _ _ t d)
             rw [hz1, hz2]
 
+/-- `held - min f.amount held` is monotone in `held`: raising `held` either
+    raises the slack directly (when `f.amount ≤ held` throughout) or only
+    ever uncaps it from `0`. Used by `paidToSeen_held_add`. -/
+theorem sub_min_mono {f : Entry E} {held1 held2 : Coins} (h : held1 ≤ held2) :
+    held1 - min f.amount held1 ≤ held2 - min f.amount held2 := by
+  rcases le_total f.amount held1 with h1 | h1 <;> rcases le_total f.amount held2 with h2 | h2 <;>
+    simp [min_eq_left, min_eq_right, h1, h2] <;> unfold Coins at * <;> omega
+
+/-- Paying a destination `d` what `held1` coins afford, then later paying
+    the remainder once `held` has grown to `held2 ≥ held1` (everything else
+    about the allocation unchanged — only `held` moved, by funds arriving
+    from elsewhere), totals exactly what `held2` would have afforded `d` in
+    one shot: the priority formula is "memoryless" in `held`. The channel
+    this models: an upstream transfer credits a channel between two draws
+    on it. Used by `turbo_redistribution_unbeatable` (`Liveness.lean`), the
+    case where one interfering transfer's destination is the very channel
+    another transfer draws from. -/
+theorem paidToSeen_held_add (seen : List (Address E)) (o : Allocation E) (d : Address E)
+    {held1 held2 : Coins} (h : held1 ≤ held2) :
+    paidToSeen seen held1 o d +
+      paidToSeen seen (held2 - paidToSeen seen held1 o d)
+        (Allocation.reduceOwed o d (paidToSeen seen held1 o d)) d =
+      paidToSeen seen held2 o d := by
+  induction o generalizing seen held1 held2 with
+  | nil => simp
+  | cons f t ih =>
+    by_cases hd_seen : d ∈ seen
+    · rw [paidToSeen_of_mem_seen d (f :: t) seen held1 hd_seen,
+        paidToSeen_of_mem_seen d (f :: t) seen held2 hd_seen,
+        paidToSeen_of_mem_seen d (Allocation.reduceOwed (f :: t) d 0) seen (held2 - 0) hd_seen]
+    · by_cases hf : f.dest ∈ seen
+      · have hfd : f.dest ≠ d := fun h => hd_seen (h ▸ hf)
+        have hx1 : paidToSeen seen held1 (f :: t) d = paidToSeen seen held1 t d := by
+          rw [paidToSeen_cons, if_pos hf]
+        have hx2 : paidToSeen seen held2 (f :: t) d = paidToSeen seen held2 t d := by
+          rw [paidToSeen_cons, if_pos hf]
+        rw [hx1, hx2]
+        have hrw : Allocation.reduceOwed (f :: t) d (paidToSeen seen held1 t d) =
+            f :: Allocation.reduceOwed t d (paidToSeen seen held1 t d) := by
+          rw [reduceOwed_cons, if_neg hfd]
+        rw [hrw, paidToSeen_cons, if_pos hf]
+        exact ih seen h
+      · by_cases hfd : f.dest = d
+        · have hx1 : paidToSeen seen held1 (f :: t) d = min f.amount held1 := by
+            rw [paidToSeen_cons, if_neg hf, if_pos hfd]
+          have hx2 : paidToSeen seen held2 (f :: t) d = min f.amount held2 := by
+            rw [paidToSeen_cons, if_neg hf, if_pos hfd]
+          rw [hx1, hx2]
+          have hrw : Allocation.reduceOwed (f :: t) d (min f.amount held1) =
+              { f with item := .alloc (f.amount - min f.amount held1) } :: t := by
+            rw [reduceOwed_cons, if_pos hfd]
+          rw [hrw]
+          have hd1 : ({ f with item := .alloc (f.amount - min f.amount held1) } : Entry E).dest = f.dest := rfl
+          have ha1 : ({ f with item := .alloc (f.amount - min f.amount held1) } : Entry E).amount = f.amount - min f.amount held1 := rfl
+          rw [paidToSeen_cons, hd1, if_neg hf, if_pos hfd, ha1]
+          rcases le_total f.amount held1 with hA1 | hA1 <;> rcases le_total f.amount held2 with
+              hA2 | hA2 <;> simp [min_eq_left, min_eq_right, hA1, hA2] <;> unfold Coins at * <;> omega
+        · have hx1 : paidToSeen seen held1 (f :: t) d =
+              paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d := by
+            rw [paidToSeen_cons, if_neg hf, if_neg hfd]
+          have hx2 : paidToSeen seen held2 (f :: t) d =
+              paidToSeen (f.dest :: seen) (held2 - min f.amount held2) t d := by
+            rw [paidToSeen_cons, if_neg hf, if_neg hfd]
+          rw [hx1, hx2]
+          have hrw : Allocation.reduceOwed (f :: t) d
+              (paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d) =
+              f :: Allocation.reduceOwed t d
+                (paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d) := by
+            rw [reduceOwed_cons, if_neg hfd]
+          rw [hrw, paidToSeen_cons, if_neg hf, if_neg hfd]
+          set X1 := paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d with hX1def
+          clear_value X1
+          have hX1b : X1 ≤ held1 - min f.amount held1 := by
+            rw [hX1def]; exact paidToSeen_le_held _ _ t d
+          have hmono := sub_min_mono (f := f) h
+          have heq : held2 - X1 - min f.amount (held2 - X1) =
+              held2 - min f.amount held2 - X1 := by
+            rcases le_total f.amount (held2 - X1) with hA | hA <;>
+              rcases le_total f.amount held2 with hB | hB <;>
+              simp [min_eq_left, min_eq_right, hA, hB] <;> unfold Coins at * <;> omega
+          rw [heq, hX1def]
+          exact ih (f.dest :: seen) hmono
+
+
+
+
 
 
 
