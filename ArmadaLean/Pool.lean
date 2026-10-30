@@ -515,6 +515,7 @@ theorem applyRecords_preserves_consistency {reg : PreimageRegistry}
 
 /-- `applyRecords` distributes over `++`: folding two batches in sequence is the same
     as folding their concatenation. -/
+@[simp]
 theorem applyRecords_append (reg : PreimageRegistry) (l1 l2 : List (Term × CommitmentPreimage)) :
     applyRecords reg (l1 ++ l2) = applyRecords (applyRecords reg l1) l2 := by
   induction l1 generalizing reg with
@@ -686,6 +687,7 @@ def insertLeaves (trees : List TreeState) (newLeaves : List Term) : List TreeSta
 
 theorem insertTree_nil (count : Nat) : insertTree [] count = 0 := rfl
 
+@[simp]
 theorem insertLeaves_nil (newLeaves : List Term) :
     insertLeaves [] newLeaves = [TreeState.empty.extend newLeaves] := rfl
 
@@ -725,6 +727,7 @@ theorem List.getElem?_concat2_eq {α : Type} (l : List α) (x y : α) (i : Nat) 
 /-- **An insertion changes only the target tree, and it extends that tree.** The one
     equation every other forest lemma below follows from. A target tree that does not
     exist yet (a new tree) starts from `TreeState.empty`. -/
+@[simp]
 theorem insertLeaves_getElem? (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
     (insertLeaves trees newLeaves)[tn]? =
       if tn = insertTree trees newLeaves.length then
@@ -755,6 +758,7 @@ theorem insertLeaves_getElem? (trees : List TreeState) (newLeaves : List Term) (
 
 /-- The leaves of tree `tn` after an insertion: the target tree gains the batch at its
     end; every other tree is unchanged. -/
+@[simp]
 theorem insertLeaves_leavesAt (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
     leavesAt (insertLeaves trees newLeaves) tn =
       if tn = insertTree trees newLeaves.length then leavesAt trees tn ++ newLeaves
@@ -768,6 +772,7 @@ theorem insertLeaves_leavesAt (trees : List TreeState) (newLeaves : List Term) (
 
 /-- The roots of tree `tn` after an insertion: the target tree gains exactly the root of
     its new leaf list; every other tree is unchanged. -/
+@[simp]
 theorem insertLeaves_rootsAt (trees : List TreeState) (newLeaves : List Term) (tn : Nat) :
     rootsAt (insertLeaves trees newLeaves) tn =
       if tn = insertTree trees newLeaves.length then
