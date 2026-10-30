@@ -167,6 +167,46 @@ def NetworkState.applyAdv (apps : Apps E) {p : Participant}
     | some s' => { net with chain := s', received := op.proofStates ++ net.received }
     | none => net
 
+/-! `applyAdv` reading lemmas (`writing-lean.md` rule 3). -/
+
+/-- `applyAdv` of an on-chain call that succeeds (`writing-lean.md` rule 3). -/
+@[simp] theorem NetworkState.applyAdv_chain_some (apps : Apps E) {p : Participant}
+    {net : NetworkState E p} {caller : Participant} {op : Op E} {s' : Adjudicator E}
+    (h : net.chain.apply apps caller op = some s') :
+    net.applyAdv apps (.chain caller op) = { net with chain := s', received := op.proofStates ++ net.received } := by
+  simp [NetworkState.applyAdv, h]
+
+/-- `applyAdv` of an on that fails: nothing changes. -/
+@[simp] theorem NetworkState.applyAdv_chain_none (apps : Apps E) {p : Participant}
+    {net : NetworkState E p} {caller : Participant} {op : Op E}
+    (h : net.chain.apply apps caller op = none) :
+    net.applyAdv apps (.chain caller op) = net := by
+  simp [NetworkState.applyAdv, h]
+
+@[simp] theorem NetworkState.applyAdv_deliver (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (ss : SignedState E) :
+    net.applyAdv apps (.deliver ss) = { net with received := ss :: net.received } := by
+  rfl
+
+theorem NetworkState.applyAdv_tick (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (dt : Time) :
+    net.applyAdv apps (.tick dt) = { net with chain := net.chain.tick dt } := by
+  rfl
+
+/-- `applyAdv` of `p`'s own pending call landing, when it succeeds. -/
+@[simp] theorem NetworkState.applyAdv_land_some (apps : Apps E) {p : Participant}
+    {net : NetworkState E p} {op : Op E} {s' : Adjudicator E}
+    (h : net.chain.apply apps p op = some s') :
+    net.applyAdv apps (.land op) = { net with chain := s', received := op.proofStates ++ net.received } := by
+  simp [NetworkState.applyAdv, h]
+
+/-- `applyAdv` of `p`'s own pending call landing, when it fails. -/
+@[simp] theorem NetworkState.applyAdv_land_none (apps : Apps E) {p : Participant}
+    {net : NetworkState E p} {op : Op E}
+    (h : net.chain.apply apps p op = none) :
+    net.applyAdv apps (.land op) = net := by
+  simp [NetworkState.applyAdv, h]
+
 /-- What the adversary can do. `feasible net m` holds when the adversary can
     play `m` from `net`. `ε` is the inclusion bound of Nitro:537-539: a
     transaction lands before `ε` has passed; the type carries `0 < ε`
