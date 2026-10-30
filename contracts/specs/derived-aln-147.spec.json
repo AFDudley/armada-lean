@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-147",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `ledger_offload_funds_subchannel` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `ledger_offload_funds_subchannel`'s proof body is `sorry`. `scripts/check.sh --json ledger_offload_funds_subchannel` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json ledger_offload_funds_subchannel` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem ledger_offload_funds_subchannel",
+  "restatement": "The theorem `ledger_offload_funds_subchannel` in `ArmadaLean/Nitro/Liveness.lean` currently has a stand-in proof body (`sorry`). A `sorry` proof is not checked by Lean; it is an unverified claim dressed as a proven one, per `docs/how-to-verify.md`'s warning that `sorry` can fake a proof. The request asks for a real Lean proof of the theorem's existing stated claim: the worker writes proof steps that establish the conclusion, removes the `sorry`, leaves the theorem's statement text exactly as it is now, and leaves the whole project able to build. Completion is confirmed by running `scripts/check.sh --json ledger_offload_funds_subchannel` from the repo root and reading the printed JSON object: its `theorem_in_sorry` field must read `false`, its `build_ok` field must read `true`, and its `signatures_ok` field must read `true`.",
+  "restatement_clauses": [
+    {
+      "id": "no_sorry",
+      "text": "`ledger_offload_funds_subchannel`'s own proof body in `ArmadaLean/Nitro/Liveness.lean` contains no `sorry`."
+    },
+    {
+      "id": "build_ok",
+      "text": "The project still builds successfully (`lake build` exits 0) with the completed proof in place."
+    },
+    {
+      "id": "statement_unchanged",
+      "text": "The theorem's stated claim (its type signature) is the same text as before the change."
+    }
+  ],
+  "goal": "Replace the `sorry` in `ledger_offload_funds_subchannel`'s proof body with a complete, checked Lean proof of its unchanged stated claim, with the project still building.",
+  "acceptance_criteria": [
+    "Running the project's check script and reading the JSON object it prints, the 'theorem_in_sorry' field reads false for ledger_offload_funds_subchannel.",
+    "Running the project's check script and reading the JSON object it prints, the 'build_ok' field reads true, showing the whole project still compiles.",
+    "Running the project's check script and reading the JSON object it prints, the 'signatures_ok' field reads true, showing no theorem's stated claim changed text."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check script and reading the JSON object it prints, the 'theorem_in_sorry' field reads false for ledger_offload_funds_subchannel."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check script and reading the JSON object it prints, the 'build_ok' field reads true, showing the whole project still compiles."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check script and reading the JSON object it prints, the 'signatures_ok' field reads true, showing no theorem's stated claim changed text."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "type": "behavior",
+      "description": "Running the project's check script and reading the JSON object it prints, the 'theorem_in_sorry' field reads false for ledger_offload_funds_subchannel.",
+      "proves": "The theorem's own proof body no longer stands in a sorry in place of a real proof.",
+      "restatement_clause_id": "no_sorry",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_offload_funds_subchannel"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "type": "behavior",
+      "description": "Running the project's check script and reading the JSON object it prints, the 'build_ok' field reads true, showing the whole project still compiles.",
+      "proves": "The added proof does not break the project's build.",
+      "restatement_clause_id": "build_ok",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_offload_funds_subchannel"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "type": "behavior",
+      "description": "Running the project's check script and reading the JSON object it prints, the 'signatures_ok' field reads true, showing no theorem's stated claim changed text.",
+      "proves": "The theorem's statement was not altered while its proof was completed.",
+      "restatement_clause_id": "statement_unchanged",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_offload_funds_subchannel"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
