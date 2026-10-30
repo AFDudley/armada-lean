@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-2ed",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `channel_finalizability_cases` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `channel_finalizability_cases`'s proof body is `sorry`. `scripts/check.sh --json channel_finalizability_cases` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json channel_finalizability_cases` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem channel_finalizability_cases",
+  "restatement": "The theorem `channel_finalizability_cases` in `ArmadaLean/Nitro/Liveness.lean` must carry a real, complete proof instead of its current placeholder. Right now its proof body is the single word `sorry`, which means Lean accepts the file without ever checking the claim \u2014 the theorem is unproven despite appearing to exist. The fix is to replace that `sorry` with an actual proof, while keeping the theorem's stated claim exactly as written today. The whole project must still build cleanly afterward, which is the only way to know the new proof is real and not another disguised shortcut. The existing check tool, `scripts/check.sh --json channel_finalizability_cases`, already reports all three facts needed to confirm this: whether the project builds, whether this theorem still appears in the list of unproven theorems, and whether its stated claim changed.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem `channel_finalizability_cases` in `ArmadaLean/Nitro/Liveness.lean` must have a proof body that no longer contains `sorry`."
+    },
+    {
+      "id": "c2",
+      "text": "The project must still build successfully (`lake build` exits 0) after the proof is written, confirming the new proof actually typechecks rather than merely lacking the word `sorry`."
+    },
+    {
+      "id": "c3",
+      "text": "The theorem statement of `channel_finalizability_cases` must not change from its current wording."
+    }
+  ],
+  "goal": "Replace the `sorry` placeholder in `channel_finalizability_cases`'s proof with a real proof, without changing what the theorem claims, and without breaking the project build.",
+  "acceptance_criteria": [
+    "Running the project's check tool and asking it whether `channel_finalizability_cases` still shows up in the list of unproven theorems should report that it does not.",
+    "Running the project's check tool should report that the whole project still builds without error after the new proof is added.",
+    "Running the project's check tool should report that no approved theorem's stated claim, including this one, changed from the recorded baseline wording."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check tool and asking it whether `channel_finalizability_cases` still shows up in the list of unproven theorems should report that it does not."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check tool should report that the whole project still builds without error after the new proof is added."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check tool should report that no approved theorem's stated claim, including this one, changed from the recorded baseline wording."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "type": "behavior",
+      "description": "Running the project's check tool and asking it whether `channel_finalizability_cases` still shows up in the list of unproven theorems should report that it does not.",
+      "proves": "Confirms clause c1: the theorem's proof body no longer contains `sorry`.",
+      "restatement_clause_id": "c1",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "channel_finalizability_cases"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "type": "behavior",
+      "description": "Running the project's check tool should report that the whole project still builds without error after the new proof is added.",
+      "proves": "Confirms clause c2: the new proof actually typechecks, because the full project build succeeds.",
+      "restatement_clause_id": "c2",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "channel_finalizability_cases"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    },
+    {
+      "type": "behavior",
+      "description": "Running the project's check tool should report that no approved theorem's stated claim, including this one, changed from the recorded baseline wording.",
+      "proves": "Confirms clause c3: `channel_finalizability_cases`'s stated claim is unchanged from before the proof was written.",
+      "restatement_clause_id": "c3",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "channel_finalizability_cases"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
