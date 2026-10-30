@@ -1727,11 +1727,11 @@ theorem nLWF_finalizable : nLWF.views.FinalizableBy apps0 (Ts apps0) cLWF wLSF.o
 /-- `ledger_offload_funds_subchannel`, funded: `wLSF.c = 5 > 0`. -/
 example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
-    w.Holds apps0 (Ts apps0) v ∧ 0 < w.c ∧
+    w.Holds apps0 (Ts apps0) v ∧ w.χ.kind = .ledger ∧ 0 < w.c ∧
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) := by
   refine ⟨nLWF.views, nLWF, wLSF, nLWF_reach, rfl,
-    ⟨⟨rfl, rfl⟩, rfl, fun r => ?_, nLWF_finalizable⟩, by decide,
+    ⟨⟨rfl, rfl⟩, rfl, fun r => ?_, nLWF_finalizable⟩, rfl, by decide,
     fun r => by rw [nLWF_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLWF_views_chain]; exact gLWF_balance_cLWF
   · by_cases hrp0 : r = p0
@@ -1750,11 +1750,11 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
 
 example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
-    w.Holds apps0 (Ts apps0) v ∧
+    w.Holds apps0 (Ts apps0) v ∧ w.χ.kind = .ledger ∧
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) := by
   refine ⟨nLW.views, nLW, wLS, nLW_reach, rfl, ⟨⟨rfl, rfl⟩, rfl, fun r => ?_, nLW_finalizable⟩,
-    fun r => by rw [nLW_views_chain]; rfl, fun r t ht hc => ?_⟩
+    rfl, fun r => by rw [nLW_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLW_views_chain]; exact zero_g0 _
   · by_cases hrp0 : r = p0
     · subst hrp0; rw [nLW_views_p0] at ht; simp at ht; subst ht

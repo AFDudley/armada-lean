@@ -6436,10 +6436,12 @@ theorem turbo_value_exists_unique (s : Adjudicator E) (hdag : s.IsDAG) (n : Addr
     unbeatable." G16 (`docs/nitro-repair-2026-10-27.md`, defect 23): the
     adversary can transfer `L → χ` and then `χ → q` within one prefix, so
     `χ` must not finalize during the strategy, as `ledger_partial_withdrawal`
-    already requires of its receiving ledger. -/
+    already requires of its receiving ledger.
+    Operator ruling 2026-10-30 (aln-147 counterexample): χ is a ledger channel, because transfer credits only a fundable channel (Adjudicator.transfer, Address.fundable) and a channel funded by an allocation is a ledger channel (nitro-repair §6.3). -/
 theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (w : LedgerWithSub E) (hw : w.Holds apps Ts v)
+    (hχk : w.χ.kind = .ledger)
     (hχopen : ∀ p, (v p).chain.finalOutcome w.χ.address = none)
     (hχsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) :
     FundedFor apps (Ts.T w.A) w.χ w.c (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.c (v w.B) := by
