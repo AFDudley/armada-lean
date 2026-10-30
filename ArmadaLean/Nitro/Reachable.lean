@@ -49,20 +49,26 @@ theorem NetworkState.applyAdv_chain_reachable {apps : Apps E} {p : Participant}
     Reachable apps (net.applyAdv apps m).chain := by
   cases m with
   | chain caller op =>
-    simp only [NetworkState.applyAdv]
     cases h : net.chain.apply apps caller op with
-    | none => exact hr
-    | some s' => exact hr.tail (Step.mk caller op net.chain s' h)
-  | deliver ss => simpa [NetworkState.applyAdv] using hr
+    | none =>
+      simp only [NetworkState.applyAdv_chain_none apps h]
+      exact hr
+    | some s' =>
+      simp only [NetworkState.applyAdv_chain_some apps h]
+      exact hr.tail (Step.mk caller op net.chain s' h)
+  | deliver ss => simpa using hr
   | tick dt =>
-    simp only [NetworkState.applyAdv]
+    simp only [NetworkState.applyAdv_tick apps]
     have happly : net.chain.apply apps p (.tick dt) = some (net.chain.tick dt) := rfl
     exact hr.tail (Step.mk p (.tick dt) net.chain (net.chain.tick dt) happly)
   | land op =>
-    simp only [NetworkState.applyAdv]
     cases h : net.chain.apply apps p op with
-    | none => exact hr
-    | some s' => exact hr.tail (Step.mk p op net.chain s' h)
+    | none =>
+      simp only [NetworkState.applyAdv_land_none apps h]
+      exact hr
+    | some s' =>
+      simp only [NetworkState.applyAdv_land_some apps h]
+      exact hr.tail (Step.mk p op net.chain s' h)
 
 /-- One successful on-chain step leaves a virtual channel's balance at
     zero, given it started at zero. `Adjudicator.deposit` refuses a
@@ -926,7 +932,7 @@ theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats 
       obtain ⟨s₀, hinit, hsteps⟩ := ihrest
       refine ⟨s₀, hinit, hsteps.tail (Or.inr (Or.inr (Or.inl
         ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged, ?_⟩)))⟩
-      simp [NetworkState.recvBatch, NetworkState.applyAdv, hqr]
+      simp [NetworkState.recvBatch, hqr]
     · simpa [NetworkState.recvBatch, List.filter_cons, hqr] using ihrest
 
 /-- **Every view of a reachable `Network` is `Nitro.participant`-reachable.**
@@ -989,20 +995,27 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         | wait dt =>
           have heq : (Network.applyHonest n p₀ (.wait dt)).view q =
               (n.view q).applyAdv apps (.tick dt) := by
-            simp [Network.applyHonest, Network.view, NetworkState.applyAdv]
+            simp [Network.applyHonest, Network.view, NetworkState.applyAdv_tick apps]
           rw [heq]
           exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
     · by_cases hqp0 : q = p₀
       · subst hqp0
         have heq : (Network.land apps n q op).view q = (n.view q).applyAdv apps (.land op) := by
-          simp only [Network.land, Network.view, NetworkState.applyAdv]
-          cases n.chain.apply apps q op <;> rfl
+          cases happly : n.chain.apply apps q op with
+          | none => simp only [Network.land, happly, NetworkState.applyAdv_land_none (net := n.view q) apps happly]
+          | some s' =>
+            simp only [Network.land, happly, NetworkState.applyAdv_land_some (net := n.view q) apps happly]
+            simp [Network.view]
         rw [heq]
         exact hP.tail (Or.inr (Or.inl ⟨op, hfeas, rfl⟩))
       · have heq : (Network.land apps n p₀ op).view q =
             (n.view q).applyAdv apps (.chain p₀ op) := by
-          simp only [Network.land, Network.view, NetworkState.applyAdv]
-          cases n.chain.apply apps p₀ op <;> simp [if_neg hqp0]
+          cases happly : n.chain.apply apps p₀ op with
+          | none =>
+            simp only [Network.land, happly, NetworkState.applyAdv_chain_none (net := n.view q) apps happly]
+          | some s' =>
+            simp only [Network.land, happly, NetworkState.applyAdv_chain_some (net := n.view q) apps happly]
+            simp [Network.view, if_neg hqp0]
         rw [heq]
         have hUnforged : ∀ ss ∈ op.proofStates, (n.view q).Unforged ss := by
           intro ss hss
@@ -1016,8 +1029,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         have heq : (Network.applyAdv apps n q m).view q = (n.view q).applyAdv apps m := by
           cases m with
           | chain caller op => exact absurd rfl (hnochain caller op)
-          | deliver ss => simp [Network.applyAdv_deliver, Network.view, NetworkState.applyAdv]
-          | tick dt => simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv]
+          | deliver ss => simp [Network.applyAdv_deliver, Network.view]
+          | tick dt => simp [NetworkState.applyAdv_tick apps, Network.view]
           | land op => exact absurd rfl (hnoland op)
         rw [heq]
         exact hP.tail (Or.inr (Or.inr (Or.inl ⟨m, hfeas, rfl⟩)))
@@ -1031,7 +1044,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         | tick dt =>
           have heq : (Network.applyAdv apps n p₀ (.tick dt)).view q =
               (n.view q).applyAdv apps (.tick dt) := by
-            simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv]
+            simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv_tick apps]
           rw [heq]
           exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
         | land op => exact absurd rfl (hnoland op)
@@ -1039,14 +1052,22 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
       · subst hqp0
         have heq : (Network.deposit n q (.channel c) e x).view q =
             (n.view q).applyAdv apps (.land (.deposit (.channel c) e x)) := by
-          simp only [Network.deposit, Network.view, NetworkState.applyAdv, Adjudicator.apply]
-          cases n.chain.deposit (.channel c) e x <;> rfl
+          cases happly : n.chain.deposit (.channel c) e x with
+          | none =>
+            simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_land_none (net := n.view q) (op := Op.deposit (.channel c) e x) apps happly]
+          | some s' =>
+            simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_land_some (net := n.view q) (op := Op.deposit (.channel c) e x) apps happly]
+            simp [Network.view, Op.proofStates]
         rw [heq]
         exact hP.tail (Or.inr (Or.inr (Or.inr ⟨.channel c, e, x, rfl⟩)))
       · have heq : (Network.deposit n p₀ (.channel c) e x).view q =
             (n.view q).applyAdv apps (.chain p₀ (.deposit (.channel c) e x)) := by
-          simp only [Network.deposit, Network.view, NetworkState.applyAdv, Adjudicator.apply]
-          cases n.chain.deposit (.channel c) e x <;> rfl
+          cases happly : n.chain.deposit (.channel c) e x with
+          | none =>
+            simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_chain_none (net := n.view q) (caller := p₀) (op := Op.deposit (.channel c) e x) apps happly]
+          | some s' =>
+            simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_chain_some (net := n.view q) (caller := p₀) (op := Op.deposit (.channel c) e x) apps happly]
+            simp [Network.view, Op.proofStates]
         rw [heq]
         have hUnforged : ∀ ss ∈ (Op.deposit (.channel c) e x : Op E).proofStates,
             (n.view q).Unforged ss := by
