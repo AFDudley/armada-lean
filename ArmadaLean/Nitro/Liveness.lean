@@ -6539,7 +6539,55 @@ theorem turbo_order_independent (apps : Apps E) (s : Adjudicator E) (hdag : s.Is
     `TurboValue` is a function. -/
 theorem turbo_value_exists_unique (s : Adjudicator E) (hdag : s.IsDAG) (n : Address E) :
     (∃ v, s.TurboValue n v) ∧ ∀ v w, s.TurboValue n v → s.TurboValue n w → v = w := by
-  sorry
+  obtain ⟨order0, horder0⟩ := exists_valid_topo_order s hdag
+  refine ⟨⟨s.turboValueAlong order0 n, order0, horder0, rfl⟩, ?_⟩
+  rintro v w ⟨order1, horder1, rfl⟩ ⟨order2, horder2, rfl⟩
+  unfold Adjudicator.turboValueAlong
+  obtain ⟨hnd1, hedge1, hactive1⟩ := horder1
+  obtain ⟨hnd2, hedge2, hactive2⟩ := horder2
+  rw [turboValues_filter_activeAlloc s order1 s.balances,
+    turboValues_filter_activeAlloc s order2 s.balances]
+  have hcharmem : ∀ (order : List (Address E)),
+      (∀ x, (s.balances.get x ≠ 0 ∨ s.allocationOf x ≠ []) → x ∈ order) →
+      ∀ x, x ∈ order.filter (fun x => !(s.allocationOf x).isEmpty) ↔ s.allocationOf x ≠ [] := by
+    intro order hactive x
+    rw [List.mem_filter]
+    constructor
+    · rintro ⟨-, hpx⟩
+      simpa using hpx
+    · intro hx
+      exact ⟨hactive x (Or.inr hx), by simp [hx]⟩
+  have hmem1 := hcharmem order1 hactive1
+  have hmem2 := hcharmem order2 hactive2
+  have hmem' : ∀ x, x ∈ order1.filter (fun x => !(s.allocationOf x).isEmpty) ↔
+      x ∈ order2.filter (fun x => !(s.allocationOf x).isEmpty) := fun x => by
+    rw [hmem1, hmem2]
+  have hext1 : ∀ x ∈ order1.filter (fun x => !(s.allocationOf x).isEmpty), x.isExternal = false := by
+    intro x hx
+    have hxa : s.allocationOf x ≠ [] := (hmem1 x).mp hx
+    cases x with
+    | external d =>
+      exact absurd (show s.allocationOf (Address.external d) = [] from rfl) hxa
+    | channel c => rfl
+  have hvalid1 : ∀ m d, m ∈ order1.filter (fun x => !(s.allocationOf x).isEmpty) →
+      d ∈ order1.filter (fun x => !(s.allocationOf x).isEmpty) → s.Edge m d →
+      ∃ i j : Nat, (order1.filter (fun x => !(s.allocationOf x).isEmpty))[i]? = some m ∧
+        (order1.filter (fun x => !(s.allocationOf x).isEmpty))[j]? = some d ∧ i < j := by
+    intro m d hm hd hmd
+    obtain ⟨i, j, hi, hj, hij⟩ := hedge1 m d hmd
+    exact before_filter hnd1 _ hi hj hij (List.mem_filter.mp hm).2 (List.mem_filter.mp hd).2
+  have hvalid2 : ∀ m d, m ∈ order2.filter (fun x => !(s.allocationOf x).isEmpty) →
+      d ∈ order2.filter (fun x => !(s.allocationOf x).isEmpty) → s.Edge m d →
+      ∃ i j : Nat, (order2.filter (fun x => !(s.allocationOf x).isEmpty))[i]? = some m ∧
+        (order2.filter (fun x => !(s.allocationOf x).isEmpty))[j]? = some d ∧ i < j := by
+    intro m d hm hd hmd
+    obtain ⟨i, j, hi, hj, hij⟩ := hedge2 m d hmd
+    exact before_filter hnd2 _ hi hj hij (List.mem_filter.mp hm).2 (List.mem_filter.mp hd).2
+  exact turboValues_order_indep s hdag
+    (order1.filter (fun x => !(s.allocationOf x).isEmpty)).length
+    (order1.filter (fun x => !(s.allocationOf x).isEmpty)) rfl (hnd1.filter _)
+    (order2.filter (fun x => !(s.allocationOf x).isEmpty)) (hnd2.filter _) hmem' hext1
+    hvalid1 hvalid2 s.balances n
 
 /-- Nitro-37, Nitro-47, docs-0060-07, docs-0080-08. Nitro:859-865: "χ is funded with 6 coins by
     L for both A and B ... Once it is on-chain, the transfer operation
