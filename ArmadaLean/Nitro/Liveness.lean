@@ -3977,7 +3977,24 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
       Finalizable apps (Ts.T p) c Ω (v p) ∧ Finalizable apps (Ts.T q) c Ω (v q) ∧
       ∀ r, r ∈ c.participants → ∀ Ω', Finalizable apps (Ts.T r) c Ω' (v r) → Ω' = Ω) ∨
     (∀ p, p ∈ c.participants → ∀ Ω, ¬ Finalizable apps (Ts.T p) c Ω (v p)) := by
-  sorry
+  by_cases hex : ∃ p ∈ c.participants, ∃ Ω, Finalizable apps (Ts.T p) c Ω (v p)
+  · obtain ⟨p, hp, Ω, hΩ⟩ := hex
+    by_cases hother :
+        ∀ q, q ∈ c.participants → q ≠ p → ∀ Ω', ¬ Finalizable apps (Ts.T q) c Ω' (v q)
+    · exact Or.inr (Or.inl ⟨p, hp, ⟨Ω, hΩ⟩, hother⟩)
+    · push_neg at hother
+      obtain ⟨q, hq, hqp, Ω', hΩ'⟩ := hother
+      have heq : Ω = Ω' :=
+        finalizable_unique apps Ts v n hr hvn c p q hqp.symm Ω Ω' hΩ hΩ'
+      refine Or.inr (Or.inr (Or.inl ⟨Ω, p, q, hp, hq, hqp.symm, hΩ, heq ▸ hΩ', ?_⟩))
+      intro r hr' Ω'' hΩ''
+      by_cases hrp : r = p
+      · subst hrp
+        have heq2 : Ω' = Ω'' := finalizable_unique apps Ts v n hr hvn c q r hqp Ω' Ω'' hΩ' hΩ''
+        exact (heq.trans heq2).symm
+      · exact (finalizable_unique apps Ts v n hr hvn c p r (fun h => hrp h.symm) Ω Ω'' hΩ hΩ'').symm
+  · push_neg at hex
+    exact Or.inr (Or.inr (Or.inr hex))
 
 /-- Nitro-24. Nitro:653-656: "For any participant, p, in a channel, χ, exactly one
     of the following statements is true at a given point in time: 1. p has at
