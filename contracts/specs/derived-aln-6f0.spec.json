@@ -1,0 +1,95 @@
+{
+  "id": "derived-aln-6f0",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `turbo_value_upper_bound` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `turbo_value_upper_bound`'s proof body is `sorry`. `scripts/check.sh --json turbo_value_upper_bound` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json turbo_value_upper_bound` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem turbo_value_upper_bound",
+  "restatement": "The request asks that the Lean theorem `turbo_value_upper_bound`, declared in `ArmadaLean/Nitro/Liveness.lean`, stop relying on a placeholder proof. Today its proof body is literally the word `sorry`, which Lean accepts so the file still compiles without the theorem actually being established. The fix is to replace that placeholder with a real proof the Lean kernel accepts, while leaving the theorem's stated claim exactly as it is today \u2014 only the proof body changes, not what is being proved. The project's own verification script already tells a real proof from a faked one: it builds the whole project, lists every theorem whose proof body still contains `sorry`, and reports whether a named theorem is on that list, plus whether any approved theorem's statement text has drifted from the frozen baseline. Success is observed by running that script against this one theorem and seeing both signals come back clean.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "turbo_value_upper_bound's proof body in ArmadaLean/Nitro/Liveness.lean no longer contains sorry, and the project still builds."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement does not change."
+    }
+  ],
+  "goal": "Replace the sorry placeholder in turbo_value_upper_bound's proof with a real, Lean-checked proof, without changing the theorem's statement.",
+  "acceptance_criteria": [
+    "Running the project's verification script and asking about turbo_value_upper_bound shows the theorem is no longer on the list of theorems with an unproven placeholder, and the whole project still compiles.",
+    "Running the same verification script shows the theorem's statement text still matches the approved baseline, confirming only the proof body changed."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's verification script and asking about turbo_value_upper_bound shows the theorem is no longer on the list of theorems with an unproven placeholder, and the whole project still compiles."
+    },
+    {
+      "id": "c2",
+      "text": "Running the same verification script shows the theorem's statement text still matches the approved baseline, confirming only the proof body changed."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's verification script and asking about turbo_value_upper_bound shows the theorem is no longer on the list of theorems with an unproven placeholder, and the whole project still compiles.",
+      "proves": "turbo_value_upper_bound's proof body no longer contains sorry.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_upper_bound"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_in_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "field": "build_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the same verification script shows the theorem's statement text still matches the approved baseline, confirming only the proof body changed.",
+      "proves": "The theorem statement was not changed while fixing the proof.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_upper_bound"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "signatures_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
