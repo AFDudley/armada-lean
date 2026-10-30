@@ -1,75 +1,86 @@
-status: failed
+status: completed
 pebble_id: aln-a14
+branch: worker/aln-a14
 summary: >
-  Investigated finalizable_unique (ArmadaLean/Nitro/Liveness.lean:2327-2332), the
-  only remaining sorry. No code was changed; the proof body is still `sorry`.
-  I read Strategy.lean (UnbeatableIn/Threat/Round/RoundSeq/Finalizable),
-  Reachable.lean (Network/views share one chain field by construction),
-  Lemmas.lean (finalizedWith_mono/finalizedWith_stable), and
-  docs/nitro-repair-2026-10-27.md's own re-audit, which independently marks
-  this theorem "unknown ... Needs a joint play of two games with different
-  threats (and different ε)". I worked out in detail what that joint play
-  has to look like and why no shortcut exists; see failure_diagnosis.
-cost: ~95k tokens
-failure_diagnosis: >
-  finalizable_unique needs an actual TWO-PARTICIPANT joint simulation, not a
-  single-participant induction, and no infrastructure for that exists
-  anywhere in ArmadaLean today (confirmed by grep across the whole Nitro
-  directory and docs for "joint"/"interleav"/combinators spanning two
-  UnbeatableIn trees: none found). The reason a one-sided argument cannot
-  work: `hp : Finalizable apps (Ts.T p) c Ω (v p)` and
-  `hq : Finalizable apps (Ts.T q) c Ω' (v q)` are each `Unbeatable` claims
-  that only constrain ONE participant's own `NetworkState`; running either
-  one alone against an idle adversary (`Threat.Round.exists`) produces a
-  chain trajectory that never reflects the other participant's actions, so
-  the two resulting `finalizedWith` facts live on two divergent,
-  unconnected branches of `Adjudicator.Step` and `finalizedWith_stable`
-  (Lemmas.lean:1190) cannot relate them. The only way to force Ω = Ω' is to
-  construct ONE shared chain trajectory that is simultaneously a valid
-  continuation of hp's tree (satisfying `Threat.Round`/`Threat.RoundSeq`
-  under `Ts.T p`) and of hq's tree (under `Ts.T q`), with each
-  participant's own on-chain calls/ticks echoed into the other's RoundSeq
-  as `AdvMove.chain`/`AdvMove.tick` steps (licensed by `Capable.capable`/
-  `capableTick` since p ≠ q and neither forges the other's signature).
+  finalizable_unique (ArmadaLean/Nitro/Liveness.lean) is true under the
+  current model and now has a proof with no sorry. The statement did not
+  change. #print axioms finalizable_unique lists only propext,
+  Classical.choice and Quot.sound.
 
-  That construction is genuinely intricate, not merely "add a helper
-  lemma": `Threat.RoundSeq.land`/`.chain`/`.deliver` are free (no clock
-  cost) and can be echoed anywhere, but `HonestMove.wait dt` is UNBOUNDED
-  for the participant issuing it (applied via `NetworkState.applyHonest`,
-  outside any `Threat.Round` bound) while its reflection into the OTHER
-  participant's RoundSeq is bounded per round by that other threat's own
-  `T.ε` (`Threat.RoundSeq.tick`'s `hgate` plus `Threat.Round`'s outer
-  `net'.chain.now < net.chain.now + T.ε`). Since `Ts.T p` and `Ts.T q` carry
-  independent, unrelated ε values, a single large wait by one side must be
-  absorbed into the other side's timeline across possibly MANY of that
-  side's own rounds — which requires that side's own `UnbeatableIn` tree to
-  keep offering rounds (via its `move` recursion) until the wait is fully
-  absorbed OR that side reaches `done` first (in which case
-  `finalizedWith_stable` closes the argument immediately, since the
-  now-finalized chain is a prefix of everything that follows). I worked out
-  a concrete, believed-correct design for this (outer structural induction
-  on hp generalizing (netq, hq), with a nested wait-absorption induction on
-  hq consuming its own rounds to match p's clock advance, symmetric for
-  q's waits into p, invariant `netp.chain = netq.chain` maintained at every
-  joint step via free call/tick echoing), but it requires several new
-  general-purpose lemmas not present anywhere in the codebase (connecting
-  `Threat.RoundSeq`/`NetworkState.applyAdv`/`applyHonest` to
-  `Relation.ReflTransGen (Adjudicator.Step apps)`; a "finish one
-  participant alone against an idle adversary" helper; the mutual
-  wait-absorption recursion itself) and is on the order of several hundred
-  lines of intricate, easy-to-get-subtly-wrong Lean. This matches the
-  project's own 2026-10-27 re-audit (docs/nitro-repair-2026-10-27.md line
-  72), which independently flags exactly this "joint play of two games with
-  different ε" as unresolved, and lists THREE further theorems
-  (channel_finalizability_cases, finalizable_or_two_enabled,
-  single_enabled_is_finalizable) that depend on the same missing
-  construction — i.e. this is prerequisite, reusable infrastructure work,
-  not a one-theorem fix. I was not able to build and verify that
-  infrastructure correctly within this session with the confidence the
-  doctrine requires (no axiom, no weakened hypothesis, a real type-checking
-  proof) rather than risk leaving a partially-built, non-compiling
-  construction. The theorem's statement is unchanged; sorry is still the
-  proof body. Recommend this be redispatched as a larger task (or split:
-  first land the joint-simulation combinator as its own piece of
-  infrastructure, then discharge finalizable_unique and the three dependent
-  theorems against it).
+  Decision. The earlier diagnosis was right that one shared chain does not
+  work: a wait is atomic, so a wait of p and a different wait of q cannot
+  occur on one clock. The proof does not use one shared chain. Each
+  participant keeps its own view and its own clock. A reaction of one
+  participant lands its calls in its own round, and the same calls run in
+  the view of the other participant as adversary .chain moves inside the
+  round that is open there (mirror_land; Capable.capable allows them,
+  because every signature of p or q that a view received is genuine). A
+  wait moves only the clock of the participant that waits. The status of c
+  stays equal on both chains up to the deadline of a running challenge
+  (ChanAgree): an operation on c reads the mode and the turn record, not
+  the clock, and a challenge sets its deadline from its own chain's clock
+  (ChanAgree.apply). Any other operation keeps the status of c while c is
+  not finalized. When both participants wait, q waits first if the running
+  challenge pays Omega, else p waits first. Thus a wait that finalizes c
+  gives Omega = Omega' (q waited) or contradicts the tree of p (p waited and
+  the outcome is not Omega). A conclude finalizes c on both chains with one
+  outcome, and both trees then give that outcome. Each step uses one move
+  of one tree, so an induction on the tree of p, with an inner induction on
+  the tree of q, ends the play (finalizable_joint). The different epsilon
+  values do not matter: the play never ticks for the adversary, and every
+  round ends at its start time. No proof step rests on an empty round as
+  evidence for a universal claim: rounds appear only as instances of the
+  two hypotheses' universal quantifiers.
+
+  New code, all proved: the section "The joint play of two participants" in
+  Liveness.lean before finalizable_unique (OtherSteps, ChanAgree,
+  ChanAgreeOrFin, SigOK, JointGenuine, mirror_land, finalizable_joint and
+  their lemmas). NetworkState.applyAdv_received_subset moved up, before its
+  new users (text unchanged). Reachable.lean: new
+  Nitro.network_received_signers, the received-signature invariant for
+  every pair of participants, p = q included (the joint play needs the
+  self-signature case); Nitro.network_views_signers is now its p /= q case.
+  docs/nitro-repair-2026-10-27.md section 3 row 6: status proved, with the
+  argument. The same joint-play lemmas are a possible base for
+  channel_finalizability_cases (row 7) [INFERENCE].
+
+  Check at 877d42c: scripts/check.sh --json finalizable_unique printed
+  {"build_ok": true, "sorry_count": 20, "axioms_ok": true,
+  "signatures_ok": true, "nonvacuity_ok": true, "reach_ok": true,
+  "theorem_under_test": "finalizable_unique", "theorem_in_sorry": false}.
+cost: "~190k tokens"
+commits:
+  - "877d42c"
+files_changed:
+  - ArmadaLean/Nitro/Liveness.lean
+  - ArmadaLean/Nitro/Reachable.lean
+  - docs/nitro-repair-2026-10-27.md
+  - .pebbles/handoffs/aln-a14.yaml
+docs_updated:
+  - docs/nitro-repair-2026-10-27.md
+verify_transcript:
+  checks:
+    - check: "scripts/check.sh --json finalizable_unique"
+      against: "the branch worktree at 877d42c"
+      reported: >-
+        {"build_ok": true, "sorry_count": 20, "axioms_ok": true,
+        "signatures_ok": true, "nonvacuity_ok": true, "reach_ok": true,
+        "theorem_under_test": "finalizable_unique", "theorem_in_sorry": false};
+        stderr: PASS build, PASS sorry count 21 (baseline 46), PASS no vacuous
+        body, PASS axioms, PASS signatures, PASS NonVacuity.lean no sorry,
+        PASS reach
+    - check: "#print axioms (scripts/check.sh axioms step)"
+      against: ".scratch/check/axioms.out at 877d42c"
+      reported: >-
+        'ArmadaLean.Nitro.finalizable_unique' depends on axioms: [propext,
+        Classical.choice, Quot.sound]; 'ArmadaLean.Nitro.finalizable_joint'
+        depends on axioms: [propext, Classical.choice, Quot.sound]
+    - check: "pre-commit (commit hooks)"
+      against: "commit 877d42c"
+      reported: "all hooks Passed or Skipped (no files to check)"
+e2e_gate:
+  spec: contracts/specs/derived-aln-a14.spec.json
+  command: "scripts/check.sh --json finalizable_unique"
+  result: "passed"
+  ran_at_sha: "877d42c"
+  mocks_in_path: false
