@@ -1,0 +1,84 @@
+status: blocked
+pebble_id: aln-af6
+summary: >
+  Investigated turbo_redistribution_unbeatable (ArmadaLean/Nitro/Liveness.lean)
+  in depth and established, by hand and then by building real Lean
+  infrastructure, that the theorem is true and derived its full proof
+  strategy, but completing it exceeds what this session can responsibly
+  finish. The theorem claims a participant p can force balance x at an
+  external destination d by replaying, as their own moves, a given list
+  `ops` of transfers that (played with no interference) reaches x -- and
+  that this is robust to an adversary capable of interleaving arbitrarily
+  many of its own transfers (TransfersOnly, CapableTransfers) around each
+  of p's moves within every round (Threat.RoundSeq's `land`/`other`
+  constructors place no bound on adversary move count per round). Proving
+  that robustness is the actual mathematical content: it reduces to
+  showing paying any allocation entry's current priority-formula
+  affordance never reduces what a DIFFERENT entry can still obtain, and
+  that a transfer crediting a channel between two draws on it is
+  additive in the held amount (so a draw split by an intervening credit
+  totals the same as one draw against the final, boosted, balance). I
+  built and fully proved both of these as general, dedup-free lemmas
+  (no `o.dedup = o` side hypothesis, unlike every existing
+  `paidTo_of_getElem?`-based proof in this file): `paidToSeen_reduceOwed_ne`
+  and `paidToSeen_held_add` in ArmadaLean/Nitro/Lemmas.lean, via a new
+  `Allocation.paidToSeen` recursion that threads `dedupFrom`'s own `seen`
+  list so duplicate destinations are handled by the recursion itself.
+  From these I derived (on paper, verified case by case, not yet in Lean)
+  the exact two-transfer "diamond": applying one transfer then another
+  equals applying the second then replaying [first, second] again,
+  uniformly across every channel relationship (disjoint, same channel
+  different destination -- exact commute, same channel same destination
+  -- absorbing, one transfer's destination is the other's source channel
+  -- the held-additivity case). That diamond, lifted first to an
+  arbitrary interleaved adversary sequence (induction on the extra list,
+  using `applyAll`'s append-composition) and then threaded through
+  `Threat.RoundSeq`'s actual `land`/`tick`/`other` constructors to
+  extract "one round's effect is some adversary transfer list split
+  around p's one landed call" and finally through an outer induction on
+  `ops` building the `UnbeatableIn.move` chain, is the remaining proof --
+  several hundred more lines of the same case-by-case Lean, none of it
+  now mathematically open, all of it unwritten. `turbo_order_independent`
+  in the same file needs essentially the same core fact and is also
+  still `sorry`, confirming this is the shared hard content of the
+  Turbo-value theorem cluster, not an isolated gap. I verified the build
+  and the acceptance script after each addition: `lake build` passes,
+  `scripts/check.sh --json turbo_redistribution_unbeatable` reports
+  build_ok=true, signatures_ok=true, sorry count unchanged at the new
+  baseline (my additions are fully proved, not sorry), and
+  theorem_in_sorry=true for the target theorem, since I did not complete
+  it. The theorem's statement is unchanged. Commits on this branch
+  (worker/aln-af6): a413b9d (paidToSeen recursion and
+  paidToSeen_reduceOwed_ne), 52e7321 (paidToSeen_held_add).
+cost: ~370k tokens
+blocker: >
+  turbo_redistribution_unbeatable needs a genuinely research-sized
+  formalization (an interference-robustness argument for priority-ordered
+  on-chain transfers under an unbounded-per-round adversary) that does
+  not fit the remaining scope of a single work session. I completed and
+  verified the two hardest pure-math sub-lemmas (same-entry-interference
+  invariance and held-growth additivity for the priority payout formula)
+  but the two-transfer state-diamond that composes them, the lift from
+  one adversary step to an arbitrary interleaved sequence, the wiring
+  through Threat.RoundSeq's own inductive constructors, and the outer
+  induction on `ops` building the UnbeatableIn strategy are all still
+  unwritten Lean, each comparable in size to what is already done.
+next_action: >
+  A worker with a larger time budget should continue directly from
+  ArmadaLean/Nitro/Lemmas.lean's paidToSeen section (search
+  "paidToSeen_held_add", the last lemma added, committed at 52e7321 on
+  worker/aln-af6 -- rebase that branch in rather than redoing this
+  infrastructure): (1) prove Adjudicator.applyAll_append (list-append
+  composition, easy induction); (2) prove the two-transfer diamond (case
+  split on the two transfers' (source-channel, destination) relationship,
+  using paidToSeen_reduceOwed_ne for same-channel-different-destination
+  and paidToSeen_held_add for one destination being the other source
+  channel; the other two cases commute trivially since they touch
+  disjoint Adjudicator state); (3) lift it to an arbitrary extra transfer
+  list via induction, composing with applyAll_append; (4) prove the
+  resulting monotonicity lemma for Threat.RoundSeq by induction on its
+  own `nil`/`land`/`tick`/`other` constructors (TransfersOnly pins
+  `tick`/`other` to transfers); (5) the main theorem by induction on
+  `ops`, one UnbeatableIn.move per element, using Bounds/Capable via
+  Threat.Round.exists and the round-monotonicity lemma from (4) applied
+  before and after p's own landed call.
