@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-c5d",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `deposit_bounds_value` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `deposit_bounds_value`'s proof body is `sorry`. `scripts/check.sh --json deposit_bounds_value` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json deposit_bounds_value` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem deposit_bounds_value",
+  "restatement": "The Lean theorem deposit_bounds_value in ArmadaLean/Nitro/Liveness.lean must carry a complete, genuine proof in its own proof body. Right now that proof body is just the placeholder sorry, which is Lean's way of saying 'trust me, no real proof here.' The fix is to replace sorry with an actual proof, without changing what the theorem claims (its statement, i.e. the types and conditions listed before the colon, and the conclusion x \u2264 x' \u2227 x' \u2264 x + y, must stay exactly as written). The repo's own check command, scripts/check.sh --json deposit_bounds_value, already reports whether this specific theorem still contains sorry, so that command is how anyone \u2014 including an automated check \u2014 confirms the work is done.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`deposit_bounds_value` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement does not change."
+    },
+    {
+      "id": "c3",
+      "text": "Running `scripts/check.sh --json deposit_bounds_value` from the repo root reflects that `deposit_bounds_value` no longer appears in the `sorry` list."
+    }
+  ],
+  "goal": "Replace the sorry placeholder in the proof body of deposit_bounds_value (ArmadaLean/Nitro/Liveness.lean) with a real, complete proof, without altering the theorem's stated claim.",
+  "acceptance_criteria": [
+    "Running the repo's check script and asking it about deposit_bounds_value shows the theorem is no longer on the list of unproven (sorry-only) theorems.",
+    "The repo's frozen snapshot of approved theorem statements still matches the wording of deposit_bounds_value word for word, proving its claim was not weakened or altered while the proof was written.",
+    "The whole project still builds successfully after the proof is written in, with no build errors introduced."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the repo's check script and asking it about deposit_bounds_value shows the theorem is no longer on the list of unproven (sorry-only) theorems."
+    },
+    {
+      "id": "c2",
+      "text": "The repo's frozen snapshot of approved theorem statements still matches the wording of deposit_bounds_value word for word, proving its claim was not weakened or altered while the proof was written."
+    },
+    {
+      "id": "c3",
+      "text": "The whole project still builds successfully after the proof is written in, with no build errors introduced."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the repo's check script and asking it about deposit_bounds_value shows the theorem is no longer on the list of unproven (sorry-only) theorems.",
+      "proves": "Clause c1: the theorem's own proof body no longer contains sorry.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "deposit_bounds_value"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_in_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "The repo's frozen snapshot of approved theorem statements still matches the wording of deposit_bounds_value word for word, proving its claim was not weakened or altered while the proof was written.",
+      "proves": "Clause c2: the theorem's stated claim is unchanged.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "deposit_bounds_value"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "signatures_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "description": "The whole project still builds successfully after the proof is written in, with no build errors introduced.",
+      "proves": "Clause c3: the check command, run from the repo root, confirms the fix in a way anyone can reproduce.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "deposit_bounds_value"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "build_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
