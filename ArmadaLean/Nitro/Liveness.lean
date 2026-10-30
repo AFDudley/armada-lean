@@ -4908,6 +4908,967 @@ theorem ledger_topup_deposit_funds (s s' : Adjudicator E) (L : FixedPart) (A B �
     refine (Allocation.paidTo_of_getElem? hd2 (j := 0) (f := alloc A (a + a')) rfl).trans ?_
     simp [alloc, Allocation.total, Entry.amount]; grind
 
+/-- While channel `c` has no recorded finalization, its own balance can only
+    grow over one successful on-chain step: a `deposit` only ever adds; a
+    `transfer` can pay INTO `c.address` (if it is the destination) but can
+    only pay OUT of a channel whose own `finalOutcome` is already `some`
+    (`Adjudicator.transfer_some`'s own `hf` field), which `hopen` rules out
+    for `c` itself; `reclaim`, `challenge`, `checkpoint`, `conclude` and
+    `tick` never touch `balances` at all (`Adjudicator.setStatus_balances`,
+    `Adjudicator.tick_balances`). Used by `conclude_round_funded` to carry
+    `c`'s starting balance forward, unharmed, to the exact step that first
+    finalizes it. -/
+theorem balances_mono_while_open_step {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {op : Op E} {c : FixedPart} (hopen : s.finalOutcome c.address = none)
+    (h : s.apply apps caller op = some s') :
+    s.balances.get c.address ≤ s'.balances.get c.address := by
+  cases op with
+  | deposit a e x =>
+    obtain ⟨-, -, hb, -, -, -⟩ := Adjudicator.deposit_some h
+    rw [hb, Balances.get_add]
+    by_cases hca : c.address = a
+    · rw [if_pos hca]; grind
+    · rw [if_neg hca]
+  | transfer a b =>
+    by_cases hac : a = c
+    · subst hac
+      obtain ⟨o, amt, x, hf, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
+      rw [hopen] at hf; simp at hf
+    · obtain ⟨o, amt, x, hf, hfind, hxeq, hbal, -, hstat, hnow, hak, hbf⟩ := Adjudicator.transfer_some h
+      have hca : (c.address : Address E) ≠ a.address := by
+        intro hh; injection hh with hh'; exact hac hh'.symm
+      rw [hbal, Balances.get_sub, if_neg hca, Balances.get_add]
+      by_cases hbc : c.address = b
+      · rw [if_pos hbc]; grind
+      · rw [if_neg hbc]
+  | reclaim l v =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hsucc, _, _⟩ := Adjudicator.reclaim_some h
+    rw [hsucc]; exact le_refl _
+  | challenge c' proof cand =>
+    obtain ⟨-, hsucc⟩ := Adjudicator.challenge_some h
+    rw [hsucc]; exact le_refl _
+  | checkpoint c' proof cand =>
+    obtain ⟨-, hsucc⟩ := Adjudicator.checkpoint_some h
+    rw [hsucc]; exact le_refl _
+  | conclude c' ss' =>
+    obtain ⟨-, hsucc⟩ := Adjudicator.conclude_some h
+    rw [hsucc]; exact le_refl _
+  | tick dt =>
+    have hs' : s.tick dt = s' := by simpa using h
+    subst hs'
+    exact le_refl _
+
+/-- One successful on-chain step, given `c` is either already finalized
+    with `Ω` and funded (its own `d`-entry known: `directly_funded_step`
+    carries it forward), or still open with `o`'s total (`Ω`'s own
+    allocation) covered by `c`'s balance: EITHER it stays in the SAME shape
+    (`balances_mono_while_open_step`-style case analysis: `deposit` only
+    adds; `transfer`/`reclaim` ON `c` are impossible while `c` is open,
+    contradicting `s.apply`'s own precondition that `c` already be
+    finalized; `challenge`/`checkpoint`/`conclude` on a DIFFERENT channel,
+    or a `deposit`/`transfer` elsewhere, never touch `c`'s own status), OR
+    it is the step that FIRST finalizes `c` (a `challenge` with zero
+    duration, or `conclude`, landing on `c` itself) — which is reported
+    as the third case with WHATEVER outcome `Ω₀` got recorded (not
+    necessarily `Ω` — that forcing is `round_keeps_status`'s own
+    `hbounds.unforgeable` argument, not re-derived here), since neither
+    mechanism writes `balances` at all, so `o.total`, covered before the
+    step, stays covered right after it. Used by `conclude_round_funded`. -/
+theorem hinv_adj_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
+    {c : FixedPart} {Ω : Outcome E} {o : Allocation E} (hΩo : Ω = .allocation o)
+    {d : E} {amt0 : Coins} (hd0 : o.find (.external d) = some ⟨.external d, .alloc amt0⟩)
+    (h : s.apply apps caller op = some s')
+    (hinv : (∃ o1 amt1, s.finalizedWith c.address = some Ω ∧
+        s.finalOutcome c.address = some (.allocation o1) ∧ o1.total ≤ s.balances.get c.address ∧
+        o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+      (s.finalOutcome c.address = none ∧ o.total ≤ s.balances.get c.address)) :
+    (∃ o1 amt1, s'.finalizedWith c.address = some Ω ∧
+        s'.finalOutcome c.address = some (.allocation o1) ∧ o1.total ≤ s'.balances.get c.address ∧
+        o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+      (s'.finalOutcome c.address = none ∧ o.total ≤ s'.balances.get c.address) ∨
+      (∃ Ω₀, s'.finalizedWith c.address = some Ω₀ ∧ s'.finalOutcome c.address = some Ω₀ ∧
+        o.total ≤ s'.balances.get c.address) := by
+  rcases hinv with ⟨o1, amt1, hfz1, hf1, ht1, hd1⟩ | ⟨hnone, hfund0⟩
+  · left
+    obtain ⟨o1', amt1', hf1', ht1', hd1', -⟩ := directly_funded_step hf1 ht1 hd1 h
+    exact ⟨o1', amt1', Adjudicator.finalizedWith_apply h hfz1, hf1', ht1', hd1'⟩
+  · cases op with
+    | deposit a e x =>
+      right; left
+      obtain ⟨⟨c', hac', -⟩, -, hb, -, hs, hn⟩ := Adjudicator.deposit_some h
+      refine ⟨?_, ?_⟩
+      · simpa [FixedPart.address_eq, Adjudicator.statusOf_of_status hs, hn] using hnone
+      · rw [hb, Balances.get_add]
+        by_cases hca : c.address = a
+        · rw [if_pos hca]; grind
+        · rw [if_neg hca]; exact hfund0
+    | transfer a b =>
+      by_cases hac : a = c
+      · subst hac
+        obtain ⟨oo, amtt, x, hf, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
+        rw [hnone] at hf; simp at hf
+      · right; left
+        obtain ⟨oo, amtt, x, hf, hfind, hxeq, hbal, -, hstat, hnow, hak, hbf⟩ :=
+          Adjudicator.transfer_some h
+        have hca : (c.address : Address E) ≠ a.address := by
+          intro hh; injection hh with hh'; exact hac hh'.symm
+        refine ⟨?_, ?_⟩
+        · simpa [FixedPart.address_eq, Adjudicator.statusOf_of_status hstat,
+            Adjudicator.statusOf_setStatus, if_neg (Ne.symm hac), hnow] using hnone
+        · rw [hbal, Balances.get_sub, if_neg hca, Balances.get_add]
+          by_cases hbc : c.address = b
+          · rw [if_pos hbc]; grind
+          · rw [if_neg hbc]; exact hfund0
+    | reclaim l v =>
+      by_cases hcl : l = c
+      · subst hcl
+        obtain ⟨oL, -, -, -, -, hL, -, -, -, -, -, -, -, -⟩ := Adjudicator.reclaim_some h
+        rw [hnone] at hL; simp at hL
+      · right; left
+        obtain ⟨oL, oV, x, left, right, hL, hV, hfind, hne1, hne2, hxeq, hsucc, hlk, hvk⟩ :=
+          Adjudicator.reclaim_some h
+        have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+        refine ⟨?_, ?_⟩
+        · simpa [FixedPart.address_eq, hsucc, Adjudicator.statusOf_setStatus,
+            if_neg (Ne.symm hcl)] using hnone
+        · rw [hbal']; exact hfund0
+    | challenge c' proof cand =>
+      by_cases hcc : c' = c
+      · subst hcc
+        obtain ⟨-, hsucc⟩ := Adjudicator.challenge_some h
+        have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+        by_cases hz : s.now + c'.challengeDuration ≤ s.now
+        · right; right
+          refine ⟨cand.outcome, ?_, ?_, ?_⟩
+          · simp [hsucc, Adjudicator.finalizedWith_channel, FixedPart.address_eq,
+              ChannelStatus.finalizedWith_challenged, hz]
+          · simp [hsucc, Adjudicator.finalOutcome_channel, FixedPart.address_eq,
+              ChannelStatus.finalOutcome_challenged, hz]
+          · rw [hbal']; exact hfund0
+        · right; left
+          refine ⟨?_, ?_⟩
+          · simp [hsucc, Adjudicator.finalOutcome_channel, FixedPart.address_eq,
+              ChannelStatus.finalOutcome_challenged, hz]
+          · rw [hbal']; exact hfund0
+      · right; left
+        obtain ⟨-, hsucc⟩ := Adjudicator.challenge_some h
+        refine ⟨?_, ?_⟩
+        · simpa [FixedPart.address_eq, hsucc, Adjudicator.statusOf_setStatus,
+            if_neg (Ne.symm hcc)] using hnone
+        · have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+          rw [hbal']; exact hfund0
+    | checkpoint c' proof cand =>
+      right; left
+      by_cases hcc : c' = c
+      · subst hcc
+        obtain ⟨-, hsucc⟩ := Adjudicator.checkpoint_some h
+        refine ⟨?_, ?_⟩
+        · simp [hsucc, Adjudicator.finalOutcome_channel, FixedPart.address_eq]
+        · have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+          rw [hbal']; exact hfund0
+      · obtain ⟨-, hsucc⟩ := Adjudicator.checkpoint_some h
+        refine ⟨?_, ?_⟩
+        · simpa [FixedPart.address_eq, hsucc, Adjudicator.statusOf_setStatus,
+            if_neg (Ne.symm hcc)] using hnone
+        · have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+          rw [hbal']; exact hfund0
+    | conclude c' ss' =>
+      by_cases hcc : c' = c
+      · subst hcc
+        right; right
+        obtain ⟨-, hsucc⟩ := Adjudicator.conclude_some h
+        have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+        refine ⟨ss'.state.outcome, ?_, ?_, ?_⟩
+        · simp [hsucc, Adjudicator.finalizedWith_channel, FixedPart.address_eq]
+        · simp [hsucc, Adjudicator.finalOutcome_channel, FixedPart.address_eq]
+        · rw [hbal']; exact hfund0
+      · right; left
+        obtain ⟨-, hsucc⟩ := Adjudicator.conclude_some h
+        refine ⟨?_, ?_⟩
+        · simpa [FixedPart.address_eq, hsucc, Adjudicator.statusOf_setStatus,
+            if_neg (Ne.symm hcc)] using hnone
+        · have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+          rw [hbal']; exact hfund0
+    | tick dt =>
+      right
+      have hs' : s.tick dt = s' := by simpa using h
+      subst hs'
+      rcases hstat : s.statusOf c with t' | ⟨t', ch⟩ | ⟨t', f, oo⟩
+      · left
+        refine ⟨?_, ?_⟩
+        · simp [Adjudicator.finalOutcome_channel, FixedPart.address_eq,
+            Adjudicator.tick_statusOf, hstat]
+        · simpa using hfund0
+      · by_cases hz : ch.deadline ≤ s.now + dt
+        · right
+          refine ⟨ch.state.outcome, ?_, ?_, ?_⟩
+          · simp [Adjudicator.finalizedWith_channel, FixedPart.address_eq,
+              Adjudicator.tick_statusOf, hstat, ChannelStatus.finalizedWith_challenged, hz]
+          · simp [Adjudicator.finalOutcome_channel, FixedPart.address_eq,
+              Adjudicator.tick_statusOf, hstat, ChannelStatus.finalOutcome_challenged, hz]
+          · simpa using hfund0
+        · left
+          refine ⟨?_, ?_⟩
+          · simp [Adjudicator.finalOutcome_channel, FixedPart.address_eq,
+              Adjudicator.tick_statusOf, hstat, ChannelStatus.finalOutcome_challenged, hz]
+          · simpa using hfund0
+      · exfalso
+        have hcontra : s.finalOutcome c.address = some oo := by
+          simp [Adjudicator.finalOutcome_channel, FixedPart.address_eq, hstat]
+        rw [hcontra] at hnone; simp at hnone
+
+/-- Over an ARBITRARY round (any `pending`, any moves), `c`'s funding fact
+    from `hinv_adj_step` threads all the way to the round's end, GIVEN the
+    round's own end is externally known (`hΩfinal`, from
+    `round_keeps_status`) to finalize `c` with `Ω`: whichever single step
+    is the one that first finalizes `c` (`hinv_adj_step`'s third case)
+    records some outcome `Ω₀` that `Threat.RoundSeq.finalizedWith_mono`
+    carries, unchanged, to the round's end — where comparing it against
+    `hΩfinal` forces `Ω₀ = Ω`, letting the induction carry on in the first
+    (already-funded-with-`Ω`) shape from that point on. Used by
+    `ledger_partial_withdrawal` for both participants' own strategies:
+    once combined with `round_keeps_status` (which independently forces
+    `hΩfinal`), this gives `net'.chain.DirectlyFunded c` for the exact
+    round that lands a `conclude c ss` call, with no further hypotheses
+    about `c`'s challenge timing beyond what `round_keeps_status` already
+    needs. -/
+theorem conclude_round_funded {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedPart}
+    {Ω : Outcome E} {o : Allocation E} (hΩo : Ω = .allocation o)
+    {d : E} {amt0 : Coins} (hd0 : o.find (.external d) = some ⟨.external d, .alloc amt0⟩) :
+    ∀ {net net' : NetworkState E p} {t : Time} {pending : List (Op E)},
+      Threat.RoundSeq apps T t pending net net' →
+      net'.chain.finalizedWith c.address = some Ω →
+      ((∃ o1 amt1, net.chain.finalizedWith c.address = some Ω ∧
+          net.chain.finalOutcome c.address = some (.allocation o1) ∧
+          o1.total ≤ net.chain.balances.get c.address ∧
+          o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+        (net.chain.finalOutcome c.address = none ∧ o.total ≤ net.chain.balances.get c.address)) →
+      net'.chain.DirectlyFunded c := by
+  intro net net' t pending hseq
+  induction hseq with
+  | nil =>
+    rename_i net
+    intro hΩfinal hinv
+    rcases hinv with ⟨o1, amt1, -, hf1, ht1, -⟩ | ⟨hnone, -⟩
+    · exact ⟨o1, hf1, ht1⟩
+    · exfalso
+      have hfw : (net.chain.statusOf c).finalizedWith net.chain.now = some Ω := by
+        simpa [FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hΩfinal
+      have hiso : ((net.chain.statusOf c).finalizedWith net.chain.now).isSome := by rw [hfw]; rfl
+      have hiso2 := (ChannelStatus.finalizedWith_isSome_iff (net.chain.statusOf c)
+        net.chain.now).mp hiso
+      have hfo : net.chain.finalOutcome c.address ≠ none := by
+        simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel]
+        exact Option.isSome_iff_ne_none.mp hiso2
+      exact hfo hnone
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    intro hΩfinal hinv
+    have hinv2 :
+        (∃ o1 amt1, (net1.applyAdv apps (.land op)).chain.finalizedWith c.address = some Ω ∧
+            (net1.applyAdv apps (.land op)).chain.finalOutcome c.address =
+              some (.allocation o1) ∧
+            o1.total ≤ (net1.applyAdv apps (.land op)).chain.balances.get c.address ∧
+            o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+          ((net1.applyAdv apps (.land op)).chain.finalOutcome c.address = none ∧
+            o.total ≤ (net1.applyAdv apps (.land op)).chain.balances.get c.address) ∨
+          (∃ Ω₀, (net1.applyAdv apps (.land op)).chain.finalizedWith c.address = some Ω₀ ∧
+            (net1.applyAdv apps (.land op)).chain.finalOutcome c.address = some Ω₀ ∧
+            o.total ≤ (net1.applyAdv apps (.land op)).chain.balances.get c.address) := by
+      cases hm : net1.chain.apply apps p op with
+      | none =>
+        rcases hinv with hleft | hright
+        · exact Or.inl (by simpa [NetworkState.applyAdv, hm] using hleft)
+        · exact Or.inr (Or.inl (by simpa [NetworkState.applyAdv, hm] using hright))
+      | some s' =>
+        have hstep := hinv_adj_step hΩo hd0 hm hinv
+        simpa [NetworkState.applyAdv, hm] using hstep
+    rcases hinv2 with hleft | hright | ⟨Ω₀, hfz0, hfo0, hfund0'⟩
+    · exact ih hΩfinal (Or.inl hleft)
+    · exact ih hΩfinal (Or.inr hright)
+    · have hpush := hrest.finalizedWith_mono hfz0
+      have hΩeq : Ω₀ = Ω := by
+        have h12 : (some Ω₀ : Option (Outcome E)) = some Ω := hpush.symm.trans hΩfinal
+        injection h12 with heq
+      subst hΩeq
+      refine ih hΩfinal (Or.inl ⟨o, amt0, hfz0, ?_, ?_, hd0⟩)
+      · rw [hΩo] at hfo0; exact hfo0
+      · exact hfund0'
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hΩfinal hinv
+    have hm : net1.chain.apply apps p (Op.tick dt) = some (net1.chain.tick dt) := by
+      simp [Adjudicator.apply_tick]
+    have hstep := hinv_adj_step hΩo hd0 hm hinv
+    have hinv2 :
+        (∃ o1 amt1, (net1.applyAdv apps (.tick dt)).chain.finalizedWith c.address = some Ω ∧
+            (net1.applyAdv apps (.tick dt)).chain.finalOutcome c.address =
+              some (.allocation o1) ∧
+            o1.total ≤ (net1.applyAdv apps (.tick dt)).chain.balances.get c.address ∧
+            o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+          ((net1.applyAdv apps (.tick dt)).chain.finalOutcome c.address = none ∧
+            o.total ≤ (net1.applyAdv apps (.tick dt)).chain.balances.get c.address) ∨
+          (∃ Ω₀, (net1.applyAdv apps (.tick dt)).chain.finalizedWith c.address = some Ω₀ ∧
+            (net1.applyAdv apps (.tick dt)).chain.finalOutcome c.address = some Ω₀ ∧
+            o.total ≤ (net1.applyAdv apps (.tick dt)).chain.balances.get c.address) := by
+      simpa [NetworkState.applyAdv] using hstep
+    rcases hinv2 with hleft | hright | ⟨Ω₀, hfz0, hfo0, hfund0'⟩
+    · exact ih hΩfinal (Or.inl hleft)
+    · exact ih hΩfinal (Or.inr hright)
+    · have hpush := hrest.finalizedWith_mono hfz0
+      have hΩeq : Ω₀ = Ω := by
+        have h12 : (some Ω₀ : Option (Outcome E)) = some Ω := hpush.symm.trans hΩfinal
+        injection h12 with heq
+      subst hΩeq
+      refine ih hΩfinal (Or.inl ⟨o, amt0, hfz0, ?_, ?_, hd0⟩)
+      · rw [hΩo] at hfo0; exact hfo0
+      · exact hfund0'
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hΩfinal hinv
+    cases m with
+    | chain caller op =>
+      have hinv2 :
+          (∃ o1 amt1, (net1.applyAdv apps (.chain caller op)).chain.finalizedWith c.address =
+              some Ω ∧
+            (net1.applyAdv apps (.chain caller op)).chain.finalOutcome c.address =
+              some (.allocation o1) ∧
+            o1.total ≤ (net1.applyAdv apps (.chain caller op)).chain.balances.get c.address ∧
+            o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+          ((net1.applyAdv apps (.chain caller op)).chain.finalOutcome c.address = none ∧
+            o.total ≤ (net1.applyAdv apps (.chain caller op)).chain.balances.get c.address) ∨
+          (∃ Ω₀, (net1.applyAdv apps (.chain caller op)).chain.finalizedWith c.address =
+              some Ω₀ ∧
+            (net1.applyAdv apps (.chain caller op)).chain.finalOutcome c.address = some Ω₀ ∧
+            o.total ≤ (net1.applyAdv apps (.chain caller op)).chain.balances.get c.address) := by
+        cases hm : net1.chain.apply apps caller op with
+        | none =>
+          rcases hinv with hleft | hright
+          · exact Or.inl (by simpa [NetworkState.applyAdv, hm] using hleft)
+          · exact Or.inr (Or.inl (by simpa [NetworkState.applyAdv, hm] using hright))
+        | some s' =>
+          have hstep := hinv_adj_step hΩo hd0 hm hinv
+          simpa [NetworkState.applyAdv, hm] using hstep
+      rcases hinv2 with hleft | hright | ⟨Ω₀, hfz0, hfo0, hfund0'⟩
+      · exact ih hΩfinal (Or.inl hleft)
+      · exact ih hΩfinal (Or.inr hright)
+      · have hpush := hrest.finalizedWith_mono hfz0
+        have hΩeq : Ω₀ = Ω := by
+          have h12 : (some Ω₀ : Option (Outcome E)) = some Ω := hpush.symm.trans hΩfinal
+          injection h12 with heq
+        subst hΩeq
+        refine ih hΩfinal (Or.inl ⟨o, amt0, hfz0, ?_, ?_, hd0⟩)
+        · rw [hΩo] at hfo0; exact hfo0
+        · exact hfund0'
+    | deliver ss' =>
+      have hinv2 :
+          (∃ o1 amt1, (net1.applyAdv apps (.deliver ss')).chain.finalizedWith c.address =
+              some Ω ∧
+            (net1.applyAdv apps (.deliver ss')).chain.finalOutcome c.address =
+              some (.allocation o1) ∧
+            o1.total ≤ (net1.applyAdv apps (.deliver ss')).chain.balances.get c.address ∧
+            o1.find (.external d) = some ⟨.external d, .alloc amt1⟩) ∨
+          ((net1.applyAdv apps (.deliver ss')).chain.finalOutcome c.address = none ∧
+            o.total ≤ (net1.applyAdv apps (.deliver ss')).chain.balances.get c.address) := by
+        simpa [NetworkState.applyAdv] using hinv
+      rcases hinv2 with hleft | hright
+      · exact ih hΩfinal (Or.inl hleft)
+      · exact ih hΩfinal (Or.inr hright)
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
+
+/-- The channel an operation can change the status of — a local copy of
+    `NonVacuity.lean`'s `opOn` (that file imports this one, not the other
+    way around). Used by `channel_stays_open_round`. -/
+def Op.targets : Op E → FixedPart → Prop
+  | .conclude c' _, c2 => c' = c2
+  | .challenge c' _ _, c2 => c' = c2
+  | .checkpoint c' _ _, c2 => c' = c2
+  | .transfer c' _, c2 => c' = c2
+  | .reclaim c' _, c2 => c' = c2
+  | _, _ => False
+
+/-- An operation that doesn't target `c2` leaves its status alone. -/
+theorem statusOf_apply_of_not_targets {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (h : s.apply apps caller op = some s') {c2 : FixedPart}
+    (hc2 : ¬ Op.targets op c2) : s'.statusOf c2 = s.statusOf c2 := by
+  cases op with
+  | deposit a e x =>
+    obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
+    exact Adjudicator.statusOf_of_status hs c2
+  | tick dt => simp at h; subst h; rfl
+  | transfer a b =>
+    obtain ⟨_, _, _, -, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
+    rw [Adjudicator.statusOf_of_status hs]
+    simp only [Adjudicator.statusOf_setStatus, Op.targets] at hc2 ⊢
+    rw [if_neg (Ne.symm hc2)]
+  | reclaim l v' =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
+    simp only [Adjudicator.statusOf_setStatus, Op.targets] at hc2 ⊢
+    rw [if_neg (Ne.symm hc2)]
+  | challenge c' proof cand =>
+    obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+    simp only [Adjudicator.statusOf_setStatus, Op.targets] at hc2 ⊢
+    rw [if_neg (Ne.symm hc2)]
+  | checkpoint c' proof cand =>
+    obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+    simp only [Adjudicator.statusOf_setStatus, Op.targets] at hc2 ⊢
+    rw [if_neg (Ne.symm hc2)]
+  | conclude c' ss =>
+    obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
+    simp only [Adjudicator.statusOf_setStatus, Op.targets] at hc2 ⊢
+    rw [if_neg (Ne.symm hc2)]
+
+/-- Only `Op.tick` moves the clock; every other operation leaves `now`
+    exactly as it was. -/
+theorem now_apply_eq_of_not_tick {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (h : s.apply apps caller op = some s')
+    (hnt : ∀ dt, op ≠ Op.tick dt) : s'.now = s.now := by
+  cases op with
+  | deposit a e x => exact (Adjudicator.deposit_some h).2.2.2.2.2
+  | tick dt => exact absurd rfl (hnt dt)
+  | transfer a b =>
+    obtain ⟨_, _, _, -, -, -, -, -, -, hn, -, -⟩ := Adjudicator.transfer_some h
+    exact hn
+  | reclaim l v' =>
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hsucc, _, _⟩ := Adjudicator.reclaim_some h
+    rw [hsucc]; rfl
+  | challenge c' proof cand =>
+    obtain ⟨-, hsucc⟩ := Adjudicator.challenge_some h
+    rw [hsucc]; rfl
+  | checkpoint c' proof cand =>
+    obtain ⟨-, hsucc⟩ := Adjudicator.checkpoint_some h
+    rw [hsucc]; rfl
+  | conclude c' ss =>
+    obtain ⟨-, hsucc⟩ := Adjudicator.conclude_some h
+    rw [hsucc]; rfl
+
+/-- Over an arbitrary round of play (`pending` is whatever `p`'s own
+    reaction this round is — none of it ever `Op.targets`-ing `c2`), a
+    consensus-app channel `c2` that `p` belongs to, that `p` has never
+    sent a final state of, that is not yet finalized, and whose every
+    outstanding challenge's deadline is at least the fixed floor `D`,
+    stays exactly so by the round's end `net'`, PROVIDED `net'.chain.now`
+    itself is still below `D`. An adversary's `conclude` on `c2` needs
+    `p`'s own genuine signature on a final state (`ConclusionProof`'s
+    `ByAll`, `Bounds.unforgeable`), which `p` never gave
+    (`hsent`'s `isFinal = false`); a `transfer`/`reclaim` reading `c2` as
+    the already-finalized source needs `c2.finalOutcome` already `some`,
+    contradicting `hc2none`; a fresh `challenge`/`checkpoint` on `c2` gets
+    a deadline `now + c2.challengeDuration`, and `now ≤ net'.chain.now <
+    D ≤ now + c2.challengeDuration` since `2 * T.ε ≤ c2.challengeDuration`
+    needs only `D ≤ now + 2 * T.ε`, which holds because `D`'s own
+    definition (`ledger_partial_withdrawal`) gives `D ≤ v0now + 2 * T.ε`
+    and `v0now ≤ now` (`hlo`, threaded forward). Used by
+    `ledger_partial_withdrawal`, once for the round that lands its own
+    `conclude` on `L` (`c2 = L'`, untouched by that call) and once for
+    the round that lands its own `transfer` paying `L'` (`c2 = L'`,
+    touched only in balance, never in status: `Op.targets`'s `transfer`
+    case reads only the transfer's own source channel). -/
+theorem channel_stays_open_round {apps : Apps E} {p : Participant} {T : Threat E p}
+    (hbounds : Bounds apps p T) {c2 : FixedPart}
+    (hc2app : apps c2.appDef = consensusRules) (hp2 : p ∈ c2.participants)
+    (hdur2 : 2 * T.ε ≤ c2.challengeDuration) {D v0now : Time} (hD : D ≤ v0now + 2 * T.ε) :
+    ∀ {net net' : NetworkState E p} {t : Time} {pending : List (Op E)},
+      Threat.RoundSeq apps T t pending net net' →
+      (∀ op ∈ pending, ¬ Op.targets op c2) →
+      (∀ op ∈ pending, ∀ dt, op ≠ Op.tick dt) →
+      net'.chain.now < D →
+      v0now ≤ net.chain.now →
+      net.chain.finalOutcome c2.address = none →
+      (∀ t0 ch, net.chain.statusOf c2 = .challenged t0 ch → D ≤ ch.deadline) →
+      (∀ t0 ∈ net.sent, t0.state.channel = c2 → t0.state.isFinal = false) →
+      net'.chain.finalOutcome c2.address = none ∧
+        (∀ t0 ch, net'.chain.statusOf c2 = .challenged t0 ch → D ≤ ch.deadline) ∧
+        (∀ t0 ∈ net'.sent, t0.state.channel = c2 → t0.state.isFinal = false) := by
+  intro net net' t pending hseq
+  induction hseq with
+  | nil => intro _ _ _ _ hfo hfl hsent; exact ⟨hfo, hfl, hsent⟩
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    intro hpend hpnotick hDbound hlo hfo hfl hsent
+    have hmem : op ∈ pending := by
+      rw [hsplit]; exact List.mem_append_right l1 List.mem_cons_self
+    have hop2 : ¬ Op.targets op c2 := hpend op hmem
+    have hopnt : ∀ dt, op ≠ Op.tick dt := hpnotick op hmem
+    have hpend' : ∀ op' ∈ l1 ++ l2, ¬ Op.targets op' c2 := by
+      intro op' hop'
+      apply hpend
+      rw [hsplit]
+      rcases List.mem_append.1 hop' with h1 | h2
+      · exact List.mem_append_left _ h1
+      · exact List.mem_append_right _ (List.mem_cons_of_mem _ h2)
+    have hpnotick' : ∀ op' ∈ l1 ++ l2, ∀ dt, op' ≠ Op.tick dt := by
+      intro op' hop' dt
+      apply hpnotick op'
+      rw [hsplit]
+      rcases List.mem_append.1 hop' with h1 | h2
+      · exact List.mem_append_left _ h1
+      · exact List.mem_append_right _ (List.mem_cons_of_mem _ h2)
+    have hstat : (net1.applyAdv apps (.land op)).chain.statusOf c2 = net1.chain.statusOf c2 := by
+      simp only [NetworkState.applyAdv]
+      cases h : net1.chain.apply apps p op with
+      | none => rfl
+      | some s' => exact statusOf_apply_of_not_targets h hop2
+    have hnow : (net1.applyAdv apps (.land op)).chain.now = net1.chain.now := by
+      simp only [NetworkState.applyAdv]
+      cases h : net1.chain.apply apps p op with
+      | none => rfl
+      | some s' => exact now_apply_eq_of_not_tick h hopnt
+    have hfo' : (net1.applyAdv apps (.land op)).chain.finalOutcome c2.address = none := by
+      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hnow]
+      simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+    have hfl' : ∀ t0 ch, (net1.applyAdv apps (.land op)).chain.statusOf c2 = .challenged t0 ch →
+        D ≤ ch.deadline := by rw [hstat]; exact hfl
+    have hsent' : ∀ t0 ∈ (net1.applyAdv apps (.land op)).sent, t0.state.channel = c2 →
+        t0.state.isFinal = false := by rw [NetworkState.applyAdv_sent]; exact hsent
+    have hlo' : v0now ≤ (net1.applyAdv apps (.land op)).chain.now := by rw [hnow]; exact hlo
+    exact ih hpend' hpnotick' hDbound hlo' hfo' hfl' hsent'
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hpend hpnotick hDbound hlo hfo hfl hsent
+    have hstat : (net1.applyAdv apps (AdvMove.tick dt)).chain.statusOf c2 = net1.chain.statusOf c2 := by
+      simp [NetworkState.applyAdv]
+    have hadv : (net1.applyAdv apps (AdvMove.tick dt)).chain.now ≤ net2.chain.now := by
+      simpa using hrest.now_le
+    have hfo' : (net1.applyAdv apps (AdvMove.tick dt)).chain.finalOutcome c2.address = none := by
+      have hfo0 : (net1.chain.statusOf c2).finalOutcome net1.chain.now = none := by
+        simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat]
+      rcases hst : net1.chain.statusOf c2 with s | ⟨t0, ch⟩ | ⟨t0, f, o⟩
+      · simp [ChannelStatus.finalOutcome]
+      · have hdl := hfl t0 ch hst
+        have hlt : (net1.applyAdv apps (AdvMove.tick dt)).chain.now < ch.deadline :=
+          lt_of_le_of_lt hadv (lt_of_lt_of_le hDbound hdl)
+        simp only [ChannelStatus.finalOutcome, if_neg (not_le.mpr hlt)]
+      · rw [hst] at hfo0; simp [ChannelStatus.finalOutcome] at hfo0
+    have hfl' : ∀ t0 ch, (net1.applyAdv apps (AdvMove.tick dt)).chain.statusOf c2 = .challenged t0 ch →
+        D ≤ ch.deadline := by rw [hstat]; exact hfl
+    have hsent' : ∀ t0 ∈ (net1.applyAdv apps (AdvMove.tick dt)).sent, t0.state.channel = c2 →
+        t0.state.isFinal = false := by rw [NetworkState.applyAdv_sent]; exact hsent
+    have hlo' : v0now ≤ (net1.applyAdv apps (AdvMove.tick dt)).chain.now :=
+      le_trans hlo (NetworkState.applyAdv_now_le apps net1 (.tick dt))
+    exact ih hpend hpnotick hDbound hlo' hfo' hfl' hsent'
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hpend hpnotick hDbound hlo hfo hfl hsent
+    have step : (net1.applyAdv apps m).chain.finalOutcome c2.address = none ∧
+        (∀ t0 ch, (net1.applyAdv apps m).chain.statusOf c2 = .challenged t0 ch → D ≤ ch.deadline) := by
+      cases m with
+      | tick dt => exact absurd rfl (hnotick dt)
+      | land op => exact absurd rfl (hnoland op)
+      | deliver _ => simpa [NetworkState.applyAdv] using And.intro hfo hfl
+      | chain caller op =>
+        simp only [NetworkState.applyAdv]
+        cases h : net1.chain.apply apps caller op with
+        | none => exact ⟨hfo, hfl⟩
+        | some s' =>
+          cases op with
+          | deposit a e x =>
+            have hop2 : ¬ Op.targets (Op.deposit a e x) c2 := by simp [Op.targets]
+            have hntk : ∀ dt, Op.deposit a e x ≠ Op.tick dt := by intro dt heq; cases heq
+            have hstat := statusOf_apply_of_not_targets h hop2
+            have hn := now_apply_eq_of_not_tick h hntk
+            refine ⟨?_, by rw [hstat]; exact hfl⟩
+            simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hn]
+            simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+          | tick dt' =>
+            have hstat : s'.statusOf c2 = net1.chain.statusOf c2 := by
+              have hs' : net1.chain.tick dt' = s' := by simpa using h
+              rw [← hs']; rfl
+            have heq : (net1.applyAdv apps (AdvMove.chain caller (Op.tick dt'))).chain = s' := by
+              simp [NetworkState.applyAdv, h]
+            have hadv : s'.now ≤ net2.chain.now := by
+              have := hrest.now_le; rw [heq] at this; exact this
+            have hfo0 : (net1.chain.statusOf c2).finalOutcome net1.chain.now = none := by
+              simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+            refine ⟨?_, by rw [hstat]; exact hfl⟩
+            simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat]
+            rcases hst : net1.chain.statusOf c2 with s | ⟨t0, ch⟩ | ⟨t0, f, o⟩
+            · simp [ChannelStatus.finalOutcome]
+            · have hdl := hfl t0 ch hst
+              have hlt : s'.now < ch.deadline := lt_of_le_of_lt hadv (lt_of_lt_of_le hDbound hdl)
+              simp only [ChannelStatus.finalOutcome, if_neg (not_le.mpr hlt)]
+            · rw [hst] at hfo0; simp [ChannelStatus.finalOutcome] at hfo0
+          | transfer a b =>
+            by_cases hop2 : Op.targets (Op.transfer a b) c2
+            · exfalso
+              simp only [Op.targets] at hop2; subst hop2
+              obtain ⟨o, -, -, hfo2, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
+              rw [hfo] at hfo2; exact absurd hfo2 (by simp)
+            · have hntk : ∀ dt, Op.transfer a b ≠ Op.tick dt := by intro dt heq; cases heq
+              have hstat := statusOf_apply_of_not_targets h hop2
+              have hn := now_apply_eq_of_not_tick h hntk
+              refine ⟨?_, by rw [hstat]; exact hfl⟩
+              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hn]
+              simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+          | reclaim rl rv =>
+            by_cases hop2 : Op.targets (Op.reclaim (E := E) rl rv) c2
+            · exfalso
+              simp only [Op.targets] at hop2; subst hop2
+              obtain ⟨oL, -, -, -, -, hfo2, -, -, -, -, -, -, -, -⟩ := Adjudicator.reclaim_some h
+              rw [hfo] at hfo2; exact absurd hfo2 (by simp)
+            · have hntk : ∀ dt, Op.reclaim (E := E) rl rv ≠ Op.tick dt := by intro dt heq; cases heq
+              have hstat := statusOf_apply_of_not_targets h hop2
+              have hn := now_apply_eq_of_not_tick h hntk
+              refine ⟨?_, by rw [hstat]; exact hfl⟩
+              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hn]
+              simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+          | challenge c' proof cand =>
+            by_cases hop2 : Op.targets (Op.challenge c' proof cand) c2
+            · simp only [Op.targets] at hop2; subst hop2
+              obtain ⟨-, hsucc⟩ := Adjudicator.challenge_some h
+              have hsnow : s'.now = net1.chain.now := by rw [hsucc]; rfl
+              have hge : D ≤ net1.chain.now + c'.challengeDuration :=
+                le_trans (le_trans hD (Nat.add_le_add_right hlo (2 * T.ε)))
+                  (Nat.add_le_add_left hdur2 net1.chain.now)
+              refine ⟨?_, ?_⟩
+              · rw [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hsnow, hsucc,
+                  Adjudicator.statusOf_setStatus, if_pos rfl]
+                have hself0 : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
+                have hpos : 0 < c'.challengeDuration := lt_of_lt_of_le T.ε_pos (le_trans hself0 hdur2)
+                have hndz : ¬ net1.chain.now + c'.challengeDuration ≤ net1.chain.now :=
+                  not_le.mpr (Nat.lt_add_of_pos_right hpos)
+                simp only [ChannelStatus.finalOutcome, if_neg hndz]
+              · intro t0 ch hc
+                rw [hsucc, Adjudicator.statusOf_setStatus, if_pos rfl] at hc
+                simp only [ChannelStatus.challenged.injEq] at hc
+                rw [← hc.2]; exact hge
+            · have hntk : ∀ dt, Op.challenge c' proof cand ≠ Op.tick dt := by intro dt heq; cases heq
+              have hstat := statusOf_apply_of_not_targets h hop2
+              have hn := now_apply_eq_of_not_tick h hntk
+              refine ⟨?_, by rw [hstat]; exact hfl⟩
+              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hn]
+              simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+          | checkpoint c' proof cand =>
+            by_cases hop2 : Op.targets (Op.checkpoint c' proof cand) c2
+            · simp only [Op.targets] at hop2; subst hop2
+              obtain ⟨-, hsucc⟩ := Adjudicator.checkpoint_some h
+              refine ⟨?_, ?_⟩
+              · rw [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hsucc,
+                  Adjudicator.statusOf_setStatus, if_pos rfl]
+                simp [ChannelStatus.finalOutcome]
+              · intro t0 ch hc
+                rw [hsucc, Adjudicator.statusOf_setStatus, if_pos rfl] at hc
+                cases hc
+            · have hntk : ∀ dt, Op.checkpoint c' proof cand ≠ Op.tick dt := by intro dt heq; cases heq
+              have hstat := statusOf_apply_of_not_targets h hop2
+              have hn := now_apply_eq_of_not_tick h hntk
+              refine ⟨?_, by rw [hstat]; exact hfl⟩
+              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hn]
+              simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+          | conclude c' ss' =>
+            by_cases hop2 : Op.targets (Op.conclude c' ss') c2
+            · exfalso
+              simp only [Op.targets] at hop2; subst hop2
+              obtain ⟨⟨-, hproof'⟩, -⟩ := Adjudicator.conclude_some h
+              have hp' : p ∈ ss'.signers := hproof'.2.2 p (hproof'.1 ▸ hp2)
+              have hmem2 : ss' ∈ (Op.conclude c' ss').proofStates := by simp [Op.proofStates]
+              obtain ⟨t', htmem, hteq⟩ :=
+                (hbounds.unforgeable net1 caller (.conclude c' ss') hfeas ss' hmem2).1 hp'
+              have hnf := hsent t' htmem (by rw [hteq]; exact hproof'.1)
+              have hxfinal : t'.state.isFinal = true := by rw [hteq]; exact hproof'.2.1
+              rw [hnf] at hxfinal; exact absurd hxfinal (by simp)
+            · have hntk : ∀ dt, Op.conclude c' ss' ≠ Op.tick dt := by intro dt heq; cases heq
+              have hstat := statusOf_apply_of_not_targets h hop2
+              have hn := now_apply_eq_of_not_tick h hntk
+              refine ⟨?_, by rw [hstat]; exact hfl⟩
+              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hstat, hn]
+              simpa [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hfo
+    have hsent' : ∀ t0 ∈ (net1.applyAdv apps m).sent, t0.state.channel = c2 →
+        t0.state.isFinal = false := by rw [NetworkState.applyAdv_sent]; exact hsent
+    have hlo' : v0now ≤ (net1.applyAdv apps m).chain.now :=
+      le_trans hlo (NetworkState.applyAdv_now_le apps net1 m)
+    exact ih hpend hpnotick hDbound hlo' step.1 step.2 hsent'
+
+
+
+
+
+
+
+
+/-- Once `c`'s own outcome is finalized, it never goes back to `none`:
+    `Adjudicator.finalizedWith_apply` shows the FIXED finalization value
+    is permanent over one step; `ChannelStatus.finalizedWith_isSome_iff`
+    converts between "finalized at all" (`finalizedWith`) and "has a
+    stored outcome" (`finalOutcome`) at each end, since the two coincide
+    (`isSome`-wise) for every `ChannelStatus` constructor. Used by
+    `Threat.RoundSeq.finalOutcome_isSome_mono`. -/
+theorem finalOutcome_isSome_apply {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (h : s.apply apps caller op = some s') {c : FixedPart}
+    (hs : s.finalOutcome c.address ≠ none) : s'.finalOutcome c.address ≠ none := by
+  have hiso : (s.finalizedWith c.address).isSome := by
+    rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+      ChannelStatus.finalizedWith_isSome_iff]
+    rw [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hs
+    exact Option.isSome_iff_ne_none.mpr hs
+  obtain ⟨f, hf⟩ := Option.isSome_iff_exists.mp hiso
+  have hf' := Adjudicator.finalizedWith_apply h hf
+  rw [FixedPart.address_eq, Adjudicator.finalOutcome_channel]
+  rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel] at hf'
+  have hiso' : ((s'.statusOf c).finalizedWith s'.now).isSome := by rw [hf']; rfl
+  rw [ChannelStatus.finalizedWith_isSome_iff] at hiso'
+  exact Option.isSome_iff_ne_none.mp hiso'
+
+/-- `finalOutcome_isSome_apply`, carried over a whole round: once `c` is
+    finalized it stays finalized through every further `land`/`tick`/
+    `other` step. Used by `directly_funded_round_open` to rule out `d`
+    first becoming finalized mid-round, given an externally-known fact
+    (`channel_stays_open_round`) that it is STILL unfinalized at the
+    round's end: if it had finalized at some step `k`, this lemma, applied
+    to the REST of the round from `k` onward, would force it finalized at
+    the end too — contradicting that external fact, with no need to
+    re-derive `channel_stays_open_round`'s own `hbounds.unforgeable`
+    argument a second time. -/
+theorem Threat.RoundSeq.finalOutcome_isSome_mono {apps : Apps E} {p : Participant} {T : Threat E p}
+    {t : Time} {pending : List (Op E)} {c : FixedPart} {net net' : NetworkState E p}
+    (h : Threat.RoundSeq apps T t pending net net') :
+    net.chain.finalOutcome c.address ≠ none → net'.chain.finalOutcome c.address ≠ none := by
+  induction h with
+  | nil => exact id
+  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
+    intro hfo
+    apply ih
+    simp only [NetworkState.applyAdv]
+    cases hop : net1.chain.apply apps p op with
+    | none => exact hfo
+    | some s' => exact finalOutcome_isSome_apply hop hfo
+  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
+    intro hfo
+    apply ih
+    simp only [NetworkState.applyAdv, FixedPart.address_eq, Adjudicator.finalOutcome_channel,
+      Adjudicator.tick_statusOf, Adjudicator.tick_now] at hfo ⊢
+    cases ho : (net1.chain.statusOf c).finalOutcome net1.chain.now with
+    | none => exact absurd ho hfo
+    | some o => rw [ChannelStatus.finalOutcome_mono ho (Nat.le_add_right net1.chain.now dt)]; simp
+  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
+    intro hfo
+    apply ih
+    cases m with
+    | deliver ss' => simpa [NetworkState.applyAdv] using hfo
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
+    | chain caller op =>
+      simp only [NetworkState.applyAdv]
+      cases hop : net1.chain.apply apps caller op with
+      | none => exact hfo
+      | some s' => exact finalOutcome_isSome_apply hop hfo
+
+/-- `directly_funded_step` generalized from an external destination `d : E`
+    to any channel destination `d : FixedPart` not itself yet finalized
+    (`hdopen`): every case where the original used `Address.external d`'s
+    own impossibility of equalling a channel address, this uses `hdopen`
+    instead — a transfer or reclaim reading `d.address` as an
+    ALREADY-finalized source/subchannel contradicts `hdopen` directly (via
+    the very fact, `hf`/`hV`, that step's own precondition supplies). The
+    conclusion drops the original's exact-tracking (never needed — only
+    the `≥` bound is used downstream) in favor of `by_cases` at every spot
+    a deposit or an unrelated transfer could, harmlessly, ALSO pay
+    `d.address`. Used by `directly_funded_round_open`. -/
+theorem directly_funded_step_open {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {op : Op E} {c d : FixedPart} {o : Allocation E} {amt : Coins}
+    (hf : s.finalOutcome c.address = some (.allocation o))
+    (ht : o.total ≤ s.balances.get c.address)
+    (hdopen : s.finalOutcome d.address = none)
+    (hd : o.find d.address = some ⟨d.address, .alloc amt⟩)
+    (h : s.apply apps caller op = some s') :
+    ∃ o' amt', s'.finalOutcome c.address = some (.allocation o') ∧
+      o'.total ≤ s'.balances.get c.address ∧
+      o'.find d.address = some ⟨d.address, .alloc amt'⟩ ∧
+      s.balances.get d.address + amt ≤ s'.balances.get d.address + amt' := by
+  have hf0 : (s.statusOf c).finalOutcome s.now = some (.allocation o) := by
+    simpa [FixedPart.address_eq] using hf
+  have hfin : (s.statusOf c).mode s.now = .finalized := by
+    rw [ChannelStatus.mode_eq_finalized_iff, hf0]; rfl
+  cases op with
+  | deposit a e x =>
+    obtain ⟨⟨c', hac', -⟩, -, hb, -, hs, hn⟩ := Adjudicator.deposit_some h
+    refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+    · simpa [FixedPart.address_eq, Adjudicator.statusOf_of_status hs, hn] using hf
+    · rw [hb, Balances.get_add]
+      by_cases hca : c.address = a
+      · rw [if_pos hca]; grind
+      · rw [if_neg hca]; exact ht
+    · rw [hb, Balances.get_add]
+      by_cases hda : d.address = a
+      · rw [if_pos hda]; grind
+      · rw [if_neg hda]
+  | transfer a b =>
+    by_cases hac : a = c
+    · subst hac
+      obtain ⟨o'', amt'', x, hf'', hfind, hxeq, hbal, -, hstat, hnow, hak, hbf⟩ :=
+        Adjudicator.transfer_some h
+      rw [hf] at hf''
+      simp only [Option.some.injEq, Outcome.allocation.injEq] at hf''
+      subst hf''
+      have hfo' : s'.finalOutcome a.address = some (.allocation (o.reduceOwed b x)) := by
+        have hstatc : s'.statusOf a = (s.statusOf a).withOutcome (.allocation (o.reduceOwed b x)) :=
+          by rw [Adjudicator.statusOf_of_status hstat, Adjudicator.statusOf_setStatus, if_pos rfl]
+        simp [FixedPart.address_eq, hstatc]
+      have hxb : x ≤ o.owed b := hxeq ▸ paidTo_first_entry_only _ _ _
+      have htot := Allocation.total_reduceOwed o b hxb
+      have hxh : x ≤ s.balances.get a.address := hxeq ▸ Allocation.paidTo_le_held _ _ _
+      have hcd : (d.address : Address E) ≠ a.address := by
+        intro hh; rw [hh, hf] at hdopen; simp at hdopen
+      have hfind' := Allocation.find_reduceOwed o b d.address x
+      by_cases hbd : d.address = b
+      · subst hbd
+        rw [if_pos rfl, hd] at hfind'
+        simp only [Option.map_some] at hfind'
+        have hxamt : x ≤ amt := by
+          have heq : o.owed d.address = amt := by rw [Allocation.owed, hd]; rfl
+          rw [heq] at hxb; exact hxb
+        refine ⟨o.reduceOwed d.address x, amt - x, hfo', ?_, hfind', ?_⟩
+        · rw [hbal, Balances.get_sub, if_pos rfl]
+          by_cases hba : (d.address : Address E) = a.address
+          · rw [hba, Balances.get_add, if_pos rfl]; grind
+          · rw [Balances.get_add, if_neg (Ne.symm hba)]; grind
+        · rw [hbal, Balances.get_sub, if_neg hcd, Balances.get_add, if_pos rfl]
+          grind
+      · rw [if_neg hbd] at hfind'
+        refine ⟨o.reduceOwed b x, amt, hfo', ?_, by rw [hfind']; exact hd, ?_⟩
+        · rw [hbal, Balances.get_sub, if_pos rfl]
+          by_cases hba : b = a.address
+          · rw [hba, Balances.get_add, if_pos rfl]; grind
+          · rw [Balances.get_add, if_neg (Ne.symm hba)]; grind
+        · rw [hbal, Balances.get_sub, if_neg hcd, Balances.get_add, if_neg hbd]
+    · obtain ⟨o'', amt'', x, hf'', hfind, hxeq, hbal, -, hstat, hnow, hak, hbf⟩ :=
+        Adjudicator.transfer_some h
+      have haddr : (c.address : Address E) ≠ a.address := by
+        intro hh; injection hh with hh'; exact hac hh'.symm
+      have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [Adjudicator.statusOf_of_status hstat, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hac)]
+      have hcd : (d.address : Address E) ≠ a.address := by
+        intro hh; rw [hh, hf''] at hdopen; simp at hdopen
+      refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal, Balances.get_sub, if_neg haddr, Balances.get_add]
+        by_cases hbc : c.address = b
+        · rw [if_pos hbc]; grind
+        · rw [if_neg hbc]; exact ht
+      · rw [hbal, Balances.get_sub, if_neg hcd, Balances.get_add]
+        by_cases hbd : d.address = b
+        · rw [if_pos hbd]; grind
+        · rw [if_neg hbd]
+  | reclaim l v =>
+    by_cases hcl : l = c
+    · subst hcl
+      obtain ⟨oL, oV, x, left, right, hL, hV, hfind, -, -, hxeq, hsucc, hlk, hvk⟩ :=
+        Adjudicator.reclaim_some h
+      rw [hf] at hL
+      simp only [Option.some.injEq, Outcome.allocation.injEq] at hL
+      subst hL
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      have hfo' : s'.finalOutcome l.address = some (.allocation
+          (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address)) := by
+        have hstatl : s'.statusOf l = (s.statusOf l).withOutcome (.allocation
+            (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address)) := by
+          rw [hsucc, Adjudicator.statusOf_setStatus, if_pos rfl]
+        simp [FixedPart.address_eq, hstatl]
+      have h1 : (o.addTo left (oV.amountAt 0)).total ≤ o.total + oV.amountAt 0 :=
+        Allocation.total_addTo_le _ _ _
+      have h2 : ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).total ≤
+          (o.addTo left (oV.amountAt 0)).total + oV.amountAt 1 :=
+        Allocation.total_addTo_le _ _ _
+      have h3 : o.owed v.address ≤ (o.addTo left (oV.amountAt 0)).owed v.address :=
+        Allocation.owed_addTo_ge _ _ _ _
+      have h4 : (o.addTo left (oV.amountAt 0)).owed v.address ≤
+          ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).owed v.address :=
+        Allocation.owed_addTo_ge _ _ _ _
+      have h5 := Allocation.total_remove_le
+        ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)) v.address
+      have hvo : o.owed v.address = x := by
+        simp only [Allocation.owed, hfind, Option.map_some, Option.getD_some, Entry.amount_mk,
+          Item.amount_guarantee]
+      have had : (d.address : Address E) ≠ v.address := by
+        intro hh
+        rw [hh] at hdopen
+        have hiso : (s.finalizedWith v.address).isSome := by rw [hV]; rfl
+        rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+          ChannelStatus.finalizedWith_isSome_iff] at hiso
+        rw [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hdopen
+        rw [hdopen] at hiso
+        simp at hiso
+      have hfind1 : (o.addTo left (oV.amountAt 0)).find d.address =
+          some ⟨d.address, .alloc (if d.address = left
+            then amt + oV.amountAt 0 else amt)⟩ := by
+        by_cases hld : d.address = left
+        · rw [if_pos hld, ← hld, Allocation.find_addTo_self, hd]; simp
+        · rw [if_neg hld, Allocation.find_addTo_of_ne _ _ hld, hd]
+      have hfind2 : ((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).find
+          d.address = some ⟨d.address, .alloc
+            ((if d.address = left then amt + oV.amountAt 0 else amt) +
+              (if d.address = right then oV.amountAt 1 else 0))⟩ := by
+        by_cases hrd : d.address = right
+        · rw [if_pos hrd, ← hrd, Allocation.find_addTo_self, hfind1]; simp
+        · rw [if_neg hrd, Allocation.find_addTo_of_ne _ _ hrd, hfind1]; simp
+      have hfind3 : (((o.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove
+          v.address).find d.address = some ⟨d.address, .alloc
+            ((if d.address = left then amt + oV.amountAt 0 else amt) +
+              (if d.address = right then oV.amountAt 1 else 0))⟩ := by
+        rw [Allocation.find_remove, if_neg had, hfind2]
+      refine ⟨_, _, hfo', ?_, hfind3, ?_⟩
+      · rw [hbal']; grind
+      · rw [hbal']
+        split <;> split <;> grind
+    · obtain ⟨oL, oV, x, left, right, hL, hV, hfind, -, -, hxeq, hsucc, hlk, hvk⟩ :=
+        Adjudicator.reclaim_some h
+      have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcl)]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']; exact ht
+      · rw [hbal']
+  | challenge c' proof candidate =>
+    obtain ⟨⟨-, -, -, hm⟩, hsucc⟩ := Adjudicator.challenge_some h
+    by_cases hcc : c = c'
+    · exfalso
+      subst hcc
+      rw [Adjudicator.mode_eq] at hm
+      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hfin <;> cases hfin
+    · have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg hcc]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']; exact ht
+      · rw [hbal']
+  | checkpoint c' proof candidate =>
+    obtain ⟨⟨ho, -, -, -⟩, hsucc⟩ := Adjudicator.checkpoint_some h
+    by_cases hcc : c = c'
+    · exfalso
+      subst hcc
+      exact ho hfin
+    · have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg hcc]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']; exact ht
+      · rw [hbal']
+  | conclude c' ss =>
+    obtain ⟨⟨ho, -⟩, hsucc⟩ := Adjudicator.conclude_some h
+    by_cases hcc : c = c'
+    · exfalso
+      subst hcc
+      exact ho hfin
+    · have hstatc : s'.statusOf c = s.statusOf c := by
+        rw [hsucc, Adjudicator.statusOf_setStatus, if_neg hcc]
+      have hnow : s'.now = s.now := by rw [hsucc]; rfl
+      have hbal' : s'.balances = s.balances := by rw [hsucc]; rfl
+      refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+      · simpa [FixedPart.address_eq, hstatc, hnow] using hf
+      · rw [hbal']; exact ht
+      · rw [hbal']
+  | tick dt =>
+    have hs' : s.tick dt = s' := by simpa using h
+    subst hs'
+    refine ⟨o, amt, ?_, ?_, hd, ?_⟩
+    · simpa [FixedPart.address_eq] using
+        ChannelStatus.finalOutcome_mono hf0 (Nat.le_add_right s.now dt)
+    · simpa using ht
+    · simp
+
+
 /-- Nitro-49 (Nitro:997-1047, §5.4.4 Partial Withdrawal from a Ledger Channel).
     Nitro:1046-1047: "A was able to withdraw their funds instantly, without
     having to wait for the channel timeout." With the conclusion proof for
