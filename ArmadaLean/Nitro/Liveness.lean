@@ -6182,6 +6182,117 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
   · exact hΩne2 (Option.some_inj.mp (hfin'.symm.trans h2))
   · rw [hfz] at hfin'; exact absurd hfin' (by simp)
 
+/-- A round with no call of `p` pending, against a transfer-only adversary
+    (`Threat.TransfersOnly`, Nitro:779-781), is one `applyAll` of transfers
+    on the chain: `tick` and `deliver` are not feasible, and `land` needs a
+    pending call. Used by `turbo_replay_unbeatable`. -/
+theorem Threat.RoundSeq.transfers {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    (hT : T.TransfersOnly) {net net' : NetworkState E p} (h : T.RoundSeq apps t [] net net') :
+    ∃ A, OnlyTransfers A ∧ net'.chain = Adjudicator.applyAll apps A net.chain := by
+  generalize hp : ([] : List (Op E)) = pending at h
+  induction h with
+  | nil => exact ⟨[], by simp [OnlyTransfers], rfl⟩
+  | land hsplit _ _ => subst hp; simp at hsplit
+  | tick hfeas _ _ _ =>
+    obtain ⟨_, _, _, h⟩ := hT _ _ hfeas
+    cases h
+  | @other pending n n' m hfeas _ _ _ ih =>
+    obtain ⟨caller, a, b, rfl⟩ := hT _ _ hfeas
+    obtain ⟨A, hA, heq⟩ := ih hp
+    refine ⟨(caller, .transfer a b) :: A, ?_, ?_⟩
+    · intro e he
+      rcases List.mem_cons.1 he with rfl | he
+      · exact ⟨a, b, rfl⟩
+      · exact hA e he
+    · rw [heq]
+      simp only [NetworkState.applyAdv]
+      cases hap : n.chain.apply apps caller (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
+
+/-- Nitro:842-843: "calling transfers out of order does not affect the
+    ultimate result", in the form the strategy needs. When `L` is a
+    subsequence of the transfer list `L'`, playing `L'` from a state ahead
+    of `sp` stays ahead of playing `L` from `sp`
+    (`Adjudicator.Ahead.transfer_right` for each transfer only in `L'`,
+    `Adjudicator.Ahead.transfer` for each transfer in both). Used by
+    `turbo_replay_unbeatable`. -/
+theorem Adjudicator.Ahead.applyAll_sublist (apps : Apps E) {L L' : List (Participant × Op E)}
+    (hsub : L.Sublist L') (hL' : OnlyTransfers L') :
+    ∀ {sp sg : Adjudicator E}, sp.Ahead sg →
+      (Adjudicator.applyAll apps L sp).Ahead (Adjudicator.applyAll apps L' sg) := by
+  induction hsub with
+  | slnil => exact fun h => h
+  | @cons l1 l2 e _ ih =>
+    intro sp sg h
+    obtain ⟨a, b, he⟩ := hL' e List.mem_cons_self
+    obtain ⟨caller, op⟩ := e
+    simp only at he
+    subst he
+    simp only [Adjudicator.applyAll, Adjudicator.apply_transfer]
+    refine ih (fun e' he' => hL' e' (List.mem_cons_of_mem _ he')) ?_
+    cases ht : sg.transfer a b with
+    | none => exact h
+    | some sg' => exact h.transfer_right ht
+  | @cons_cons l1 l2 e _ ih =>
+    intro sp sg h
+    obtain ⟨a, b, he⟩ := hL' e List.mem_cons_self
+    obtain ⟨caller, op⟩ := e
+    simp only at he
+    subst he
+    simp only [Adjudicator.applyAll, Adjudicator.apply_transfer]
+    exact ih (fun e' he' => hL' e' (List.mem_cons_of_mem _ he')) (h.transfer a b)
+
+/-- The strategy of `turbo_redistribution_unbeatable`: `p` replays `ops`, one
+    transfer per round. The chain stays ahead of the state `sp` that `ops`
+    reaches with no interference: each round lands `p`'s transfer between
+    two adversary transfer lists (`Threat.Round.single`,
+    `Threat.RoundSeq.transfers`), and `Adjudicator.Ahead.applyAll_sublist`
+    keeps the order. An external balance is never lower in a state ahead
+    (`Adjudicator.Ahead.get_external_le`). -/
+theorem turbo_replay_unbeatable (apps : Apps E) {p : Participant} (T : Threat E p)
+    (hT : T.TransfersOnly) (d : E) (x : Coins) :
+    ∀ ops : List (Participant × Op E), OnlyTransfers ops →
+      ∀ (sp : Adjudicator E) (net : NetworkState E p), sp.Ahead net.chain →
+        x ≤ (Adjudicator.applyAll apps ops sp).balances.get (.external d) →
+        CanObtainIn apps T HonestMove.IsTransfer (.external d) x net := by
+  intro ops
+  induction ops with
+  | nil => intro _ sp net h hx; exact .done (le_trans hx (h.get_external_le d))
+  | cons o L ih =>
+    intro hops sp net h hx
+    obtain ⟨a, b, ho⟩ := hops o List.mem_cons_self
+    refine .move (HonestMove.chain (.transfer a b)) ⟨a, b, rfl, rfl⟩
+      (by simp [Op.HonestFeasible, Op.proofStates]) ?_
+    intro net' hround
+    rw [NetworkState.applyHonest_chain]
+    obtain ⟨n1, h1, h2⟩ := Threat.Round.single hround
+    obtain ⟨A1, hA1, e1⟩ := h1.transfers hT
+    obtain ⟨A2, hA2, e2⟩ := h2.transfers hT
+    have hland : (n1.applyAdv apps (.land (.transfer a b))).chain =
+        Adjudicator.applyAll apps [(p, .transfer a b)] n1.chain := by
+      simp only [NetworkState.applyAdv]
+      cases hap : n1.chain.apply apps p (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
+    have hchain : net'.chain =
+        Adjudicator.applyAll apps (A1 ++ (p, .transfer a b) :: A2) net.chain := by
+      rw [e2, hland, e1, ← Adjudicator.applyAll_append, ← Adjudicator.applyAll_append]
+      rfl
+    have hall : OnlyTransfers (A1 ++ (p, .transfer a b) :: A2) := by
+      intro e he
+      rcases List.mem_append.1 he with he | he
+      · exact hA1 e he
+      · rcases List.mem_cons.1 he with rfl | he
+        · exact ⟨a, b, rfl⟩
+        · exact hA2 e he
+    have hstep := Adjudicator.Ahead.applyAll_sublist apps
+      (List.singleton_sublist.2 (List.mem_append_right _ List.mem_cons_self)) hall h
+    rw [← hchain] at hstep
+    obtain ⟨q, op⟩ := o
+    simp only at ho
+    subst ho
+    refine ih (fun e he => hops e (List.mem_cons_of_mem _ he)) ((sp.transfer a b).getD sp) net'
+      ?_ ?_
+    · simpa [Adjudicator.applyAll] using hstep
+    · simpa [Adjudicator.applyAll] using hx
+
 /-- Nitro-30, Nitro-16. Nitro:775-777: "reasoning about redistribution is easy
     in Turbo: if you can find one strategy to move a certain amount into an
     address, then no-one else can prevent this from occurring." A transfer
@@ -6196,7 +6307,8 @@ theorem turbo_redistribution_unbeatable (apps : Apps E) {p : Participant} (T : T
     (ops : List (Participant × Op E)) (hops : OnlyTransfers ops) (d : E) (x : Coins)
     (hgoal : x ≤ (Adjudicator.applyAll apps ops net.chain).balances.get (.external d)) :
     CanObtainIn apps T HonestMove.IsTransfer (.external d) x net := by
-  sorry
+  exact turbo_replay_unbeatable apps T hT d x ops hops net.chain net (Adjudicator.Ahead.refl _)
+    hgoal
 
 /-- Nitro-31. Nitro:785-787: "a deposit into the system cannot reduce the value of
     any address and cannot increase the value of any address by more than the

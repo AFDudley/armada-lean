@@ -563,262 +563,345 @@ theorem total_reduceOwed (o : Allocation E) (d : Address E) {x : Coins} (hx : x 
       have := ih hx
       grind
 
-/-! ### `paidTo`, generalized with an explicit "seen" set
+/-! ### Priority position, and one allocation ahead of another
 
-`Allocation.paidTo` dedups the whole allocation up front (`Allocation.dedup`).
-To induct on an allocation one entry at a time while tracking which
-destinations an earlier recursive step already paid, `paidToSeen` threads
-`dedupFrom`'s own `seen` list through the same recursion as `payout`
-(`paidToSeen_cons`), so a destination duplicated deeper in the list is
-skipped exactly when `dedupFrom` would skip it, with no `.dedup = ·`
-hypothesis anywhere: the "no duplicates" fact `paidTo_of_getElem?` needs is
-built into this recursion instead of assumed. Used by
-`paidToSeen_reduceOwed_ne` (below) and `turbo_redistribution_unbeatable`
-(`ArmadaLean/Nitro/Liveness.lean`). -/
-def paidToSeen (seen : List (Address E)) (held : Coins) (o : Allocation E)
-    (d : Address E) : Coins :=
-  Balances.get ((Allocation.dedupFrom seen o).payout held) d
+`turbo_redistribution_unbeatable` (`Liveness.lean`, Nitro:775-777) compares
+two states of one channel's allocation. `get_payout` is the priority formula
+(Nitro:747-749) on any list. `dueBefore`, `Precedes` and `dueAfter` locate the
+first entry of one destination in priority order. `AheadOf` is the per-channel
+part of `Adjudicator.Ahead`. -/
 
-@[simp] theorem paidToSeen_nil (seen : List (Address E)) (held : Coins) (d : Address E) :
-    paidToSeen seen held ([] : Allocation E) d = 0 := rfl
+/-- An entry's destination and whether it is a guarantee. `transfer` never
+    changes this pair when it pays an allocation item (`map_kind_reduceOwed`). -/
+def _root_.ArmadaLean.Nitro.Entry.kind (e : Entry E) : Address E × Bool :=
+  (e.dest, e.item.isGuarantee)
 
-theorem paidTo_eq_paidToSeen_nil (held : Coins) (o : Allocation E) (d : Address E) :
-    o.paidTo held d = paidToSeen [] held o d := paidTo_eq_get held o d
+/-- Nitro:747-749, on any list: the first entry for `b` receives
+    `min(amount, held − the total of the entries ahead of it)`.
+    `Balances.get` and `owed` both read the first entry for `b`, so the list
+    need not be deduplicated. -/
+theorem get_payout (held : Coins) (o : Allocation E) (b : Address E) :
+    Balances.get (o.payout held) b =
+      min (o.owed b) (held - Allocation.total (o.takeWhile (fun e => !decide (e.dest = b)))) := by
+  induction o generalizing held with
+  | nil => simp [Allocation.owed]
+  | cons e t ih =>
+    rw [payout_cons, Balances.get_cons, owed_cons, List.takeWhile_cons]
+    by_cases h : e.dest = b
+    · simp [h]
+    · simp only [Ne.symm h, h, if_false, ih, decide_false, Bool.not_false, if_true, total_cons]
+      congr 1
+      rcases le_total e.amount held with h1 | h1 <;> simp [h1] <;> unfold Coins at * <;> omega
 
-/-- `paidToSeen`'s own recursion, matching `dedupFrom_cons` and `payout_cons`:
-    a seen destination is skipped with no change to `held`; an unseen match
-    for `d` is that entry's own affordance (`Balances.get_cons`'s first-match
-    semantics); an unseen non-match consumes its affordance from `held` and
-    joins `seen` before the recursive call. -/
-theorem paidToSeen_cons (seen : List (Address E)) (held : Coins) (e : Entry E) (o : Allocation E)
-    (d : Address E) :
-    paidToSeen seen held (e :: o) d =
-      if e.dest ∈ seen then paidToSeen seen held o d
-      else if e.dest = d then min e.amount held
-      else paidToSeen (e.dest :: seen) (held - min e.amount held) o d := by
-  unfold paidToSeen
-  rw [dedupFrom_cons]
-  split
-  · rfl
-  · rw [payout_cons]
-    by_cases hed : e.dest = d
-    · simp [hed, Balances.get_cons]
-    · simp [hed, Ne.symm hed, Balances.get_cons]
-
-/-- Once `d` is in `seen`, every later entry for `d` is a duplicate
-    `dedupFrom` would drop, so `d` reads as unpaid regardless of `o`.
-    Used by `paidToSeen_reduceOwed_ne`. -/
-theorem paidToSeen_of_mem_seen (d : Address E) (o : Allocation E) :
-    ∀ seen held, d ∈ seen → paidToSeen seen held o d = 0 := by
+/-- The entries ahead of `b`'s first entry, and that entry, are part of the
+    total. -/
+theorem total_takeWhile_add_owed_le (o : Allocation E) (b : Address E) :
+    Allocation.total (o.takeWhile (fun e => !decide (e.dest = b))) + o.owed b ≤ o.total := by
   induction o with
-  | nil => intros; simp
-  | cons f t ih =>
-    intro seen held hd
-    rw [paidToSeen_cons]
-    by_cases hf : f.dest ∈ seen
-    · rw [if_pos hf]; exact ih seen held hd
-    · have hne : f.dest ≠ d := fun h => hf (by rw [h]; exact hd)
-      rw [if_neg hf, if_neg hne]
-      exact ih (f.dest :: seen) (held - min f.amount held) (List.mem_cons_of_mem _ hd)
+  | nil => simp [Allocation.owed]
+  | cons e t ih =>
+    rw [owed_cons, List.takeWhile_cons, total_cons]
+    by_cases h : e.dest = b
+    · simp [h]
+    · simp only [h, decide_false, Bool.not_false, if_true, if_false, total_cons]
+      unfold Coins at *
+      omega
 
-/-- `paidToSeen` never exceeds the `held` it is given, the same bound as
-    `paidTo_le_held`. Used by `paidToSeen_reduceOwed_ne`. -/
-theorem paidToSeen_le_held (seen : List (Address E)) (held : Coins) (o : Allocation E)
-    (d : Address E) : paidToSeen seen held o d ≤ held := by
-  induction o generalizing seen held with
+/-- Paying `x` to `c`'s first entry lowers the total ahead of `b`'s first
+    entry by `x` when `c`'s entry lies ahead of `b`'s, and by nothing
+    otherwise. -/
+theorem total_takeWhile_reduceOwed (o : Allocation E) (b c : Address E) {x : Coins}
+    (hx : x ≤ o.owed c) :
+    Allocation.total ((o.reduceOwed c x).takeWhile (fun e => !decide (e.dest = b))) +
+        (if c ∈ (o.map Entry.dest).takeWhile (fun d => !decide (d = b)) then x else 0) =
+      Allocation.total (o.takeWhile (fun e => !decide (e.dest = b))) := by
+  induction o with
   | nil => simp
-  | cons f t ih =>
-    rw [paidToSeen_cons]
-    split
-    · exact ih seen held
-    · split
-      · exact Nat.min_le_right _ _
-      · exact le_trans (ih (f.dest :: seen) (held - min f.amount held)) (Nat.sub_le _ _)
+  | cons e t ih =>
+    rw [owed_cons] at hx
+    rw [reduceOwed_cons]
+    by_cases hc : e.dest = c
+    · rw [if_pos hc] at hx ⊢
+      subst hc
+      rw [List.takeWhile_cons, List.takeWhile_cons, List.map_cons, List.takeWhile_cons]
+      by_cases hb : e.dest = b
+      · simp [hb]
+      · simp [hb]
+        unfold Coins at *
+        omega
+    · rw [if_neg hc] at hx ⊢
+      rw [List.takeWhile_cons, List.takeWhile_cons, List.map_cons, List.takeWhile_cons]
+      by_cases hb : e.dest = b
+      · simp [hb]
+      · simp [hb, Ne.symm hc]
+        rw [← ih hx]
+        unfold Coins at *
+        omega
 
-/-- Paying `e`'s own current affordance (the honest `transfer` amount,
-    `x = o.paidToSeen seen held e`) never changes what a later call for a
-    different destination `d` would pay. Proved by induction on `o`,
-    carrying `seen`/`held` along: `paidToSeen_cons` and `reduceOwed_cons`
-    agree on which entry (if any) is `e`'s first unseen match; when `e` is
-    already in `seen`, `paidToSeen_of_mem_seen` makes the affordance there
-    `0`, so the stray `reduceOwed` rewrite of a later `e`-entry subtracts
-    `0` and changes nothing; when `e`'s own first unseen entry is `f`
-    itself, `paidToSeen_le_held` bounds what `t` still owes `e` by what is
-    left after `f`'s own cut, which is exactly the slack `omega` needs to
-    show paying `e` first or `f` first lands at the same remaining `held`
-    for whichever of the two is not being queried. Used by
-    `turbo_redistribution_unbeatable` (`Liveness.lean`). -/
-theorem paidToSeen_reduceOwed_ne (seen : List (Address E)) (held : Coins) (o : Allocation E)
-    {e d : Address E} (hed : e ≠ d) :
-    paidToSeen seen (held - paidToSeen seen held o e)
-      (Allocation.reduceOwed o e (paidToSeen seen held o e)) d =
-      paidToSeen seen held o d := by
-  induction o generalizing seen held with
-  | nil => simp
-  | cons f t ih =>
-    by_cases hf : f.dest ∈ seen
-    · have hxe : paidToSeen seen held (f :: t) e = paidToSeen seen held t e := by
-        rw [paidToSeen_cons, if_pos hf]
-      rw [hxe]
-      have hx0 : f.dest = e → paidToSeen seen held t e = 0 := fun h =>
-        paidToSeen_of_mem_seen e t seen held (h ▸ hf)
-      have hrw : Allocation.reduceOwed (f :: t) e (paidToSeen seen held t e) =
-          if f.dest = e then
-            { f with item := .alloc (f.amount - paidToSeen seen held t e) } :: t
-          else f :: Allocation.reduceOwed t e (paidToSeen seen held t e) := reduceOwed_cons ..
-      rw [hrw]
+/-- When `b`'s first entry lies ahead of `c`'s first entry, that entry and
+    everything ahead of it lie ahead of `c`'s entry. -/
+theorem total_takeWhile_lt (o : Allocation E) {b c : Address E} (hbc : b ≠ c)
+    (hc : 0 < o.owed c) (hnot : c ∉ (o.map Entry.dest).takeWhile (fun d => !decide (d = b))) :
+    Allocation.total (o.takeWhile (fun e => !decide (e.dest = b))) + o.owed b ≤
+      Allocation.total (o.takeWhile (fun e => !decide (e.dest = c))) := by
+  induction o with
+  | nil => simp [Allocation.owed] at hc
+  | cons e t ih =>
+    rw [owed_cons] at hc
+    by_cases hb : e.dest = b
+    · subst hb
+      simp [owed_cons, hbc]
+    · have hec : e.dest ≠ c := by
+        rintro rfl
+        exact hnot (by simp [hb])
+      rw [if_neg hec] at hc
+      have hnot' : c ∉ (t.map Entry.dest).takeWhile (fun d => !decide (d = b)) := by
+        simpa [List.takeWhile_cons, hb, Ne.symm hec] using hnot
+      have := ih hc hnot'
+      simp [hb, hec, owed_cons]
+      unfold Coins at *
+      omega
+
+/-- `reduceOwed` rewrites the first entry for `c`, and `dedupFrom` keeps the
+    first entry for `c` once `c` is not yet seen: the two commute. -/
+theorem dedupFrom_reduceOwed (o : Allocation E) (c : Address E) (x : Coins) :
+    ∀ seen, c ∉ seen →
+      (o.reduceOwed c x).dedupFrom seen = (o.dedupFrom seen).reduceOwed c x := by
+  induction o with
+  | nil => intros; rfl
+  | cons e t ih =>
+    intro seen hc
+    rw [reduceOwed_cons, dedupFrom_cons]
+    by_cases hec : e.dest = c
+    · have hs : e.dest ∉ seen := hec ▸ hc
+      simp [hec, dedupFrom_cons, reduceOwed_cons, hc]
+    · by_cases hs : e.dest ∈ seen
+      · simp [hec, dedupFrom_cons, hs, ih seen hc]
+      · have hc' : c ∉ e.dest :: seen := by simp [Ne.symm hec, hc]
+        simp [hec, dedupFrom_cons, hs, reduceOwed_cons, ih _ hc']
+
+/-- Paying an allocation item keeps every entry's kind. -/
+theorem map_kind_reduceOwed {o : Allocation E} {c : Address E} {amt : Coins}
+    (h : o.find c = some ⟨c, .alloc amt⟩) (x : Coins) :
+    (o.reduceOwed c x).map Entry.kind = o.map Entry.kind := by
+  induction o with
+  | nil => rfl
+  | cons e t ih =>
+    rw [find_cons] at h
+    rw [reduceOwed_cons]
+    by_cases hec : e.dest = c
+    · rw [if_pos hec] at h
+      cases h
+      simp [Entry.kind, Item.isGuarantee]
+    · rw [if_neg hec] at h
+      simp [hec, ih h]
+
+/-- Two allocations with the same entry kinds find entries of the same kind. -/
+theorem find_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.map Entry.kind)
+    (c : Address E) : (o.find c).map Entry.kind = (o'.find c).map Entry.kind := by
+  induction o generalizing o' with
+  | nil => cases o' <;> simp_all
+  | cons e t ih =>
+    cases o' with
+    | nil => simp at h
+    | cons e' t' =>
+      simp only [List.map_cons, List.cons.injEq] at h
+      have hd : e.dest = e'.dest := congrArg Prod.fst h.1
+      rw [find_cons, find_cons, ← hd]
       split
-      · rename_i hfe
-        rw [hx0 hfe, Nat.sub_zero]
-        have hd1 : ({ f with item := .alloc (f.amount - 0) } : Entry E).dest = f.dest := rfl
-        rw [paidToSeen_cons, hd1, if_pos hf, paidToSeen_cons, if_pos hf]
-      · rw [paidToSeen_cons, if_pos hf, paidToSeen_cons, if_pos hf]
-        exact ih seen held
-    · have hxe : paidToSeen seen held (f :: t) e =
-          if f.dest = e then min f.amount held
-          else paidToSeen (f.dest :: seen) (held - min f.amount held) t e := by
-        rw [paidToSeen_cons, if_neg hf]
-      rw [hxe]
-      split
-      · rename_i hfe
-        have hdne : f.dest ≠ d := hfe ▸ hed
-        have hrw : Allocation.reduceOwed (f :: t) e (min f.amount held) =
-            { f with item := .alloc (f.amount - min f.amount held) } :: t := by
-          rw [reduceOwed_cons, if_pos hfe]
-        rw [hrw]
-        have hm0 : min (f.amount - min f.amount held) (held - min f.amount held) = 0 := by
-          rcases le_total f.amount held with h | h
-          · simp [min_eq_left h]
-          · simp [min_eq_right h]
-        have hL : paidToSeen seen (held - min f.amount held)
-            ({ f with item := .alloc (f.amount - min f.amount held) } :: t) d =
-            paidToSeen (f.dest :: seen) (held - min f.amount held) t d := by
-          rw [paidToSeen_cons]
-          have hd1 : ({ f with item := .alloc (f.amount - min f.amount held) } : Entry E).dest =
-              f.dest := rfl
-          have ha1 : ({ f with item := .alloc (f.amount - min f.amount held) } : Entry E).amount =
-              f.amount - min f.amount held := rfl
-          rw [hd1, if_neg hf, if_neg hdne, ha1, hm0, Nat.sub_zero]
-        rw [hL, paidToSeen_cons, if_neg hf, if_neg hdne]
-      · rename_i hfe
-        set Y := paidToSeen (f.dest :: seen) (held - min f.amount held) t e with hYdef
-        clear_value Y
-        have hrw : Allocation.reduceOwed (f :: t) e Y = f :: Allocation.reduceOwed t e Y := by
-          rw [reduceOwed_cons, if_neg hfe]
-        rw [hrw]
-        rcases le_total f.amount held with h1 | h1
-        · rw [min_eq_left h1] at hYdef
-          have hYb : Y ≤ held - f.amount := by rw [hYdef]; exact paidToSeen_le_held _ _ t e
-          have hge : f.amount ≤ held - Y := by unfold Coins at *; omega
-          by_cases hfd : f.dest = d
-          · rw [paidToSeen_cons, if_neg hf, if_pos hfd, min_eq_left hge,
-              paidToSeen_cons, if_neg hf, if_pos hfd, min_eq_left h1]
-          · rw [paidToSeen_cons, if_neg hf, if_neg hfd, min_eq_left hge]
-            have heq : held - Y - f.amount = held - f.amount - Y := by unfold Coins at *; omega
-            rw [heq, hYdef, paidToSeen_cons, if_neg hf, if_neg hfd, min_eq_left h1]
-            exact ih (f.dest :: seen) (held - f.amount)
-        · rw [min_eq_right h1] at hYdef
-          have hY0 : Y = 0 := by
-            rw [hYdef, Nat.sub_self]; exact Nat.le_zero.mp (paidToSeen_le_held _ _ t e)
-          rw [hY0, Nat.sub_zero]
-          by_cases hfd : f.dest = d
-          · rw [paidToSeen_cons, if_neg hf, if_pos hfd, paidToSeen_cons, if_neg hf, if_pos hfd]
-          · rw [paidToSeen_cons, if_neg hf, if_neg hfd, paidToSeen_cons, if_neg hf, if_neg hfd,
-              min_eq_right h1, Nat.sub_self]
-            have hz1 : paidToSeen (f.dest :: seen) 0 (Allocation.reduceOwed t e 0) d = 0 :=
-              Nat.le_zero.mp (paidToSeen_le_held _ _ _ d)
-            have hz2 : paidToSeen (f.dest :: seen) 0 t d = 0 :=
-              Nat.le_zero.mp (paidToSeen_le_held _ _ t d)
-            rw [hz1, hz2]
+      · simp [h.1]
+      · exact ih h.2
 
-/-- `held - min f.amount held` is monotone in `held`: raising `held` either
-    raises the slack directly (when `f.amount ≤ held` throughout) or only
-    ever uncaps it from `0`. Used by `paidToSeen_held_add`. -/
-theorem sub_min_mono {f : Entry E} {held1 held2 : Coins} (h : held1 ≤ held2) :
-    held1 - min f.amount held1 ≤ held2 - min f.amount held2 := by
-  rcases le_total f.amount held1 with h1 | h1 <;> rcases le_total f.amount held2 with h2 | h2 <;>
-    simp [min_eq_left, min_eq_right, h1, h2] <;> unfold Coins at * <;> omega
+/-- An allocation item for `c` in one allocation is an allocation item for
+    `c` in every allocation with the same entry kinds. -/
+theorem find_alloc_of_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.map Entry.kind)
+    {c : Address E} {amt : Coins} (hf : o.find c = some ⟨c, .alloc amt⟩) :
+    ∃ amt', o'.find c = some ⟨c, .alloc amt'⟩ := by
+  have hk := find_map_kind h c
+  rw [hf] at hk
+  cases hf' : o'.find c with
+  | none => rw [hf'] at hk; cases hk
+  | some e' =>
+    rw [hf'] at hk
+    obtain ⟨d', i'⟩ := e'
+    cases i' with
+    | alloc a' =>
+      simp [Entry.kind] at hk
+      exact ⟨a', by rw [hk.1]⟩
+    | guarantee x ps => simp [Entry.kind, Item.isGuarantee] at hk
 
-/-- Paying a destination `d` what `held1` coins afford, then later paying
-    the remainder once `held` has grown to `held2 ≥ held1` (everything else
-    about the allocation unchanged — only `held` moved, by funds arriving
-    from elsewhere), totals exactly what `held2` would have afforded `d` in
-    one shot: the priority formula is "memoryless" in `held`. The channel
-    this models: an upstream transfer credits a channel between two draws
-    on it. Used by `turbo_redistribution_unbeatable` (`Liveness.lean`), the
-    case where one interfering transfer's destination is the very channel
-    another transfer draws from. -/
-theorem paidToSeen_held_add (seen : List (Address E)) (o : Allocation E) (d : Address E)
-    {held1 held2 : Coins} (h : held1 ≤ held2) :
-    paidToSeen seen held1 o d +
-      paidToSeen seen (held2 - paidToSeen seen held1 o d)
-        (Allocation.reduceOwed o d (paidToSeen seen held1 o d)) d =
-      paidToSeen seen held2 o d := by
-  induction o generalizing seen held1 held2 with
-  | nil => simp
-  | cons f t ih =>
-    by_cases hd_seen : d ∈ seen
-    · rw [paidToSeen_of_mem_seen d (f :: t) seen held1 hd_seen,
-        paidToSeen_of_mem_seen d (f :: t) seen held2 hd_seen,
-        paidToSeen_of_mem_seen d (Allocation.reduceOwed (f :: t) d 0) seen (held2 - 0) hd_seen]
-    · by_cases hf : f.dest ∈ seen
-      · have hfd : f.dest ≠ d := fun h => hd_seen (h ▸ hf)
-        have hx1 : paidToSeen seen held1 (f :: t) d = paidToSeen seen held1 t d := by
-          rw [paidToSeen_cons, if_pos hf]
-        have hx2 : paidToSeen seen held2 (f :: t) d = paidToSeen seen held2 t d := by
-          rw [paidToSeen_cons, if_pos hf]
-        rw [hx1, hx2]
-        have hrw : Allocation.reduceOwed (f :: t) d (paidToSeen seen held1 t d) =
-            f :: Allocation.reduceOwed t d (paidToSeen seen held1 t d) := by
-          rw [reduceOwed_cons, if_neg hfd]
-        rw [hrw, paidToSeen_cons, if_pos hf]
-        exact ih seen h
-      · by_cases hfd : f.dest = d
-        · have hx1 : paidToSeen seen held1 (f :: t) d = min f.amount held1 := by
-            rw [paidToSeen_cons, if_neg hf, if_pos hfd]
-          have hx2 : paidToSeen seen held2 (f :: t) d = min f.amount held2 := by
-            rw [paidToSeen_cons, if_neg hf, if_pos hfd]
-          rw [hx1, hx2]
-          have hrw : Allocation.reduceOwed (f :: t) d (min f.amount held1) =
-              { f with item := .alloc (f.amount - min f.amount held1) } :: t := by
-            rw [reduceOwed_cons, if_pos hfd]
-          rw [hrw]
-          have hd1 : ({ f with item := .alloc (f.amount - min f.amount held1) } : Entry E).dest = f.dest := rfl
-          have ha1 : ({ f with item := .alloc (f.amount - min f.amount held1) } : Entry E).amount = f.amount - min f.amount held1 := rfl
-          rw [paidToSeen_cons, hd1, if_neg hf, if_pos hfd, ha1]
-          rcases le_total f.amount held1 with hA1 | hA1 <;> rcases le_total f.amount held2 with
-              hA2 | hA2 <;> simp [min_eq_left, min_eq_right, hA1, hA2] <;> unfold Coins at * <;> omega
-        · have hx1 : paidToSeen seen held1 (f :: t) d =
-              paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d := by
-            rw [paidToSeen_cons, if_neg hf, if_neg hfd]
-          have hx2 : paidToSeen seen held2 (f :: t) d =
-              paidToSeen (f.dest :: seen) (held2 - min f.amount held2) t d := by
-            rw [paidToSeen_cons, if_neg hf, if_neg hfd]
-          rw [hx1, hx2]
-          have hrw : Allocation.reduceOwed (f :: t) d
-              (paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d) =
-              f :: Allocation.reduceOwed t d
-                (paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d) := by
-            rw [reduceOwed_cons, if_neg hfd]
-          rw [hrw, paidToSeen_cons, if_neg hf, if_neg hfd]
-          set X1 := paidToSeen (f.dest :: seen) (held1 - min f.amount held1) t d with hX1def
-          clear_value X1
-          have hX1b : X1 ≤ held1 - min f.amount held1 := by
-            rw [hX1def]; exact paidToSeen_le_held _ _ t d
-          have hmono := sub_min_mono (f := f) h
-          have heq : held2 - X1 - min f.amount (held2 - X1) =
-              held2 - min f.amount held2 - X1 := by
-            rcases le_total f.amount (held2 - X1) with hA | hA <;>
-              rcases le_total f.amount held2 with hB | hB <;>
-              simp [min_eq_left, min_eq_right, hA, hB] <;> unfold Coins at * <;> omega
-          rw [heq, hX1def]
-          exact ih (f.dest :: seen) hmono
+/-- The coins due, in priority order, ahead of `b`'s first entry. -/
+def dueBefore (o : Allocation E) (b : Address E) : Coins :=
+  Allocation.total (o.dedup.takeWhile (fun e => !decide (e.dest = b)))
 
+/-- `c`'s first entry lies ahead of `b`'s first entry in priority order. -/
+def Precedes (o : Allocation E) (c b : Address E) : Prop :=
+  c ∈ (o.dedup.map Entry.dest).takeWhile (fun d => !decide (d = b))
 
+instance (o : Allocation E) (c b : Address E) : Decidable (o.Precedes c b) :=
+  inferInstanceAs (Decidable (c ∈ _))
 
+/-- The coins due behind `b`'s first entry. -/
+def dueAfter (o : Allocation E) (b : Address E) : Coins :=
+  o.dedup.total - (o.dueBefore b + o.owed b)
 
+/-- Nitro:747-749, the amount `transfer` pays `b`. -/
+theorem paidTo_eq_min (held : Coins) (o : Allocation E) (b : Address E) :
+    o.paidTo held b = min (o.owed b) (held - o.dueBefore b) := by
+  rw [paidTo_eq_get, get_payout, owed_dedup]; rfl
 
+theorem paidTo_le_owed (held : Coins) (o : Allocation E) (b : Address E) :
+    o.paidTo held b ≤ o.owed b := by
+  rw [paidTo_eq_min]; exact min_le_left _ _
 
+theorem dueBefore_add_owed_le (o : Allocation E) (b : Address E) :
+    o.dueBefore b + o.owed b ≤ o.dedup.total := by
+  rw [← owed_dedup]; exact total_takeWhile_add_owed_le o.dedup b
+
+theorem not_precedes_self (o : Allocation E) (c : Address E) : ¬ o.Precedes c c := by
+  intro h
+  simpa using List.all_eq_true.1 List.all_takeWhile c h
+
+theorem dedup_reduceOwed (o : Allocation E) (c : Address E) (x : Coins) :
+    (o.reduceOwed c x).dedup = o.dedup.reduceOwed c x :=
+  dedupFrom_reduceOwed o c x [] List.not_mem_nil
+
+theorem dueBefore_reduceOwed (o : Allocation E) (b c : Address E) {x : Coins} (hx : x ≤ o.owed c) :
+    (o.reduceOwed c x).dueBefore b + (if o.Precedes c b then x else 0) = o.dueBefore b := by
+  unfold dueBefore Precedes
+  rw [dedup_reduceOwed]
+  exact total_takeWhile_reduceOwed o.dedup b c (by rw [owed_dedup]; exact hx)
+
+theorem dedup_total_reduceOwed (o : Allocation E) (c : Address E) {x : Coins} (hx : x ≤ o.owed c) :
+    (o.reduceOwed c x).dedup.total + x = o.dedup.total := by
+  rw [dedup_reduceOwed]; exact total_reduceOwed o.dedup c (by rw [owed_dedup]; exact hx)
+
+theorem dueBefore_add_owed_le_of_not_precedes (o : Allocation E) {b c : Address E} (hbc : b ≠ c)
+    (hc : 0 < o.owed c) (hnot : ¬ o.Precedes c b) :
+    o.dueBefore b + o.owed b ≤ o.dueBefore c := by
+  rw [← owed_dedup] at hc
+  rw [← owed_dedup o b]
+  exact total_takeWhile_lt o.dedup hbc hc hnot
+
+/-- A payment from an allocation never raises the coins due behind an entry. -/
+theorem dueAfter_reduceOwed_le (o : Allocation E) (b c : Address E) {x : Coins}
+    (hx : x ≤ o.owed c) : (o.reduceOwed c x).dueAfter b ≤ o.dueAfter b := by
+  have h1 := dueBefore_reduceOwed o b c hx
+  have h2 := dedup_total_reduceOwed o c hx
+  have h3 := owed_reduceOwed o c b x
+  unfold dueAfter
+  by_cases hbc : b = c
+  · subst hbc
+    rw [if_neg (not_precedes_self o b)] at h1
+    rw [if_pos rfl] at h3
+    unfold Coins at *
+    omega
+  · rw [if_neg hbc] at h3
+    split_ifs at h1 <;> unfold Coins at * <;> omega
+
+/-- `AheadOf.cover` survives a `transfer` from `og` to `c`. When the
+    payment is positive and `c`'s entry lies behind `b`'s, the held coins
+    covered `b`'s entry and everything ahead of it (Nitro:747-749). In every
+    other case the coins due behind `b` do not change, and the old cover
+    applies. -/
+theorem cover_pay {og op op' : Allocation E} {hg : Coins}
+    (hcov : ∀ b, og.dueAfter b < op.dueAfter b → og.dueBefore b + og.owed b ≤ hg)
+    (c : Address E) (hop : ∀ b, op'.dueAfter b ≤ op.dueAfter b) (b : Address E)
+    (hlt : (og.reduceOwed c (og.paidTo hg c)).dueAfter b < op'.dueAfter b) :
+    (og.reduceOwed c (og.paidTo hg c)).dueBefore b + (og.reduceOwed c (og.paidTo hg c)).owed b ≤
+      hg - og.paidTo hg c := by
+  have hx := paidTo_eq_min hg og c
+  have hxo := paidTo_le_owed hg og c
+  have h1 := dueBefore_reduceOwed og b c hxo
+  have h2 := dedup_total_reduceOwed og c hxo
+  have h3 := owed_reduceOwed og c b (og.paidTo hg c)
+  have h4 := dueBefore_add_owed_le og b
+  have h5 := hop b
+  have hcov' := hcov b
+  unfold dueAfter at hlt h5 hcov'
+  by_cases hbc : b = c
+  · subst hbc
+    rw [if_neg (not_precedes_self og b)] at h1
+    rw [if_pos rfl] at h3
+    unfold Coins at *
+    omega
+  · rw [if_neg hbc] at h3
+    by_cases hp : og.Precedes c b
+    · rw [if_pos hp] at h1
+      unfold Coins at *
+      omega
+    · rw [if_neg hp] at h1
+      by_cases hx0 : og.paidTo hg c = 0
+      · unfold Coins at *
+        omega
+      · have h6 := dueBefore_add_owed_le_of_not_precedes og hbc
+          (lt_of_lt_of_le (Nat.pos_of_ne_zero hx0) hxo) hp
+        unfold Coins at *
+        omega
+
+/-- One channel's allocation `og`, holding `hg`, is ahead of the same
+    channel's allocation `op` in another state: the same entries, each owing
+    no more, and where fewer coins are due behind an entry than in `op`, the
+    held coins cover that entry and everything ahead of it. A transfer pays
+    an entry behind `b` only when the coins cover `b` (Nitro:747-749), so the
+    last field records why `og` paid more behind `b`. -/
+structure AheadOf (og op : Allocation E) (hg : Coins) : Prop where
+  kind : og.map Entry.kind = op.map Entry.kind
+  owed_le : ∀ d, og.owed d ≤ op.owed d
+  cover : ∀ b, og.dueAfter b < op.dueAfter b → og.dueBefore b + og.owed b ≤ hg
+
+theorem AheadOf.refl (o : Allocation E) (hg : Coins) : o.AheadOf o hg :=
+  ⟨rfl, fun _ => le_rfl, fun _ h => absurd h (lt_irrefl _)⟩
+
+theorem AheadOf.mono {og op : Allocation E} {hg hg' : Coins} (h : og.AheadOf op hg)
+    (hle : hg ≤ hg') : og.AheadOf op hg' :=
+  ⟨h.kind, h.owed_le, fun b hb => le_trans (h.cover b hb) hle⟩
+
+/-- A transfer from `og` alone keeps it ahead of `op`. -/
+theorem AheadOf.pay_left {og op : Allocation E} {hg : Coins} {c : Address E} {amt : Coins}
+    (h : og.AheadOf op hg) (hf : og.find c = some ⟨c, .alloc amt⟩) :
+    (og.reduceOwed c (og.paidTo hg c)).AheadOf op (hg - og.paidTo hg c) where
+  kind := (map_kind_reduceOwed hf _).trans h.kind
+  owed_le d := by
+    rw [owed_reduceOwed]
+    split_ifs with hd
+    · subst hd; exact le_trans (Nat.sub_le _ _) (h.owed_le _)
+    · exact h.owed_le d
+  cover := cover_pay h.cover c (fun _ => le_rfl)
+
+/-- The same transfer from both allocations leaves `og` owing `c` no more
+    than `op`. `hC`: `og`'s channel received, beyond `op`'s, at least what
+    `og` paid out beyond `op`. When fewer coins are due behind `c` in `og`,
+    `AheadOf.cover` makes `og` pay `c` in full. Otherwise `hC` bounds the
+    priority formula. -/
+theorem AheadOf.owed_pay_le {og op : Allocation E} {hg hp : Coins} (h : og.AheadOf op hg)
+    (hC : hp + og.dedup.total ≤ hg + op.dedup.total) (c : Address E) :
+    og.owed c - og.paidTo hg c ≤ op.owed c - op.paidTo hp c := by
+  rw [paidTo_eq_min, paidTo_eq_min]
+  have h1 := h.owed_le c
+  have h2 := dueBefore_add_owed_le og c
+  have h3 := dueBefore_add_owed_le op c
+  by_cases hs : og.dueAfter c < op.dueAfter c
+  · have := h.cover c hs
+    unfold Coins at *
+    omega
+  · unfold dueAfter at hs
+    unfold Coins at *
+    omega
+
+/-- The same transfer from both allocations keeps `og` ahead of `op`. -/
+theorem AheadOf.pay_both {og op : Allocation E} {hg hp : Coins} {c : Address E} {ag ap : Coins}
+    (h : og.AheadOf op hg) (hfg : og.find c = some ⟨c, .alloc ag⟩)
+    (hfp : op.find c = some ⟨c, .alloc ap⟩) (hC : hp + og.dedup.total ≤ hg + op.dedup.total) :
+    (og.reduceOwed c (og.paidTo hg c)).AheadOf (op.reduceOwed c (op.paidTo hp c))
+      (hg - og.paidTo hg c) where
+  kind := by rw [map_kind_reduceOwed hfg, map_kind_reduceOwed hfp]; exact h.kind
+  owed_le d := by
+    rw [owed_reduceOwed, owed_reduceOwed]
+    split_ifs with hd
+    · subst hd; exact h.owed_pay_le hC d
+    · exact h.owed_le d
+  cover := cover_pay h.cover c (fun b => dueAfter_reduceOwed_le op b c (paidTo_le_owed hp op c))
 
 /-! ### `addTo` and `remove` -/
 
@@ -1215,6 +1298,26 @@ theorem forceMoveRules_noUnilateralSupport (vt : State E → State E → Bool) :
     subst hmv1
     exact ⟨m, List.mem_of_getElem? hmget, hmv2⟩
 
+/-- `L` lists each element once. Changing `f` at `a` alone, by `y`, changes
+    the sum of `f` over `L` by `y` exactly when `a` is in `L`. Used by
+    `Adjudicator.transfer_effect`. -/
+theorem sum_map_update {α : Type} [DecidableEq α] {L : List α} (hL : L.Nodup) {f g : α → Nat}
+    {a : α} {y : Nat} (hne : ∀ c, c ≠ a → f c = g c) (ha : f a + y = g a) :
+    (L.map f).sum + (if a ∈ L then y else 0) = (L.map g).sum := by
+  induction L with
+  | nil => simp
+  | cons c t ih =>
+    obtain ⟨hct, ht⟩ := List.nodup_cons.1 hL
+    have ih := ih ht
+    simp only [List.map_cons, List.sum_cons, List.mem_cons]
+    by_cases hca : c = a
+    · subst hca
+      rw [if_neg hct] at ih
+      simp only [true_or, if_true]
+      omega
+    · rw [hne c hca, if_congr (or_iff_right (Ne.symm hca)) rfl rfl]
+      omega
+
 /-! ## The adjudicator (`Adjudicator.lean`) -/
 
 namespace Adjudicator
@@ -1331,6 +1434,16 @@ theorem transfer_some {s : Adjudicator E} {a : FixedPart} {b : Address E} {s' : 
       · cases h
     · cases h
   · cases h
+
+/-- A transfer whose guard holds does not revert (the converse of
+    `transfer_some`'s guard facts). -/
+theorem transfer_ne_none {s : Adjudicator E} {a : FixedPart} {b : Address E} {o : Allocation E}
+    {amt : Coins} (hk : a.kind = .ledger) (hb : b.fundable = true)
+    (hf : s.finalOutcome a.address = some (.allocation o)) (hfind : o.find b = some ⟨b, .alloc amt⟩) :
+    s.transfer a b ≠ none := by
+  unfold transfer
+  rw [if_pos ⟨hk, hb⟩, hf]
+  simp [hfind]
 
 /-- The exact effect of a successful reclaim. -/
 theorem reclaim_some {s : Adjudicator E} {l v : FixedPart} {s' : Adjudicator E}
@@ -1739,6 +1852,248 @@ theorem held_paidOut_step_no_deposit {apps : Apps E} {s s' : Adjudicator E} {cal
 theorem held_paidOut_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s) :
     s.held + s.balances.paidOutTotal = s.balances.total := by
   rw [(heldInv_reachable hr).2, Balances.total_eq_channelTotal_add_paidOutTotal]
+
+/-! ### One state ahead of another under transfers
+
+Nitro:775-777: "if you can find one strategy to move a certain amount into an
+address, then no-one else can prevent this from occurring". `Ahead sp sg`
+says that `sg` is where `sp` goes after more transfers (`Ahead.transfer_right`),
+and the same transfer in both states keeps the order (`Ahead.transfer`). An
+external balance is never lower in `sg` (`Ahead.get_external_le`). -/
+
+/-- What the stored outcome of channel `c` still owes `d` (zero when `c` is
+    not finalized). -/
+def owedBy (s : Adjudicator E) (c : FixedPart) (d : Address E) : Coins :=
+  match s.finalOutcome c.address with
+  | some (.allocation o) => o.owed d
+  | none => 0
+
+/-- What the stored outcome at address `d` still owes all its destinations,
+    one entry per destination (zero when `d` is not a finalized channel). -/
+def dueTotal (s : Adjudicator E) (d : Address E) : Coins :=
+  match s.finalOutcome d with
+  | some (.allocation o) => o.dedup.total
+  | none => 0
+
+theorem owedBy_of {s : Adjudicator E} {c : FixedPart} {o : Allocation E}
+    (h : s.finalOutcome c.address = some (.allocation o)) (d : Address E) :
+    s.owedBy c d = o.owed d := by
+  simp only [owedBy, h]
+
+theorem dueTotal_of {s : Adjudicator E} {d : Address E} {o : Allocation E}
+    (h : s.finalOutcome d = some (.allocation o)) : s.dueTotal d = o.dedup.total := by
+  simp only [dueTotal, h]
+
+/-- The exact effect of a successful transfer, read through `finalOutcome`,
+    `balances.get`, `dueTotal` and `owedBy`: `x` coins leave `a` for `b`
+    (Nitro:765-772). -/
+theorem transfer_effect {s s' : Adjudicator E} {a : FixedPart} {b : Address E}
+    (h : s.transfer a b = some s') :
+    ∃ o amt x, s.finalOutcome a.address = some (.allocation o) ∧
+      o.find b = some ⟨b, .alloc amt⟩ ∧ a.kind = .ledger ∧ b.fundable = true ∧
+      x = o.paidTo (s.balances.get a.address) b ∧
+      (∀ c : FixedPart, s'.finalOutcome c.address =
+        if c = a then some (.allocation (o.reduceOwed b x)) else s.finalOutcome c.address) ∧
+      (∀ d, s'.balances.get d + (if d = a.address then x else 0) =
+        s.balances.get d + (if d = b then x else 0)) ∧
+      (∀ d, s'.dueTotal d + (if d = a.address then x else 0) = s.dueTotal d) ∧
+      (∀ d (L : List FixedPart), L.Nodup → (L.map (s'.owedBy · d)).sum +
+        (if a ∈ L then (if d = b then x else 0) else 0) = (L.map (s.owedBy · d)).sum) := by
+  obtain ⟨o, amt, x, hf, hfind, hx, hbal, -, hst, hnow, hk, hb⟩ := transfer_some h
+  have hxh : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
+  have hxo : x ≤ o.owed b := hx ▸ Allocation.paidTo_le_owed _ _ _
+  have hfo : ∀ c : FixedPart, s'.finalOutcome c.address =
+      if c = a then some (.allocation (o.reduceOwed b x)) else s.finalOutcome c.address := by
+    intro c
+    simp only [FixedPart.address_eq, finalOutcome_channel, statusOf_of_status hst, hnow,
+      statusOf_setStatus]
+    split_ifs with hc
+    · simp
+    · rfl
+  refine ⟨o, amt, x, hf, hfind, hk, hb, hx, hfo, fun d => ?_, fun d => ?_, fun d L hL => ?_⟩
+  · rw [hbal, Balances.get_sub, Balances.get_add, Balances.get_add]
+    split_ifs <;> simp_all
+  · cases d with
+    | external e => simp [dueTotal]
+    | channel c =>
+      have hc := hfo c
+      simp only [FixedPart.address_eq] at hc hf
+      by_cases hca : c = a
+      · subst hca
+        have h1 := Allocation.dedup_total_reduceOwed o b hxo
+        simp only [dueTotal, hc, hf, FixedPart.address_eq, if_true]
+        unfold Coins at *
+        omega
+      · simp [dueTotal, hc, hca]
+  · refine sum_map_update hL (fun c hca => ?_) ?_
+    · simp only [owedBy, hfo c, if_neg hca]
+    · rw [owedBy_of (by rw [hfo a, if_pos rfl]), owedBy_of hf, Allocation.owed_reduceOwed]
+      split_ifs with hd
+      · subst hd
+        unfold Coins at *
+        omega
+      · rfl
+
+/-- `sg` is ahead of `sp`. `chan`: each channel is finalized in both states
+    or in neither, and `sg`'s stored allocation is ahead of `sp`'s
+    (`Allocation.AheadOf`). `flow`: for each address `d` and each list `L` of
+    channels, what `d` received in `sg` beyond `sp` (its balance plus what it
+    paid out) is at least what the channels in `L` paid `d` in `sg` beyond
+    `sp`. -/
+structure Ahead (sp sg : Adjudicator E) : Prop where
+  chan : ∀ c : FixedPart, Option.Rel (fun op og : Outcome E =>
+    og.entries.AheadOf op.entries (sg.balances.get c.address))
+    (sp.finalOutcome c.address) (sg.finalOutcome c.address)
+  flow : ∀ (d : Address E) (L : List FixedPart), L.Nodup →
+    sp.balances.get d + sg.dueTotal d + (L.map (sp.owedBy · d)).sum ≤
+      sg.balances.get d + sp.dueTotal d + (L.map (sg.owedBy · d)).sum
+
+theorem Ahead.refl (s : Adjudicator E) : s.Ahead s where
+  chan c := by
+    generalize s.finalOutcome c.address = o
+    cases o with
+    | none => exact .none
+    | some o => exact .some (Allocation.AheadOf.refl _ _)
+  flow _ _ _ := le_rfl
+
+theorem Ahead.get_external_le {sp sg : Adjudicator E} (h : sp.Ahead sg) (d : E) :
+    sp.balances.get (.external d) ≤ sg.balances.get (.external d) := by
+  simpa [dueTotal] using h.flow (.external d) [] List.nodup_nil
+
+/-- A held amount that does not fall keeps a channel ahead. -/
+theorem Ahead.chan_mono {sp sg sg' : Adjudicator E} {c : FixedPart}
+    (h : Option.Rel (fun op og : Outcome E => og.entries.AheadOf op.entries
+      (sg.balances.get c.address)) (sp.finalOutcome c.address) (sg.finalOutcome c.address))
+    (hle : sg.balances.get c.address ≤ sg'.balances.get c.address) :
+    Option.Rel (fun op og : Outcome E => og.entries.AheadOf op.entries
+      (sg'.balances.get c.address)) (sp.finalOutcome c.address) (sg.finalOutcome c.address) := by
+  generalize sp.finalOutcome c.address = op at h ⊢
+  generalize sg.finalOutcome c.address = og at h ⊢
+  cases h with
+  | none => exact .none
+  | some hrel => exact .some (hrel.mono hle)
+
+/-- One transfer by the adversary alone keeps `sg` ahead of `sp`. -/
+theorem Ahead.transfer_right {sp sg sg' : Adjudicator E} {a : FixedPart} {b : Address E}
+    (h : sp.Ahead sg) (ht : sg.transfer a b = some sg') : sp.Ahead sg' := by
+  obtain ⟨og, amt, x, hf, hfind, -, -, hx, hfo, hget, hdt, hsum⟩ := transfer_effect ht
+  refine ⟨fun c => ?_, fun d L hL => ?_⟩
+  · have hgc := hget c.address
+    rw [hfo c]
+    split_ifs with hca
+    · subst hca
+      have hc := h.chan c
+      rw [hf] at hc
+      generalize sp.finalOutcome c.address = op at hc ⊢
+      cases hc with
+      | some hrel =>
+        refine .some ((hx ▸ hrel.pay_left hfind).mono ?_)
+        simp only [if_true] at hgc
+        split_ifs at hgc <;> unfold Coins at * <;> omega
+    · refine Ahead.chan_mono (h.chan c) ?_
+      have : (c.address : Address E) ≠ a.address := by simpa using hca
+      rw [if_neg this] at hgc
+      split_ifs at hgc <;> unfold Coins at * <;> omega
+  · have h0 := h.flow d L hL
+    have h1 := hget d
+    have h2 := hdt d
+    have h3 := hsum d L hL
+    split_ifs at h1 h2 h3 <;> unfold Coins at * <;> omega
+
+/-- A transfer reverts in `sp` exactly when it reverts in a state ahead of
+    `sp`: the two states finalized the same channels, and the first entry for
+    `b` has the same kind in both (`Allocation.AheadOf.kind`). -/
+theorem Ahead.transfer_eq_none_iff {sp sg : Adjudicator E} (h : sp.Ahead sg) (a : FixedPart)
+    (b : Address E) : sp.transfer a b = none ↔ sg.transfer a b = none := by
+  have hc := h.chan a
+  constructor
+  · intro hp
+    by_contra hg
+    obtain ⟨sg', hsg'⟩ := Option.ne_none_iff_exists'.1 hg
+    obtain ⟨og, amt, -, hf, hfind, hk, hb, -⟩ := transfer_effect hsg'
+    rw [hf] at hc
+    generalize hop : sp.finalOutcome a.address = op at hc
+    cases hc with
+    | some hrel =>
+      obtain ⟨amt', hfind'⟩ := Allocation.find_alloc_of_map_kind hrel.kind hfind
+      exact transfer_ne_none hk hb hop hfind' hp
+  · intro hg
+    by_contra hp
+    obtain ⟨sp', hsp'⟩ := Option.ne_none_iff_exists'.1 hp
+    obtain ⟨op, amt, -, hf, hfind, hk, hb, -⟩ := transfer_effect hsp'
+    rw [hf] at hc
+    generalize hog : sg.finalOutcome a.address = og at hc
+    cases hc with
+    | some hrel =>
+      obtain ⟨amt', hfind'⟩ := Allocation.find_alloc_of_map_kind hrel.kind.symm hfind
+      exact transfer_ne_none hk hb hog hfind' hg
+
+/-- The same transfer in both states keeps `sg` ahead of `sp`. At the paying
+    channel `a`, `Allocation.AheadOf.pay_both`. At the payee `b`, `sg` may pay
+    less than `sp` only by what `a` paid `b` in `sg` beyond `sp` before, which
+    `flow` at the list `a :: L` already counts. -/
+theorem Ahead.transfer_both {sp sg sp' sg' : Adjudicator E} {a : FixedPart} {b : Address E}
+    (h : sp.Ahead sg) (hp : sp.transfer a b = some sp') (hg : sg.transfer a b = some sg') :
+    sp'.Ahead sg' := by
+  obtain ⟨op, ap, xp, hfp, hfindp, -, -, hxp, hfop, hgetp, hdtp, hsump⟩ := transfer_effect hp
+  obtain ⟨og, ag, xg, hfg, hfindg, -, -, hxg, hfog, hgetg, hdtg, hsumg⟩ := transfer_effect hg
+  have hC : sp.balances.get a.address + og.dedup.total ≤
+      sg.balances.get a.address + op.dedup.total := by
+    have := h.flow a.address [] List.nodup_nil
+    rw [dueTotal_of hfp, dueTotal_of hfg] at this
+    simpa using this
+  have hrel : og.AheadOf op (sg.balances.get a.address) := by
+    have hc := h.chan a
+    rw [hfp, hfg] at hc
+    cases hc with
+    | some hrel => exact hrel
+  have hxpo : xp ≤ op.owed b := hxp ▸ Allocation.paidTo_le_owed _ _ _
+  have hxgo : xg ≤ og.owed b := hxg ▸ Allocation.paidTo_le_owed _ _ _
+  have hdom : og.owed b - xg ≤ op.owed b - xp := hxp ▸ hxg ▸ hrel.owed_pay_le hC b
+  refine ⟨fun c => ?_, fun d L hL => ?_⟩
+  · have hgc := hgetg c.address
+    rw [hfop c, hfog c]
+    split_ifs with hca
+    · subst hca
+      refine .some ((hxp ▸ hxg ▸ hrel.pay_both hfindg hfindp hC).mono ?_)
+      simp only [if_true] at hgc
+      split_ifs at hgc <;> unfold Coins at * <;> omega
+    · refine Ahead.chan_mono (h.chan c) ?_
+      have : (c.address : Address E) ≠ a.address := by simpa using hca
+      rw [if_neg this] at hgc
+      split_ifs at hgc <;> unfold Coins at * <;> omega
+  · have h1 := hgetp d
+    have h2 := hgetg d
+    have h3 := hdtp d
+    have h4 := hdtg d
+    have h5 := hsump d L hL
+    have h6 := hsumg d L hL
+    by_cases hdb : d = b
+    · subst hdb
+      rw [if_pos rfl] at h1 h2
+      by_cases haL : a ∈ L
+      · have h0 := h.flow d L hL
+        rw [if_pos haL, if_pos rfl] at h5 h6
+        split_ifs at h1 h2 h3 h4 <;> unfold Coins at * <;> omega
+      · have h0 := h.flow d (a :: L) (List.nodup_cons.2 ⟨haL, hL⟩)
+        rw [if_neg haL] at h5 h6
+        simp only [List.map_cons, List.sum_cons, owedBy_of hfp, owedBy_of hfg] at h0
+        split_ifs at h1 h2 h3 h4 <;> unfold Coins at * <;> omega
+    · have h0 := h.flow d L hL
+      rw [if_neg hdb] at h1 h2
+      simp only [if_neg hdb, ite_self] at h5 h6
+      split_ifs at h1 h2 h3 h4 <;> unfold Coins at * <;> omega
+
+/-- One transfer, applied to both states, keeps `sg` ahead of `sp`. A
+    transfer that reverts reverts in both (`Ahead.transfer_eq_none_iff`). -/
+theorem Ahead.transfer {sp sg : Adjudicator E} (h : sp.Ahead sg) (a : FixedPart) (b : Address E) :
+    ((sp.transfer a b).getD sp).Ahead ((sg.transfer a b).getD sg) := by
+  cases hp : sp.transfer a b with
+  | none => rw [(h.transfer_eq_none_iff a b).1 hp]; exact h
+  | some sp' =>
+    cases hg : sg.transfer a b with
+    | none => exact absurd ((h.transfer_eq_none_iff a b).2 hg) (by simp [hp])
+    | some sg' => exact h.transfer_both hp hg
 
 end Adjudicator
 
