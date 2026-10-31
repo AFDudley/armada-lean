@@ -10408,37 +10408,31 @@ theorem NetVOrigin_reachable {apps : Apps E} {P : Participant} {T : Threat E P} 
       | some s' => simpa [h] using NetVOrigin_apply_step hV hP h
 
 
-theorem Threat.RoundSeq.reachable {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
-    {pending : List (Op E)} {net net' : NetworkState E p}
-    (h : Threat.RoundSeq apps T t pending net net')
-    (hpfeas : ∀ op ∈ pending, op.HonestFeasible net)
-    (hR : (Nitro.participant apps T).Reachable net) :
-    (Nitro.participant apps T).Reachable net' := by
-  induction h with
-  | nil => exact hR
-  | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
-    have hopfeas : op.HonestFeasible net1 := hpfeas op (by simp [hsplit])
-    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps (.land op)) :=
-      Machine.Reachable.tail hR (Or.inr (Or.inl ⟨op, hopfeas, rfl⟩))
-    have hpfeas' : ∀ op' ∈ l1 ++ l2, op'.HonestFeasible (net1.applyAdv apps (.land op)) := by
-      intro op' hop'
-      refine Op.HonestFeasible.applyAdv (.land op) (hpfeas op' ?_)
-      simp only [hsplit, List.mem_append, List.mem_cons] at hop' ⊢
-      tauto
-    exact ih hpfeas' hR1
-  | @tick pending net1 net2 dt hfeas hgate hrest ih =>
-    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps (.tick dt)) :=
-      Machine.Reachable.tail hR (Or.inr (Or.inr (Or.inl ⟨.tick dt, hfeas,
-        (fun op h => by cases h), rfl⟩)))
-    have hpfeas' : ∀ op' ∈ pending, op'.HonestFeasible (net1.applyAdv apps (.tick dt)) :=
-      fun op' hop' => Op.HonestFeasible.applyAdv (.tick dt) (hpfeas op' hop')
-    exact ih hpfeas' hR1
-  | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
-    have hR1 : (Nitro.participant apps T).Reachable (net1.applyAdv apps m) :=
-      Machine.Reachable.tail hR (Or.inr (Or.inr (Or.inl ⟨m, hfeas, hnoland, rfl⟩)))
-    have hpfeas' : ∀ op' ∈ pending, op'.HonestFeasible (net1.applyAdv apps m) :=
-      fun op' hop' => Op.HonestFeasible.applyAdv m (hpfeas op' hop')
-    exact ih hpfeas' hR1
+/-- Reachability of `p`'s network as a round invariant: a landing of one of `p`'s own
+    calls that `p` can make (`Op.HonestFeasible`, which stays true as `Holds` grows), and
+    every adversary move the threat allows, are steps of `Nitro.participant`. -/
+theorem Threat.reachable_step {apps : Apps E} {p : Participant} {T : Threat E p} :
+    T.CondStepInvariant apps (fun _ => True) (Nitro.participant apps T).Reachable
+      (fun n op => op.HonestFeasible n) :=
+  ⟨⟨fun _ hop hR => Machine.Reachable.tail hR (Or.inr (Or.inl ⟨_, hop, rfl⟩)),
+    fun _ hfeas hR => Machine.Reachable.tail hR
+      (Or.inr (Or.inr (Or.inl ⟨_, hfeas, (fun _ h => by cases h), rfl⟩))),
+    fun _ hfeas hR => Machine.Reachable.tail hR
+      (Or.inr (Or.inr (Or.inl ⟨_, hfeas, (fun _ h => by cases h), rfl⟩))),
+    fun _ hfeas hR => Machine.Reachable.tail hR
+      (Or.inr (Or.inr (Or.inl ⟨_, hfeas, (fun _ h => by cases h), rfl⟩)))⟩,
+    fun m hop => Op.HonestFeasible.applyAdv m hop⟩
+
+/-- One round of a feasible honest move, from a reachable state, ends in a reachable state
+    (`Threat.RoundSeq.condInvariant` on `Threat.reachable_step`). -/
+theorem Threat.Round.reachable {apps : Apps E} {p : Participant} {T : Threat E p}
+    {m : HonestMove E} {net net' : NetworkState E p} (h : T.Round apps m net net')
+    (hfeas : m.Feasible net) (hR : (Nitro.participant apps T).Reachable net) :
+    (Nitro.participant apps T).Reachable net' :=
+  h.1.condInvariant ⟨(Threat.reachable_step (T := T)).toStepInvariant.anyGuard,
+    (Threat.reachable_step (T := T)).condMono⟩ (match m, hfeas with
+      | .react _, hf => hf
+      | .wait _, _ => fun _ hop => absurd hop (List.not_mem_nil)) hR
 
 theorem UnbeatableIn.and_reachable {apps : Apps E} {p : Participant} {T : Threat E p}
     {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} :
@@ -10451,21 +10445,9 @@ theorem UnbeatableIn.and_reachable {apps : Apps E} {p : Participant} {T : Threat
   | move m hal hfeas _ ih =>
     intro hR
     refine UnbeatableIn.move m hal hfeas fun net' hround => ?_
-    cases m with
-    | react r =>
-      have hR1 : (Nitro.participant apps T).Reachable net' :=
-        Threat.RoundSeq.reachable hround.1 hfeas hR
-      have hfeas' : (HonestMove.react r).Feasible net' := HonestMove.Feasible.round hround.1 hfeas
-      have hR2 : (Nitro.participant apps T).Reachable (net'.applyHonest (.react r)) :=
-        Machine.Reachable.tail hR1 (Or.inl ⟨.react r, hfeas', rfl⟩)
-      exact ih net' hround hR2
-    | wait dt =>
-      have hR1 : (Nitro.participant apps T).Reachable net' :=
-        Threat.RoundSeq.reachable hround.1 (by simp [HonestMove.calls]) hR
-      have hfeas' : (HonestMove.wait dt).Feasible net' := HonestMove.Feasible.round hround.1 hfeas
-      have hR2 : (Nitro.participant apps T).Reachable (net'.applyHonest (.wait dt)) :=
-        Machine.Reachable.tail hR1 (Or.inl ⟨.wait dt, hfeas', rfl⟩)
-      exact ih net' hround hR2
+    have hR1 : (Nitro.participant apps T).Reachable net' := hround.reachable hfeas hR
+    exact ih net' hround (Machine.Reachable.tail hR1
+      (Or.inl ⟨m, HonestMove.Feasible.round hround.1 hfeas, rfl⟩))
 
 
 /-- Whatever `r.V` is challenged with, at any reachable state, the challenged state's own
@@ -10536,7 +10518,7 @@ theorem satp_virtual_wait_step {apps : Apps E} {P : Participant} {T : Threat E P
   · have hVs3 : HoldsVirtualSetup net3 r alice bob true := by
       unfold HoldsVirtualSetup; rw [hround.1.sent_eq]; exact hVs
     have hnr3 : (Nitro.participant apps T).Reachable net3 :=
-      Threat.RoundSeq.reachable hround.1 (by simp) hnr2
+      hround.reachable trivial hnr2
     rcases hcs : net3.chain.statusOf r.V with u | ⟨u, ch'⟩ | ⟨u, f, o⟩
     · -- `.open`: `finalizedWith` stays `none` through any tick.
       have hnr3' : (Nitro.participant apps T).Reachable
@@ -10709,7 +10691,7 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
       have hres := satp_land_keeps_status hbounds hV hdur hhead hlast hP hsupp0 hseq hεbound hVs
         hHeld0 (Or.inl ⟨u, hu⟩)
       have hnr1 : (Nitro.participant apps T).Reachable net1 :=
-        Threat.RoundSeq.reachable hseq hfeasR hnr
+        Threat.Round.reachable ⟨hseq, hεbound⟩ hfeasR hnr
       have hVs1 : HoldsVirtualSetup net1 r alice bob true := by
         unfold HoldsVirtualSetup; rw [hseq.sent_eq]; exact hVs
       rcases hres with ⟨ch1, hst1, hcheq1, hdd1⟩ |
