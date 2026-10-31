@@ -6826,7 +6826,7 @@ theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
 theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
     (net : NetworkState E p) (hr : (Nitro.participant apps T).Reachable net)
-    (hturbo : net.chain.IsTurboOutcomeNetwork) (n : Address E) (v x : Coins)
+    (hdag : net.chain.IsDAG) (n : Address E) (v x : Coins)
     (hv : net.chain.TurboValue n v)
     (h : CanObtainIn apps T HonestMove.IsTransfer n x net) : x ≤ v := by
   -- `sg` is ahead of every state `p`'s strategy reaches: the adversary's
@@ -6837,13 +6837,13 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
   -- `symbolicTerminal_conservation` bounds the balance by the value.
   obtain ⟨order, hord, rfl⟩ := hv
   set sg := net.chain.symbolicTerminal order with hsg
-  have hcons := net.chain.symbolicTerminal_conservation hturbo.1 order hord n
+  have hcons := net.chain.symbolicTerminal_conservation hdag order hord n
   rw [← hsg] at hcons
   suffices hsuff : ∀ {net2 : NetworkState E p},
       UnbeatableIn apps T HonestMove.IsTransfer (fun net' => x ≤ net'.chain.balances.get n) net2 →
       net2.chain.Ahead sg → net2.chain.dueTotal n ≤ net.chain.dueTotal n →
       x ≤ net.chain.turboValueAlong order n from
-    hsuff h (net.chain.symbolicTerminal_Ahead hturbo.1 order hord) le_rfl
+    hsuff h (net.chain.symbolicTerminal_Ahead hdag order hord) le_rfl
   intro net2 h2
   induction h2 with
   | @done net2 hgoal =>
@@ -6868,7 +6868,7 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
       rw [hm, NetworkState.applyHonest_chain] at hih
       rw [hm] at hround
       obtain ⟨ops, hall, -, hchain⟩ := hround.transfer_applyAll hT
-      have hmatch := symbolicTerminal_applyAll_unmoved net.chain hturbo.1 order hord apps _ hall sg
+      have hmatch := symbolicTerminal_applyAll_unmoved net.chain hdag order hord apps _ hall sg
         (fun _ => rfl) (fun _ => rfl)
       rw [hchain] at hih
       exact hih (Ahead_right_congr hmatch.1 hmatch.2
@@ -7218,8 +7218,9 @@ theorem balances_eq_of_mutual_ahead {t1 t2 : Adjudicator E} (h12 : t1.Ahead t2) 
 
 /-- Nitro-36. Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result." Two exhausted transfer sequences from one Turbo state
-    give the same balances. -/
-theorem turbo_order_independent (apps : Apps E) (s : TurboOutcomeNetwork E)
+    give the same balances. Proved for every DAG outcome network, not only in
+    Turbo scope (`ArmadaLean/Types/Outcome.lean`, module comment). -/
+theorem turbo_order_independent (apps : Apps E) (s : DAGOutcomeNetwork E)
     (ops1 ops2 : List (Participant × Op E)) (h1 : OnlyTransfers ops1)
     (h2 : OnlyTransfers ops2)
     (hx1 : (Adjudicator.applyAll apps ops1 (s : Adjudicator E)).TransferExhausted)
@@ -7227,7 +7228,7 @@ theorem turbo_order_independent (apps : Apps E) (s : TurboOutcomeNetwork E)
     (a : Address E) :
     (Adjudicator.applyAll apps ops1 (s : Adjudicator E)).balances.get a =
       (Adjudicator.applyAll apps ops2 (s : Adjudicator E)).balances.get a := by
-  obtain ⟨s, hdag, hscope⟩ := s
+  obtain ⟨s, hdag⟩ := s
   have hdag1 : (Adjudicator.applyAll apps ops1 s).IsDAG := (IsDAG_applyAll_iff apps h1 s).mpr hdag
   have hdag2 : (Adjudicator.applyAll apps ops2 s).IsDAG := (IsDAG_applyAll_iff apps h2 s).mpr hdag
   have hOT12 : OnlyTransfers (ops1 ++ ops2) := by
@@ -7268,10 +7269,10 @@ theorem turbo_order_independent (apps : Apps E) (s : TurboOutcomeNetwork E)
     on a DAG a topological ordering exists (Nitro:798-799) and the
     algorithm's value does not depend on which one is chosen, so
     `TurboValue` is a function. -/
-theorem turbo_value_exists_unique (s : TurboOutcomeNetwork E) (n : Address E) :
+theorem turbo_value_exists_unique (s : DAGOutcomeNetwork E) (n : Address E) :
     (∃ v, (s : Adjudicator E).TurboValue n v) ∧
       ∀ v w, (s : Adjudicator E).TurboValue n v → (s : Adjudicator E).TurboValue n w → v = w := by
-  obtain ⟨s, hdag, hscope⟩ := s
+  obtain ⟨s, hdag⟩ := s
   obtain ⟨order0, horder0⟩ := exists_valid_topo_order s hdag
   refine ⟨⟨s.turboValueAlong order0 n, order0, horder0, rfl⟩, ?_⟩
   rintro v w ⟨order1, horder1, rfl⟩ ⟨order2, horder2, rfl⟩

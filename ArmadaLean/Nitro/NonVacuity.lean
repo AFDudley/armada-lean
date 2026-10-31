@@ -1541,10 +1541,10 @@ example : ∃ net : NetworkState Nat p0,
 example : ∃ (net : NetworkState Nat p0) (n : Address Nat) (v x : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
-    net.chain.IsTurboOutcomeNetwork ∧ net.chain.TurboValue n v ∧
+    net.chain.IsDAG ∧ net.chain.TurboValue n v ∧
     CanObtainIn apps0 (turboT p0) HonestMove.IsTransfer n x net :=
   ⟨⟨g0, [], []⟩, d0, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
-    participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, g0_turbo _,
+    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _,
     .done (Nat.zero_le _)⟩
 
 /-- `turbo_value_achievable`. `net` is the genesis state itself. -/
@@ -1569,15 +1569,15 @@ theorem g0_exhausted : g0.TransferExhausted := by
     Adjudicator.genesis] at h
 
 /-- `turbo_order_independent`. -/
-example : ∃ (s : TurboOutcomeNetwork Nat) (ops1 ops2 : List (Participant × Op Nat)),
+example : ∃ (s : DAGOutcomeNetwork Nat) (ops1 ops2 : List (Participant × Op Nat)),
     OnlyTransfers ops1 ∧ OnlyTransfers ops2 ∧
     (Adjudicator.applyAll apps0 ops1 (s : Adjudicator Nat)).TransferExhausted ∧
     (Adjudicator.applyAll apps0 ops2 (s : Adjudicator Nat)).TransferExhausted :=
-  ⟨⟨g0, g0_turboOutcomeNetwork⟩, [], [], fun _ h => absurd h List.not_mem_nil,
+  ⟨⟨g0, g0_dag⟩, [], [], fun _ h => absurd h List.not_mem_nil,
     fun _ h => absurd h List.not_mem_nil, g0_exhausted, g0_exhausted⟩
 
 /-- `turbo_value_exists_unique`. -/
-example : TurboOutcomeNetwork Nat := ⟨g0, g0_turboOutcomeNetwork⟩
+example : DAGOutcomeNetwork Nat := ⟨g0, g0_dag⟩
 
 
 /-! ### Ledger constructions: `A = p0` at `0`, `B = q0` at `1`. -/

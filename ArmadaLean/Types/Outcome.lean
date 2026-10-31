@@ -11,7 +11,19 @@ namespace ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
 
-/-! ## `TurboOutcomeNetwork`: the Turbo scope, not just a DAG -/
+/-! ## Outcome networks: `DAGOutcomeNetwork`, and `TurboOutcomeNetwork` that extends it
+
+Two levels (operator, 2026-10-31). The outcome network of an on-chain state
+(Nitro:790-791: "the nodes are channels and the edges represent" allocations)
+is a DAG for `DAGOutcomeNetwork`. `TurboOutcomeNetwork` extends it with the
+Turbo scope. Three theorems are proved for every DAG outcome network,
+including networks with guarantees and virtual channels
+(`turbo_value_upper_bound`, `turbo_order_independent`,
+`turbo_value_exists_unique`). This is more general than the paper, which
+states them inside Turbo (§5.2). The generality is kept on purpose: it
+covers simple transfers in a system that also has virtual channels. Only
+`turbo_value_achievable` and `turbo_value_is_value` need the Turbo scope
+(counterexample `docs/counterexamples/turbo_value_achievable.lean`). -/
 
 /-- Turbo scope (Nitro:732-734 and footnote 5, Nitro:1102-1104; operator
     ruling 2026-10-31): every channel that is a node of the outcome network
@@ -34,29 +46,50 @@ def Adjudicator.TurboScope (s : Adjudicator E) : Prop :=
 def Adjudicator.IsTurboOutcomeNetwork (s : Adjudicator E) : Prop :=
   s.IsDAG ∧ s.TurboScope
 
-/-- An on-chain state whose outcome network is a DAG and uses only
-    allocations among ledger channels and external destinations, with no
-    virtual channels and no guarantees (`Adjudicator.IsTurboOutcomeNetwork`,
-    the Turbo scope, Nitro:732-734 and footnote 5, Nitro:1102-1104).
-    `docs/lean/typed-library.md` §4, row `Outcome.lean`. -/
-def TurboOutcomeNetwork (E : Type) [DecidableEq E] : Type :=
-  {s : Adjudicator E // s.IsTurboOutcomeNetwork}
+/-- An on-chain state whose outcome network is a DAG (Nitro:790-791). The
+    parent of `TurboOutcomeNetwork`; the type of theorems that hold for every
+    DAG outcome network (module comment). -/
+structure DAGOutcomeNetwork (E : Type) [DecidableEq E] where
+  /-- The on-chain state. -/
+  chain : Adjudicator E
+  /-- Its outcome network is a DAG (Nitro:790-791). -/
+  isDAG : chain.IsDAG
 
-namespace TurboOutcomeNetwork
+namespace DAGOutcomeNetwork
 
 /-- Coercion to the carrier (`writing-lean.md` §3, rule 2 of
     `typed-library.md`). -/
-instance : CoeOut (TurboOutcomeNetwork E) (Adjudicator E) := ⟨Subtype.val⟩
+instance : CoeOut (DAGOutcomeNetwork E) (Adjudicator E) := ⟨DAGOutcomeNetwork.chain⟩
 
-@[simp] theorem isDAG (s : TurboOutcomeNetwork E) : (s : Adjudicator E).IsDAG := s.property.1
-
-@[simp] theorem turboScope (s : TurboOutcomeNetwork E) : (s : Adjudicator E).TurboScope :=
-  s.property.2
+@[simp] theorem coe_eq (s : DAGOutcomeNetwork E) : (s : Adjudicator E) = s.chain := rfl
 
 -- No decidable smart constructor: `Adjudicator.IsDAG` (`Acyclic s.Edge`,
 -- `Relation.TransGen` over the infinite type `Address E`) carries no
 -- `Decidable` instance in `Value.lean` (`typed-library.md` rule 2 makes
 -- the constructor conditional on decidability).
+
+end DAGOutcomeNetwork
+
+/-- A DAG outcome network in Turbo scope: only allocations among ledger
+    channels and external destinations, with no virtual channels and no
+    guarantees (`Adjudicator.TurboScope`, Nitro:732-734 and footnote 5,
+    Nitro:1102-1104). `docs/lean/typed-library.md` §4, row `Outcome.lean`. -/
+structure TurboOutcomeNetwork (E : Type) [DecidableEq E] extends DAGOutcomeNetwork E where
+  /-- Every node is a ledger channel or an external destination, and no entry is a guarantee. -/
+  turboScope : chain.TurboScope
+
+namespace TurboOutcomeNetwork
+
+/-- A Turbo network is a DAG network (`extends`). -/
+instance : CoeOut (TurboOutcomeNetwork E) (DAGOutcomeNetwork E) := ⟨toDAGOutcomeNetwork⟩
+
+/-- Coercion to the carrier. -/
+instance : CoeOut (TurboOutcomeNetwork E) (Adjudicator E) := ⟨fun s => s.chain⟩
+
+@[simp] theorem coe_eq (s : TurboOutcomeNetwork E) : (s : Adjudicator E) = s.chain := rfl
+
+theorem isTurboOutcomeNetwork (s : TurboOutcomeNetwork E) : s.chain.IsTurboOutcomeNetwork :=
+  ⟨s.isDAG, s.turboScope⟩
 
 end TurboOutcomeNetwork
 
