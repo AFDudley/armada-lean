@@ -519,6 +519,56 @@ theorem Threat.RoundSeq.nil_invariant {apps : Apps E} {p : Participant} {T : Thr
     | deliver ss => exact hdeliver hnow hfeas hI
     | chain caller op => exact hchain hnow hfeas hI
 
+/-- **The round combinator, with a per-call side condition.** Generalizes
+    `Threat.RoundSeq.invariant`: the `land` lemma also needs a fact `Cond n op` about the one
+    call landing (its OWN feasibility, or a fact about which channel it targets), supplied
+    once for the round's own `pending` list and carried forward across `tick`/`deliver`/
+    `chain` by one uniform monotonicity lemma `hcondmono` (works for ANY adversary move,
+    because every family's own `Cond` so far -- `Op.HonestFeasible`, "targets a channel other
+    than X" -- is either itself monotone under `Holds` growing, or does not mention the net at
+    all). Subsumes `Threat.RoundSeq.invariant` at `Cond := fun _ _ => True`. Matches the shape
+    `Threat.RoundSeq.reachable` (`Nitro/Liveness.lean`) already needed by hand, with
+    `Cond n op := op.HonestFeasible n`. -/
+theorem Threat.RoundSeq.condInvariant {apps : Apps E} {p : Participant} {T : Threat E p}
+    {t : Time} {pending : List (Op E)} {net net' : NetworkState E p}
+    {Inv : NetworkState E p → Prop} {Cond : NetworkState E p → Op E → Prop}
+    (hcondmono : ∀ {n : NetworkState E p} {op : Op E} (m : AdvMove E),
+      Cond n op → Cond (n.applyAdv apps m) op)
+    (hseq : Threat.RoundSeq apps T t pending net net') :
+    (∀ op ∈ pending, Cond net op) →
+    (∀ {n : NetworkState E p} {op : Op E}, Cond n op → Inv n → Inv (n.applyAdv apps (.land op))) →
+    (∀ {n : NetworkState E p} {ss : SignedState E}, T.feasible n (.deliver ss) →
+      Inv n → Inv (n.applyAdv apps (.deliver ss))) →
+    (∀ {n : NetworkState E p} {dt : Time}, T.feasible n (.tick dt) →
+      Inv n → Inv (n.applyAdv apps (.tick dt))) →
+    (∀ {n : NetworkState E p} {caller : Participant} {op : Op E},
+      T.feasible n (.chain caller op) → Inv n → Inv (n.applyAdv apps (.chain caller op))) →
+    Inv net → Inv net' := by
+  induction hseq with
+  | nil => intro _ _ _ _ _ hI; exact hI
+  | @land pending n1 n2 op l1 l2 hsplit hrest ih =>
+    intro hcond hland hdeliver htick hchain hI
+    have hcop : Cond n1 op := hcond op (by rw [hsplit]; simp)
+    have hcond' : ∀ op' ∈ l1 ++ l2, Cond (n1.applyAdv apps (.land op)) op' := fun op' hop' =>
+      hcondmono (.land op) (hcond op' (by
+        rw [hsplit]; simp only [List.mem_append, List.mem_cons] at hop' ⊢; tauto))
+    exact ih hcond' hland hdeliver htick hchain (hland hcop hI)
+  | @tick pending n1 n2 dt hfeas hgate hrest ih =>
+    intro hcond hland hdeliver htick hchain hI
+    have hcond' : ∀ op' ∈ pending, Cond (n1.applyAdv apps (.tick dt)) op' := fun op' hop' =>
+      hcondmono (.tick dt) (hcond op' hop')
+    exact ih hcond' hland hdeliver htick hchain (htick hfeas hI)
+  | @other pending n1 n2 m hfeas hnotick hnoland hrest ih =>
+    intro hcond hland hdeliver htick hchain hI
+    have hcond' : ∀ op' ∈ pending, Cond (n1.applyAdv apps m) op' := fun op' hop' =>
+      hcondmono m (hcond op' hop')
+    apply ih hcond' hland hdeliver htick hchain
+    cases m with
+    | tick dt => exact absurd rfl (hnotick dt)
+    | land op => exact absurd rfl (hnoland op)
+    | deliver ss => exact hdeliver hfeas hI
+    | chain caller op => exact hchain hfeas hI
+
 /-- **The old per-move bound is `Threat.Round`'s one-call special case.**
     For a reaction with one call (`HonestMove.chain op`, `pending = [op]`),
     `Threat.RoundSeq.peel_one` splits the round into ordinary adversary
@@ -722,6 +772,66 @@ theorem Threat.Run.invariant {apps : Apps E} {p : Participant} {T : Threat E p}
     exact hhonest (Threat.RoundSeq.invariant hround.1
       (fun _ hI => hland hI) (fun _ hfeas hI => hdeliver hfeas hI)
       (fun _ hfeas hI => htick hfeas hI) (fun _ hfeas hI => hchain hfeas hI) (ih hI))
+
+/-- **A strategy tree's own invariant.** An invariant `Inv` that every kind of round step
+    preserves, and that an honest move's own effect (`applyHonest`) also preserves, holds
+    alongside the original goal at every state an `UnbeatableIn` strategy tree reaches -- the
+    `UnbeatableIn`-level form of the round combinator, over `UnbeatableIn`'s own `done`/`move`
+    induction (the same convention as `UnbeatableIn.and_chainInv`/`UnbeatableIn.and_reachable`,
+    `Nitro/Liveness.lean`, generalized here to any `NetworkState` invariant instead of one
+    tied to the chain alone or to `Reachable` specifically; each of those two keeps its own
+    proof, since each threads an EXTRA per-op side fact beyond `Inv` that this plain form does
+    not carry). -/
+theorem UnbeatableIn.and_invariant {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {Inv : NetworkState E p → Prop}
+    (hland : ∀ {n : NetworkState E p} {op : Op E}, Inv n → Inv (n.applyAdv apps (.land op)))
+    (hdeliver : ∀ {n : NetworkState E p} {ss : SignedState E}, T.feasible n (.deliver ss) →
+      Inv n → Inv (n.applyAdv apps (.deliver ss)))
+    (htick : ∀ {n : NetworkState E p} {dt : Time}, T.feasible n (.tick dt) →
+      Inv n → Inv (n.applyAdv apps (.tick dt)))
+    (hchain : ∀ {n : NetworkState E p} {caller : Participant} {op : Op E},
+      T.feasible n (.chain caller op) → Inv n → Inv (n.applyAdv apps (.chain caller op)))
+    (hhonest : ∀ {n : NetworkState E p} {m : HonestMove E}, Inv n → Inv (n.applyHonest m))
+    {net : NetworkState E p} (hU : UnbeatableIn apps T allowed G net) (hI : Inv net) :
+    UnbeatableIn apps T allowed (fun n => G n ∧ Inv n) net := by
+  induction hU with
+  | done hG => exact UnbeatableIn.done ⟨hG, hI⟩
+  | move m hal hfeas _ ih =>
+    refine UnbeatableIn.move m hal hfeas fun net' hround => ih net' hround ?_
+    exact hhonest (Threat.RoundSeq.invariant hround.1
+      (fun _ hI => hland hI) (fun _ hfeas hI => hdeliver hfeas hI)
+      (fun _ hfeas hI => htick hfeas hI) (fun _ hfeas hI => hchain hfeas hI) hI)
+
+/-- **A strategy tree's own invariant, with a per-call side condition.** The `UnbeatableIn`
+    form of `Threat.RoundSeq.condInvariant`: `Cond` for this round's own `pending` (`m.calls`)
+    comes from `hcondfeas`, applied once per round to that round's own `allowed m`/`m.Feasible`
+    witnesses (already in `UnbeatableIn.move`'s own hypotheses, so no extra derivation is
+    needed at the call site) -- matches `UnbeatableIn.and_reachable`'s own shape, with
+    `Cond n op := op.HonestFeasible n` and `hcondfeas := fun _ hfeas => hfeas`. -/
+theorem UnbeatableIn.and_condInvariant {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {Inv : NetworkState E p → Prop}
+    {Cond : NetworkState E p → Op E → Prop}
+    (hcondmono : ∀ {n : NetworkState E p} {op : Op E} (m : AdvMove E),
+      Cond n op → Cond (n.applyAdv apps m) op)
+    (hcondfeas : ∀ {n : NetworkState E p} {m : HonestMove E}, allowed m → m.Feasible n →
+      ∀ op ∈ m.calls, Cond n op)
+    (hland : ∀ {n : NetworkState E p} {op : Op E}, Cond n op → Inv n →
+      Inv (n.applyAdv apps (.land op)))
+    (hdeliver : ∀ {n : NetworkState E p} {ss : SignedState E}, T.feasible n (.deliver ss) →
+      Inv n → Inv (n.applyAdv apps (.deliver ss)))
+    (htick : ∀ {n : NetworkState E p} {dt : Time}, T.feasible n (.tick dt) →
+      Inv n → Inv (n.applyAdv apps (.tick dt)))
+    (hchain : ∀ {n : NetworkState E p} {caller : Participant} {op : Op E},
+      T.feasible n (.chain caller op) → Inv n → Inv (n.applyAdv apps (.chain caller op)))
+    (hhonest : ∀ {n : NetworkState E p} {m : HonestMove E}, Inv n → Inv (n.applyHonest m))
+    {net : NetworkState E p} (hU : UnbeatableIn apps T allowed G net) (hI : Inv net) :
+    UnbeatableIn apps T allowed (fun n => G n ∧ Inv n) net := by
+  induction hU with
+  | done hG => exact UnbeatableIn.done ⟨hG, hI⟩
+  | move m hal hfeas _ ih =>
+    refine UnbeatableIn.move m hal hfeas fun net' hround => ih net' hround ?_
+    exact hhonest (Threat.RoundSeq.condInvariant hcondmono hround.1 (hcondfeas hal hfeas)
+      hland hdeliver htick hchain hI)
 
 /-- Nitro:641-644: `p` "has a strategy to prevent" `G`: a strategy whose
     every move is feasible keeps every state of every play outside `G`,
