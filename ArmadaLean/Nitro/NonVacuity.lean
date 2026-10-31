@@ -2538,6 +2538,7 @@ example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : FixedPart) (o
     r.ledgers[0]? = some L0 ∧
     (2 * (canon P).ε ≤ L0.challengeDuration ∧ 2 * (canon P).ε ≤ r.V.challengeDuration) ∧
     r.LedgerAfterRound2 o P P1 P bal r.a0 ∧
+    (∀ e ∈ o, ∀ x ps, e.item = .guarantee x ps → ∀ d ∈ ps, d.isExternal = true) ∧
     (Nitro.participant apps2 (canon P)).Reachable net ∧
     HoldsLatestLedger net L0 o ∧
     HoldsVirtualSetup net r alice bob true ∧ a + b = r.a0 + r.b0 ∧
@@ -2545,7 +2546,30 @@ example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : FixedPart) (o
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
     net.DeadlineAfter L0 (canon P).ε ∧ net.chain.finalizedWith L0.address = none := by
   refine ⟨r2, p0, q0, p0, q0, Lr, o0, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl, rfl, rfl, rfl, rfl,
-    rfl, ⟨by decide, by decide⟩, by unfold Route.LedgerAfterRound2; decide, netE_reach,
+    rfl, ⟨by decide, by decide⟩, by unfold Route.LedgerAfterRound2; decide,
+    (by
+      intro e he
+      simp only [o0, List.mem_cons, List.not_mem_nil, or_false] at he
+      rcases he with h1 | h2 | h3
+      · subst h1
+        intro x ps hxps
+        intro d hd
+        have hf : False := by cases hxps
+        exact hf.elim
+      · subst h2
+        intro x ps hxps
+        intro d hd
+        have hf : False := by cases hxps
+        exact hf.elim
+      · subst h3
+        intro x ps hxps
+        simp only [Route.guarantee, Item.guarantee.injEq] at hxps
+        obtain ⟨hx, hps⟩ := hxps
+        subst hps
+        intro d hd
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hd
+        rcases hd with rfl | rfl <;> rfl
+    ), netE_reach,
     ⟨⟨S0, [p0, q0]⟩, ?_, by decide, rfl, rfl, rfl, ?_, ?_⟩, ⟨?_, ?_⟩, rfl, by decide, ?_, by decide⟩
   · refine ⟨fun q hq => ?_, fun v hv => ?_⟩
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq

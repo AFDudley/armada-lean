@@ -8142,7 +8142,8 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
     (go-nitro `reclaim` needs it, MultiAssetHolder.sol:365), Alice can
     finalize `L0` with no guarantee for `V` and her entry raised by `a` from
     its Round 2 level, so she is owed her pre-protocol balance minus `a0`
-    plus `a`. -/
+    plus `a`.
+    Operator ruling 2026-10-31 (aln-223 counterexample): every guarantee Alice signed in `o` names external peers, as SATP Protocol 3.1 Round 2 has her sign `G(a0 + b0, [P_i, P_{i+1}]` (SATP:411-418); signing otherwise is an own-violation of IR (armada-laconic labbook/2026-10-31-funding-point-alternative-moves.md). -/
 theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules)
@@ -8151,6 +8152,7 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     (L0 : FixedPart) (hL0 : r.ledgers[0]? = some L0)
     (hdur : 2 * T.ε ≤ L0.challengeDuration ∧ 2 * T.ε ≤ r.V.challengeDuration)
     (o : Allocation E) (bal : Coins) (ho : r.LedgerAfterRound2 o P P1 P bal r.a0)
+    (hog : ∀ e ∈ o, ∀ x ps, e.item = .guarantee x ps → ∀ d ∈ ps, d.isExternal = true)
     (net : NetworkState E P) (hnr : (Nitro.participant apps T).Reachable net)
     (hH : HoldsLatestLedger net L0 o)
     (hVs : HoldsVirtualSetup net r alice bob true)
