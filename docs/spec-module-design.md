@@ -193,7 +193,7 @@ not in `sorry` any more: an open helper shows in `sorry` through the spec theore
 ## 9. The conversion script and the rolling cutover (decision 3)
 
 `python3 scripts/convert_spec.py` runs on any branch whose tree builds. It changes theorem
-headers, the generated access lines, the call-site names, the `example` headers of
+headers, the generated access lines, each call site's own arguments, the `example` headers of
 `NonVacuity.lean`, the spec and witness modules, and the root imports. It prints every
 converted theorem and every call site. A second run changes nothing.
 
@@ -213,6 +213,78 @@ A worker branch from before the cutover:
 4. Merge commit 3 and later commits (normal merges).
 5. Run `python3 scripts/convert_spec.py` again: it must change nothing.
 
-## 10. Runtime
+## 10. Measurements (2026-10-31, warm build, this host, rerun on `integrated` `5e5ce55`)
 
-Measured on this branch with a warm build: see the cutover commit message.
+| | Old check (`integrated` `5e5ce55`) | New check (`draft/spec-module-4`) |
+|---|---:|---:|
+| `scripts/check.sh --json`, wall time | 12.7 s | 16.1 s |
+| Open spec proofs (`sorry` ∪ `out_of_scope_open`) | 12 | 12, the same names |
+| Spec theorems | — (no rule) | 177 |
+| Converted to `ReachableState` | — | 55 (43 with an access line, 12 with a `sorry` body) |
+| Call sites rewritten in place | — | 18 |
+| "Every state" entries | 86 TSV rows | 56 (14 with a generated reason) |
+| Witnesses | 149 entries need one: 81 proved by `spec_witness`, 68 open |
+
+**No compatibility helper (decision 3 restated).** The first cutover
+(`draft/spec-module-2`/`-3`) gave each converted theorem `foo` a
+`foo.of_reachable` theorem — the pre-conversion header, proved by `foo` — and
+renamed every call of `foo` to it, so a caller's own two arguments (a state
+and its reachability hypothesis) stayed untouched. That is a shim; the
+project's cutover rule is a clean one. `convert_spec.py` now rewrites each of
+the 18 call sites' own arguments into the one `ReachableState` value the
+converted header takes, `⟨state, proof⟩` (`⟨_, proof⟩` when the state binder
+was implicit, so the call never named it), and generates no helper.
+`git grep -c 'of_reachable' ArmadaLean` is 0.
+
+One call site needed a one-line repair of its OWN proof, not the script:
+`nTwoCh_finalizable_latest_snd` (`ArmadaLean/Nitro/NonVacuity.lean`) calls
+`latest_state_finalizable` with a non-trivial state expression, then later
+`rw`s six goals through lemmas that mention that same expression. Once the
+call builds the state and its reachability proof as one dependent pair, `rw`
+cannot form a motive for a term a sibling field's type also depends on
+(Lean's own diagnostic: "motive is not type correct"). `simp only` can,
+through its own congruence reasoning, once the lemma's own implicit state
+arguments are given explicitly (`@nTwoCh_views_p0/q0 n0 st1 st2 …`): `simp`'s
+argument elaboration does not pin them from the goal first, the way `rw`'s
+does.
+
+**`scripts/type_lint.lean` (report-only, `docs/lean/type-doctrine.md` §3-4a).**
+`ArmadaLean/Lint/TypeDoctrine.lean`'s `inScope` excludes two cases, by rule:
+a module under `ArmadaLean.Spec` or `ArmadaLean.Witness` (the spec module's
+own generated statements and witnesses), and a declaration whose last name
+component is `nonvacuity` or `nonvacuity_N` (an `example` the conversion
+promotes to a named theorem, `scripts/spec_lib.py` §5). A third case lives
+in `exprKey` itself, not `inScope`: `stateCarrier?` reduces a
+`ReachableState.state e` premise subterm to `e` before keying, so a
+premise's shape does not change just because its state binder moved from a
+bare parameter to a `ReachableState` one (decision 2). Scoped to
+`ReachableState.state` alone, not every `Subtype` carrier (`Subtype.val`,
+`.1`): a refined type such as `TimedChannel` also coerces through
+`Subtype.val`, and that projection IS part of its own premises' shape.
+
+`repeatedFindings` and `variantFindings` grouped by `Std.HashMap`, whose
+iteration order depends on Lean's per-process hash seed: the same
+unchanged commit read `repeatedPremise_groups` 258 on one run, 259 on
+another. `groupByKey` replaces both: sort the rows by `(key, tiebreak)`, a
+total order over the row data, then group adjacent rows. `premiseVariant`'s
+representative `pretty` text is now the alphabetically first declaration's,
+by the same order, not whichever declaration the `HashMap` iteration
+reached first.
+
+Measured with this same linter file on both ends, five runs in each of two
+fresh worktrees (ten runs per row): every run of a row reads the same
+number.
+
+| | Base (`integrated` `5e5ce55`) | Tip (`draft/spec-module-4`) |
+|---|---:|---:|
+| `decls_scanned` | 1593 (10/10 runs) | 1593 (10/10 runs) |
+| `nitro_decls` | 1185 (10/10 runs) | 1185 (10/10 runs) |
+| `pool_decls` | 408 (10/10 runs) | 408 (10/10 runs) |
+| `repeatedPremise_groups` | 258 (10/10 runs) | 257 (10/10 runs) |
+| `premiseVariant_groups` | 11 (10/10 runs) | 10 (10/10 runs) |
+| `looseHypothesis_findings` | 139 (10/10 runs) | 123 (10/10 runs) |
+| `aliasHypothesis_findings` | 62 (10/10 runs) | 62 (10/10 runs) |
+| `layerDiscipline_nitro_spec_total`/`_hits` | 96 / 35 | 96 / 35 |
+| `layerDiscipline_pool_spec_total`/`_hits` | 45 / 12 | 45 / 12 |
+
+Every field is equal or lower on the tip.
