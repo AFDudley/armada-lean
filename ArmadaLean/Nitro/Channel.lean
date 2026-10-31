@@ -116,6 +116,14 @@ def SignedState.byMover (ss : SignedState E) : Bool :=
   | some m => decide (m ∈ ss.signers)
   | none => false
 
+/-- `byMover` decides `ByMover`. -/
+theorem SignedState.byMover_eq_true_iff {ss : SignedState E} :
+    ss.byMover = true ↔ ss.ByMover := by
+  unfold SignedState.byMover SignedState.ByMover
+  cases ss.state.mover with
+  | none => simp
+  | some m => simp
+
 /-- A support proof. SATP:247-250 `SupportProof { consts, vars :
     ChannelVars[] }`; go-nitro ForceMove.sol `proof :
     SignedVariablePart[]`. -/
@@ -165,6 +173,28 @@ def validMove (vt : State E → State E → Bool) (m1 m2 : SignedState E) : Bool
   (!m1.state.isFinal || m2.state.isFinal) &&
   (m2.state.isFinal || vt m1.state m2.state) &&
   m2.byMover
+
+/-- `validMove` decides `ValidMove`: field by field, `validMove`'s `Bool`
+    conjuncts are the `decide`d or `Bool`-form of `ValidMove`'s `Prop`
+    conjuncts (ForceMove:744-751's `validMove(fromMove, toMove)` next to the
+    model's own `ValidMove`, `Channel.lean:153`). `hfalse_or`/`htrue_or`
+    convert a `Bool` field's `= false ∨ _`/`= true ∨ _` disjunction
+    (`validMove`'s shape) to the matching `= true → _`/`= false → _`
+    implication (`ValidMove`'s shape); `Decidable.imp_iff_not_or`'s two
+    directions give both. -/
+theorem validMove_iff (vt : State E → State E → Bool) (m1 m2 : SignedState E) :
+    validMove vt m1 m2 = true ↔ ValidMove (fun s1 s2 => vt s1 s2 = true) m1 m2 := by
+  have hfalse_or : ∀ (b : Bool) (P : Prop), (b = false ∨ P) ↔ (b = true → P) := by
+    intro b P
+    rw [Bool.eq_false_iff]
+    exact (Decidable.imp_iff_not_or).symm
+  have htrue_or : ∀ (b : Bool) (P : Prop), (b = true ∨ P) ↔ (b = false → P) := by
+    intro b P
+    rw [Bool.eq_false_iff]
+    exact Decidable.or_iff_not_imp_left
+  unfold validMove ValidMove UniversalTransition ConclusionTransition
+  simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, Bool.not_eq_eq_eq_not,
+    Bool.not_true, hfalse_or, and_assoc, htrue_or, SignedState.byMover_eq_true_iff]
 
 /-- A run of valid moves. -/
 def validRun (vt : State E → State E → Bool) : SupportProof E → Bool
