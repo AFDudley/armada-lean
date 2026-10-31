@@ -6093,6 +6093,353 @@ theorem turbo_value_is_value (apps : Apps E) {p : Participant} (T : Threat E p)
     ValueIn apps T HonestMove.IsTransfer d net v := by
   sorry
 
+theorem Allocation.reduceOwed_self_of_find_alloc {o : Allocation E} {d : Address E} {amt : Coins}
+    (h : o.find d = some ⟨d, .alloc amt⟩) : o.reduceOwed d 0 = o := by
+  induction o with
+  | nil => simp [Allocation.find] at h
+  | cons e t ih =>
+    rw [Allocation.find_cons] at h
+    rw [Allocation.reduceOwed_cons]
+    by_cases he : e.dest = d
+    · rw [if_pos he] at h ⊢
+      have he' : e = (⟨d, .alloc amt⟩ : Entry E) := Option.some.inj h
+      subst he'
+      simp
+    · rw [if_neg he] at h ⊢
+      rw [ih h]
+
+/-- `reduceOwed` never changes an entry's destination. -/
+theorem Allocation.reduceOwed_map_dest (o : Allocation E) (d : Address E) (x : Coins) :
+    (o.reduceOwed d x).map Entry.dest = o.map Entry.dest := by
+  induction o with
+  | nil => rfl
+  | cons e t ih =>
+    rw [Allocation.reduceOwed_cons]
+    by_cases h : e.dest = d
+    · simp [h]
+    · simp [h, ih]
+
+/-- `OnlyTransfers` never changes which destinations a channel's own
+    allocation lists (only the amounts move). -/
+theorem allocationOf_dest_applyAll (apps : Apps E) :
+    ∀ (ops : List (Participant × Op E)), OnlyTransfers ops →
+    ∀ (u : Adjudicator E) (n : Address E),
+      ((Adjudicator.applyAll apps ops u).allocationOf n).map Entry.dest =
+        (u.allocationOf n).map Entry.dest := by
+  intro ops
+  induction ops with
+  | nil => intro _ u n; rfl
+  | cons hd rest ih =>
+    intro hops u n
+    obtain ⟨a, b, hb⟩ := hops hd List.mem_cons_self
+    obtain ⟨caller, op⟩ := hd
+    have hb' : op = Op.transfer a b := hb
+    have hOT : OnlyTransfers rest := fun e he => hops e (List.mem_cons_of_mem _ he)
+    show ((Adjudicator.applyAll apps rest ((u.apply apps caller op).getD u)).allocationOf n).map
+      Entry.dest = (u.allocationOf n).map Entry.dest
+    rw [hb', Adjudicator.apply_transfer]
+    cases hstep : u.transfer a b with
+    | none => simp only [Option.getD_none]; exact ih hOT u n
+    | some u' =>
+      simp only [Option.getD_some]
+      rw [ih hOT u' n]
+      obtain ⟨o, amt, x, hf, hfind, -, -, -, hfo, -, -, -⟩ := Adjudicator.transfer_effect hstep
+      cases n with
+      | external e => simp [Adjudicator.allocationOf, Adjudicator.finalOutcome]
+      | channel c =>
+        have hc := hfo c
+        rw [FixedPart.address_eq] at hc
+        by_cases hca : c = a
+        · subst hca
+          rw [FixedPart.address_eq] at hf
+          unfold Adjudicator.allocationOf
+          rw [hc, if_pos rfl, hf]
+          dsimp only
+          rw [Allocation.dedup_reduceOwed, Allocation.reduceOwed_map_dest]
+        · unfold Adjudicator.allocationOf
+          rw [hc, if_neg hca]
+
+theorem Edge_applyAll_iff (apps : Apps E) {ops : List (Participant × Op E)} (hops : OnlyTransfers ops)
+    (s : Adjudicator E) (n d : Address E) :
+    (Adjudicator.applyAll apps ops s).Edge n d ↔ s.Edge n d := by
+  have hdest := allocationOf_dest_applyAll apps ops hops s n
+  unfold Adjudicator.Edge
+  constructor
+  · rintro ⟨hext, e, he, hed⟩
+    refine ⟨hext, ?_⟩
+    have hmem : d ∈ ((Adjudicator.applyAll apps ops s).allocationOf n).map Entry.dest :=
+      List.mem_map.mpr ⟨e, he, hed⟩
+    rw [hdest] at hmem
+    obtain ⟨e', he', hed'⟩ := List.mem_map.mp hmem
+    exact ⟨e', he', hed'⟩
+  · rintro ⟨hext, e, he, hed⟩
+    refine ⟨hext, ?_⟩
+    have hmem : d ∈ (s.allocationOf n).map Entry.dest := List.mem_map.mpr ⟨e, he, hed⟩
+    rw [← hdest] at hmem
+    obtain ⟨e', he', hed'⟩ := List.mem_map.mp hmem
+    exact ⟨e', he', hed'⟩
+
+theorem IsDAG_applyAll_iff (apps : Apps E) {ops : List (Participant × Op E)} (hops : OnlyTransfers ops)
+    (s : Adjudicator E) :
+    (Adjudicator.applyAll apps ops s).IsDAG ↔ s.IsDAG := by
+  unfold Adjudicator.IsDAG Acyclic
+  constructor
+  · intro h
+    refine ⟨fun n hn => h.irrefl n ?_⟩
+    exact Relation.TransGen.mono (fun x y hxy => (Edge_applyAll_iff apps hops s x y).mpr hxy) n n hn
+  · intro h
+    refine ⟨fun n hn => h.irrefl n ?_⟩
+    exact Relation.TransGen.mono (fun x y hxy => (Edge_applyAll_iff apps hops s x y).mp hxy) n n hn
+
+/-- An exhausted DAG state is a fixed point of `transfer`: the call that
+    "succeeds" moves zero coins, so the state (read through `finalOutcome`
+    and `balances.get`) does not move either. -/
+theorem transfer_exhausted_fixed {t : Adjudicator E} (hdag : t.IsDAG) (hexh : t.TransferExhausted)
+    {a : FixedPart} {b : Address E} {t' : Adjudicator E} (h : t.transfer a b = some t') :
+    (∀ n, t'.finalOutcome n = t.finalOutcome n) ∧ (∀ n, t'.balances.get n = t.balances.get n) := by
+  obtain ⟨o, amt, x, hf, hfind, hk, hbfund, hx, hfo, hbal, -, -⟩ := Adjudicator.transfer_effect h
+  have hbne : b ≠ (a.address : Address E) := by
+    intro hcontra
+    have hbmem : b ∈ o.dedup.map Entry.dest := by
+      have h1 : o.dedup.find b ≠ none := by rw [Allocation.find_dedup, hfind]; simp
+      by_contra hcon
+      exact h1 (Allocation.find_eq_none.mpr hcon)
+    have hedge : t.Edge a.address b := by
+      refine ⟨?_, ?_⟩
+      · rw [hcontra, FixedPart.address_eq]; exact Address.isExternal_channel a
+      · unfold Adjudicator.allocationOf
+        rw [hf]
+        obtain ⟨e, he, hed⟩ := List.mem_map.mp hbmem
+        exact ⟨e, he, hed⟩
+    rw [hcontra] at hedge
+    exact hdag.irrefl a.address (Relation.TransGen.single hedge)
+  have hxeq : t'.balances.get b = t.balances.get b + x := by
+    have hb := hbal b
+    rw [FixedPart.address_eq] at hbne
+    simpa [hbne] using hb
+  have hsame : t'.balances.get b = t.balances.get b := by
+    rw [hexh a b t' h]
+  have hx0 : x = 0 := by
+    rw [hsame] at hxeq
+    unfold Coins at *
+    omega
+  refine ⟨fun n => ?_, fun n => ?_⟩
+  · cases n with
+    | external e => simp [Adjudicator.finalOutcome]
+    | channel c =>
+      have hc := hfo c
+      rw [FixedPart.address_eq] at hc
+      by_cases hca : c = a
+      · subst hca
+        rw [FixedPart.address_eq] at hf
+        rw [hc, if_pos rfl, hx0, hf]
+        congr 2
+        exact Allocation.reduceOwed_self_of_find_alloc hfind
+      · rw [hc, if_neg hca]
+  · have hb := hbal n
+    rw [hx0] at hb
+    simp only [ite_self, Nat.add_zero] at hb
+    exact hb
+
+/-- The amount a deduped allocation's own first entry is, for an entry
+    reached by deduplication, is exactly what `owed` reads at its
+    destination. -/
+theorem Allocation.owed_eq_amount_of_mem_dedup {o : Allocation E} {e : Entry E} (he : e ∈ o.dedup) :
+    o.owed e.dest = e.amount := by
+  obtain ⟨j, hj⟩ := List.getElem?_of_mem he
+  have hfind := Allocation.find_of_getElem? (Allocation.dedup_nodup o) hj
+  rw [Allocation.find_dedup] at hfind
+  unfold Allocation.owed
+  rw [hfind]
+  rfl
+
+theorem Allocation.dedup_total_eq_sum_owed (o : Allocation E) :
+    o.dedup.total = ((o.dedup.map Entry.dest).map o.owed).sum := by
+  unfold Allocation.total
+  rw [List.map_map]
+  congr 1
+  apply List.map_congr_left
+  intro e he
+  exact (Allocation.owed_eq_amount_of_mem_dedup he).symm
+
+theorem Allocation.dedup_total_eq_of_dest_owed {o o' : Allocation E}
+    (hd : o.dedup.map Entry.dest = o'.dedup.map Entry.dest) (hw : ∀ d, o.owed d = o'.owed d) :
+    o.dedup.total = o'.dedup.total := by
+  rw [Allocation.dedup_total_eq_sum_owed, Allocation.dedup_total_eq_sum_owed, hd]
+  congr 1
+  apply List.map_congr_left
+  intro d _
+  exact hw d
+
+
+theorem transfer_pointwise_absorbed {u t : Adjudicator E}
+    (hfo : ∀ n, u.finalOutcome n = t.finalOutcome n) (hbal : ∀ n, u.balances.get n = t.balances.get n)
+    (hdag : t.IsDAG) (hexh : t.TransferExhausted) (a : FixedPart) (b : Address E) :
+    u.transfer a b = none ∨
+    ∃ u', u.transfer a b = some u' ∧ (∀ n, u'.finalOutcome n = t.finalOutcome n) ∧
+      (∀ n, u'.balances.get n = t.balances.get n) := by
+  cases ht : t.transfer a b with
+  | none =>
+    left
+    by_contra hcon
+    obtain ⟨u', hu'⟩ := Option.ne_none_iff_exists'.mp hcon
+    obtain ⟨o, amt, x, hf, hfind, hk, hbfund, -, -, -, -, -⟩ := Adjudicator.transfer_effect hu'
+    have hft : t.finalOutcome a.address = some (.allocation o) := by rw [← hfo a.address]; exact hf
+    exact Adjudicator.transfer_ne_none hk hbfund hft hfind ht
+  | some t' =>
+    right
+    obtain ⟨o, amt, x, hf, hfind, hk, hbfund, hx, hfot, hbalt, -, -⟩ := Adjudicator.transfer_effect ht
+    have hfu : u.finalOutcome a.address = some (.allocation o) := (hfo a.address).trans hf
+    have hune : u.transfer a b ≠ none := Adjudicator.transfer_ne_none hk hbfund hfu hfind
+    obtain ⟨u', hu'⟩ := Option.ne_none_iff_exists'.mp hune
+    obtain ⟨o', amt', x', hf', hfind', -, -, hx', hfou, hbalu, -, -⟩ := Adjudicator.transfer_effect hu'
+    have hoeq : o' = o := by
+      have heq2 : (some (Outcome.allocation o') : Option (Outcome E)) = some (Outcome.allocation o) :=
+        hf'.symm.trans hfu
+      injection heq2 with heq3
+      injection heq3
+    have hxeq : x' = x := by rw [hx', hx, hoeq, hbal a.address]
+    have hmatcht' : (∀ n, u'.finalOutcome n = t'.finalOutcome n) ∧ (∀ n, u'.balances.get n = t'.balances.get n) := by
+      constructor
+      · intro n
+        cases n with
+        | external e => simp [Adjudicator.finalOutcome]
+        | channel c =>
+          have h1 := hfou c
+          have h2 := hfot c
+          rw [hoeq, hxeq, FixedPart.address_eq] at h1
+          rw [FixedPart.address_eq] at h2
+          by_cases hca : c = a
+          · rw [if_pos hca] at h1; rw [if_pos hca] at h2; rw [h1, h2]
+          · rw [if_neg hca] at h1; rw [if_neg hca] at h2
+            rw [h1, h2, hfo (Address.channel c)]
+      · intro n
+        have h1 := hbalu n
+        have h2 := hbalt n
+        have h3 := hbal n
+        rw [hxeq] at h1
+        by_cases hca : n = a.address
+        · rw [if_pos hca] at h1 h2
+          by_cases hcb : n = b
+          · rw [if_pos hcb] at h1 h2; unfold Coins at h1 h2 h3 ⊢; omega
+          · rw [if_neg hcb] at h1 h2; unfold Coins at h1 h2 h3 ⊢; omega
+        · rw [if_neg hca] at h1 h2
+          by_cases hcb : n = b
+          · rw [if_pos hcb] at h1 h2; unfold Coins at h1 h2 h3 ⊢; omega
+          · rw [if_neg hcb] at h1 h2; unfold Coins at h1 h2 h3 ⊢; omega
+    have hmatcht := transfer_exhausted_fixed hdag hexh ht
+    exact ⟨u', hu', fun n => (hmatcht'.1 n).trans (hmatcht.1 n), fun n => (hmatcht'.2 n).trans (hmatcht.2 n)⟩
+
+/-- Starting from a state that matches `t` pointwise, running any further
+    `OnlyTransfers` list leaves the pointwise reading of `t` unchanged,
+    because `t` is itself an exhausted fixed point. -/
+theorem applyAll_pointwise_absorbed {t : Adjudicator E} (hdag : t.IsDAG) (hexh : t.TransferExhausted)
+    (apps : Apps E) :
+    ∀ (ops : List (Participant × Op E)), OnlyTransfers ops →
+    ∀ (u : Adjudicator E), (∀ n, u.finalOutcome n = t.finalOutcome n) →
+      (∀ n, u.balances.get n = t.balances.get n) →
+      (∀ n, (Adjudicator.applyAll apps ops u).finalOutcome n = t.finalOutcome n) ∧
+      (∀ n, (Adjudicator.applyAll apps ops u).balances.get n = t.balances.get n) := by
+  intro ops
+  induction ops with
+  | nil => intro _ u hfo hbal; exact ⟨hfo, hbal⟩
+  | cons hd rest ih =>
+    intro hops u hfo hbal
+    obtain ⟨a, b, hb⟩ := hops hd List.mem_cons_self
+    obtain ⟨caller, op⟩ := hd
+    have hb' : op = Op.transfer a b := hb
+    have hOT : OnlyTransfers rest := fun e he => hops e (List.mem_cons_of_mem _ he)
+    show (∀ n, (Adjudicator.applyAll apps rest ((u.apply apps caller op).getD u)).finalOutcome n = t.finalOutcome n) ∧
+      (∀ n, (Adjudicator.applyAll apps rest ((u.apply apps caller op).getD u)).balances.get n = t.balances.get n)
+    rw [hb', Adjudicator.apply_transfer]
+    rcases transfer_pointwise_absorbed hfo hbal hdag hexh a b with hnone | ⟨u', hu', hfo', hbal'⟩
+    · rw [hnone, Option.getD_none]
+      exact ih hOT u hfo hbal
+    · rw [hu', Option.getD_some]
+      exact ih hOT u' hfo' hbal'
+
+/-- An exhausted DAG state is unmoved (pointwise) by any further
+    `OnlyTransfers` list. -/
+theorem applyAll_exhausted_absorbed {t : Adjudicator E} (hdag : t.IsDAG) (hexh : t.TransferExhausted)
+    (apps : Apps E) {ops : List (Participant × Op E)} (hops : OnlyTransfers ops) :
+    (∀ n, (Adjudicator.applyAll apps ops t).finalOutcome n = t.finalOutcome n) ∧
+    (∀ n, (Adjudicator.applyAll apps ops t).balances.get n = t.balances.get n) :=
+  applyAll_pointwise_absorbed hdag hexh apps ops hops t (fun _ => rfl) (fun _ => rfl)
+
+theorem balances_eq_of_mutual_ahead {t1 t2 : Adjudicator E} (h12 : t1.Ahead t2) (h21 : t2.Ahead t1)
+    (hdest : ∀ c : FixedPart, (t1.allocationOf c.address).map Entry.dest =
+      (t2.allocationOf c.address).map Entry.dest)
+    (a : Address E) : t1.balances.get a = t2.balances.get a := by
+  cases a with
+  | external e => exact le_antisymm (h12.get_external_le e) (h21.get_external_le e)
+  | channel c =>
+    have hch12 := h12.chan c
+    have hch21 := h21.chan c
+    rw [FixedPart.address_eq] at hch12 hch21
+    have hflow12 := h12.flow (Address.channel c) [] List.nodup_nil
+    have hflow21 := h21.flow (Address.channel c) [] List.nodup_nil
+    simp only [List.map_nil, List.sum_nil, Nat.add_zero] at hflow12 hflow21
+    cases hfo1 : t1.finalOutcome (Address.channel c) with
+    | none =>
+      cases hfo2 : t2.finalOutcome (Address.channel c) with
+      | none =>
+        have hd1 : t1.dueTotal (Address.channel c) = 0 := by unfold Adjudicator.dueTotal; rw [hfo1]
+        have hd2 : t2.dueTotal (Address.channel c) = 0 := by unfold Adjudicator.dueTotal; rw [hfo2]
+        rw [hd1, hd2] at hflow12 hflow21
+        show t1.balances.get (Address.channel c) = t2.balances.get (Address.channel c)
+        unfold Coins at hflow12 hflow21 ⊢
+        omega
+      | some o2 => rw [hfo1, hfo2] at hch12; cases hch12
+    | some o1 =>
+      cases hfo2 : t2.finalOutcome (Address.channel c) with
+      | none => rw [hfo1, hfo2] at hch12; cases hch12
+      | some o2 =>
+        rw [hfo1, hfo2] at hch12 hch21
+        cases hch12 with
+        | some hrel12 =>
+          cases hch21 with
+          | some hrel21 =>
+            cases o1 with
+            | allocation al1 =>
+              cases o2 with
+              | allocation al2 =>
+                have how2 : ∀ d, al2.owed d ≤ al1.owed d := hrel12.owed_le
+                have how1 : ∀ d, al1.owed d ≤ al2.owed d := hrel21.owed_le
+                have howeq : ∀ d, al1.owed d = al2.owed d := fun d => le_antisymm (how1 d) (how2 d)
+                have hdc := hdest c
+                unfold Adjudicator.allocationOf at hdc
+                rw [FixedPart.address_eq] at hdc
+                rw [hfo1, hfo2] at hdc
+                simp only at hdc
+                have hdt1 : t1.dueTotal (Address.channel c) = al1.dedup.total :=
+                  Adjudicator.dueTotal_of hfo1
+                have hdt2 : t2.dueTotal (Address.channel c) = al2.dedup.total :=
+                  Adjudicator.dueTotal_of hfo2
+                have hdteq : al1.dedup.total = al2.dedup.total :=
+                  Allocation.dedup_total_eq_of_dest_owed hdc howeq
+                rw [hdt1, hdt2, hdteq] at hflow12 hflow21
+                show t1.balances.get (Address.channel c) = t2.balances.get (Address.channel c)
+                unfold Coins at hflow12 hflow21 ⊢
+                omega
+
+theorem Ahead_right_congr {sp sg sg' : Adjudicator E}
+    (hfo : ∀ n, sg.finalOutcome n = sg'.finalOutcome n) (hbal : ∀ n, sg.balances.get n = sg'.balances.get n)
+    (h : sp.Ahead sg) : sp.Ahead sg' := by
+  have hdueeq : ∀ d, sg.dueTotal d = sg'.dueTotal d := fun d => by
+    unfold Adjudicator.dueTotal; rw [hfo d]
+  have howedeq : ∀ (c : FixedPart) (d : Address E), sg.owedBy c d = sg'.owedBy c d := fun c d => by
+    unfold Adjudicator.owedBy; rw [hfo c.address]
+  refine ⟨fun c => ?_, fun d L hL => ?_⟩
+  · have hc := h.chan c
+    rw [FixedPart.address_eq] at hc ⊢
+    rw [hfo (Address.channel c), hbal (Address.channel c)] at hc
+    exact hc
+  · have hf := h.flow d L hL
+    rw [hdueeq d, hbal d] at hf
+    rw [show (L.map (sg.owedBy · d)) = (L.map (sg'.owedBy · d)) from
+      List.map_congr_left (fun x _ => howedeq x d)] at hf
+    exact hf
+
 /-- Nitro-36. Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result." Two exhausted transfer sequences from one Turbo state
     give the same balances. -/
@@ -6102,7 +6449,41 @@ theorem turbo_order_independent (apps : Apps E) (s : Adjudicator E) (hdag : s.Is
     (hx2 : (Adjudicator.applyAll apps ops2 s).TransferExhausted) (a : Address E) :
     (Adjudicator.applyAll apps ops1 s).balances.get a =
       (Adjudicator.applyAll apps ops2 s).balances.get a := by
-  sorry
+  have hdag1 : (Adjudicator.applyAll apps ops1 s).IsDAG := (IsDAG_applyAll_iff apps h1 s).mpr hdag
+  have hdag2 : (Adjudicator.applyAll apps ops2 s).IsDAG := (IsDAG_applyAll_iff apps h2 s).mpr hdag
+  have hOT12 : OnlyTransfers (ops1 ++ ops2) := by
+    intro e he; rcases List.mem_append.mp he with he | he
+    · exact h1 e he
+    · exact h2 e he
+  have hOT21 : OnlyTransfers (ops2 ++ ops1) := by
+    intro e he; rcases List.mem_append.mp he with he | he
+    · exact h2 e he
+    · exact h1 e he
+  have htC_eq : Adjudicator.applyAll apps (ops1 ++ ops2) s =
+      Adjudicator.applyAll apps ops2 (Adjudicator.applyAll apps ops1 s) :=
+    Adjudicator.applyAll_append apps ops1 ops2 s
+  have htC_match := applyAll_exhausted_absorbed hdag1 hx1 apps h2
+  rw [← htC_eq] at htC_match
+  have htC'_eq : Adjudicator.applyAll apps (ops2 ++ ops1) s =
+      Adjudicator.applyAll apps ops1 (Adjudicator.applyAll apps ops2 s) :=
+    Adjudicator.applyAll_append apps ops2 ops1 s
+  have htC'_match := applyAll_exhausted_absorbed hdag2 hx2 apps h1
+  rw [← htC'_eq] at htC'_match
+  have hsub2 : ops2.Sublist (ops1 ++ ops2) := List.sublist_append_right ops1 ops2
+  have hsub1 : ops1.Sublist (ops2 ++ ops1) := List.sublist_append_right ops2 ops1
+  have hahead_t2_tC : (Adjudicator.applyAll apps ops2 s).Ahead (Adjudicator.applyAll apps (ops1 ++ ops2) s) :=
+    Adjudicator.Ahead.applyAll_sublist apps hsub2 hOT12 (Adjudicator.Ahead.refl s)
+  have hahead_t1_tC' : (Adjudicator.applyAll apps ops1 s).Ahead (Adjudicator.applyAll apps (ops2 ++ ops1) s) :=
+    Adjudicator.Ahead.applyAll_sublist apps hsub1 hOT21 (Adjudicator.Ahead.refl s)
+  have ht21 : (Adjudicator.applyAll apps ops2 s).Ahead (Adjudicator.applyAll apps ops1 s) :=
+    Ahead_right_congr htC_match.1 htC_match.2 hahead_t2_tC
+  have ht12 : (Adjudicator.applyAll apps ops1 s).Ahead (Adjudicator.applyAll apps ops2 s) :=
+    Ahead_right_congr htC'_match.1 htC'_match.2 hahead_t1_tC'
+  have hdest : ∀ c : FixedPart, ((Adjudicator.applyAll apps ops1 s).allocationOf c.address).map Entry.dest =
+      ((Adjudicator.applyAll apps ops2 s).allocationOf c.address).map Entry.dest := fun c =>
+    (allocationOf_dest_applyAll apps ops1 h1 s c.address).trans
+      (allocationOf_dest_applyAll apps ops2 h2 s c.address).symm
+  exact balances_eq_of_mutual_ahead ht12 ht21 hdest a
 
 /-- Nitro-33, Nitro-36, Nitro-32. Nitro:819 "Choose a topological ordering":
     on a DAG a topological ordering exists (Nitro:798-799) and the
