@@ -64,6 +64,18 @@ def scopedDeclNames (env : Environment) : Array Name := Id.run do
     | _ => continue
   return out
 
+/-- The `theorem` declarations in scope (`layerDiscipline`'s own scope,
+    `type-doctrine.md` §4a: "theorems scanned", not every declaration —
+    unlike `repeatedPremise`/`looseHypothesis`, which `scopedDeclNames`
+    serves and which decision 1 extends to helpers). -/
+def scopedTheoremNames (env : Environment) : Array Name := Id.run do
+  let mut out := #[]
+  for n in allDeclNames env do
+    if !inScope env n then continue
+    if env.isAutoDecl n then continue
+    if let some (.thmInfo _) := env.find? n then out := out.push n
+  return out
+
 /-! ## Expr-level helpers -/
 
 /-- Split `e` at every top-level `∧`. -/
@@ -371,7 +383,7 @@ def computeGlobalData : MetaM GlobalData := do
     variant := variantFindings decls
     loose := looseFindings decls
     alias := aliasFindings decls
-    layer := ← layerFindings env names
+    layer := ← layerFindings env (scopedTheoremNames env)
   }
 
 initialize globalDataRef : IO.Ref (Option GlobalData) ← IO.mkRef none

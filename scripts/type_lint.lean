@@ -57,8 +57,9 @@ def report : MetaM Unit := do
       s!"\{\"linter\":\"layerDiscipline\",\"declaration\":{jsonStr (toString declName)},\"layer\":{jsonStr layer},\"baseOps\":{jsonArr (hit.toList.map (jsonStr ∘ toString))}}"
 
   -- Spec-level totals (the §4a denominator), recomputed here from the
-  -- same `scopedDeclNames`/citation predicates the linter module exposes.
-  let names := scopedDeclNames env
+  -- same `scopedTheoremNames`/citation predicates the linter module
+  -- exposes (layerDiscipline's scope is theorems, not every declaration).
+  let names := scopedTheoremNames env
   let mut specNitro := 0
   let mut specPool := 0
   for n in names do
