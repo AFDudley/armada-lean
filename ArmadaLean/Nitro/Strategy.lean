@@ -479,6 +479,22 @@ theorem Threat.StepInvariant.anyGuard {apps : Apps E} {p : Participant} {T : Thr
   ⟨fun _ => h.land trivial, fun _ => h.deliver trivial, fun _ => h.tick trivial,
     fun _ => h.chain trivial⟩
 
+/-- **Conjunction of step invariants.** `I1`'s obligations, and `I2`'s obligations proved
+    with `I1` at the step's own start state as an extra guard, give the obligations of
+    `I1 ∧ I2`. A family reuses a named invariant (`I1`) and states only what it adds (`I2`).
+    This also closes the "ratchet" families (`Nitro/Liveness.lean`, SATP): `I1` carries
+    "`r.V` is live at the round's end", so a disjunct of `I2` that records an escalation
+    witness needs no second induction to show `r.V` stays unfinalized. -/
+theorem Threat.StepInvariant.and {apps : Apps E} {p : Participant} {T : Threat E p}
+    {Guard I1 I2 : NetworkState E p → Prop} {Cond : NetworkState E p → Op E → Prop}
+    (h1 : T.StepInvariant apps Guard I1 Cond)
+    (h2 : T.StepInvariant apps (fun n => Guard n ∧ I1 n) I2 Cond) :
+    T.StepInvariant apps Guard (fun n => I1 n ∧ I2 n) Cond :=
+  ⟨fun hg hc hI => ⟨h1.land hg hc hI.1, h2.land ⟨hg, hI.1⟩ hc hI.2⟩,
+    fun hg hf hI => ⟨h1.deliver hg hf hI.1, h2.deliver ⟨hg, hI.1⟩ hf hI.2⟩,
+    fun hg hf hI => ⟨h1.tick hg hf hI.1, h2.tick ⟨hg, hI.1⟩ hf hI.2⟩,
+    fun hg hf hI => ⟨h1.chain hg hf hI.1, h2.chain ⟨hg, hI.1⟩ hf hI.2⟩⟩
+
 /-- **The round combinator.** An invariant `Inv` whose step obligations hold
     (`Threat.CondStepInvariant`, guarded by the round's own end clock) holds when the round
     ends whenever it held at its start and `Cond` held of every pending call at the start.
