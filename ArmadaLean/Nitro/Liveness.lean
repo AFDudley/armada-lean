@@ -11981,6 +11981,68 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
       exact hChallenged hnr hVs hUnf (le_of_eq hn.symm) hu hsupp hHeld hU
 
 
+/-- SATP-15, SATP-20 (Protocol 3.3 step 3, SATP:484-485; SATP:550-553). After
+    both ledgers and `V` are finalized, one reclaim on each ledger credits
+    `Pi` with `a` in `L_{i-1}` and `b` in `L_i`: "implying Pi's balance
+    increases by a + b = a0 + b0 across both Li and Li−1." go-nitro
+    `compute_reclaim_effects` needs the peers' entries present and
+    `a + b = a0 + b0`; both hold after Protocol 3.1 Round 2 (SATP:411-418). -/
+theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
+    (alice bob P Pprev Pnext : Participant)
+    (Lm Lp : FixedPart) (om op : Allocation E) (a b : Coins)
+    (hdist : r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext)
+    (hkLm : Lm.kind = .ledger) (hkLp : Lp.kind = .ledger) (hkV : r.V.kind = .virtual)
+    (hV : s.finalizedWith r.V.address =
+      some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]))
+    (hLm : s.finalOutcome Lm.address = some (.allocation om))
+    (hLp : s.finalOutcome Lp.address = some (.allocation op))
+    (hgm : om.find r.V.address = some (r.guarantee Pprev P))
+    (hgp : op.find r.V.address = some (r.guarantee P Pnext)) (hne : Lm ≠ Lp)
+    (hem : om.find (.external (r.dest Pprev)) ≠ none ∧ om.find (.external (r.dest P)) ≠ none)
+    (hep : op.find (.external (r.dest P)) ≠ none ∧ op.find (.external (r.dest Pnext)) ≠ none)
+    (hab : a + b = r.a0 + r.b0) :
+    ∃ s1 s2 om' op', s.reclaim Lm r.V = some s1 ∧ s1.reclaim Lp r.V = some s2 ∧
+      s2.finalOutcome Lm.address = some (.allocation om') ∧
+      s2.finalOutcome Lp.address = some (.allocation op') ∧
+      om'.owed (.external (r.dest P)) = om.owed (.external (r.dest P)) + b ∧
+      op'.owed (.external (r.dest P)) = op.owed (.external (r.dest P)) + a ∧
+      om'.find r.V.address = none ∧ op'.find r.V.address = none := by
+  obtain ⟨h1, h2, h3⟩ := hdist
+  set dP : Address E := .external (r.dest P)
+  set dPp : Address E := .external (r.dest Pprev)
+  set dPn : Address E := .external (r.dest Pnext)
+  set oV : Allocation E := [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]
+  have hVa : oV.amountAt 0 = a := rfl
+  have hVb : oV.amountAt 1 = b := rfl
+  have hx : oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 := hab
+  have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by simp
+  -- `Lm ≠ V` and `Lp ≠ V`: a ledger channel is never a virtual one.
+  have hmV : Lm ≠ r.V := by rintro rfl; rw [hkV] at hkLm; cases hkLm
+  have hpV : Lp ≠ r.V := by rintro rfl; rw [hkV] at hkLp; cases hkLp
+  let om' := ((om.addTo dPp (oV.amountAt 0)).addTo dP (oV.amountAt 1)).remove r.V.address
+  let op' := ((op.addTo dP (oV.amountAt 0)).addTo dPn (oV.amountAt 1)).remove r.V.address
+  have hr1 := reclaim_can_happen s Lm r.V om oV (r.a0 + r.b0) dPp dP hkLm hkV hLm hV hgm
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.1)
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.2) hx
+  set s1 := s.setStatus Lm ((s.statusOf Lm).withOutcome (.allocation om'))
+  have hV1 : s1.finalizedWith r.V.address = some (.allocation oV) := by
+    simpa [s1, Ne.symm hmV] using hV
+  have hLp1 : s1.finalOutcome Lp.address = some (.allocation op) := by
+    simpa [s1, Ne.symm hne] using hLp
+  have hr2 := reclaim_can_happen s1 Lp r.V op oV (r.a0 + r.b0) dP dPn hkLp hkV hLp1 hV1 hgp
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.1)
+    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.2) hx
+  refine ⟨s1, _, om', op', hr1, hr2, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [s1, hne]
+  · simp; rfl
+  · rw [Allocation.owed_remove_of_ne _ (hext _), Allocation.owed_addTo_self _ ?_,
+      Allocation.owed_addTo_of_ne _ _ (by simpa [dP, dPp] using h1), hVb]
+    rw [Allocation.find_addTo_of_ne _ _ (by simpa [dP, dPp] using h1)]; exact hem.2
+  · rw [Allocation.owed_remove_of_ne _ (hext _), Allocation.owed_addTo_of_ne _ _
+      (by simpa [dP, dPn] using h2), Allocation.owed_addTo_self _ hep.1, hVa]
+  · rw [Allocation.find_remove, if_pos rfl]
+  · rw [Allocation.find_remove, if_pos rfl]
+
 /-- SATP-20 (Theorem 3.2, SATP:503-507). "Let d(V, Pi) be the amount debited to
     V from Pi's balances, across Li and Li−1 in Protocol 3.1. Let c(V, Pi) be
     the amount credited to Pi's balance from guarantees targeting V across Li
@@ -12534,67 +12596,5 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) bal a
       (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
   sorry
-
-/-- SATP-15, SATP-20 (Protocol 3.3 step 3, SATP:484-485; SATP:550-553). After
-    both ledgers and `V` are finalized, one reclaim on each ledger credits
-    `Pi` with `a` in `L_{i-1}` and `b` in `L_i`: "implying Pi's balance
-    increases by a + b = a0 + b0 across both Li and Li−1." go-nitro
-    `compute_reclaim_effects` needs the peers' entries present and
-    `a + b = a0 + b0`; both hold after Protocol 3.1 Round 2 (SATP:411-418). -/
-theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
-    (alice bob P Pprev Pnext : Participant)
-    (Lm Lp : FixedPart) (om op : Allocation E) (a b : Coins)
-    (hdist : r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext)
-    (hkLm : Lm.kind = .ledger) (hkLp : Lp.kind = .ledger) (hkV : r.V.kind = .virtual)
-    (hV : s.finalizedWith r.V.address =
-      some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]))
-    (hLm : s.finalOutcome Lm.address = some (.allocation om))
-    (hLp : s.finalOutcome Lp.address = some (.allocation op))
-    (hgm : om.find r.V.address = some (r.guarantee Pprev P))
-    (hgp : op.find r.V.address = some (r.guarantee P Pnext)) (hne : Lm ≠ Lp)
-    (hem : om.find (.external (r.dest Pprev)) ≠ none ∧ om.find (.external (r.dest P)) ≠ none)
-    (hep : op.find (.external (r.dest P)) ≠ none ∧ op.find (.external (r.dest Pnext)) ≠ none)
-    (hab : a + b = r.a0 + r.b0) :
-    ∃ s1 s2 om' op', s.reclaim Lm r.V = some s1 ∧ s1.reclaim Lp r.V = some s2 ∧
-      s2.finalOutcome Lm.address = some (.allocation om') ∧
-      s2.finalOutcome Lp.address = some (.allocation op') ∧
-      om'.owed (.external (r.dest P)) = om.owed (.external (r.dest P)) + b ∧
-      op'.owed (.external (r.dest P)) = op.owed (.external (r.dest P)) + a ∧
-      om'.find r.V.address = none ∧ op'.find r.V.address = none := by
-  obtain ⟨h1, h2, h3⟩ := hdist
-  set dP : Address E := .external (r.dest P)
-  set dPp : Address E := .external (r.dest Pprev)
-  set dPn : Address E := .external (r.dest Pnext)
-  set oV : Allocation E := [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]
-  have hVa : oV.amountAt 0 = a := rfl
-  have hVb : oV.amountAt 1 = b := rfl
-  have hx : oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 := hab
-  have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by simp
-  -- `Lm ≠ V` and `Lp ≠ V`: a ledger channel is never a virtual one.
-  have hmV : Lm ≠ r.V := by rintro rfl; rw [hkV] at hkLm; cases hkLm
-  have hpV : Lp ≠ r.V := by rintro rfl; rw [hkV] at hkLp; cases hkLp
-  let om' := ((om.addTo dPp (oV.amountAt 0)).addTo dP (oV.amountAt 1)).remove r.V.address
-  let op' := ((op.addTo dP (oV.amountAt 0)).addTo dPn (oV.amountAt 1)).remove r.V.address
-  have hr1 := reclaim_can_happen s Lm r.V om oV (r.a0 + r.b0) dPp dP hkLm hkV hLm hV hgm
-    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.1)
-    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hem.2) hx
-  set s1 := s.setStatus Lm ((s.statusOf Lm).withOutcome (.allocation om'))
-  have hV1 : s1.finalizedWith r.V.address = some (.allocation oV) := by
-    simpa [s1, Ne.symm hmV] using hV
-  have hLp1 : s1.finalOutcome Lp.address = some (.allocation op) := by
-    simpa [s1, Ne.symm hne] using hLp
-  have hr2 := reclaim_can_happen s1 Lp r.V op oV (r.a0 + r.b0) dP dPn hkLp hkV hLp1 hV1 hgp
-    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.1)
-    (by rw [Allocation.find_remove, if_neg (hext _)]; exact hep.2) hx
-  refine ⟨s1, _, om', op', hr1, hr2, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · simp [s1, hne]
-  · simp; rfl
-  · rw [Allocation.owed_remove_of_ne _ (hext _), Allocation.owed_addTo_self _ ?_,
-      Allocation.owed_addTo_of_ne _ _ (by simpa [dP, dPp] using h1), hVb]
-    rw [Allocation.find_addTo_of_ne _ _ (by simpa [dP, dPp] using h1)]; exact hem.2
-  · rw [Allocation.owed_remove_of_ne _ (hext _), Allocation.owed_addTo_of_ne _ _
-      (by simpa [dP, dPn] using h2), Allocation.owed_addTo_self _ hep.1, hVa]
-  · rw [Allocation.find_remove, if_pos rfl]
-  · rw [Allocation.find_remove, if_pos rfl]
 
 end ArmadaLean.Nitro
