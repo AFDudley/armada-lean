@@ -286,37 +286,6 @@ theorem UnbeatableIn.mono {apps : Apps E} {p : Participant} {T : Threat E p}
     simp only [NetworkState.applyAdv]
     cases net.chain.apply apps p op <;> rfl
 
-/-- An adversary move never moves the chain's clock backward: only `tick`
-    touches it, and only forward (`Adjudicator.apply_now_le`). -/
-theorem NetworkState.applyAdv_now_le (apps : Apps E) {p : Participant}
-    (net : NetworkState E p) (m : AdvMove E) :
-    net.chain.now ≤ (net.applyAdv apps m).chain.now := by
-  cases m with
-  | chain caller op =>
-    simp only [NetworkState.applyAdv]
-    cases h : net.chain.apply apps caller op with
-    | none => exact le_refl _
-    | some s' => simpa using Adjudicator.apply_now_le h
-  | deliver ss => exact le_refl _
-  | tick dt => simp only [NetworkState.applyAdv, Adjudicator.tick_now]; exact Nat.le_add_right _ _
-  | land op =>
-    simp only [NetworkState.applyAdv]
-    cases h : net.chain.apply apps p op with
-    | none => exact le_refl _
-    | some s' => simpa using Adjudicator.apply_now_le h
-
-/-- Over a round's adversary play (`Threat.RoundSeq`, any pending calls),
-    the chain's clock only advances (`NetworkState.applyAdv_now_le`, by
-    induction over `land`/`tick`/`other`: each is one `NetworkState.applyAdv`
-    step). -/
-theorem Threat.RoundSeq.now_le {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
-    {pending : List (Op E)} {net net' : NetworkState E p}
-    (h : T.RoundSeq apps t pending net net') : net.chain.now ≤ net'.chain.now := by
-  induction h with
-  | nil => exact le_refl _
-  | land _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
-  | tick _ _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
-  | other _ _ _ _ ih => exact le_trans (NetworkState.applyAdv_now_le _ _ _) ih
 
 /-- Over a round's adversary play, `p`'s own sent list never changes: only
     `p`'s own honest moves touch it (`NetworkState.applyAdv_sent`, by
@@ -8839,11 +8808,11 @@ theorem SatpFinalizeInv_chain_step {apps : Apps E} {p : Participant} {T : Threat
           rw [hseq, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]) hI
 
 /-- `SatpFinalizeInv` carries across a whole sub-round of pure adversary
-    play (`Threat.RoundSeq` with nothing of `p`'s own pending): `nil` is
-    the base case, `land` is impossible (`pending = []`), `tick` and
-    `other`'s `.deliver`/`.chain` each take one step
-    (`SatpFinalizeInv_tick_step`, `SatpFinalizeInv_deliver_step`,
-    `SatpFinalizeInv_chain_step`). -/
+    play (`Threat.RoundSeq` with nothing of `p`'s own pending). A direct
+    call of `Threat.RoundSeq.nil_invariant` (`Strategy.lean`): the
+    threaded invariant is `SatpFinalizeInv` together with `sent =
+    net.sent`, since `SatpFinalizeInv_chain_step` needs that equality to
+    read `hsent`/`hM` against the right network. -/
 theorem SatpFinalizeInv_nil_roundSeq {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {r : Route E} (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules) {alice bob : Participant}
@@ -8857,28 +8826,17 @@ theorem SatpFinalizeInv_nil_roundSeq {apps : Apps E} {p : Participant} {T : Thre
     ∀ {t0 : Time} {net' net'' : NetworkState E p}, Threat.RoundSeq apps T t0 [] net' net'' →
       net'.sent = net.sent → SatpFinalizeInv r alice bob M net' →
       net''.sent = net.sent ∧ SatpFinalizeInv r alice bob M net'' := by
-  intro t0 net' net'' hseq
-  generalize hpnil : ([] : List (Op E)) = pending at hseq
-  induction hseq with
-  | nil => intro hsent' hI; exact ⟨hsent', hI⟩
-  | land hsplit _ _ => rw [← hpnil] at hsplit; simp at hsplit
-  | @tick pending n1 n2 dt hfeas hgate hrest ih =>
-    intro hsent1 hI1
-    have hsent1' : (n1.applyAdv apps (AdvMove.tick dt)).sent = net.sent := by
-      rw [NetworkState.applyAdv_sent]; exact hsent1
-    exact ih hpnil hsent1' (SatpFinalizeInv_tick_step apps dt hI1)
-  | @other pending n1 n2 m hfeas hnotick hnoland hrest ih =>
-    intro hsent1 hI1
-    have hI1' : SatpFinalizeInv r alice bob M (n1.applyAdv apps m) := by
-      cases m with
-      | tick dt => exact absurd rfl (hnotick dt)
-      | land op => exact absurd rfl (hnoland op)
-      | deliver ss => exact SatpFinalizeInv_deliver_step apps ss hI1
-      | chain caller op =>
-        exact SatpFinalizeInv_chain_step hbounds hr hV h4M hp halice hbob hsent hM hsent1 hfeas hI1
-    have hsent1' : (n1.applyAdv apps m).sent = net.sent := by
-      rw [NetworkState.applyAdv_sent]; exact hsent1
-    exact ih hpnil hsent1' hI1'
+  intro t0 net' net'' hseq hsent' hI
+  refine Threat.RoundSeq.nil_invariant
+    (Inv := fun n => n.sent = net.sent ∧ SatpFinalizeInv r alice bob M n) hseq ?_ ?_ ?_
+    ⟨hsent', hI⟩
+  · intro n ss _ _ ⟨hs, hI1⟩
+    exact ⟨by rw [NetworkState.applyAdv_sent]; exact hs, SatpFinalizeInv_deliver_step apps ss hI1⟩
+  · intro n dt _ _ ⟨hs, hI1⟩
+    exact ⟨by rw [NetworkState.applyAdv_sent]; exact hs, SatpFinalizeInv_tick_step apps dt hI1⟩
+  · intro n caller op _ hfeas ⟨hs, hI1⟩
+    exact ⟨by rw [NetworkState.applyAdv_sent]; exact hs,
+      SatpFinalizeInv_chain_step hbounds hr hV h4M hp halice hbob hsent hM hs hfeas hI1⟩
 
 /-- `turnNumRecord_monotone`, restated for one successful `Adjudicator.apply`:
     the turn record of `c` only grows, except a `conclude` of `c` itself,
