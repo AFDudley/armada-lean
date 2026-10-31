@@ -63,15 +63,17 @@ structure NetworkState (E : Type) (p : Participant) where
 /-- The signed states `p` can assemble. Every signer is `p` on a state `p`
     sent, or a participant whose signature `p` received on that state. Every
     signer listed in the state's voucher (SATP:703) is `p` on a voucher `p`
-    sent, or a participant who signed a received state that carries the
-    voucher. -/
+    sent, or a received state that carries the voucher (its
+    signatures travel inside the voucher, SATP:630-637; operator ruling
+    2026-10-31, armada-laconic
+    labbook/2026-10-31-funding-point-alternative-moves.md). -/
 def NetworkState.Holds {p : Participant} (net : NetworkState E p) (ss : SignedState E) : Prop :=
   (∀ q ∈ ss.signers,
     (q = p ∧ ∃ s ∈ net.sent, s.state = ss.state) ∨
     (∃ r ∈ net.received, r.state = ss.state ∧ q ∈ r.signers)) ∧
   ∀ v, ss.state.voucher? = some v → ∀ q ∈ v.signers,
     (q = p ∧ ∃ s ∈ net.sent, s.state.voucher? = some v) ∨
-    (∃ r ∈ net.received, r.state.voucher? = some v ∧ q ∈ r.signers)
+    (∃ r ∈ net.received, r.state.voucher? = some v)
 
 /-- One honest reaction (Nitro:485-488: "signing commitments, refusing to
     sign commitments, launching/responding to on-chain challenges and
