@@ -231,12 +231,7 @@ theorem held_falls_only_by_payout (apps : Apps E) (s s' : Adjudicator E) (hr : R
       · rw [hb, hh]; simp; grind
       · rw [hb]; simp [hq]
   | deposit a e x => obtain ⟨-, -, -, hh, -, -⟩ := Adjudicator.deposit_some h; grind
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; simp at hlt
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h; simp at hlt
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp at hlt
-  | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp at hlt
-  | tick dt => simp at h; subst h; simp at hlt
+  | _ => exact absurd (Adjudicator.apply_held_frame rfl h) (ne_of_lt hlt)
 
 /-- Nitro-07. Nitro:227-229: no operation takes a channel's coins except a
     redistribution. go-nitro: only `holdings[asset][channelId] -=
@@ -251,10 +246,7 @@ theorem channel_balance_falls_only_by_redistribution (apps : Apps E) (s s' : Adj
     rw [hb] at hlt; simp at hlt; split at hlt <;> grind
   | transfer a b => rfl
   | reclaim l v => rfl
-  | challenge c' proof cand => obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h; simp at hlt
-  | checkpoint c' proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp at hlt
-  | conclude c' ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp at hlt
-  | tick dt => simp at h; subst h; simp at hlt
+  | _ => exact absurd (congrArg (·.get c.address) (Adjudicator.apply_balances_frame rfl h)) (ne_of_lt hlt)
 
 /-- Nitro-06. An external destination's paid-out balance never falls:
     go-nitro has no operation that takes coins back from an external
@@ -271,12 +263,7 @@ theorem paid_out_monotone (apps : Apps E) (s s' : Adjudicator E) (h : Step apps 
   | transfer a b =>
     obtain ⟨_, _, x, -, -, -, hb, -, -, -⟩ := Adjudicator.transfer_some h
     rw [hb]; simp; split <;> grind
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; simp
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h; simp
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp
-  | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp
-  | tick dt => simp at h; subst h; simp
+  | _ => exact (congrArg (·.get (.external d)) (Adjudicator.apply_balances_frame rfl h)).symm.le
 
 omit [DecidableEq E] in
 /-- ForceMove-A16, ForceMove-B07, Nitro-26, SATP-12, docs-0080-03. go-nitro
@@ -565,56 +552,24 @@ theorem statusOrigin_step {apps : Apps E} {s s' : Adjudicator E} {caller : Parti
     (hr : Reachable apps s) (ho : ∀ c, StatusOrigin apps s c)
     (h : s.apply apps caller op = some s') (c : FixedPart) : StatusOrigin apps s' c := by
   have hn := Adjudicator.apply_now_le h
-  cases op with
-  | deposit a e x =>
-    obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-    exact statusOrigin_of_eq (ho c) (Adjudicator.statusOf_of_status hs c) hn
-  | tick dt => simp at h; subst h; exact statusOrigin_of_eq (ho c) rfl hn
-  | transfer a b =>
-    obtain ⟨o, _, x, hf, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
-    have hsc := Adjudicator.statusOf_of_status hs c
-    simp only [Adjudicator.statusOf_setStatus] at hsc
-    by_cases hca : c = a
-    · subst hca
-      simp only [if_true] at hsc
-      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
-      exact statusOrigin_redistribute (ho c) hf
-        (Relation.ReflTransGen.single (RedistributeStep.reduce o b x)) hn hsc
-    · simp only [hca, if_false] at hsc
-      exact statusOrigin_of_eq (ho c) hsc hn
-  | reclaim l v =>
-    obtain ⟨oL, oV, x, left, right, hL, -, -, -, -, -, rfl, -, -⟩ := Adjudicator.reclaim_some h
-    by_cases hcl : c = l
-    · subst hcl
-      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hL
-      exact statusOrigin_redistribute (ho c) hL
-        (Relation.ReflTransGen.single
-          (RedistributeStep.reclaim oL left right v.address (oV.amountAt 0) (oV.amountAt 1))) hn
-        (by simp only [Adjudicator.statusOf_setStatus, if_true])
-    · exact statusOrigin_of_eq (ho c) (by simp [hcl]) hn
-  | challenge c' proof cand =>
-    have h' := h
-    obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
-    by_cases hcc : c = c'
-    · subst hcc
-      unfold StatusOrigin
-      simp only [Adjudicator.statusOf_setStatus, if_true]
-      exact ⟨s, _, caller, proof, hr, h', rfl⟩
-    · exact statusOrigin_of_eq (ho c) (by simp [hcc]) hn
-  | checkpoint c' proof cand =>
-    obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
-    by_cases hcc : c = c'
-    · subst hcc; unfold StatusOrigin; simp
-    · exact statusOrigin_of_eq (ho c) (by simp [hcc]) hn
-  | conclude c' ss =>
-    have h' := h
-    obtain ⟨⟨-, hp⟩, rfl⟩ := Adjudicator.conclude_some h
-    by_cases hcc : c = c'
-    · subst hcc
-      unfold StatusOrigin
-      simp only [Adjudicator.statusOf_setStatus, if_true]
-      exact ⟨s, _, caller, hr, Or.inl ⟨ss, h', hp, Relation.ReflTransGen.refl⟩⟩
-    · exact statusOrigin_of_eq (ho c) (by simp [hcc]) hn
+  rcases Adjudicator.statusOf_step h c with
+    heq | ⟨o, b, x, hf, heq⟩ | ⟨oL, left, x1, right, x2, rm, hL, heq⟩ |
+    ⟨proof, cand, hch, heq⟩ | ⟨proof, cand, hcp, heq⟩ | ⟨ss, hcl, heq⟩
+  · exact statusOrigin_of_eq (ho c) heq hn
+  · exact statusOrigin_redistribute (ho c) hf
+      (Relation.ReflTransGen.single (RedistributeStep.reduce o b x)) hn heq
+  · exact statusOrigin_redistribute (ho c) hL
+      (Relation.ReflTransGen.single (RedistributeStep.reclaim oL left right rm x1 x2)) hn heq
+  · unfold StatusOrigin
+    rw [heq]
+    exact ⟨s, s', caller, proof, hr, hch, rfl⟩
+  · unfold StatusOrigin
+    rw [heq]
+    trivial
+  · unfold StatusOrigin
+    rw [heq]
+    obtain ⟨⟨-, hp⟩, -⟩ := Adjudicator.conclude_some hcl
+    exact ⟨s, s', caller, hr, Or.inl ⟨ss, hcl, hp, Relation.ReflTransGen.refl⟩⟩
 
 theorem statusOrigin_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s)
     (c : FixedPart) : StatusOrigin apps s c := by
@@ -669,44 +624,18 @@ theorem finalized_permanent (apps : Apps E) (s s' : Adjudicator E) (c : FixedPar
   | mk caller op _ _ h =>
   rw [Adjudicator.mode_eq] at hf ⊢
   have hn := Adjudicator.apply_now_le h
-  cases op with
-  | deposit a e x =>
-    obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-    rw [Adjudicator.statusOf_of_status hs]; exact ChannelStatus.mode_finalized_mono hf hn
-  | tick dt =>
-    simp at h; subst h; exact ChannelStatus.mode_finalized_mono hf hn
-  | transfer a b =>
-    obtain ⟨_, _, _, -, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
-    rw [Adjudicator.statusOf_of_status hs]
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · exact ChannelStatus.mode_withOutcome _ _ _
-    · exact ChannelStatus.mode_finalized_mono hf hn
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · exact ChannelStatus.mode_withOutcome _ _ _
-    · exact hf
-  | challenge c' proof cand =>
-    obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hcc; subst hcc; rw [Adjudicator.mode_eq] at hm
-      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
-    · exact hf
-  | checkpoint c' proof cand =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := Adjudicator.checkpoint_some h
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hcc; subst hcc; exact absurd hf ho
-    · exact hf
-  | conclude c' ss =>
-    obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rfl
-    · exact hf
+  rcases Adjudicator.statusOf_step h c with
+    heq | ⟨_, _, _, _, heq⟩ | ⟨_, _, _, _, _, _, _, heq⟩ |
+    ⟨proof, cand, hch, heq⟩ | ⟨proof, cand, hcp, heq⟩ | ⟨ss, hcl, heq⟩
+  · rw [heq]; exact ChannelStatus.mode_finalized_mono hf hn
+  · rw [heq]; exact ChannelStatus.mode_withOutcome _ _ _
+  · rw [heq]; exact ChannelStatus.mode_withOutcome _ _ _
+  · obtain ⟨⟨-, -, -, hm⟩, -⟩ := Adjudicator.challenge_some hch
+    rw [Adjudicator.mode_eq] at hm
+    rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
+  · obtain ⟨⟨ho, -⟩, -⟩ := Adjudicator.checkpoint_some hcp
+    exact absurd hf ho
+  · rw [heq]; rfl
 
 /-- Nitro-14. A finalized outcome is never replaced by a second
     finalization. Every later outcome of the channel is a redistribution of
@@ -718,54 +647,27 @@ theorem finalized_outcome_only_redistributed (apps : Apps E) (s s' : Adjudicator
   | mk caller op _ _ h =>
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf ⊢
   have hn := Adjudicator.apply_now_le h
-  have hsame : ∀ {t : Adjudicator E}, t.statusOf c = s.statusOf c → s.now ≤ t.now →
-      ∃ Ω', (t.statusOf c).finalOutcome t.now = some Ω' ∧ Redistributed Ω Ω' :=
-    fun hs hn => ⟨Ω, by rw [hs]; exact ChannelStatus.finalOutcome_mono hf hn,
-      Relation.ReflTransGen.refl⟩
   have hfin : (s.statusOf c).mode s.now = .finalized := by
     rw [ChannelStatus.mode_eq_finalized_iff, hf]; rfl
-  cases op with
-  | deposit a e x =>
-    obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-    exact hsame (Adjudicator.statusOf_of_status hs c) hn
-  | tick dt => simp at h; subst h; exact hsame rfl hn
-  | transfer a b =>
-    obtain ⟨o, _, x, hfo, -, -, -, -, hs, hn', -, -⟩ := Adjudicator.transfer_some h
-    rw [Adjudicator.statusOf_of_status hs, hn']
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hca; subst hca
-      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hf] at hfo
-      cases hfo
-      exact ⟨_, ChannelStatus.finalOutcome_withOutcome _ _ _,
-        Relation.ReflTransGen.single (RedistributeStep.reduce o b x)⟩
-    · exact ⟨Ω, hf, Relation.ReflTransGen.refl⟩
-  | reclaim l v =>
-    obtain ⟨oL, _, _, left, right, hL, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
-    simp only [Adjudicator.statusOf_setStatus, Adjudicator.setStatus_now]
-    split
-    · rename_i hcl; subst hcl
-      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hf] at hL
-      cases hL
-      exact ⟨_, ChannelStatus.finalOutcome_withOutcome _ _ _,
-        Relation.ReflTransGen.single (RedistributeStep.reclaim oL left right _ _ _)⟩
-    · exact ⟨Ω, hf, Relation.ReflTransGen.refl⟩
-  | challenge c' proof cand =>
-    obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
-    by_cases hcc : c = c'
-    · subst hcc; rw [Adjudicator.mode_eq] at hm
-      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hfin <;> cases hfin
-    · exact hsame (by simp [hcc]) hn
-  | checkpoint c' proof cand =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := Adjudicator.checkpoint_some h
-    by_cases hcc : c = c'
-    · subst hcc; exact absurd hfin ho
-    · exact hsame (by simp [hcc]) hn
-  | conclude c' ss =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := Adjudicator.conclude_some h
-    by_cases hcc : c = c'
-    · subst hcc; exact absurd hfin ho
-    · exact hsame (by simp [hcc]) hn
+  rcases Adjudicator.statusOf_step h c with
+    heq | ⟨o, b, x, hf', heq⟩ | ⟨oL, left, x1, right, x2, rm, hL, heq⟩ |
+    ⟨proof, cand, hch, heq⟩ | ⟨proof, cand, hcp, heq⟩ | ⟨ss, hcl, heq⟩
+  · exact ⟨Ω, by rw [heq]; exact ChannelStatus.finalOutcome_mono hf hn, Relation.ReflTransGen.refl⟩
+  · rw [hf] at hf'
+    cases hf'
+    exact ⟨_, by rw [heq]; exact ChannelStatus.finalOutcome_withOutcome _ _ _,
+      Relation.ReflTransGen.single (RedistributeStep.reduce o b x)⟩
+  · rw [hf] at hL
+    cases hL
+    exact ⟨_, by rw [heq]; exact ChannelStatus.finalOutcome_withOutcome _ _ _,
+      Relation.ReflTransGen.single (RedistributeStep.reclaim oL left right rm x1 x2)⟩
+  · obtain ⟨⟨-, -, -, hm⟩, -⟩ := Adjudicator.challenge_some hch
+    rw [Adjudicator.mode_eq] at hm
+    rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hfin <;> cases hfin
+  · obtain ⟨⟨ho, -⟩, -⟩ := Adjudicator.checkpoint_some hcp
+    exact absurd hfin ho
+  · obtain ⟨⟨ho, -⟩, -⟩ := Adjudicator.conclude_some hcl
+    exact absurd hfin ho
 
 omit [DecidableEq E] in
 /-- ForceMove-A10, ForceMove-A21, SATP-14, docs-0070-02, docs-0070-03.
@@ -886,44 +788,27 @@ theorem turnNumRecord_monotone (apps : Apps E) (s s' : Adjudicator E) (c : Fixed
     ∃ caller ss, s.apply apps caller (.conclude c ss) = some s' ∧ s'.mode c = .finalized := by
   cases h with
   | mk caller op _ _ h =>
-  cases op with
-  | conclude c' ss =>
-    by_cases hcc : c = c'
-    · subst hcc
-      refine Or.inr ⟨caller, ss, h, ?_⟩
-      obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
-      rw [Adjudicator.mode_eq]; simp
-    · obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
-      left; simp [hcc]
-  | deposit a e x =>
-    obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-    left; rw [Adjudicator.statusOf_of_status hs]
-  | tick dt => simp at h; subst h; left; simp
-  | transfer a b =>
-    obtain ⟨_, _, _, -, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
-    left; rw [Adjudicator.statusOf_of_status hs]
-    simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hca; subst hca; exact (ChannelStatus.turnNumRecord_withOutcome _ _).ge
-    · exact le_rfl
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
-    left; simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hcl; subst hcl; exact (ChannelStatus.turnNumRecord_withOutcome _ _).ge
-    · exact le_rfl
-  | challenge c' proof cand =>
-    obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
-    left; simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hcc; subst hcc; simp; omega
-    · exact le_rfl
-  | checkpoint c' proof cand =>
-    obtain ⟨⟨-, -, -, ht⟩, rfl⟩ := Adjudicator.checkpoint_some h
-    left; simp only [Adjudicator.statusOf_setStatus]
-    split
-    · rename_i hcc; subst hcc; simp; omega
-    · exact le_rfl
+  rcases Adjudicator.statusOf_step h c with
+    heq | ⟨o, b, x, _, heq⟩ | ⟨oL, left, x1, right, x2, rm, _, heq⟩ |
+    ⟨proof, cand, hch, heq⟩ | ⟨proof, cand, hcp, heq⟩ | ⟨ss, hcl, heq⟩
+  · exact Or.inl (congrArg ChannelStatus.turnNumRecord heq).ge
+  · refine Or.inl ?_
+    rw [heq]
+    exact (ChannelStatus.turnNumRecord_withOutcome _ _).ge
+  · refine Or.inl ?_
+    rw [heq]
+    exact (ChannelStatus.turnNumRecord_withOutcome _ _).ge
+  · refine Or.inl ?_
+    rw [heq]
+    simp only [ChannelStatus.turnNumRecord_challenged]
+    obtain ⟨-, -, -, hm⟩ := (Adjudicator.challenge_some hch).1
+    rcases hm with ⟨-, hm⟩ | ⟨-, hm⟩ <;> omega
+  · refine Or.inl ?_
+    rw [heq]
+    simp only [ChannelStatus.turnNumRecord_open]
+    obtain ⟨-, -, -, ht⟩ := (Adjudicator.checkpoint_some hcp).1
+    omega
+  · exact Or.inr ⟨caller, ss, hcl, by rw [Adjudicator.mode_eq, heq]; rfl⟩
 
 omit [DecidableEq E] in
 /-- ForceMove-A14, Nitro-13, SATP-16, docs-0070-01, docs-0010-05. go-nitro
@@ -1025,15 +910,13 @@ theorem funding_decoupled_from_rules (apps : Apps E) (caller : Participant) (s :
   obtain ⟨h1, h2⟩ := hop
   cases op with
   | deposit a e x => exact absurd rfl (h2 a e x)
-  | transfer a b => simp [Op.isRedistribution] at h1
-  | reclaim l v => simp [Op.isRedistribution] at h1
-  | challenge c proof cand =>
-    simp [Adjudicator.challenge, Adjudicator.mode, Adjudicator.statusOf, Adjudicator.setStatus]
-  | checkpoint c proof cand =>
-    simp [Adjudicator.checkpoint, Adjudicator.statusOf, Adjudicator.setStatus]
-  | conclude c ss =>
-    simp [Adjudicator.conclude, Adjudicator.statusOf, Adjudicator.setStatus]
-  | tick dt => rfl
+  | transfer a b => simp only [Op.isRedistribution] at h1; cases h1
+  | reclaim l v => simp only [Op.isRedistribution] at h1; cases h1
+  | _ =>
+    simp only [Adjudicator.apply_challenge, Adjudicator.challenge, Adjudicator.apply_checkpoint,
+      Adjudicator.checkpoint, Adjudicator.apply_conclude, Adjudicator.conclude, Adjudicator.mode,
+      Adjudicator.statusOf, Adjudicator.setStatus, ne_eq, decide_not, Option.map_if,
+      Adjudicator.apply_tick, Option.map_some, Adjudicator.tick_status]
 
 /-- ForceMove-A01, ForceMove-A02, ForceMove-A03, ForceMove-D05, ForceMove-D06,
     ForceMove-D04 (ForceMove only; go-nitro StrictTurnTaking.sol is the same
@@ -1264,9 +1147,6 @@ theorem held_changes_only_by_deposit_payout (apps : Apps E) (s s' : Adjudicator 
   | deposit a e x => exact Or.inl ⟨a, e, x, rfl⟩
   | transfer a b => exact Or.inr rfl
   | reclaim l v => exact Or.inr rfl
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h; simp at hne
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp at hne
-  | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp at hne
-  | tick dt => simp at h; subst h; simp at hne
+  | _ => exact absurd (Adjudicator.apply_held_frame rfl h) hne
 
 end ArmadaLean.Nitro

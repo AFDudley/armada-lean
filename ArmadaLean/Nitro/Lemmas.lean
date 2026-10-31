@@ -2199,13 +2199,87 @@ theorem apply_held_frame {apps : Apps E} {caller : Participant} {op : Op E}
     subst h
     exact tick_held s dt
 
+/-- The exact effect of one step on channel `c`'s status: unchanged, or the
+    step redistributes `c`'s finalized outcome (`reduceOwed`/`addTo`+`remove`),
+    or the step is a challenge/checkpoint/conclude of `c` with the stated new
+    status. Replaces the `cases op with` split repeated in `finalized_permanent`,
+    `finalized_outcome_only_redistributed`, `turnNumRecord_monotone`,
+    `statusOrigin_step`, and the narrower `finalizedWith_apply`. -/
+theorem statusOf_step {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
+    {op : Op E} (h : s.apply apps caller op = some s') (c : FixedPart) :
+    s'.statusOf c = s.statusOf c ∨
+    (∃ o b x, (s.statusOf c).finalOutcome s.now = some (.allocation o) ∧
+      s'.statusOf c = (s.statusOf c).withOutcome (.allocation (o.reduceOwed b x))) ∨
+    (∃ oL left x1 right x2 rm, (s.statusOf c).finalOutcome s.now = some (.allocation oL) ∧
+      s'.statusOf c =
+        (s.statusOf c).withOutcome (.allocation (((oL.addTo left x1).addTo right x2).remove rm))) ∨
+    (∃ proof cand, s.apply apps caller (.challenge c proof cand) = some s' ∧
+      s'.statusOf c = .challenged cand.turnNum ⟨cand, s.now + c.challengeDuration⟩) ∨
+    (∃ proof cand, s.apply apps caller (.checkpoint c proof cand) = some s' ∧
+      s'.statusOf c = .open cand.turnNum) ∨
+    (∃ ss, s.apply apps caller (.conclude c ss) = some s' ∧
+      s'.statusOf c = .finalized ss.state.turnNum ss.state.outcome ss.state.outcome) := by
+  cases op with
+  | deposit a e x =>
+    obtain ⟨-, -, -, -, hs, -⟩ := deposit_some h
+    exact Or.inl (statusOf_of_status hs c)
+  | tick dt =>
+    simp only [apply_tick, Option.some.injEq] at h
+    subst h
+    exact Or.inl (tick_statusOf s dt c)
+  | transfer a b =>
+    obtain ⟨o, _, x, hf, -, -, -, -, hs, -⟩ := transfer_some h
+    have hsc := statusOf_of_status hs c
+    simp only [statusOf_setStatus] at hsc
+    by_cases hca : c = a
+    · subst hca
+      simp only [if_true] at hsc
+      simp only [FixedPart.address_eq, finalOutcome_channel] at hf
+      exact Or.inr (Or.inl ⟨o, b, x, hf, hsc⟩)
+    · simp only [hca, if_false] at hsc
+      exact Or.inl hsc
+  | reclaim l v =>
+    obtain ⟨oL, oV, x, left, right, hL, -, -, -, -, -, rfl, -, -⟩ := reclaim_some h
+    by_cases hcl : c = l
+    · subst hcl
+      simp only [FixedPart.address_eq, finalOutcome_channel] at hL
+      refine Or.inr (Or.inr (Or.inl ⟨oL, left, oV.amountAt 0, right, oV.amountAt 1, v.address, hL, ?_⟩))
+      simp only [statusOf_setStatus, if_true]
+    · exact Or.inl (by simp only [statusOf_setStatus, hcl, if_false])
+  | challenge c' proof cand =>
+    have h' := h
+    obtain ⟨-, rfl⟩ := challenge_some h
+    by_cases hcc : c = c'
+    · subst hcc
+      refine Or.inr (Or.inr (Or.inr (Or.inl ⟨proof, cand, h', ?_⟩)))
+      simp only [statusOf_setStatus, if_true]
+    · exact Or.inl (by simp only [statusOf_setStatus, hcc, if_false])
+  | checkpoint c' proof cand =>
+    have h' := h
+    obtain ⟨-, rfl⟩ := checkpoint_some h
+    by_cases hcc : c = c'
+    · subst hcc
+      refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨proof, cand, h', ?_⟩))))
+      simp only [statusOf_setStatus, if_true]
+    · exact Or.inl (by simp only [statusOf_setStatus, hcc, if_false])
+  | conclude c' ss =>
+    have h' := h
+    obtain ⟨-, rfl⟩ := conclude_some h
+    by_cases hcc : c = c'
+    · subst hcc
+      refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨ss, h', ?_⟩))))
+      simp only [statusOf_setStatus, if_true]
+    · exact Or.inl (by simp only [statusOf_setStatus, hcc, if_false])
+
 /-- The outcome of finalization never changes: `transfer` and `reclaim`
     rewrite only the stored outcome, through `withOutcome`, which keeps the
     outcome of finalization; `challenge`, `checkpoint` and `conclude` all
     require the channel to be open, so none can act on an already-finalized
     one. Used by `Adjudicator.reclaim`'s channel-types repair (operator
     ruling 2026-10-27): a virtual channel's outcome, once finalized, is
-    exactly what `reclaim` reads. -/
+    exactly what `reclaim` reads. Built from `statusOf_step`: the challenge/
+    checkpoint/conclude disjuncts contradict `hmode` (each needs the channel
+    open), the redistribution disjuncts call `finalizedWith_withOutcome`. -/
 theorem finalizedWith_apply {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
     (h : s.apply apps caller op = some s') {c : FixedPart} {f : Outcome E}
     (hf : s.finalizedWith c.address = some f) : s'.finalizedWith c.address = some f := by
@@ -2213,43 +2287,19 @@ theorem finalizedWith_apply {apps : Apps E} {caller : Participant} {op : Op E} {
   simp only [FixedPart.address_eq, finalizedWith_channel] at hf ⊢
   have hmode : (s.statusOf c).mode s.now = .finalized := by
     rw [ChannelStatus.mode_eq_finalized_iff, ← ChannelStatus.finalizedWith_isSome_iff, hf]; rfl
-  cases op with
-  | deposit a e x =>
-    obtain ⟨-, -, -, -, hs, -⟩ := deposit_some h
-    rw [statusOf_of_status hs]; exact ChannelStatus.finalizedWith_mono hf hn
-  | tick dt => simp at h; subst h; exact ChannelStatus.finalizedWith_mono hf hn
-  | transfer a b =>
-    obtain ⟨_, _, _, -, -, -, -, -, hs, hn', -, -⟩ := transfer_some h
-    rw [statusOf_of_status hs, hn']
-    simp only [statusOf_setStatus]
-    split
-    · rename_i hca; subst hca; exact ChannelStatus.finalizedWith_withOutcome hf _ _
-    · exact hf
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h
-    simp only [statusOf_setStatus, setStatus_now]
-    split
-    · rename_i hcl; subst hcl; exact ChannelStatus.finalizedWith_withOutcome hf _ _
-    · exact hf
-  | challenge c' proof cand =>
-    obtain ⟨⟨-, -, -, hm⟩, rfl⟩ := challenge_some h
-    simp only [statusOf_setStatus, setStatus_now]
-    split
-    · rename_i hcc; subst hcc; rw [mode_eq] at hm
-      rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hmode <;> cases hmode
-    · exact hf
-  | checkpoint c' proof cand =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := checkpoint_some h
-    simp only [statusOf_setStatus, setStatus_now]
-    split
-    · rename_i hcc; subst hcc; exact absurd hmode ho
-    · exact hf
-  | conclude c' ss =>
-    obtain ⟨⟨ho, -⟩, rfl⟩ := conclude_some h
-    simp only [statusOf_setStatus, setStatus_now]
-    split
-    · rename_i hcc; subst hcc; exact absurd hmode ho
-    · exact hf
+  rcases statusOf_step h c with
+    heq | ⟨_, _, _, _, heq⟩ | ⟨_, _, _, _, _, _, _, heq⟩ |
+    ⟨proof, cand, hch, heq⟩ | ⟨proof, cand, hcp, heq⟩ | ⟨ss, hcl, heq⟩
+  · rw [heq]; exact ChannelStatus.finalizedWith_mono hf hn
+  · rw [heq]; exact ChannelStatus.finalizedWith_withOutcome hf _ _
+  · rw [heq]; exact ChannelStatus.finalizedWith_withOutcome hf _ _
+  · obtain ⟨⟨-, -, -, hm⟩, -⟩ := challenge_some hch
+    rw [mode_eq] at hm
+    rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hmode <;> cases hmode
+  · obtain ⟨⟨ho, -⟩, -⟩ := checkpoint_some hcp
+    exact absurd hmode ho
+  · obtain ⟨⟨ho, -⟩, -⟩ := conclude_some hcl
+    exact absurd hmode ho
 
 /-- The outcome of finalization is permanent over every reachable step, not
     just one, by induction on `finalizedWith_apply`. Used by
