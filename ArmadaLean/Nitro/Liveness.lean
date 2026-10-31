@@ -6837,13 +6837,13 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
   -- `symbolicTerminal_conservation` bounds the balance by the value.
   obtain ⟨order, hord, rfl⟩ := hv
   set sg := net.chain.symbolicTerminal order with hsg
-  have hcons := net.chain.symbolicTerminal_conservation hdag order hord n
+  have hcons := net.chain.symbolicTerminal_conservation hturbo.1 order hord n
   rw [← hsg] at hcons
   suffices hsuff : ∀ {net2 : NetworkState E p},
       UnbeatableIn apps T HonestMove.IsTransfer (fun net' => x ≤ net'.chain.balances.get n) net2 →
       net2.chain.Ahead sg → net2.chain.dueTotal n ≤ net.chain.dueTotal n →
       x ≤ net.chain.turboValueAlong order n from
-    hsuff h (net.chain.symbolicTerminal_Ahead hdag order hord) le_rfl
+    hsuff h (net.chain.symbolicTerminal_Ahead hturbo.1 order hord) le_rfl
   intro net2 h2
   induction h2 with
   | @done net2 hgoal =>
@@ -6868,7 +6868,7 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
       rw [hm, NetworkState.applyHonest_chain] at hih
       rw [hm] at hround
       obtain ⟨ops, hall, -, hchain⟩ := hround.transfer_applyAll hT
-      have hmatch := symbolicTerminal_applyAll_unmoved net.chain hdag order hord apps _ hall sg
+      have hmatch := symbolicTerminal_applyAll_unmoved net.chain hturbo.1 order hord apps _ hall sg
         (fun _ => rfl) (fun _ => rfl)
       rw [hchain] at hih
       exact hih (Ahead_right_congr hmatch.1 hmatch.2
