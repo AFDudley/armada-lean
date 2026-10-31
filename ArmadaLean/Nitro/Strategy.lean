@@ -309,46 +309,64 @@ omit [DecidableEq E] in
     (st : State E) : net.applyHonest (HonestMove.send st) = { net with sent := ⟨st, [p]⟩ :: net.sent } := by
   simp [NetworkState.applyHonest, HonestMove.send]
 
+/-- A `RoundSeq` derivation, when its pending list is non-empty, is: a run of
+    ordinary adversary moves (`tick`/`other`, no land) up to the FIRST call
+    the adversary actually lands — some `op` sitting at `pending = l1 ++ op
+    :: l2` — then the rest, with `op` cleared from `pending`. The base case
+    (`land` is the derivation's own first step) needs no induction; `tick`
+    and `other` just carry the found split through unchanged, prepending
+    their own step ahead of the found land.
+
+    The lemma reports WHICH call landed first instead of fixing an order
+    ahead of time, because two land calls do not commute in general:
+    `Adjudicator.deposit`'s `expectedHeld` guard (`Adjudicator.lean:108`)
+    makes a second deposit's success depend on whether an earlier one to
+    the same channel already landed, so "pending1 always lands before
+    pending2" is false for an arbitrary split of an arbitrary pending list.
+    `peel_one` and `peel_two` both specialize this one lemma by a short
+    case split on the reported position `l1`, instead of re-running the
+    induction each time. -/
+theorem Threat.RoundSeq.peel_split {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
+    {pending : List (Op E)} {n0 n2 : NetworkState E p} (hne : pending ≠ [])
+    (hseq : Threat.RoundSeq apps T t pending n0 n2) :
+    ∃ l1 op l2, pending = l1 ++ op :: l2 ∧
+      ∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
+        Threat.RoundSeq apps T t (l1 ++ l2) (n1.applyAdv apps (.land op)) n2 := by
+  induction hseq with
+  | nil => exact absurd rfl hne
+  | @land pending n net' op l1 l2 hsplit hrest _ =>
+    exact ⟨l1, op, l2, hsplit, n, Threat.RoundSeq.nil, hrest⟩
+  | @tick pending n net' dt hfeas hgate hrest ih =>
+    obtain ⟨l1, op, l2, heq, n1, hA, hB⟩ := ih hne
+    exact ⟨l1, op, l2, heq, n1, Threat.RoundSeq.tick hfeas (Or.inl rfl) hA, hB⟩
+  | @other pending n net' m hfeas hnotick hnoland hrest ih =>
+    obtain ⟨l1, op, l2, heq, n1, hA, hB⟩ := ih hne
+    exact ⟨l1, op, l2, heq, n1, Threat.RoundSeq.other hfeas hnotick hnoland hA, hB⟩
+
 /-- One call always peels off a `RoundSeq` as the LAST pending-clearing
     step: `[op]` has only one way to split, so every `land` step on
-    `pending = [op]` consumes it whole, leaving `[]`. Stated over fresh
-    state names (not the caller's), so `induction` builds the right
-    motive. -/
+    `pending = [op]` consumes it whole, leaving `[]`. `peel_split` finds
+    the split; a singleton pending list has only the empty one. -/
 theorem Threat.RoundSeq.peel_one {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
     (op : Op E) (n0 n2 : NetworkState E p) (hseq : Threat.RoundSeq apps T t [op] n0 n2) :
     ∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
       Threat.RoundSeq apps T t [] (n1.applyAdv apps (.land op)) n2 := by
-  generalize hp : ([op] : List (Op E)) = pending at hseq
-  induction hseq with
-  | nil => cases hp
-  | @land pending n net' op' l1 l2 hsplit hrest ih =>
-    cases hp
-    rcases l1 with _ | ⟨a, l1⟩
-    · rcases l2 with _ | ⟨b, l2⟩
-      · simp only [List.nil_append, List.cons.injEq] at hsplit
-        obtain ⟨heq, -⟩ := hsplit
-        subst heq
-        exact ⟨n, Threat.RoundSeq.nil, hrest⟩
-      · simp at hsplit
-    · simp at hsplit
-  | tick hfeas hgate hrest ih =>
-    obtain ⟨n1, h1, h2⟩ := ih hp
-    refine ⟨n1, Threat.RoundSeq.tick hfeas (Or.inr ?_) h1, h2⟩
-    rcases hgate with h | h
-    · cases hp.trans h
-    · exact h
-  | other hfeas hnotick hnoland hrest ih =>
-    obtain ⟨n1, h1, h2⟩ := ih hp
-    exact ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
-
+  obtain ⟨l1, op', l2, heq, n1, hA, hB⟩ :=
+    Threat.RoundSeq.peel_split (pending := [op]) (by simp) hseq
+  rcases l1 with _ | ⟨a, l1⟩
+  · simp only [List.nil_append, List.cons.injEq, List.nil_eq] at heq
+    obtain ⟨heqop, heql2⟩ := heq
+    subst heqop; subst heql2
+    simp only [List.nil_append] at hB
+    exact ⟨n1, hA, hB⟩
+  · simp at heq
 
 /-- Two calls peel off a `RoundSeq` one at a time, in whichever order the
     adversary front-runs them (Nitro:540-542): `pending = [opA, opB]` splits
     at a `land` step either on `opA` (leaving `[opB]` still pending) or on
     `opB` (leaving `[opA]`), with ordinary adversary play (`tick`/`other`)
-    before that first `land`, exactly as `peel_one`'s singleton case.
-    `peel_one`, applied to the returned singleton `RoundSeq`, splits the
-    rest into its own ordinary-play-then-land shape.
+    before that first `land` — `peel_split`'s own split, specialized to a
+    two-element pending list, which has only those two positions.
     `satp_intermediary_before_round2`'s two-call reaction peels through
     this, independently of which of its two calls the adversary lands
     first. -/
@@ -359,42 +377,20 @@ theorem Threat.RoundSeq.peel_two {apps : Apps E} {p : Participant} {T : Threat E
       Threat.RoundSeq apps T t [opB] (n1.applyAdv apps (.land opA)) n3) ∨
     (∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
       Threat.RoundSeq apps T t [opA] (n1.applyAdv apps (.land opB)) n3) := by
-  generalize hp : ([opA, opB] : List (Op E)) = pending at hseq
-  induction hseq with
-  | nil => cases hp
-  | @land pending n net' op l1 l2 hsplit hrest ih =>
-    cases hp
-    rcases l1 with _ | ⟨a, l1⟩
-    · rcases l2 with _ | ⟨b, l2⟩
-      · simp at hsplit
-      · rcases l2 with _ | ⟨c, l2⟩
-        · simp only [List.nil_append, List.cons.injEq] at hsplit
-          obtain ⟨hoA, hoB, -⟩ := hsplit
-          subst hoA; subst hoB
-          exact Or.inl ⟨n, Threat.RoundSeq.nil, hrest⟩
-        · simp at hsplit
-    · rcases l1 with _ | ⟨a1, l1⟩
-      · rcases l2 with _ | ⟨c, l2⟩
-        · simp only [List.cons_append, List.nil_append, List.cons.injEq] at hsplit
-          obtain ⟨haA, hoB, -⟩ := hsplit
-          subst haA; subst hoB
-          exact Or.inr ⟨n, Threat.RoundSeq.nil, hrest⟩
-        · simp at hsplit
-      · simp at hsplit
-  | tick hfeas hgate hrest ih =>
-    rcases ih hp with ⟨n1, h1, h2⟩ | ⟨n1, h1, h2⟩
-    · refine Or.inl ⟨n1, Threat.RoundSeq.tick hfeas (Or.inr ?_) h1, h2⟩
-      rcases hgate with h | h
-      · cases hp.trans h
-      · exact h
-    · refine Or.inr ⟨n1, Threat.RoundSeq.tick hfeas (Or.inr ?_) h1, h2⟩
-      rcases hgate with h | h
-      · cases hp.trans h
-      · exact h
-  | other hfeas hnotick hnoland hrest ih =>
-    rcases ih hp with ⟨n1, h1, h2⟩ | ⟨n1, h1, h2⟩
-    · exact Or.inl ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
-    · exact Or.inr ⟨n1, Threat.RoundSeq.other hfeas hnotick hnoland h1, h2⟩
+  obtain ⟨l1, op, l2, heq, n1, hA, hB⟩ :=
+    Threat.RoundSeq.peel_split (pending := [opA, opB]) (by simp) hseq
+  rcases l1 with _ | ⟨a, l1⟩
+  · simp only [List.nil_append, List.cons.injEq] at heq
+    obtain ⟨heqop, heql2⟩ := heq
+    subst heqop; subst heql2
+    exact Or.inl ⟨n1, hA, hB⟩
+  · rcases l1 with _ | ⟨b, l1⟩
+    · simp only [List.cons_append, List.nil_append, List.cons.injEq, List.nil_eq] at heq
+      obtain ⟨heqa, heqop, heql2⟩ := heq
+      subst heqa; subst heqop; subst heql2
+      simp only [List.append_nil] at hB
+      exact Or.inr ⟨n1, hA, hB⟩
+    · simp at heq
 /-- **The old per-move bound is `Threat.Round`'s one-call special case.**
     For a reaction with one call (`HonestMove.chain op`, `pending = [op]`),
     `Threat.RoundSeq.peel_one` splits the round into ordinary adversary
