@@ -11,7 +11,16 @@
   namespace — a namespace filter on `ArmadaLean` misses the Pool (its
   theorems sit at the root namespace) and names such as
   `Nitro.network_received_voucher_signers` (module
-  `ArmadaLean.Nitro.Reachable`, name `Nitro.…`).
+  `ArmadaLean.Nitro.Reachable`, name `Nitro.…`). A module under
+  `ArmadaLean.Spec` or `ArmadaLean.Witness` is out of scope: the spec
+  module (`docs/spec-module-design.md`) generates these from a cited
+  theorem's own header, so a finding on one is a finding on that header,
+  already reported once, under its own module. A declaration whose last
+  name component is `nonvacuity` or starts with `nonvacuity_` is also out
+  of scope: the spec module promotes a non-vacuity `example` to a theorem
+  of that name (`docs/spec-module-design.md` §5, `convert_spec.py`'s own
+  `nm = f"{short}.nonvacuity" + …`), so it reports the fact the `example`
+  already stated, now under a name instead of anonymous.
 -/
 import Lean.Meta.Basic
 import Lean.DocString
@@ -31,11 +40,24 @@ namespace ArmadaLean.Lint.TypeDoctrine
 def declModule (env : Environment) (n : Name) : Option Name :=
   env.getModuleIdxFor? n |>.map fun idx => env.header.moduleNames[idx.toNat]!
 
+/-- The spec module's own generated-witness naming
+    (`docs/spec-module-design.md` §5): a name whose last component is
+    `nonvacuity`, or starts with `nonvacuity_` (a disambiguating suffix,
+    `convert_spec.py`'s `nm`). -/
+def isGeneratedWitnessExample : Name → Bool
+  | .str _ s => s == "nonvacuity" || "nonvacuity_".isPrefixOf s
+  | _ => false
+
 /-- A declaration is in scope when its own module path starts with
-    `ArmadaLean`, outside this linter module itself. -/
+    `ArmadaLean`, outside this linter module itself and outside the spec
+    module's own generated declarations (`ArmadaLean.Spec`,
+    `ArmadaLean.Witness`, a promoted non-vacuity example: the module
+    comment above). -/
 def inScope (env : Environment) (n : Name) : Bool :=
   match declModule env n with
   | some m => (`ArmadaLean).isPrefixOf m && !(`ArmadaLean.Lint).isPrefixOf m
+      && !(`ArmadaLean.Spec).isPrefixOf m && !(`ArmadaLean.Witness).isPrefixOf m
+      && !isGeneratedWitnessExample n
   | none => false
 
 /-- Nitro declarations live in a module under `ArmadaLean.Nitro`; every
@@ -97,10 +119,34 @@ partial def collectOrderedFVars (e : Expr) (acc : Array FVarId := #[]) : Array F
   | .proj _ _ e => collectOrderedFVars e acc
   | _ => acc
 
+/-- `e`'s carrier, when `e` is `ReachableState.state e'`: the coercion a
+    converted theorem's header uses for its `ReachableState` binder
+    (`docs/spec-module-design.md` decision 2). A premise's shape must not
+    change just because its state binder moved from a bare parameter to a
+    `ReachableState` one — the reachable type's own carrier projection is
+    not part of the shape. Matches `ReachableState.state` by `Name`, not by
+    an import of `ArmadaLean.Types.Reachable` (which would drag in
+    `Lean.Linter`, ambiguous here with `Batteries.Tactic.Lint.Linter`).
+    Scoped to `ReachableState.state` itself, not every `Subtype` carrier
+    (`Subtype.val`/`.1`): a refined type such as `TimedChannel` also
+    coerces through `Subtype.val`, and its own carrier projection IS part
+    of its premises' shape (`docs/lean/typed-library.md` §3 rule 2 gives
+    every refined type the same coercion; only the reachable type's is
+    exempted here). -/
+def stateCarrier? (e : Expr) : Option Expr :=
+  match e with
+  | .app (.app (.app (.const n _) _) _) e => if n == `ReachableState.state then some e else none
+  | _ => none
+
 /-- A structural key for `e`, stable under consistent renaming of bound
     variables (`bvar` indices only; no fvar should remain once `e` has
-    been abstracted by `collectOrderedFVars`). -/
-partial def exprKey : Expr → String
+    been abstracted by `collectOrderedFVars`), and under a `ReachableState`
+    or `Subtype` carrier projection (`stateCarrier?`). -/
+partial def exprKey (e : Expr) : String :=
+  match stateCarrier? e with
+  | some inner => exprKey inner
+  | none =>
+  match e with
   | .bvar i => s!"B{i}"
   | .fvar fvarId => s!"F{fvarId.name}"
   | .mvar _ => "M"
@@ -235,36 +281,70 @@ def analyzeDecl (env : Environment) (n : Name) : MetaM DeclInfo := do
 
 /-! ## Cross-declaration grouping (pure, over precomputed `DeclInfo`) -/
 
+/-- Group `rows` by `keyOf`, in the order a total order on
+    `(keyOf, tiebreakOf)` gives: a sort, then adjacent rows sharing a key —
+    never `HashMap` iteration order. `HashMap`'s order depends on Lean's
+    per-process hash seed; `repeatedFindings`'s own group count read 258
+    on one run and 259 on another, same code, same tree
+    (`docs/spec-module-design.md` §10). `keyOf`/`tiebreakOf` together must
+    total-order `rows`: two rows with the same `keyOf` but an unordered
+    `tiebreakOf` leave `qsort` free to place either first, which only
+    matters where a caller reads "the first row of a group" as a
+    representative (`variantFindings` below). -/
+def groupByKey {α} [Inhabited α] (rows : Array α) (keyOf : α → String) (tiebreakOf : α → String) :
+    Array (String × Array α) :=
+  let sorted := rows.qsort fun a b =>
+    keyOf a < keyOf b || (keyOf a == keyOf b && tiebreakOf a < tiebreakOf b)
+  Id.run do
+    let mut out := #[]
+    let mut i := 0
+    while i < sorted.size do
+      let k := keyOf sorted[i]!
+      let mut j := i
+      let mut g := #[]
+      while j < sorted.size && keyOf sorted[j]! == k do
+        g := g.push sorted[j]!
+        j := j + 1
+      out := out.push (k, g)
+      i := j
+    return out
+
 /-- `repeatedPremise`: every normalized shape that at least two distinct
-    declarations use, with one `(decl, prettyConjunct)` pair per use. -/
+    declarations use, with one `(decl, prettyConjunct)` pair per use, the
+    uses in declaration-name order. -/
 def repeatedFindings (decls : Array DeclInfo) : Array (String × Array (Name × String)) := Id.run do
-  let mut m : Std.HashMap String (Array (Name × String)) := {}
+  let mut rows : Array (String × Name × String) := #[]
   for d in decls do
     for c in d.conjuncts do
-      m := m.insert c.key ((m.getD c.key #[]).push (d.name, c.pretty))
+      rows := rows.push (c.key, d.name, c.pretty)
   let mut out := #[]
-  for (key, uses) in m.toArray do
-    let names : Std.HashSet Name := uses.foldl (init := {}) fun s (n, _) => s.insert n
+  for (key, g) in groupByKey rows (·.1) (fun r => toString r.2.1) do
+    let names : Std.HashSet Name := g.foldl (init := {}) fun s r => s.insert r.2.1
     if names.size ≥ 2 then
-      out := out.push (key, uses)
+      out := out.push (key, g.map fun r => r.2)
   return out
 
 /-- `premiseVariant`: every `(binderType, field)` that two or more
     distinct normalized shapes constrain. Each inner entry is one shape
-    (its pretty text and the declarations that use it). -/
+    (its pretty text and the declarations that use it, in declaration-name
+    order); the `pretty` text is the alphabetically first declaration's,
+    deterministically (the group's own order, `groupByKey`). -/
 def variantFindings (decls : Array DeclInfo) :
     Array ((Name × Name) × Array (String × String × Array Name)) := Id.run do
-  let mut m : Std.HashMap (Name × Name) (Std.HashMap String (String × Array Name)) := {}
+  let mut rows : Array ((Name × Name) × String × String × Name) := #[]
   for d in decls do
     for c in d.conjuncts do
       for ref in c.fieldRefs do
-        let inner := m.getD ref {}
-        let (_, names) := inner.getD c.key (c.pretty, #[])
-        m := m.insert ref (inner.insert c.key (c.pretty, names.push d.name))
+        rows := rows.push (ref, c.key, c.pretty, d.name)
   let mut out := #[]
-  for (ref, inner) in m.toArray do
-    if inner.size ≥ 2 then
-      out := out.push (ref, inner.toArray.map fun (k, pretty, names) => (k, pretty, names))
+  for (_, refRows) in groupByKey rows (fun r => s!"{r.1.1}.{r.1.2}")
+      (fun r => s!"{r.2.1}#{r.2.2.2}") do
+    let ref := refRows[0]!.1
+    let byKey := groupByKey refRows (·.2.1) (fun r => toString r.2.2.2)
+    if byKey.size ≥ 2 then
+      let inner := byKey.map fun (key, krows) =>
+        (key, krows[0]!.2.2.1, krows.map fun r => r.2.2.2)
+      out := out.push (ref, inner)
   return out
 
 /-- `looseHypothesis`: every conjunct whose only free variable is one
