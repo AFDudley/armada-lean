@@ -68,6 +68,239 @@ def payoutValues : Balances E → Coins → Allocation E → Balances E
     let x := min e.amount remaining
     payoutValues (if e.item.isGuarantee then vals else vals.add e.dest x) (remaining - x) rest
 
+/-! ### Monotonicity of the Turbo Value Algorithm
+
+    `turbo_value_upper_bound` needs: no sequence of real `transfer` calls, in
+    the transfer-only game, can ever raise `turboValueAlong` at any address
+    above its value at the start. Two facts drive this: `payoutValues_le`
+    (the algorithm never reports less than its own starting balances) and
+    `payoutValues_absorb` (one real `transfer` call, applied to the exact
+    allocation the algorithm reads, is exactly one step of the algorithm's
+    own computation: pre-paying it for real and lowering what the
+    allocation still owes leaves the algorithm's eventual answer, at every
+    address, unchanged). -/
+
+theorem payoutValues_get_add_le (vals : Balances E) (d : Address E) (x : Coins) (n : Address E) :
+    vals.get n ≤ (vals.add d x).get n := by
+  rw [Balances.get_add]
+  by_cases h : n = d
+  · subst h
+    rw [if_pos rfl]
+    exact Nat.le_add_right _ _
+  · simp [h]
+
+/-- `payoutValues` never lowers any address's recorded value: every update
+    it makes is an addition. -/
+theorem payoutValues_le (o : Allocation E) (vals : Balances E) (remaining : Coins) (n : Address E) :
+    vals.get n ≤ (payoutValues vals remaining o).get n := by
+  induction o generalizing vals remaining with
+  | nil => simp [payoutValues]
+  | cons e rest ih =>
+    simp only [payoutValues]
+    refine le_trans ?_ (ih _ _)
+    split
+    · exact le_refl _
+    · exact payoutValues_get_add_le vals e.dest _ n
+
+/-- `payoutValues` is congruent in its starting balances, pointwise. -/
+theorem payoutValues_congr {vals1 vals2 : Balances E} (h : ∀ m, vals1.get m = vals2.get m)
+    (remaining : Coins) (o : Allocation E) (n : Address E) :
+    (payoutValues vals1 remaining o).get n = (payoutValues vals2 remaining o).get n := by
+  induction o generalizing vals1 vals2 remaining with
+  | nil => simp only [payoutValues]; exact h n
+  | cons e rest ih =>
+    simp only [payoutValues]
+    apply ih
+    intro m
+    split
+    · exact h m
+    · simp [Balances.get_add, h]
+
+/-- Processing an allocation that never mentions `d` as a destination
+    leaves `d`'s recorded value unchanged. -/
+theorem payoutValues_get_of_not_mem {o : Allocation E} {d : Address E}
+    (hd : d ∉ o.map Entry.dest) (vals : Balances E) (remaining : Coins) :
+    (payoutValues vals remaining o).get d = vals.get d := by
+  induction o generalizing vals remaining with
+  | nil => simp [payoutValues]
+  | cons e rest ih =>
+    simp only [List.map_cons, List.mem_cons, not_or] at hd
+    simp only [payoutValues]
+    rw [ih hd.2]
+    split
+    · rfl
+    · rw [Balances.get_add, if_neg hd.1]
+
+/-- One real `transfer`'s payout to a non-guarantee destination, absorbed
+    into `vals`/`remaining` and lowered out of the allocation, is exactly
+    one step of `payoutValues`'s own computation: a real on-chain transfer
+    never does more, nor less, than the Turbo Value Algorithm's own
+    priority formula already credits, so the algorithm's eventual answer,
+    at every address, is unchanged by it. -/
+theorem min_sub_of_le_sub_min (a b x : Nat) (hx : x ≤ b - min a b) :
+    min a (b - x) = min a b := by omega
+
+theorem sub_sub_swap (b x y : Nat) : b - x - y = b - y - x := by omega
+
+theorem min_sub_min_eq_zero (a b : Nat) : min (a - min a b) (b - min a b) = 0 := by omega
+
+theorem payoutValues_absorb {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
+    {b : Address E} {amt : Coins} (hb : o.find b = some ⟨b, .alloc amt⟩)
+    (vals : Balances E) (remaining : Coins) (n : Address E) :
+    (payoutValues vals remaining o).get n =
+      (payoutValues (vals.add b (Allocation.paidTo remaining o b))
+        (remaining - Allocation.paidTo remaining o b)
+        (Allocation.reduceOwed o b (Allocation.paidTo remaining o b))).get n := by
+  induction o generalizing vals remaining with
+  | nil => simp at hb
+  | cons e rest ih =>
+    rw [Allocation.find_cons] at hb
+    have hnde : e.dest ∉ rest.map Entry.dest := (List.nodup_cons.1 hnd).1
+    have hndr : (rest.map Entry.dest).Nodup := (List.nodup_cons.1 hnd).2
+    have hdeq := Allocation.dedup_eq_self_of_nodup hnd
+    by_cases he : e.dest = b
+    · subst he
+      rw [if_pos rfl] at hb
+      have hee : e = (⟨e.dest, .alloc amt⟩ : Entry E) := by injection hb
+      have heitem : e.item = Item.alloc amt := by rw [hee]
+      have heamt : e.amount = amt := by simp [Entry.amount, heitem]
+      have hx : Allocation.paidTo remaining (e :: rest) e.dest = min amt remaining := by
+        rw [Allocation.paidTo_eq_get, hdeq]
+        conv_lhs => rw [hee]
+        simp [Allocation.payout_cons, Balances.get_cons]
+      rw [hx]
+      have hro : Allocation.reduceOwed (e :: rest) e.dest (min amt remaining) =
+          ({ e with item := .alloc (amt - min amt remaining) } : Entry E) :: rest := by
+        rw [Allocation.reduceOwed_cons, if_pos rfl]
+        simp [Entry.amount, heitem]
+      rw [hro]
+      simp only [payoutValues]
+      have hcond1 : ¬ e.item.isGuarantee = true := by rw [heitem]; simp [Item.isGuarantee]
+      have hcond2 : ¬ ({ e with item := .alloc (amt - min amt remaining) } : Entry E).item.isGuarantee = true := by
+        simp [Item.isGuarantee]
+      have hmodamt : ({ e with item := .alloc (amt - min amt remaining) } : Entry E).amount
+          = amt - min amt remaining := rfl
+      rw [if_neg hcond1, if_neg hcond2, heamt, hmodamt]
+      have hxnn : min (amt - min amt remaining) (remaining - min amt remaining) = 0 :=
+        min_sub_min_eq_zero amt remaining
+      rw [hxnn]
+      simp only [Nat.sub_zero]
+      apply payoutValues_congr
+      intro m
+      by_cases hm : m = e.dest
+      · simp [hm, Balances.get_add]
+      · simp [hm, Balances.get_add]
+    · rw [if_neg he] at hb
+      have hx : Allocation.paidTo remaining (e :: rest) b =
+          Allocation.paidTo (remaining - min e.amount remaining) rest b := by
+        conv_lhs => rw [Allocation.paidTo_eq_get, hdeq, Allocation.payout_cons, Balances.get_cons,
+          if_neg (Ne.symm he)]
+        rw [Allocation.paidTo_eq_get, Allocation.dedup_eq_self_of_nodup hndr]
+      rw [hx]
+      have hro : Allocation.reduceOwed (e :: rest) b
+          (Allocation.paidTo (remaining - min e.amount remaining) rest b) =
+          e :: Allocation.reduceOwed rest b
+            (Allocation.paidTo (remaining - min e.amount remaining) rest b) := by
+        rw [Allocation.reduceOwed_cons, if_neg he]
+      rw [hro]
+      simp only [payoutValues]
+      have hxle : Allocation.paidTo (remaining - min e.amount remaining) rest b ≤
+          remaining - min e.amount remaining :=
+        Allocation.paidTo_le_held _ _ _
+      have hmineq : min e.amount (remaining - Allocation.paidTo (remaining - min e.amount remaining) rest b)
+          = min e.amount remaining := min_sub_of_le_sub_min _ _ _ hxle
+      rw [hmineq]
+      have hsub : remaining - Allocation.paidTo (remaining - min e.amount remaining) rest b -
+          min e.amount remaining =
+          remaining - min e.amount remaining - Allocation.paidTo (remaining - min e.amount remaining) rest b :=
+        sub_sub_swap _ _ _
+      rw [hsub]
+      have hbridge : ∀ m,
+          ((if e.item.isGuarantee then vals else vals.add e.dest (min e.amount remaining)).add b
+              (Allocation.paidTo (remaining - min e.amount remaining) rest b)).get m
+            = (if e.item.isGuarantee then vals.add b (Allocation.paidTo (remaining - min e.amount remaining) rest b)
+                else (vals.add b (Allocation.paidTo (remaining - min e.amount remaining) rest b)).add e.dest
+                  (min e.amount remaining)).get m := by
+        intro m
+        by_cases hg : e.item.isGuarantee = true
+        · simp [hg]
+        · by_cases hmb : m = b
+          · by_cases hme : m = e.dest
+            · exact absurd (hme.symm.trans hmb) he
+            · simp_all [Balances.get_add]
+          · by_cases hme : m = e.dest
+            · simp_all [Balances.get_add]
+            · simp_all [Balances.get_add]
+      calc (payoutValues (if e.item.isGuarantee then vals else vals.add e.dest (min e.amount remaining))
+                (remaining - min e.amount remaining) rest).get n
+          = (payoutValues
+              ((if e.item.isGuarantee then vals else vals.add e.dest (min e.amount remaining)).add b
+                (Allocation.paidTo (remaining - min e.amount remaining) rest b))
+              (remaining - min e.amount remaining - Allocation.paidTo (remaining - min e.amount remaining) rest b)
+              (Allocation.reduceOwed rest b (Allocation.paidTo (remaining - min e.amount remaining) rest b))).get n :=
+            ih hndr hb _ _
+        _ = (payoutValues
+              (if e.item.isGuarantee then vals.add b (Allocation.paidTo (remaining - min e.amount remaining) rest b)
+                else (vals.add b (Allocation.paidTo (remaining - min e.amount remaining) rest b)).add e.dest
+                  (min e.amount remaining))
+              (remaining - min e.amount remaining - Allocation.paidTo (remaining - min e.amount remaining) rest b)
+              (Allocation.reduceOwed rest b (Allocation.paidTo (remaining - min e.amount remaining) rest b))).get n :=
+            payoutValues_congr hbridge _ _ n
+
+/-- While `payoutValues` processes an allocation that names neither `a` nor
+    `b`, starting balances that differ only by moving `x` from `a` to `b`
+    (Nitro:765-772 `T(A,B,x)`, before `A`'s own turn in the algorithm) stay
+    exactly that far apart at every address, and the bound `x ≤ vals.get a`
+    (what makes the move affordable) persists: nothing here ever lowers
+    `a`'s own recorded value (`payoutValues_le`). -/
+theorem payoutValues_delta_step (a b : Address E) (hab : a ≠ b) :
+    ∀ (o : Allocation E) (vals1 vals2 : Balances E) (x : Coins), x ≤ vals1.get a →
+      (∀ m, m ≠ a → m ≠ b → vals1.get m = vals2.get m) →
+      vals2.get a = vals1.get a - x → vals2.get b = vals1.get b + x →
+      ∀ remaining : Coins,
+        (∀ m, m ≠ a → m ≠ b →
+          (payoutValues vals1 remaining o).get m = (payoutValues vals2 remaining o).get m) ∧
+        x ≤ (payoutValues vals1 remaining o).get a ∧
+        (payoutValues vals2 remaining o).get a = (payoutValues vals1 remaining o).get a - x ∧
+        (payoutValues vals2 remaining o).get b = (payoutValues vals1 remaining o).get b + x := by
+  intro o
+  induction o with
+  | nil => intro vals1 vals2 x hxle hagree ha hb remaining; exact ⟨hagree, hxle, ha, hb⟩
+  | cons e rest ih =>
+    intro vals1 vals2 x hxle hagree ha hb remaining
+    simp only [payoutValues]
+    by_cases hg : e.item.isGuarantee = true
+    · simp only [hg, if_true]
+      exact ih vals1 vals2 x hxle hagree ha hb (remaining - min e.amount remaining)
+    · simp only [hg, if_false]
+      have hxle' : x ≤ (vals1.add e.dest (min e.amount remaining)).get a := by
+        rw [Balances.get_add]
+        split
+        · next h => rw [← h]; exact le_trans hxle (Nat.le_add_right _ _)
+        · next h => exact hxle
+      have hagree' : ∀ m, m ≠ a → m ≠ b →
+          (vals1.add e.dest (min e.amount remaining)).get m
+            = (vals2.add e.dest (min e.amount remaining)).get m := by
+        intro m hma hmb
+        simp only [Balances.get_add]
+        split
+        · next h => rw [hagree e.dest (h ▸ hma) (h ▸ hmb)]
+        · next h => exact hagree m hma hmb
+      have ha' : (vals2.add e.dest (min e.amount remaining)).get a
+          = (vals1.add e.dest (min e.amount remaining)).get a - x := by
+        simp only [Balances.get_add]
+        split
+        · next h => rw [← h, ha]; exact (Nat.sub_add_comm hxle).symm
+        · next h => exact ha
+      have hb' : (vals2.add e.dest (min e.amount remaining)).get b
+          = (vals1.add e.dest (min e.amount remaining)).get b + x := by
+        simp only [Balances.get_add]
+        split
+        · next h => rw [← h, hb]; exact add_right_comm _ _ _
+        · next h => exact hb
+      exact ih _ _ x hxle' hagree' ha' hb' (remaining - min e.amount remaining)
+
+
 /-- Nitro:818-835 Turbo Value Algorithm, steps 2-3: start from the balances,
     then for each node in order pay its value through its allocation. -/
 def Adjudicator.turboValues (s : Adjudicator E) : List (Address E) → Balances E → Balances E

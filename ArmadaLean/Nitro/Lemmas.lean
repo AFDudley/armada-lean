@@ -389,6 +389,31 @@ theorem find_dedupFrom (seen : List (Address E)) (o : Allocation E) (d : Address
 @[simp] theorem owed_dedup (o : Allocation E) (d : Address E) : o.dedup.owed d = o.owed d := by
   simp [Allocation.owed]
 
+/-- `dedupFrom` is a no-op on an allocation whose destinations are already
+    distinct from each other and from `seen`: every entry passes the
+    membership test, so nothing is dropped. -/
+theorem dedupFrom_eq_self {seen : List (Address E)} {o : Allocation E}
+    (hseen : ∀ e ∈ o, e.dest ∉ seen) (hnd : (o.map Entry.dest).Nodup) :
+    Allocation.dedupFrom seen o = o := by
+  induction o generalizing seen with
+  | nil => rfl
+  | cons e rest ih =>
+    rw [dedupFrom_cons, if_neg (hseen e List.mem_cons_self)]
+    have hrest : (rest.map Entry.dest).Nodup := (List.nodup_cons.1 hnd).2
+    have he : e.dest ∉ rest.map Entry.dest := (List.nodup_cons.1 hnd).1
+    have hseen' : ∀ e' ∈ rest, e'.dest ∉ e.dest :: seen := by
+      intro e' he' hmem
+      rcases List.mem_cons.1 hmem with heq | hmem
+      · exact he (heq ▸ List.mem_map_of_mem he')
+      · exact hseen e' (List.mem_cons_of_mem e he') hmem
+    rw [ih hseen' hrest]
+
+/-- A deduplicated allocation with already-distinct destinations is
+    unchanged by `dedup`. -/
+theorem dedup_eq_self_of_nodup {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) :
+    o.dedup = o :=
+  dedupFrom_eq_self (by simp) hnd
+
 /-! ### `payout` and `paidTo` -/
 
 omit [DecidableEq E] in
