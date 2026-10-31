@@ -232,6 +232,40 @@ theorem total_eq_channelTotal_add_paidOutTotal (b : Balances E) :
       grind
 end Balances
 
+/-- A sum over a duplicate-free list `L` is at most the sum over a
+    duplicate-free list `M` that holds each element of `L` where `g` is not
+    zero. `turbo_value_upper_bound` uses it to bound the credits of the
+    channels in `Ahead.flow`'s list by the credits along the topological
+    order. -/
+theorem sum_le_sum_of_support_subset {α : Type} [DecidableEq α] :
+    ∀ (L M : List α), L.Nodup → M.Nodup → (g : α → Nat) → (∀ a ∈ L, g a ≠ 0 → a ∈ M) →
+    (L.map g).sum ≤ (M.map g).sum := by
+  intro L
+  induction L with
+  | nil => intro M _ _ g _; simp
+  | cons a rest ih =>
+    intro M hL hM g hsupp
+    rw [List.nodup_cons] at hL
+    obtain ⟨hanotin, hrest⟩ := hL
+    simp only [List.map_cons, List.sum_cons]
+    by_cases hga : g a = 0
+    · rw [hga, zero_add]
+      exact ih M hrest hM g fun b hb hgb => hsupp b (List.mem_cons_of_mem a hb) hgb
+    · obtain ⟨M1, M2, rfl, -⟩ := List.eq_append_cons_of_mem (hsupp a List.mem_cons_self hga)
+      rw [List.nodup_append, List.nodup_cons] at hM
+      obtain ⟨h1, ⟨-, h2⟩, h3⟩ := hM
+      have hM' : (M1 ++ M2).Nodup :=
+        List.nodup_append.mpr ⟨h1, h2, fun x hx y hy => h3 x hx y (List.mem_cons_of_mem a hy)⟩
+      have hih := ih (M1 ++ M2) hrest hM' g fun b hb hgb => by
+        have hbM := hsupp b (List.mem_cons_of_mem a hb) hgb
+        rw [List.mem_append, List.mem_cons] at hbM
+        rcases hbM with hb1 | rfl | hb2
+        · exact List.mem_append.mpr (Or.inl hb1)
+        · exact absurd hb hanotin
+        · exact List.mem_append.mpr (Or.inr hb2)
+      simp only [List.map_append, List.map_cons, List.sum_append, List.sum_cons] at hih ⊢
+      omega
+
 /-! ## Outcomes (`Outcome.lean`) -/
 
 omit [DecidableEq E] in
@@ -1509,6 +1543,52 @@ theorem chainPay_owed_eq (og : Allocation E) (hnd : (og.map Entry.dest).Nodup) (
   have hxo := paidTo_le_owed hg og d
   unfold Coins at *
   omega
+
+/-- `chainPay` never changes the amount of a guarantee entry: each step
+    reduces an allocation item at another destination
+    (`owed_reduceOwed`), and that step keeps `d`'s first entry
+    (`find_reduceOwed`). -/
+theorem chainPay_owed_of_find_guarantee (ds : List (Address E)) (og : Allocation E)
+    (hg : Coins) (d : Address E) (x : Coins) (ps : List (Address E))
+    (hf : og.find d = some ⟨d, .guarantee x ps⟩) :
+    (chainPay ds og hg).1.owed d = og.owed d := by
+  induction ds generalizing og hg with
+  | nil => rfl
+  | cons e ds ih =>
+    rw [chainPay_cons]
+    cases hfe : og.find e with
+    | none => exact ih og hg hf
+    | some entry =>
+      obtain ⟨ee, item⟩ := entry
+      cases item with
+      | alloc amt =>
+        have hne : d ≠ e := by rintro rfl; rw [hf] at hfe; cases hfe
+        rw [ih _ _ (by rw [find_reduceOwed, if_neg hne]; exact hf), owed_reduceOwed, if_neg hne]
+      | guarantee _ _ => exact ih og hg hf
+
+/-- What `og` owes `d`, before a `chainPay` run over its own destinations,
+    is at most what it owes after, plus the run's payment to `d`
+    (`chainPay_owed_eq`). A guarantee entry or no entry gets no payment
+    (`chainPay_owed_of_find_guarantee`). The guard is the shape of
+    `Adjudicator.CreditsTo`. -/
+theorem owed_le_chainPay_owed_add (og : Allocation E) (hnd : (og.map Entry.dest).Nodup)
+    (hg : Coins) (d : Address E) :
+    og.owed d ≤ (chainPay (og.map Entry.dest) og hg).1.owed d +
+      if ((og.find d).elim false (fun e => !e.item.isGuarantee)) then og.paidTo hg d else 0 := by
+  cases hf : og.find d with
+  | none => simp [Allocation.owed, hf]
+  | some e =>
+    obtain ⟨de, item⟩ := e
+    obtain rfl : de = d := find_dest hf
+    cases item with
+    | alloc amt =>
+      have h := chainPay_owed_eq og hnd hg de amt hf
+      simp only [Option.elim, Item.isGuarantee, Bool.not_false, if_true]
+      unfold Coins at *
+      omega
+    | guarantee x ps =>
+      rw [chainPay_owed_of_find_guarantee _ og hg de x ps hf]
+      simp
 
 end Allocation
 

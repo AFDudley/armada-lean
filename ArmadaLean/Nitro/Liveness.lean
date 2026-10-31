@@ -5756,7 +5756,7 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
 /-- A round with no call of `p` pending, against a transfer-only adversary
     (`Threat.TransfersOnly`, Nitro:779-781), is one `applyAll` of transfers
     on the chain: `tick` and `deliver` are not feasible, and `land` needs a
-    pending call. Used by `turbo_replay_unbeatable`. -/
+    pending call. Used by `Threat.Round.transfer_applyAll`. -/
 theorem Threat.RoundSeq.transfers {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
     (hT : T.TransfersOnly) {net net' : NetworkState E p} (h : T.RoundSeq apps t [] net net') :
     ∃ A, OnlyTransfers A ∧ net'.chain = Adjudicator.applyAll apps A net.chain := by
@@ -5778,6 +5778,34 @@ theorem Threat.RoundSeq.transfers {apps : Apps E} {p : Participant} {T : Threat 
     · rw [heq]
       simp only [NetworkState.applyAdv]
       cases hap : n.chain.apply apps caller (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
+
+/-- A round of `p`'s one-transfer move against a transfer-only adversary
+    (`Threat.TransfersOnly`, Nitro:779-781) is one `applyAll` of transfers
+    on the chain: the adversary's transfers, `p`'s transfer, then the
+    adversary's transfers (`Threat.Round.single`,
+    `Threat.RoundSeq.transfers`). Used by `turbo_replay_unbeatable` and
+    `turbo_value_upper_bound`. -/
+theorem Threat.Round.transfer_applyAll {apps : Apps E} {p : Participant} {T : Threat E p}
+    (hT : T.TransfersOnly) {a : FixedPart} {b : Address E} {net net' : NetworkState E p}
+    (h : T.Round apps (HonestMove.chain (.transfer a b)) net net') :
+    ∃ ops, OnlyTransfers ops ∧ (p, Op.transfer a b) ∈ ops ∧
+      net'.chain = Adjudicator.applyAll apps ops net.chain := by
+  obtain ⟨n1, h1, h2⟩ := Threat.Round.single h
+  obtain ⟨A1, hA1, e1⟩ := h1.transfers hT
+  obtain ⟨A2, hA2, e2⟩ := h2.transfers hT
+  have hland : (n1.applyAdv apps (.land (.transfer a b))).chain =
+      Adjudicator.applyAll apps [(p, .transfer a b)] n1.chain := by
+    simp only [NetworkState.applyAdv]
+    cases hap : n1.chain.apply apps p (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
+  refine ⟨A1 ++ (p, .transfer a b) :: A2, fun e he => ?_,
+    List.mem_append_right _ List.mem_cons_self, ?_⟩
+  · rcases List.mem_append.1 he with he | he
+    · exact hA1 e he
+    · rcases List.mem_cons.1 he with rfl | he
+      · exact ⟨a, b, rfl⟩
+      · exact hA2 e he
+  · rw [e2, hland, e1, ← Adjudicator.applyAll_append, ← Adjudicator.applyAll_append]
+    rfl
 
 /-- Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result", in the form the strategy needs. When `L` is a
@@ -5815,8 +5843,8 @@ theorem Adjudicator.Ahead.applyAll_sublist (apps : Apps E) {L L' : List (Partici
 /-- The strategy of `turbo_redistribution_unbeatable`: `p` replays `ops`, one
     transfer per round. The chain stays ahead of the state `sp` that `ops`
     reaches with no interference: each round lands `p`'s transfer between
-    two adversary transfer lists (`Threat.Round.single`,
-    `Threat.RoundSeq.transfers`), and `Adjudicator.Ahead.applyAll_sublist`
+    two adversary transfer lists (`Threat.Round.transfer_applyAll`), and
+    `Adjudicator.Ahead.applyAll_sublist`
     keeps the order. An external balance is never lower in a state ahead
     (`Adjudicator.Ahead.get_external_le`). -/
 theorem turbo_replay_unbeatable (apps : Apps E) {p : Participant} (T : Threat E p)
@@ -5835,26 +5863,9 @@ theorem turbo_replay_unbeatable (apps : Apps E) {p : Participant} (T : Threat E 
       (by simp [Op.HonestFeasible, Op.proofStates]) ?_
     intro net' hround
     rw [NetworkState.applyHonest_chain]
-    obtain ⟨n1, h1, h2⟩ := Threat.Round.single hround
-    obtain ⟨A1, hA1, e1⟩ := h1.transfers hT
-    obtain ⟨A2, hA2, e2⟩ := h2.transfers hT
-    have hland : (n1.applyAdv apps (.land (.transfer a b))).chain =
-        Adjudicator.applyAll apps [(p, .transfer a b)] n1.chain := by
-      simp only [NetworkState.applyAdv]
-      cases hap : n1.chain.apply apps p (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
-    have hchain : net'.chain =
-        Adjudicator.applyAll apps (A1 ++ (p, .transfer a b) :: A2) net.chain := by
-      rw [e2, hland, e1, ← Adjudicator.applyAll_append, ← Adjudicator.applyAll_append]
-      rfl
-    have hall : OnlyTransfers (A1 ++ (p, .transfer a b) :: A2) := by
-      intro e he
-      rcases List.mem_append.1 he with he | he
-      · exact hA1 e he
-      · rcases List.mem_cons.1 he with rfl | he
-        · exact ⟨a, b, rfl⟩
-        · exact hA2 e he
+    obtain ⟨ops, hall, hmem, hchain⟩ := hround.transfer_applyAll hT
     have hstep := Adjudicator.Ahead.applyAll_sublist apps
-      (List.singleton_sublist.2 (List.mem_append_right _ List.mem_cons_self)) hall h
+      (List.singleton_sublist.2 hmem) hall h
     rw [← hchain] at hstep
     obtain ⟨q, op⟩ := o
     simp only at ho
@@ -6653,6 +6664,149 @@ theorem dueTotal_applyAll_le (apps : Apps E) {ops : List (Participant × Op E)}
       calc u'.dueTotal d ≤ u'.dueTotal d + (if d = a.address then x else 0) := Nat.le_add_right _ _
         _ = u.dueTotal d := hdt d
 
+theorem Ahead_right_congr {sp sg sg' : Adjudicator E}
+    (hfo : ∀ n, sg.finalOutcome n = sg'.finalOutcome n) (hbal : ∀ n, sg.balances.get n = sg'.balances.get n)
+    (h : sp.Ahead sg) : sp.Ahead sg' := by
+  have hdueeq : ∀ d, sg.dueTotal d = sg'.dueTotal d := fun d => by
+    unfold Adjudicator.dueTotal; rw [hfo d]
+  have howedeq : ∀ (c : FixedPart) (d : Address E), sg.owedBy c d = sg'.owedBy c d := fun c d => by
+    unfold Adjudicator.owedBy; rw [hfo c.address]
+  refine ⟨fun c => ?_, fun d L hL => ?_⟩
+  · have hc := h.chan c
+    rw [FixedPart.address_eq] at hc ⊢
+    rw [hfo (Address.channel c), hbal (Address.channel c)] at hc
+    exact hc
+  · have hf := h.flow d L hL
+    rw [hdueeq d, hbal d] at hf
+    rw [show (L.map (sg.owedBy · d)) = (L.map (sg'.owedBy · d)) from
+      List.map_congr_left (fun x _ => howedeq x d)] at hf
+    exact hf
+
+/-- At each address `m`, the symbolic terminal balance plus what `s` owes
+    at `m` is the algorithm's value at `m` plus what the symbolic terminal
+    state owes at `m`. `chainPay_dedup_total_conservation` gives the
+    finalized channel
+    case. Other addresses have no allocation, so `chainPay` keeps the full
+    value. -/
+theorem Adjudicator.symbolicTerminal_conservation (s : Adjudicator E) (hdag : s.IsDAG)
+    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (m : Address E) :
+    (s.symbolicTerminal order).balances.get m + s.dueTotal m =
+      s.turboValueAlong order m + (s.symbolicTerminal order).dueTotal m := by
+  rw [s.symbolicTerminal_balances_get hdag order hord m]
+  unfold Adjudicator.symbolicLeftover
+  cases m with
+  | external e =>
+    have h : s.allocationOf (.external e) = [] := allocationOf_eq_nil_of_isExternal _ rfl
+    simp [h, Allocation.chainPay, Adjudicator.dueTotal, Adjudicator.finalOutcome]
+  | channel c =>
+    rw [← FixedPart.address_eq]
+    have hfo := s.symbolicTerminal_finalOutcome order c
+    cases hf : s.finalOutcome c.address with
+    | none =>
+      simp only [hf, Option.isSome_none, Bool.false_eq_true, if_false] at hfo
+      have halloc : s.allocationOf c.address = [] := by unfold Adjudicator.allocationOf; rw [hf]
+      have h1 : s.dueTotal c.address = 0 := by unfold Adjudicator.dueTotal; rw [hf]
+      have h2 : (s.symbolicTerminal order).dueTotal c.address = 0 := by
+        unfold Adjudicator.dueTotal; rw [hfo]
+      rw [halloc, h1, h2]
+      rfl
+    | some outcome =>
+      obtain ⟨o⟩ := outcome
+      rw [hf] at hfo
+      have halloc : s.allocationOf c.address = o.dedup := by
+        unfold Adjudicator.allocationOf; rw [hf]
+      have hsa : s.symbolicAlloc order c.address =
+          (Allocation.chainPay (o.dedup.map Entry.dest) o (s.turboValueAlong order c.address)).1 := by
+        unfold Adjudicator.symbolicAlloc; rw [hf, halloc]
+      have hdd := (Allocation.chainPay_dedup (o.dedup.map Entry.dest) o
+        (s.turboValueAlong order c.address)).1
+      obtain ⟨hcons, hle⟩ := Allocation.chainPay_dedup_total_conservation
+        (o.dedup.map Entry.dest) o.dedup (s.turboValueAlong order c.address)
+      have hself : ∀ o' : Allocation E, o'.dedup.dedup = o'.dedup := fun o' =>
+        Allocation.dedup_eq_self_of_nodup (Allocation.dedup_nodup o')
+      rw [← hdd, hself, hself] at hcons hle
+      simp only [Adjudicator.dueTotal, hf, hfo, Option.isSome_some, if_true, halloc, hsa]
+      unfold Coins at *
+      omega
+
+/-- What `s` owes `d` through channel `c` is at most what the symbolic
+    terminal state owes, plus the algorithm's credit from `c` to `d`
+    (`Allocation.owed_le_chainPay_owed_add` on `c`'s deduplicated
+    allocation). -/
+theorem Adjudicator.symbolicTerminal_owedBy_le (s : Adjudicator E) (order : List (Address E))
+    (c : FixedPart) (d : Address E) :
+    s.owedBy c d ≤ (s.symbolicTerminal order).owedBy c d +
+      if s.CreditsTo c.address d then
+        (s.allocationOf c.address).paidTo (s.turboValueAlong order c.address) d
+      else 0 := by
+  have hfo := s.symbolicTerminal_finalOutcome order c
+  cases hf : s.finalOutcome c.address with
+  | none => unfold Adjudicator.owedBy; rw [hf]; exact Nat.zero_le _
+  | some outcome =>
+    obtain ⟨o⟩ := outcome
+    rw [hf] at hfo
+    have halloc : s.allocationOf c.address = o.dedup := by
+      unfold Adjudicator.allocationOf; rw [hf]
+    have hsa : s.symbolicAlloc order c.address =
+        (Allocation.chainPay (o.dedup.map Entry.dest) o (s.turboValueAlong order c.address)).1 := by
+      unfold Adjudicator.symbolicAlloc; rw [hf, halloc]
+    have hdd := (Allocation.chainPay_dedup (o.dedup.map Entry.dest) o
+      (s.turboValueAlong order c.address)).1
+    have h := Allocation.owed_le_chainPay_owed_add o.dedup (Allocation.dedup_nodup o)
+      (s.turboValueAlong order c.address) d
+    rw [← hdd, Allocation.owed_dedup, Allocation.owed_dedup] at h
+    simp only [Adjudicator.owedBy, hf, hfo, Option.isSome_some, if_true, hsa,
+      Adjudicator.CreditsTo, halloc]
+    simpa using h
+
+/-- Point 7. The symbolic terminal state is ahead of `s`. `chan`:
+    `symbolicAlloc_AheadOf`. `flow`: `symbolicTerminal_conservation` turns
+    the claim into "the credits of the channels in `L` are at most the
+    algorithm's credits to `d`". `symbolicTerminal_owedBy_le` bounds each
+    channel, and `sum_le_sum_of_support_subset` bounds the sum by the sum
+    along `order` (`turboValueAlong_eq_add_credits`). -/
+theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
+    (order : List (Address E)) (hord : s.IsTopologicalOrder order) :
+    s.Ahead (s.symbolicTerminal order) := by
+  set sg := s.symbolicTerminal order with hsg
+  refine ⟨fun c => ?_, fun d L hL => ?_⟩
+  · have hfo := s.symbolicTerminal_finalOutcome order c
+    rw [← hsg] at hfo
+    cases hf : s.finalOutcome c.address with
+    | none => rw [hf] at hfo; rw [hfo]; exact .none
+    | some outcome =>
+      obtain ⟨o⟩ := outcome
+      rw [hf] at hfo
+      rw [hfo]
+      simp only [Option.isSome_some, if_true]
+      refine .some ?_
+      rw [hsg, s.symbolicTerminal_balances_get hdag order hord]
+      exact s.symbolicAlloc_AheadOf order c o hf
+  · let g : Address E → Coins := fun m =>
+      if s.CreditsTo m d then (s.allocationOf m).paidTo (s.turboValueAlong order m) d else 0
+    have hsumL : (L.map (s.owedBy · d)).sum ≤
+        (L.map (sg.owedBy · d)).sum + ((L.map FixedPart.address).map g).sum := by
+      rw [List.map_map, ← List.sum_map_add]
+      exact List.sum_le_sum fun c _ => s.symbolicTerminal_owedBy_le order c d
+    have hsupp : ((L.map FixedPart.address).map g).sum ≤
+        ((order.filter (s.CreditsTo · d)).map g).sum := by
+      refine sum_le_sum_of_support_subset _ _
+        (hL.map fun a b h => Address.channel.inj h) (hord.1.filter _) g fun m _ hgm => ?_
+      have hcr : s.CreditsTo m d = true := by
+        by_contra hcr; exact hgm (by simp [g, hcr])
+      refine List.mem_filter.mpr ⟨hord.2.2 m (Or.inr fun hnil => hgm ?_), hcr⟩
+      simp [g, hnil, Allocation.paidTo, Allocation.dedup]
+    have hfilt : ((order.filter (s.CreditsTo · d)).map g).sum =
+        ((order.filter (s.CreditsTo · d)).map
+          (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
+      congr 1
+      refine List.map_congr_left fun m hm => ?_
+      simp [g, (List.mem_filter.mp hm).2]
+    have htv := turboValueAlong_eq_add_credits s hdag order hord d
+    have hcons := s.symbolicTerminal_conservation hdag order hord d
+    rw [← hsg] at hcons
+    unfold Coins at *
+    omega
 
 /-- Nitro-33, Nitro-34, Nitro-32. Nitro:836-837: "it is impossible to find a strategy
     that gives any node a value higher than allocated by this algorithm."
@@ -6663,7 +6817,51 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
     (hdag : net.chain.IsDAG) (n : Address E) (v x : Coins)
     (hv : net.chain.TurboValue n v)
     (h : CanObtainIn apps T HonestMove.IsTransfer n x net) : x ≤ v := by
-  sorry
+  -- `sg` is ahead of every state `p`'s strategy reaches: the adversary's
+  -- and `p`'s transfers move nothing on `sg`
+  -- (`symbolicTerminal_applyAll_unmoved`), and `Ahead.applyAll_sublist`
+  -- keeps the start state ahead. `dueTotal` at `n` never rises
+  -- (`dueTotal_applyAll_le`). At the end, `Ahead.flow` at `n` with
+  -- `symbolicTerminal_conservation` bounds the balance by the value.
+  obtain ⟨order, hord, rfl⟩ := hv
+  set sg := net.chain.symbolicTerminal order with hsg
+  have hcons := net.chain.symbolicTerminal_conservation hdag order hord n
+  rw [← hsg] at hcons
+  suffices hsuff : ∀ {net2 : NetworkState E p},
+      UnbeatableIn apps T HonestMove.IsTransfer (fun net' => x ≤ net'.chain.balances.get n) net2 →
+      net2.chain.Ahead sg → net2.chain.dueTotal n ≤ net.chain.dueTotal n →
+      x ≤ net.chain.turboValueAlong order n from
+    hsuff h (net.chain.symbolicTerminal_Ahead hdag order hord) le_rfl
+  intro net2 h2
+  induction h2 with
+  | @done net2 hgoal =>
+    intro hag hdt
+    have hflow := hag.flow n [] List.nodup_nil
+    simp only [List.map_nil, List.sum_nil, Nat.add_zero] at hflow
+    unfold Coins at *
+    omega
+  | @move net2 m hallow hfeas _ ih =>
+    intro hag hdt
+    cases m with
+    | wait dt => exact (hallow : False).elim
+    | react r =>
+      obtain ⟨a, b, hc, hs⟩ := hallow
+      obtain ⟨calls, sends⟩ := r
+      simp only at hc hs
+      subst hc hs
+      obtain ⟨net', hround⟩ := Threat.Round.exists T hfeas
+      have hih := ih net' hround
+      have hm : (HonestMove.react ⟨[Op.transfer a b], []⟩ : HonestMove E) =
+          HonestMove.chain (.transfer a b) := rfl
+      rw [hm, NetworkState.applyHonest_chain] at hih
+      rw [hm] at hround
+      obtain ⟨ops, hall, -, hchain⟩ := hround.transfer_applyAll hT
+      have hmatch := symbolicTerminal_applyAll_unmoved net.chain hdag order hord apps _ hall sg
+        (fun _ => rfl) (fun _ => rfl)
+      rw [hchain] at hih
+      exact hih (Ahead_right_congr hmatch.1 hmatch.2
+          (Adjudicator.Ahead.applyAll_sublist apps (List.Sublist.refl _) hall hag))
+        (le_trans (dueTotal_applyAll_le apps hall _ n) hdt)
 
 /-- Nitro-33, Nitro-35, Nitro-18. Nitro:837-839: "It is also not hard to construct a
     strategy for a node to obtain the value allocated by the algorithm, if
@@ -7005,24 +7203,6 @@ theorem balances_eq_of_mutual_ahead {t1 t2 : Adjudicator E} (h12 : t1.Ahead t2) 
                 show t1.balances.get (Address.channel c) = t2.balances.get (Address.channel c)
                 unfold Coins at hflow12 hflow21 ⊢
                 omega
-
-theorem Ahead_right_congr {sp sg sg' : Adjudicator E}
-    (hfo : ∀ n, sg.finalOutcome n = sg'.finalOutcome n) (hbal : ∀ n, sg.balances.get n = sg'.balances.get n)
-    (h : sp.Ahead sg) : sp.Ahead sg' := by
-  have hdueeq : ∀ d, sg.dueTotal d = sg'.dueTotal d := fun d => by
-    unfold Adjudicator.dueTotal; rw [hfo d]
-  have howedeq : ∀ (c : FixedPart) (d : Address E), sg.owedBy c d = sg'.owedBy c d := fun c d => by
-    unfold Adjudicator.owedBy; rw [hfo c.address]
-  refine ⟨fun c => ?_, fun d L hL => ?_⟩
-  · have hc := h.chan c
-    rw [FixedPart.address_eq] at hc ⊢
-    rw [hfo (Address.channel c), hbal (Address.channel c)] at hc
-    exact hc
-  · have hf := h.flow d L hL
-    rw [hdueeq d, hbal d] at hf
-    rw [show (L.map (sg.owedBy · d)) = (L.map (sg'.owedBy · d)) from
-      List.map_congr_left (fun x _ => howedeq x d)] at hf
-    exact hf
 
 /-- Nitro-36. Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result." Two exhausted transfer sequences from one Turbo state
