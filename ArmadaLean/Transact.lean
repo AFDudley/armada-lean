@@ -187,7 +187,7 @@ theorem transact_public_outputs_determined {N M : Nat} (w : TransactWitness N M)
 
 /--
 **The nullifiers one proof publishes are pairwise distinct**: the input-distinctness
-block (:145-161, commit `e79919d`) plus collision resistance of `Term.hash2` (by
+block (Transact.circom:145-161 at commit `e79919d`) plus collision resistance of `Term.hash2` (by
 construction, `ArmadaLean.Poseidon`) force the nullifiers of one proof to differ, so
 one proof cannot list the same note twice and count its value twice toward `sumIn`.
 This is not a no-double-spend theorem. The circuit cannot see earlier spends, and a
@@ -204,10 +204,11 @@ theorem transact_inputs_distinct_nullifiers {N M : Nat} (w : TransactWitness N M
 
 /--
 **Value is conserved as an integer equality** (SECURITY_REVIEW.md Finding 1
-fix): because every note value is range-checked below `2^120` (:120-129) and
+fix): because every note value is range-checked below `2^120` (Transact.circom:122-127
+at commit `e79919d`; :119-124 on upstream `main`) and
 there are at most 8 inputs and 4 outputs, both sums stay below the BN254
 scalar field prime, so the circuit's mod-`p` check `sumIn === sumOut`
-(:141-143) is an honest integer equality — no wraparound minting. Values are
+(Transact.circom:143 at `e79919d`; :140 on `main`) is an honest integer equality — no wraparound minting. Values are
 plain `Nat`, never hashed, so the symbolic `Term` model does not touch this
 theorem. -/
 theorem transact_value_conserved {N M : Nat} (w : TransactWitness N M)

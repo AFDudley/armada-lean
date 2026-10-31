@@ -147,10 +147,11 @@ structure OwnedConstrained {N M : Nat} (w : TransactOwnedWitness N M)
 /--
 **Value is conserved as an integer equality**, for the owned circuit, exactly
 as `transact_value_conserved` for Transact (SECURITY_REVIEW.md Finding 1
-fix): because every note value is range-checked below `2^120` (:112-121) and
+fix): because every note value is range-checked below `2^120`
+(TransactOwned.circom:114-119) and
 there are at most 8 inputs and 4 outputs, both sums stay below the BN254
 scalar field prime, so the circuit's mod-`p` check `sumIn === sumOut`
-(:133-135) is an honest integer equality. Rules out an owned spend that mints
+(TransactOwned.circom:135) is an honest integer equality. Rules out an owned spend that mints
 value by wraparound. Values are plain `Nat`, so the symbolic `Term` model
 does not touch this theorem. -/
 theorem transactOwned_value_conserved {N M : Nat} (w : TransactOwnedWitness N M)

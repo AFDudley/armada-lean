@@ -54,7 +54,10 @@ theorem fee_bounded (r : FeeRatio) (amount : Nat) : shieldFee r amount ≤ amoun
   omega
 
 /-- **Conservation: `base + fee = amount`.** The fee split is exact: every unit of the
-    shielded amount goes either to the pool (`base`) or to the fee recipient (`fee`). -/
+    shielded amount goes either to the pool (`base`) or to the fee recipient (`fee`).
+    Source: the inclusive branch of `_getFee`, `base = amount - (amount * _feeBP) /
+    BASIS_POINTS; fee = amount - base` (ShieldModule.sol:362-366), which both shield
+    paths call with `_isInclusive = true` (ShieldModule.sol:211, :326). -/
 theorem fee_conservation (r : FeeRatio) (amount : Nat) :
     shieldBase r amount + shieldFee r amount = amount :=
   Nat.sub_add_cancel (fee_bounded r amount)
