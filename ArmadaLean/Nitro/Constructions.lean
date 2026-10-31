@@ -33,12 +33,17 @@ def alloc (a : Address E) (x : Coins) : Entry E := ⟨a, .alloc x⟩
 
 /-- Nitro:848-851: "A ledger channel is a channel whose sole purpose is to
     provide funding to other channels... All ledger channels run the consensus
-    game." Both halves: the channel's kind is `ledger` (its funding role,
-    `FixedPart.kind`, operator ruling 2026-10-27, SATP §1 SATP:79-84), and its
-    app is the consensus game. The app alone does not make a channel a ledger
-    channel: a virtual channel may run any app (aln-d1a, 2026-10-29). -/
-def IsLedgerChannel (apps : Apps E) (c : FixedPart) : Prop :=
-  c.kind = .ledger ∧ apps c.appDef = consensusRules
+    game." The channel's `kind` field (operator ruling 2026-10-27, SATP §1
+    SATP:79-84) already decides "ledger channel"
+    (`ArmadaLean/Types/Channel.lean`'s `LedgerChannel`); `RunsConsensus` is
+    the separate fact that its app is the consensus game (operator ruling
+    2026-10-31: the two facts can disagree on a reachable state, so they
+    are two names, not one — `ArmadaLean/Types/Channel.lean`'s `LedgerChannel`
+    doc comment has the counterexample). The app alone does not make a
+    channel a ledger channel: a virtual channel may run any app
+    (aln-d1a, 2026-10-29). -/
+def FixedPart.RunsConsensus (apps : Apps E) (c : FixedPart) : Prop :=
+  apps c.appDef = consensusRules
 
 /-- Nitro:857 (equation 2): `⟦L : 10⟧, [L ↦ (A : 3, B : 1, χ : 6)]_{A,B}`, in
     general `⟦L : x⟧, [L ↦ (A : a, B : b, χ : c)]_{A,B}` (Nitro:945, eq 6).
@@ -62,7 +67,7 @@ def LedgerWithSub.outcome (w : LedgerWithSub E) : Outcome E :=
     is finalizable by `A` and `B`. -/
 def LedgerWithSub.Holds (apps : Apps E) (Ts : Threats E apps) (v : Views E) (w : LedgerWithSub E) :
     Prop :=
-  IsLedgerChannel apps w.L ∧ w.L.participants = [w.A, w.B] ∧
+  w.L.kind = .ledger ∧ w.L.RunsConsensus apps ∧ w.L.participants = [w.A, w.B] ∧
   v.HoldsBalance w.L.address (w.a + w.b + w.c) ∧
   v.FinalizableBy apps Ts w.L w.outcome [w.A, w.B]
 

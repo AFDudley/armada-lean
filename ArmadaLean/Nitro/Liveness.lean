@@ -7357,7 +7357,8 @@ theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (
     (hr' : (Nitro.network apps Ts).Reachable n') (hvn' : v' = n'.views)
     (A B : Participant) (dA dB : E) (L χ : FixedPart)
     (a b a' b' : Coins) (ha : a' ≤ a) (hb : b' ≤ b)
-    (hL : IsLedgerChannel apps L) (hLp : L.participants = [A, B]) (hχp : χ.participants = [A, B])
+    (hLk : L.kind = .ledger) (hLc : L.RunsConsensus apps) (hLp : L.participants = [A, B])
+    (hχp : χ.participants = [A, B])
     (hbal : v.HoldsBalance L.address (a + b)) (hbal' : v'.HoldsBalance L.address (a + b))
     (h1 : v.FinalizableBy apps Ts L (.allocation [alloc (.external dA) a, alloc (.external dB) b])
       [A, B])
@@ -8448,7 +8449,8 @@ theorem conclude_transfer_pays (apps : Apps E) {p : Participant} (T : Threat E p
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (A B : Participant) (dA dB : E)
-    (L L' : LedgerChannel apps) (χ : FixedPart) (a b c a' : Coins)
+    (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps) (χ : FixedPart)
+    (a b c a' : Coins)
     (hLp : (L : FixedPart).participants = [A, B])
     (hL'p : (L' : FixedPart).participants = [A, B]) (hLL' : (L : FixedPart) ≠ (L' : FixedPart))
     (hbal : v.HoldsBalance (L : FixedPart).address (a + b + c + a'))
@@ -8472,11 +8474,9 @@ theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Vie
       (v A) ∧
     FundedFor apps (Ts.T A) (L' : FixedPart) (a + b + c) (v A) ∧
     FundedFor apps (Ts.T B) (L' : FixedPart) (a + b + c) (v B) := by
-  obtain ⟨L, hL⟩ := L
-  obtain ⟨L', hL'⟩ := L'
-  obtain ⟨hLk, _hLapp⟩ := hL
-  obtain ⟨hL'k, hL'app⟩ := hL'
-  dsimp only at hLp hL'p hLL' hbal hconc hsent hopen hdur hpend hL'open hL'sent hL'out ⊢
+  obtain ⟨L, hLk⟩ := L
+  obtain ⟨L', hL'k⟩ := L'
+  dsimp only at hLp hL'p hLL' hbal hconc hsent hopen hdur hpend hL'open hL'sent hL'out hL'c ⊢
   have hA : A ∈ L.participants := by simp [hLp]
   have hB : B ∈ L.participants := by simp [hLp]
   have hA' : A ∈ L'.participants := by simp [hL'p]
@@ -8502,11 +8502,11 @@ theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Vie
       have hb2 : n2.chain.now < (v p).chain.now + 2 * (Ts.T p).ε := by
         rw [Nat.two_mul, ← Nat.add_assoc]
         exact lt_of_lt_of_le hε2 (Nat.add_le_add_right (le_of_lt hε1) _)
-      obtain ⟨hfo1, hfl1, hs1⟩ := channel_stays_open_round (Ts.ok p).toBounds hL'app hp'
+      obtain ⟨hfo1, hfl1, hs1⟩ := channel_stays_open_round (Ts.ok p).toBounds hL'c hp'
         (hdur p).2 (D := (v p).chain.now + 2 * (Ts.T p).ε) (v0now := (v p).chain.now) le_rfl
         hseq1 (by simpa [Op.targets] using hLL') (by simp) hb1 le_rfl (hL'open p)
         (hpend p).2 (hL'sent p)
-      exact (channel_stays_open_round (Ts.ok p).toBounds hL'app hp' (hdur p).2
+      exact (channel_stays_open_round (Ts.ok p).toBounds hL'c hp' (hdur p).2
         (D := (v p).chain.now + 2 * (Ts.T p).ε) (v0now := (v p).chain.now) le_rfl hseq2
         (by simpa [Op.targets] using hLL') (by simp) hb2 hseq1.now_le hfo1 hfl1 hs1).1
     have hU := conclude_transfer_pays apps (Ts.T p) (Ts.ok p) (v p) hLk hp hh hproof hΩ

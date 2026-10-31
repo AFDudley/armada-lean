@@ -55,56 +55,62 @@ def ofFixedPart? (c : FixedPart) (ε : Time) : Option (TimedChannel ε) :=
 
 end TimedChannel
 
-/-! ## `LedgerChannel`: the ledger encoding `IsLedgerChannel` already decides -/
+/-! ## `LedgerChannel`: the channel's own `kind`, not the app it runs -/
 
 /-
-  `c.kind = .ledger` and `IsLedgerChannel apps c` (`c.kind = .ledger ∧
-  apps c.appDef = consensusRules`, `Constructions.lean`) are NOT equivalent
-  on a reachable state. Checked (`.scratch/ledger_disagreement_check.lean`,
-  `lake env lean` clean): let `apps1 := fun _ => noRules` where `noRules :
-  Rules Nat` never supports anything, and let `c0 : FixedPart := ⟨[], 0,
-  ⟨0⟩, 2, .ledger⟩`. One `deposit` reaches a state `s1` where `c0` holds a
-  real balance (`s1.balances.get c0.address = 1`) and `Reachable apps1 s1`
-  holds. At `s1`, `c0.kind = .ledger` holds, but `IsLedgerChannel apps1 c0`
-  does not: `apps1` never maps `c0.appDef` to `consensusRules`. This
-  disagreement is reported, not resolved by this file: `deposit`,
-  `transfer` and `reclaim` (`Adjudicator.lean`) take no `apps` argument and
-  decide "ledger" from `kind` alone, a strictly lower-level, `apps`-free
-  notion than `IsLedgerChannel`. No statement moved to `LedgerChannel`
-  (`ledger_partial_withdrawal`, the one Liveness.lean use of
-  `IsLedgerChannel`) reads the `kind`-only notion; the `Adjudicator.lean`
-  operations and their Safety.lean theorems keep reading `kind` directly,
-  unchanged by this file.
+  Operator ruling 2026-10-31: being a ledger channel is the channel's own
+  property, `c.kind = .ledger`, which the on-chain operations
+  (`Adjudicator.deposit`/`transfer`/`reclaim`) already use. The consensus
+  app is a separate fact about the channel's app, not part of "ledger".
+
+  This splits the old `IsLedgerChannel apps c := c.kind = .ledger ∧ apps
+  c.appDef = consensusRules` (`Constructions.lean`, now removed). The two
+  conjuncts disagree on a reachable state: checked
+  (`.scratch/ledger_disagreement_check.lean`, `lake env lean` clean), with
+  `apps1 := fun _ => noRules` (a `Rules` value that never supports
+  anything) and `c0 : FixedPart := ⟨[], 0, ⟨0⟩, 2, .ledger⟩`. One `deposit`
+  reaches a state `s1` where `c0` holds a real balance
+  (`s1.balances.get c0.address = 1`) and `Reachable apps1 s1` holds. At
+  `s1`, `c0.kind = .ledger` holds, but `apps1 c0.appDef = consensusRules`
+  does not: `apps1` never maps `c0.appDef` to `consensusRules`. That
+  finding is why `LedgerChannel` carries only `kind`: a type that also
+  carried the app fact would hide, inside one name, two facts a reachable
+  state can pull apart. `FixedPart.RunsConsensus` (`Constructions.lean`)
+  is the separate, named premise a proof adds where it needs the app fact.
 -/
 
-/-- One encoding of "ledger channel": `kind` and `appDef` must agree
-    (`IsLedgerChannel`, `Constructions.lean`, operator ruling 2026-10-27,
-    SATP §1 SATP:79-84). `docs/lean/typed-library.md` §4, row `Channel.lean`.
-    See the note above: this is a different, stronger fact than the
-    `kind`-only notion `Adjudicator.lean`'s `deposit`/`transfer`/`reclaim`
-    decide; it is the one `ledger_partial_withdrawal` needs. -/
-structure LedgerChannel (apps : Apps E) where
+/-- A channel that is, by its own `kind` field, a ledger channel (operator
+    ruling 2026-10-31; see the note above). `docs/lean/typed-library.md`
+    §4, row `Channel.lean`. -/
+structure LedgerChannel where
   channel : FixedPart
-  isLedger : IsLedgerChannel apps channel
+  isLedger : channel.kind = .ledger
 
 namespace LedgerChannel
 
-variable {apps : Apps E}
-
 /-- Coercion to the carrier (`writing-lean.md` §3, rule 2 of
     `typed-library.md`). -/
-instance : CoeOut (LedgerChannel apps) FixedPart := ⟨LedgerChannel.channel⟩
+instance : CoeOut LedgerChannel FixedPart := ⟨LedgerChannel.channel⟩
 
-@[simp] theorem kind_eq (c : LedgerChannel apps) : (c : FixedPart).kind = .ledger := c.isLedger.1
+@[simp] theorem kind_eq (c : LedgerChannel) : (c : FixedPart).kind = .ledger := c.isLedger
 
-@[simp] theorem appDef_eq (c : LedgerChannel apps) :
-    apps (c : FixedPart).appDef = consensusRules := c.isLedger.2
+/-- Decidable smart constructor (`typed-library.md` rule 2): `kind = .ledger`
+    is decidable (`ChannelKind` has `DecidableEq`), unlike the old
+    `IsLedgerChannel`'s app conjunct. -/
+def ofFixedPart? (c : FixedPart) : Option LedgerChannel :=
+  if h : c.kind = .ledger then some ⟨c, h⟩ else none
 
--- No decidable smart constructor: `IsLedgerChannel`'s second conjunct,
--- `apps c.appDef = consensusRules`, is an equation on `Rules E`, a type
--- with no `DecidableEq` instance (`Rules.supports` is an arbitrary
--- function; `typed-library.md` rule 2 makes the constructor conditional
--- on decidability).
+@[simp] theorem ofFixedPart?_eq_some_iff {c : FixedPart} {t : LedgerChannel} :
+    ofFixedPart? c = some t ↔ (t : FixedPart) = c := by
+  unfold ofFixedPart?
+  split
+  · constructor
+    · intro h; cases h; rfl
+    · intro h; cases t with
+      | mk tc htc => cases h; rfl
+  · constructor
+    · intro h; cases h
+    · intro h; subst h; rename_i hcon; exact absurd t.isLedger hcon
 
 end LedgerChannel
 

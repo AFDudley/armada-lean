@@ -1755,7 +1755,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) := by
   refine ⟨nLWF.views, nLWF, wLSF, nLWF_reach, rfl,
-    ⟨⟨rfl, rfl⟩, rfl, fun r => ?_, nLWF_finalizable⟩, rfl, by decide,
+    ⟨rfl, rfl, rfl, fun r => ?_, nLWF_finalizable⟩, rfl, by decide,
     fun r => by rw [nLWF_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLWF_views_chain]; exact gLWF_balance_cLWF
   · by_cases hrp0 : r = p0
@@ -1777,7 +1777,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     w.Holds apps0 (Ts apps0) v ∧ w.χ.kind = .ledger ∧
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) := by
-  refine ⟨nLW.views, nLW, wLS, nLW_reach, rfl, ⟨⟨rfl, rfl⟩, rfl, fun r => ?_, nLW_finalizable⟩,
+  refine ⟨nLW.views, nLW, wLS, nLW_reach, rfl, ⟨rfl, rfl, rfl, fun r => ?_, nLW_finalizable⟩,
     rfl, fun r => by rw [nLW_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLW_views_chain]; exact zero_g0 _
   · by_cases hrp0 : r = p0
@@ -2153,7 +2153,7 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB
     (L χ : FixedPart) (a b a' b' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     (Nitro.network apps0 (Ts apps0)).Reachable n' ∧ v' = n'.views ∧
-    a' ≤ a ∧ b' ≤ b ∧ IsLedgerChannel apps0 L ∧
+    a' ≤ a ∧ b' ≤ b ∧ L.kind = .ledger ∧ L.RunsConsensus apps0 ∧
     L.participants = [A, B] ∧ χ.participants = [A, B] ∧
     v.HoldsBalance L.address (a + b) ∧ v'.HoldsBalance L.address (a + b) ∧
     v.FinalizableBy apps0 (Ts apps0) L
@@ -2167,7 +2167,7 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB
       (.allocation [alloc (.external dA) a', alloc (.external dB) b']) [A, B] ∧
     (∀ p, p = A ∨ p = B → (v p).chain = (v' p).chain) := by
   refine ⟨nOpenF.views, nOpenF'.views, nOpenF, nOpenF', p0, q0, 0, 1, cLWF, cχF, 2, 3, 2, 3,
-    nOpenF_reach, rfl, nOpenF'_reach, rfl, le_rfl, le_rfl, ⟨rfl, rfl⟩, rfl, rfl, ?_, ?_,
+    nOpenF_reach, rfl, nOpenF'_reach, rfl, le_rfl, le_rfl, rfl, rfl, rfl, rfl, ?_, ?_,
     nTwoCh_finalizable_fst rfl rfl cLWF_ne_cχF.symm rfl rfl rfl rfl rfl rfl rfl,
     nTwoCh_finalizable_snd rfl rfl cLWF_ne_cχF rfl rfl rfl rfl rfl rfl rfl,
     nTwoCh_finalizable_fst rfl rfl cLWF_ne_cχF.symm rfl rfl rfl rfl rfl rfl rfl,
@@ -2197,7 +2197,7 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a
     (∀ p, p = w.A ∨ p = w.B → (v p).chain = (v' p).chain) := by
   refine ⟨nOpenF'.views, nCloseF'.views, nOpenF', nCloseF', wLSF, 2, 3,
     nOpenF'_reach, rfl, nCloseF'_reach, rfl, rfl,
-    ⟨⟨rfl, rfl⟩, rfl, ?_, nTwoCh_finalizable_fst rfl rfl cLWF_ne_cχF.symm rfl rfl rfl rfl rfl rfl rfl⟩,
+    ⟨rfl, rfl, rfl, ?_, nTwoCh_finalizable_fst rfl rfl cLWF_ne_cχF.symm rfl rfl rfl rfl rfl rfl rfl⟩,
     nTwoCh_finalizable_snd rfl rfl cLWF_ne_cχF rfl rfl rfl rfl rfl rfl rfl,
     nOneCh_finalizable rfl rfl rfl rfl rfl rfl rfl rfl, ?_,
     fun r _ => by simp only [nOpenF', nCloseF', nTwoCh_views_chain, nOneCh_views_chain]⟩
@@ -2236,7 +2236,8 @@ theorem nPWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPWF :=
   nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher
 
 example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
-    (L L' : LedgerChannel apps0) (χ : FixedPart) (a b c a' : Coins),
+    (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps0) (χ : FixedPart)
+    (a b c a' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     (L : FixedPart).participants = [A, B] ∧ (L' : FixedPart).participants = [A, B] ∧
     (L : FixedPart) ≠ (L' : FixedPart) ∧
@@ -2255,7 +2256,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = (L' : FixedPart) → t.state.isFinal = false) ∧
     v.FinalizableBy apps0 (Ts apps0) (L' : FixedPart)
       (.allocation [alloc (.external dA) a, alloc (.external dB) b, alloc χ.address c]) [A, B] := by
-  refine ⟨nPWF.views, nPWF, p0, q0, 0, 1, ⟨cLWF, ⟨rfl, rfl⟩⟩, ⟨cL2F, ⟨rfl, rfl⟩⟩, c3, 1, 1, 1, 2,
+  refine ⟨nPWF.views, nPWF, p0, q0, 0, 1, ⟨cLWF, rfl⟩, ⟨cL2F, rfl⟩, rfl, c3, 1, 1, 1, 2,
     nPWF_reach, rfl, rfl, rfl, cLWF_ne_cL2F, ?_, ?_, ?_,
     fun r => by simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_finalizedWith _,
     fun _ => ⟨(by decide : 2 * 1 ≤ 2), (by decide : 2 * 1 ≤ 2)⟩, ?_,
