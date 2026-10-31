@@ -1,0 +1,46 @@
+status: completed
+pebble_id: aln-dbf
+summary: >
+  Proved turbo_order_independent in ArmadaLean/Nitro/Liveness.lean with a real
+  Lean proof, no sorry in its own proof body, and no change to the theorem's
+  statement. The proof adds ~380 lines of new helper lemmas directly above the
+  theorem: a dest-list invariance lemma for applyAll under OnlyTransfers (used
+  to transport IsDAG from the start state to any OnlyTransfers-derived state),
+  a fixed-point lemma showing an exhausted DAG state is unmoved pointwise
+  (through finalOutcome and balances.get) by any further OnlyTransfers list,
+  and a congruence lemma transporting the existing Adjudicator.Ahead relation
+  along that pointwise match. The main proof builds t1 = applyAll ops1 s and
+  t2 = applyAll ops2 s, uses the already-proven Ahead.applyAll_sublist (since
+  ops1 and ops2 are each sublists of their own concatenation applied to s) to
+  get t2.Ahead(applyAll(ops1++ops2)s) and t1.Ahead(applyAll(ops2++ops1)s),
+  collapses each concatenated run back to t1/t2 via the new fixed-point
+  absorption lemma (using hx1/hx2 exhaustion), yielding mutual t1.Ahead t2 and
+  t2.Ahead t1, then combines the AheadOf.owed_le and Ahead.flow fields in both
+  directions (plus dest-list equality back to s) to force equal balances at
+  every address, external and channel alike. Verified by running
+  `scripts/check.sh --json turbo_order_independent` from repo root: output is
+  `{"build_ok": true, ..., "theorem_in_sorry": false, ... "signatures_ok":
+  true, "nonvacuity_ok": true, "reach_ok": true}`; sorry_count dropped from 15
+  to 14 (baseline 46). Also ran a full `lake build` (834 jobs) to confirm the
+  whole project still builds clean. Developed and verified the whole lemma
+  chain first in a scratch file outside the tree (imported ArmadaLean.Nitro.Liveness,
+  iterated with `lake env lean`) before transplanting the final, fully
+  type-checked text into Liveness.lean in one edit, so every line landed
+  already proven rather than being debugged in place.
+cost: "~950k tokens"
+commits:
+  - "c3c93a4"
+verify_transcript:
+  hooks:
+    - name: "lake build (full project, 834 jobs)"
+      outcome: passed
+      duration_s: 28
+    - name: "scripts/check.sh --json turbo_order_independent"
+      outcome: passed
+      duration_s: 7
+e2e_gate:
+  spec: contracts/specs/derived-aln-dbf.spec.json
+  command: "scripts/check.sh --json turbo_order_independent"
+  result: "passed"
+  ran_at_sha: "c3c93a4"
+  mocks_in_path: false
