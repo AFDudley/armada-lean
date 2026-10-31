@@ -1302,6 +1302,214 @@ theorem chainPay_exhausted (o : Allocation E) (hg : Coins) (d : Address E) :
       exact Or.inr (chainPay_processes_alloc (o.map Entry.dest) o hg d hmem amt hfod)
     | guarantee x ps => exact Or.inl hkind
 
+
+theorem chainPay_dedup_total_conservation (ds : List (Address E)) (og : Allocation E) (hg : Coins) :
+    (chainPay ds og hg).2 + (og.dedup.total - (chainPay ds og hg).1.dedup.total) = hg ∧
+    (chainPay ds og hg).1.dedup.total ≤ og.dedup.total := by
+  induction ds generalizing og hg with
+  | nil => simp [chainPay]
+  | cons e ds ih =>
+    cases hf : og.find e with
+    | none =>
+      rw [chainPay_cons]
+      simp only [hf]
+      exact ih og hg
+    | some entry =>
+      obtain ⟨ee, item⟩ := entry
+      cases item with
+      | alloc amt =>
+        rw [chainPay_cons]
+        simp only [hf]
+        have howed : og.owed e = amt := by unfold Allocation.owed; rw [hf]; rfl
+        have hxo : og.paidTo hg e ≤ og.owed e := by
+          rw [howed]
+          have := Allocation.paidTo_le_owed hg og e
+          rwa [howed] at this
+        have htot : (og.reduceOwed e (og.paidTo hg e)).dedup.total + og.paidTo hg e =
+            og.dedup.total := Allocation.dedup_total_reduceOwed og e hxo
+        obtain ⟨ihc, ihle⟩ := ih (og.reduceOwed e (og.paidTo hg e)) (hg - og.paidTo hg e)
+        have hxh : og.paidTo hg e ≤ hg := Allocation.paidTo_le_held hg og e
+        refine ⟨?_, ?_⟩
+        · have h1 := ihc
+          have h2 := htot
+          have h3 := ihle
+          have h4 := hxh
+          unfold Coins at h1 h2 h3 h4 ⊢
+          omega
+        · have h1 := ihle
+          have h2 := htot
+          unfold Coins at h1 h2 ⊢
+          omega
+      | guarantee amt ps =>
+        rw [chainPay_cons]
+        simp only [hf]
+        exact ih og hg
+
+theorem chainPay_owed_invariant (ds : List (Address E)) (og : Allocation E) (hg : Coins)
+    (d : Address E) (h0 : og.paidTo hg d = 0) :
+    (chainPay ds og hg).1.owed d = og.owed d := by
+  induction ds generalizing og hg with
+  | nil => rfl
+  | cons e ds ih =>
+    rw [chainPay_cons]
+    cases hfe : og.find e with
+    | none => simp only [hfe]; exact ih og hg h0
+    | some entry =>
+      obtain ⟨ee, item⟩ := entry
+      cases item with
+      | alloc amt' =>
+        simp only [hfe]
+        have h0' := paidTo_zero_reduceOwed og hg d e h0
+        rw [ih (og.reduceOwed e (og.paidTo hg e)) (hg - og.paidTo hg e) h0']
+        rw [owed_reduceOwed]
+        by_cases hed : d = e
+        · subst hed; rw [if_pos rfl, h0]; unfold Coins; omega
+        · rw [if_neg hed]
+      | guarantee amt' ps =>
+        simp only [hfe]
+        exact ih og hg h0
+
+
+theorem chainPay_append (ds1 ds2 : List (Address E)) (og : Allocation E) (hg : Coins) :
+    chainPay (ds1 ++ ds2) og hg =
+      chainPay ds2 (chainPay ds1 og hg).1 (chainPay ds1 og hg).2 := by
+  induction ds1 generalizing og hg with
+  | nil => rfl
+  | cons d ds1 ih =>
+    rw [List.cons_append, chainPay_cons, chainPay_cons]
+    cases hfd : og.find d with
+    | none => exact ih og hg
+    | some entry =>
+      obtain ⟨ed, item⟩ := entry
+      cases item with
+      | alloc amt => exact ih _ _
+      | guarantee amt ps => exact ih og hg
+
+/-- An entry never targeted during a `chainPay` run is never found at
+    (hence never touched at) any later point. -/
+theorem chainPay_find_unchanged (ds : List (Address E)) (og : Allocation E) (hg : Coins)
+    (d : Address E) (hd : d ∉ ds) :
+    (chainPay ds og hg).1.find d = og.find d := by
+  induction ds generalizing og hg with
+  | nil => rfl
+  | cons e ds ih =>
+    simp only [List.mem_cons, not_or] at hd
+    obtain ⟨hed, hd⟩ := hd
+    rw [chainPay_cons]
+    cases hfe : og.find e with
+    | none => simp only [hfe]; exact ih og hg hd
+    | some entry =>
+      obtain ⟨ee, item⟩ := entry
+      cases item with
+      | alloc amt' =>
+        simp only [hfe]
+        rw [ih (og.reduceOwed e (og.paidTo hg e)) (hg - og.paidTo hg e) hd]
+        rw [find_reduceOwed, if_neg hed]
+      | guarantee amt' ps => simp only [hfe]; exact ih og hg hd
+
+/-- Paying `c`'s own first entry down leaves `d`'s `paidTo` unchanged, as
+    long as `c` precedes `d` in priority order: both the running budget and
+    `d`'s own coins due before it drop by the same amount
+    (`dueBefore_reduceOwed`, `owed_le_dueBefore_of_precedes`). -/
+theorem paidTo_eq_reduceOwed_of_precedes (og : Allocation E) (hg : Coins) (d c : Address E)
+    (hp : og.Precedes c d) :
+    (og.reduceOwed c (og.paidTo hg c)).paidTo (hg - og.paidTo hg c) d = og.paidTo hg d := by
+  have hcd : c ≠ d := fun h => not_precedes_self og d (h ▸ hp)
+  have hxo : og.paidTo hg c ≤ og.owed c := paidTo_le_owed hg og c
+  have hxd : og.paidTo hg c ≤ og.dueBefore d := le_trans hxo (owed_le_dueBefore_of_precedes hp)
+  have h1 := dueBefore_reduceOwed og d c hxo
+  rw [if_pos hp] at h1
+  have h3 := owed_reduceOwed og c d (og.paidTo hg c)
+  rw [if_neg (Ne.symm hcd)] at h3
+  rw [paidTo_eq_min hg og d]
+  conv_lhs => rw [paidTo_eq_min]
+  rw [h3]
+  have heq : hg - og.paidTo hg c -
+      (og.reduceOwed c (og.paidTo hg c)).dueBefore d = hg - og.dueBefore d := by
+    unfold Coins at *
+    omega
+  rw [heq]
+
+theorem reduceOwed_map_dest (o : Allocation E) (c : Address E) (x : Coins) :
+    (o.reduceOwed c x).map Entry.dest = o.map Entry.dest := by
+  induction o with
+  | nil => rfl
+  | cons e t ih =>
+    rw [reduceOwed_cons]
+    by_cases h : e.dest = c
+    · simp [h]
+    · simp [h, ih]
+
+/-- `Precedes` only reads the destination list, which `reduceOwed` never
+    changes. -/
+theorem precedes_reduceOwed' (o : Allocation E) (e : Address E) (x : Coins) (c d : Address E) :
+    (o.reduceOwed e x).Precedes c d ↔ o.Precedes c d := by
+  unfold Precedes
+  rw [dedup_reduceOwed, reduceOwed_map_dest]
+
+/-- Chains `paidTo_eq_reduceOwed_of_precedes` over a whole run: processing
+    only destinations that precede `d` never moves `d`'s own `paidTo`
+    reading. -/
+theorem chainPay_paidTo_eq_of_precedes (ds : List (Address E)) (og : Allocation E) (hg : Coins)
+    (d : Address E) (hds : ∀ c ∈ ds, og.Precedes c d) :
+    (chainPay ds og hg).1.paidTo (chainPay ds og hg).2 d = og.paidTo hg d := by
+  induction ds generalizing og hg with
+  | nil => rfl
+  | cons e ds ih =>
+    rw [chainPay_cons]
+    have hpe : og.Precedes e d := hds e List.mem_cons_self
+    cases hfe : og.find e with
+    | none => simp only [hfe]; exact ih og hg (fun c hc => hds c (List.mem_cons_of_mem e hc))
+    | some entry =>
+      obtain ⟨ee, item⟩ := entry
+      cases item with
+      | alloc amt' =>
+        simp only [hfe]
+        have heq := paidTo_eq_reduceOwed_of_precedes og hg d e hpe
+        have hds' : ∀ c ∈ ds, (og.reduceOwed e (og.paidTo hg e)).Precedes c d := by
+          intro c hc
+          rw [precedes_reduceOwed']
+          exact hds c (List.mem_cons_of_mem e hc)
+        rw [ih (og.reduceOwed e (og.paidTo hg e)) (hg - og.paidTo hg e) hds']
+        exact heq
+      | guarantee amt' ps =>
+        simp only [hfe]
+        exact ih og hg (fun c hc => hds c (List.mem_cons_of_mem e hc))
+
+
+theorem chainPay_owed_eq (og : Allocation E) (hnd : (og.map Entry.dest).Nodup) (hg : Coins)
+    (d : Address E) (amt : Coins) (hf : og.find d = some ⟨d, .alloc amt⟩) :
+    og.owed d - (chainPay (og.map Entry.dest) og hg).1.owed d = og.paidTo hg d := by
+  have hdmem : d ∈ og.map Entry.dest := find_mem_map_dest hf
+  obtain ⟨pre, suf, heq, hdpre⟩ := List.eq_append_cons_of_mem hdmem
+  have hprecedes : ∀ c ∈ pre, og.Precedes c d := by
+    intro c hc
+    unfold Precedes
+    rw [dedup_eq_self_of_nodup hnd, heq, List.takeWhile_append_of_pos]
+    · exact List.mem_append_left _ hc
+    · intro x hx
+      by_cases hxd : x = d
+      · subst hxd
+        exact absurd hx hdpre
+      · simp [hxd]
+  rw [heq, chainPay_append, chainPay_cons]
+  set og1 := (chainPay pre og hg).1 with hog1
+  set hg1 := (chainPay pre og hg).2 with hhg1
+  have hpaidto : og1.paidTo hg1 d = og.paidTo hg d :=
+    chainPay_paidTo_eq_of_precedes pre og hg d hprecedes
+  have hfind1 : og1.find d = og.find d := chainPay_find_unchanged pre og hg d hdpre
+  rw [hfind1, hf]
+  rw [chainPay_owed_invariant suf (og1.reduceOwed d (og1.paidTo hg1 d))
+    (hg1 - og1.paidTo hg1 d) d (paidTo_reduceOwed_self_zero og1 hg1 d)]
+  rw [owed_reduceOwed, if_pos rfl]
+  have hown1 : og1.owed d = og.owed d := by
+    unfold Allocation.owed
+    rw [hfind1]
+  rw [hown1, hpaidto]
+  have hxo := paidTo_le_owed hg og d
+  unfold Coins at *
+  omega
+
 end Allocation
 
 /-! ## Channels (`Channel.lean`) -/
