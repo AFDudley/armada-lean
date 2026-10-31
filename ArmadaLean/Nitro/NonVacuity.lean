@@ -64,81 +64,81 @@ def sR : Adjudicator Nat :=
 /-! ## `Safety.lean` -/
 
 /-- `channel_address_inj`. -/
-example : ∃ c c' : FixedPart, (c.address : Address Nat) = c'.address := ⟨c1, c1, rfl⟩
+theorem channel_address_inj.nonvacuity : ∃ c c' : FixedPart, (c.address : Address Nat) = c'.address := ⟨c1, c1, rfl⟩
 
 /-- `balances_absent_zero`. -/
-example : ∃ (b : Balances Nat) (a : Address Nat), ∀ e ∈ b, e.1 ≠ a :=
+theorem balances_absent_zero.nonvacuity : ∃ (b : Balances Nat) (a : Address Nat), ∀ e ∈ b, e.1 ≠ a :=
   ⟨[], d0, fun _ h => absurd h (List.not_mem_nil)⟩
 
 /-- `held_eq_channel_balances`. -/
 example : ∃ s : Adjudicator Nat, Reachable apps0 s := ⟨g0, .refl⟩
 
 /-- `deposit_effects`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (e x : Coins) (s' : Adjudicator Nat),
+theorem deposit_effects.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (e x : Coins) (s' : Adjudicator Nat),
     s.deposit c.address e x = some s' := ⟨g0, c1, 0, 1, _, rfl⟩
 
 /-- `deposit_requires_expectedHeld`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (e : Coins), s.balances.get c.address ≠ e :=
+theorem deposit_requires_expectedHeld.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (e : Coins), s.balances.get c.address ≠ e :=
   ⟨g0, c1, 1, by decide⟩
 
 /-- `deposit_respects_funding_order`. -/
-example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (c : FixedPart) (o : Allocation Nat)
+theorem deposit_respects_funding_order.nonvacuity : ∃ (s s' : Adjudicator Nat) (caller : Participant) (c : FixedPart) (o : Allocation Nat)
     (k : Nat) (e : Entry Nat), Reachable apps0 s ∧ o.dedup = o ∧ o[k]? = some e ∧
     s.apply apps0 caller (.deposit c.address (o.aheadOf k) e.amount) = some s' :=
   ⟨g0, sDep, p0, c1, o1, 0, alloc d0 1, .refl, by decide, by decide, rfl⟩
 
 /-- `deposit_can_happen`. -/
-example : ∃ (c : FixedPart), c.kind = .ledger := ⟨c1, by decide⟩
+theorem deposit_can_happen.nonvacuity : ∃ (c : FixedPart), c.kind = .ledger := ⟨c1, by decide⟩
 
 /-- `deposits_in_order_succeed`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart), c.kind = .ledger ∧
+theorem deposits_in_order_succeed.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart), c.kind = .ledger ∧
     s.balances.get c.address = 0 :=
   ⟨g0, c1, by decide, by decide⟩
 
 /-- `held_falls_only_by_payout`. -/
-example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
+theorem held_falls_only_by_payout.nonvacuity : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
     Reachable apps0 s ∧ s.apply apps0 caller op = some s' ∧ s'.held < s.held :=
   ⟨sCon, _, p0, .transfer c1 d0, sCon_reach, rfl, by decide⟩
 
 /-- `channel_balance_falls_only_by_redistribution`. -/
-example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat) (c : FixedPart),
+theorem channel_balance_falls_only_by_redistribution.nonvacuity : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat) (c : FixedPart),
     s.apply apps0 caller op = some s' ∧ s'.balances.get c.address < s.balances.get c.address :=
   ⟨sCon, _, p0, .transfer c1 d0, c1, rfl, by decide⟩
 
 /-- `paid_out_monotone`. -/
-example : ∃ s s' : Adjudicator Nat, Step apps0 s s' := ⟨g0, sDep, .mk _ _ _ _ g0_dep⟩
+theorem paid_out_monotone.nonvacuity : ∃ s s' : Adjudicator Nat, Step apps0 s s' := ⟨g0, sDep, .mk _ _ _ _ g0_dep⟩
 
 /-- `payout_priority_formula`. -/
-example : ∃ (o : Allocation Nat) (k : Nat) (e : Entry Nat), o[k]? = some e :=
+theorem payout_priority_formula.nonvacuity : ∃ (o : Allocation Nat) (k : Nat) (e : Entry Nat), o[k]? = some e :=
   ⟨o1, 0, alloc d0 1, by decide⟩
 
 /-- `payout_earlier_paid_in_full`. -/
-example : ∃ (held : Coins) (o : Allocation Nat) (i j : Nat) (ei ej : Entry Nat) (pi pj : Coins),
+theorem payout_earlier_paid_in_full.nonvacuity : ∃ (held : Coins) (o : Allocation Nat) (i j : Nat) (ei ej : Entry Nat) (pi pj : Coins),
     o[i]? = some ei ∧ o[j]? = some ej ∧ i < j ∧ (o.payout held)[i]? = some (ei.dest, pi) ∧
     (o.payout held)[j]? = some (ej.dest, pj) ∧ 0 < pj :=
   ⟨2, [alloc d0 1, alloc d1 1], 0, 1, alloc d0 1, alloc d1 1, 1, 1, by decide, by decide, by decide,
     by decide, by decide, by decide⟩
 
 /-- `affords_when_fully_funded`. -/
-example : ∃ (held : Coins) (o : Allocation Nat), o.total ≤ held := ⟨1, o1, by decide⟩
+theorem affords_when_fully_funded.nonvacuity : ∃ (held : Coins) (o : Allocation Nat), o.total ≤ held := ⟨1, o1, by decide⟩
 
 /-- `transfer_effects`. -/
-example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
+theorem transfer_effects.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
     Reachable apps0 s ∧ s.transfer a b = some s' := ⟨sCon, c1, d0, _, sCon_reach, rfl⟩
 
 /-- `transfer_can_happen`. -/
-example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (o : Allocation Nat) (amt : Coins),
+theorem transfer_can_happen.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (o : Allocation Nat) (amt : Coins),
     a.kind = .ledger ∧ b.fundable = true ∧
     s.finalOutcome a.address = some (.allocation o) ∧ o.find b = some ⟨b, .alloc amt⟩ :=
   ⟨sCon, c1, d0, o1, 1, by decide, by decide, by decide, by decide⟩
 
 /-- `transfer_fails_otherwise`. -/
-example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat),
+theorem transfer_fails_otherwise.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat),
     ∀ o, s.finalOutcome a.address = some (.allocation o) → ∀ amt, o.find b ≠ some ⟨b, .alloc amt⟩ :=
   ⟨g0, c1, d0, fun o h => by simp [g0, Adjudicator.genesis, Adjudicator.statusOf] at h⟩
 
 /-- `transfer_zero_moves_nothing`. -/
-example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
+theorem transfer_zero_moves_nothing.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
     s.transfer a b = some s' ∧
     ∀ o, s.finalOutcome a.address = some (.allocation o) → o.paidTo (s.balances.get a.address) b = 0 :=
   ⟨sCon.setStatus c1 (.finalized 0 (.allocation [alloc d0 0]) (.allocation [alloc d0 0])), c1, d0, _,
@@ -148,53 +148,53 @@ example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adju
       subst h; decide⟩
 
 /-- `transfer_requires_finalized`. -/
-example : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
+theorem transfer_requires_finalized.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
     s.transfer a b = some s' := ⟨sCon, c1, d0, _, rfl⟩
 
 /-- `redistribution_ignores_caller`. -/
-example : ∃ op : Op Nat, op.isRedistribution = true := ⟨.transfer c1 d0, rfl⟩
+theorem redistribution_ignores_caller.nonvacuity : ∃ op : Op Nat, op.isRedistribution = true := ⟨.transfer c1 d0, rfl⟩
 
 /-- `redistribution_conserves_total`. -/
-example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
+theorem redistribution_conserves_total.nonvacuity : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
     Reachable apps0 s ∧ op.isRedistribution = true ∧ s.apply apps0 caller op = some s' :=
   ⟨sCon, _, p0, .transfer c1 d0, sCon_reach, rfl, rfl⟩
 
 /-- `FinalizedTwoWays.mono`. -/
-example : ∃ (s s' : Adjudicator Nat) (c : FixedPart) (Ω Ω' : Outcome Nat),
+theorem redistribution_conserves_total.nonvacuity_2 : ∃ (s s' : Adjudicator Nat) (c : FixedPart) (Ω Ω' : Outcome Nat),
     FinalizedTwoWays apps0 s c Ω ∧ s.now ≤ s'.now ∧ Redistributed Ω Ω' :=
   ⟨sCon, sCon, c1, _, _, ⟨sDep, sCon, p0, sDep_reach, .inl ⟨ssF, sDep_con, by decide, .refl⟩⟩,
     le_rfl, .refl⟩
 
 /-- `statusOrigin_of_eq`. -/
-example : ∃ (s s' : Adjudicator Nat) (c : FixedPart),
+theorem redistribution_conserves_total.nonvacuity_3 : ∃ (s s' : Adjudicator Nat) (c : FixedPart),
     StatusOrigin apps0 s c ∧ s'.statusOf c = s.statusOf c ∧ s.now ≤ s'.now :=
   ⟨g0, g0, c1, trivial, rfl, le_rfl⟩
 
 /-- `statusOrigin_redistribute`. -/
-example : ∃ (s s' : Adjudicator Nat) (c : FixedPart) (Ω Ω' : Outcome Nat),
+theorem redistribution_conserves_total.nonvacuity_4 : ∃ (s s' : Adjudicator Nat) (c : FixedPart) (Ω Ω' : Outcome Nat),
     StatusOrigin apps0 s c ∧ (s.statusOf c).finalOutcome s.now = some Ω ∧ Redistributed Ω Ω' ∧
     s.now ≤ s'.now ∧ s'.statusOf c = (s.statusOf c).withOutcome Ω' :=
   ⟨sCon, sCon, c1, _, _, ⟨sDep, sCon, p0, sDep_reach, .inl ⟨ssF, sDep_con, by decide, .refl⟩⟩,
     rfl, .refl, le_rfl, rfl⟩
 
 /-- `statusOrigin_step`. -/
-example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
+theorem redistribution_conserves_total.nonvacuity_5 : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
     Reachable apps0 s ∧ (∀ c, StatusOrigin apps0 s c) ∧ s.apply apps0 caller op = some s' :=
   ⟨g0, sDep, p0, _, .refl, fun _ => trivial, g0_dep⟩
 
 /-- `statusOrigin_reachable`. -/
-example : ∃ s : Adjudicator Nat, Reachable apps0 s := ⟨g0, .refl⟩
+theorem redistribution_conserves_total.nonvacuity_6 : ∃ s : Adjudicator Nat, Reachable apps0 s := ⟨g0, .refl⟩
 
 /-- `finalized_two_ways`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (Ω : Outcome Nat),
+theorem finalized_two_ways.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (Ω : Outcome Nat),
     Reachable apps0 s ∧ s.finalOutcome c.address = some Ω := ⟨sCon, c1, _, sCon_reach, rfl⟩
 
 /-- `finalized_permanent`. -/
-example : ∃ (s s' : Adjudicator Nat) (c : FixedPart), Step apps0 s s' ∧ s.mode c = .finalized :=
+theorem finalized_permanent.nonvacuity : ∃ (s s' : Adjudicator Nat) (c : FixedPart), Step apps0 s s' ∧ s.mode c = .finalized :=
   ⟨sCon, _, c1, .mk p0 (.tick 1) _ _ rfl, by decide⟩
 
 /-- `finalized_outcome_only_redistributed`. -/
-example : ∃ (s s' : Adjudicator Nat) (c : FixedPart) (Ω : Outcome Nat),
+theorem finalized_outcome_only_redistributed.nonvacuity : ∃ (s s' : Adjudicator Nat) (c : FixedPart) (Ω : Outcome Nat),
     Step apps0 s s' ∧ s.finalOutcome c.address = some Ω :=
   ⟨sCon, _, c1, _, .mk p0 (.tick 1) _ _ rfl, rfl⟩
 
@@ -203,23 +203,23 @@ def stO : State Nat := ⟨c1, 1, .allocation o1, false, .opaque 0⟩
 def ssO : SignedState Nat := ⟨stO, [p0]⟩
 
 /-- `challenge_requires`. -/
-example : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
+theorem challenge_requires.nonvacuity : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
     (proof : SupportProof Nat) (candidate : State Nat) (s' : Adjudicator Nat),
     s.challenge apps0 challenger c proof candidate = some s' := ⟨g0, p0, c1, [ssO], stO, _, rfl⟩
 
 /-- `challenge_fails_when_finalized`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart), s.mode c = .finalized := ⟨sCon, c1, by decide⟩
+theorem challenge_fails_when_finalized.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart), s.mode c = .finalized := ⟨sCon, c1, by decide⟩
 
 /-- The status of `c1` after the challenge with `stO`. -/
 def sCh : Adjudicator Nat := g0.setStatus c1 (.challenged 1 ⟨stO, 2⟩)
 
 /-- `rechallenge_equal_turn_fails`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (candidate : State Nat),
+theorem rechallenge_equal_turn_fails.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (candidate : State Nat),
     s.mode c = .challenge ∧ candidate.turnNum ≤ (s.statusOf c).turnNumRecord :=
   ⟨sCh, c1, stO, by decide, by decide⟩
 
 /-- `challenge_can_happen`. -/
-example : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
+theorem challenge_can_happen.nonvacuity : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
     (proof : SupportProof Nat) (candidate : State Nat),
     challenger ∈ c.participants ∧ (apps0 c.appDef).supports c proof candidate = true ∧
     candidate.channel = c ∧
@@ -228,65 +228,65 @@ example : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
   ⟨g0, p0, c1, [ssO], stO, by decide, by decide, rfl, .inl ⟨by decide, by decide⟩⟩
 
 /-- `challenge_effects`. -/
-example : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
+theorem challenge_effects.nonvacuity : ∃ (s : Adjudicator Nat) (challenger : Participant) (c : FixedPart)
     (proof : SupportProof Nat) (candidate : State Nat) (s' : Adjudicator Nat),
     s.challenge apps0 challenger c proof candidate = some s' ∧ 0 < c.challengeDuration :=
   ⟨g0, p0, c1, [ssO], stO, _, rfl, by decide⟩
 
 /-- `checkpoint_requires`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (proof : SupportProof Nat) (candidate : State Nat)
+theorem checkpoint_requires.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (proof : SupportProof Nat) (candidate : State Nat)
     (s' : Adjudicator Nat), s.checkpoint apps0 c proof candidate = some s' :=
   ⟨g0, c1, [ssO], stO, _, rfl⟩
 
 /-- `checkpoint_can_happen`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (proof : SupportProof Nat) (candidate : State Nat),
+theorem checkpoint_can_happen.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (proof : SupportProof Nat) (candidate : State Nat),
     s.mode c ≠ .finalized ∧ (apps0 c.appDef).supports c proof candidate = true ∧
     candidate.channel = c ∧ (s.statusOf c).turnNumRecord < candidate.turnNum :=
   ⟨g0, c1, [ssO], stO, by decide, by decide, rfl, by decide⟩
 
 /-- `turnNumRecord_monotone`. -/
-example : ∃ s s' : Adjudicator Nat, Step apps0 s s' := ⟨g0, sDep, .mk _ _ _ _ g0_dep⟩
+theorem turnNumRecord_monotone.nonvacuity : ∃ s s' : Adjudicator Nat, Step apps0 s s' := ⟨g0, sDep, .mk _ _ _ _ g0_dep⟩
 
 /-- `conclude_requires`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat) (s' : Adjudicator Nat),
+theorem conclude_requires.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat) (s' : Adjudicator Nat),
     s.conclude c ss = some s' := ⟨sDep, c1, ssF, _, rfl⟩
 
 /-- `conclude_needs_all`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat) (s' : Adjudicator Nat)
+theorem conclude_needs_all.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat) (s' : Adjudicator Nat)
     (p : Participant), s.conclude c ss = some s' ∧ p ∈ c.participants :=
   ⟨sDep, c1, ssF, _, p0, rfl, by decide⟩
 
 /-- `conclude_can_happen`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat),
+theorem conclude_can_happen.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat),
     s.mode c ≠ .finalized ∧ ConclusionProof c ss := ⟨sDep, c1, ssF, by decide, by decide⟩
 
 /-- `conclude_moves_no_value`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat) (s' : Adjudicator Nat),
+theorem conclude_moves_no_value.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (ss : SignedState Nat) (s' : Adjudicator Nat),
     s.conclude c ss = some s' := ⟨sDep, c1, ssF, _, rfl⟩
 
 /-- `timeout_finalizes`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (t : Nat) (ch : Challenge Nat),
+theorem timeout_finalizes.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (t : Nat) (ch : Challenge Nat),
     s.statusOf c = .challenged t ch ∧ ch.deadline ≤ s.now :=
   ⟨sCh.tick 2, c1, 1, ⟨stO, 2⟩, by decide, by decide⟩
 
 /-- `challenge_in_progress_before_deadline`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart) (t : Nat) (ch : Challenge Nat),
+theorem challenge_in_progress_before_deadline.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (t : Nat) (ch : Challenge Nat),
     s.statusOf c = .challenged t ch ∧ s.now < ch.deadline :=
   ⟨sCh, c1, 1, ⟨stO, 2⟩, by decide, by decide⟩
 
 /-- `failed_op_no_effect`. -/
-example : ∃ (caller : Participant) (op : Op Nat) (s : Adjudicator Nat),
+theorem failed_op_no_effect.nonvacuity : ∃ (caller : Participant) (op : Op Nat) (s : Adjudicator Nat),
     s.apply apps0 caller op = none := ⟨p0, .transfer c1 d0, g0, rfl⟩
 
 /-- `funding_decoupled_from_rules`. -/
-example : ∃ op : Op Nat, op.isRedistribution = false ∧ ∀ a e x, op ≠ .deposit a e x :=
+theorem funding_decoupled_from_rules.nonvacuity : ∃ op : Op Nat, op.isRedistribution = false ∧ ∀ a e x, op ≠ .deposit a e x :=
   ⟨.tick 0, rfl, fun _ _ _ h => by cases h⟩
 
 /-- A ForceMove run of one state for `c1` (one participant). -/
 def vtAll : State Nat → State Nat → Bool := fun s1 s2 => decide (s2.outcome = s1.outcome)
 
 /-- `forceMove_supports_valid_run`. -/
-example : ∃ (vt : State Nat → State Nat → Bool) (c : FixedPart) (proof : SupportProof Nat)
+theorem forceMove_supports_valid_run.nonvacuity : ∃ (vt : State Nat → State Nat → Bool) (c : FixedPart) (proof : SupportProof Nat)
     (candidate : State Nat), (forceMoveRules vt).supports c proof candidate = true :=
   ⟨vtAll, c1, [⟨stO, [p0]⟩], stO, by decide⟩
 
@@ -295,7 +295,7 @@ example : ∃ (vt : State Nat → State Nat → Bool) (c : FixedPart) (proof : S
 def stM0 : State Nat := ⟨c2, 0, .allocation o1, false, .opaque 0⟩
 def stM1 : State Nat := ⟨c2, 1, .allocation o1, false, .opaque 0⟩
 
-example : ∃ (vt : State Nat → State Nat → Bool) (c : FixedPart) (proof : SupportProof Nat)
+theorem forceMove_conclude_keeps_outcome.nonvacuity : ∃ (vt : State Nat → State Nat → Bool) (c : FixedPart) (proof : SupportProof Nat)
     (candidate : State Nat) (i : Nat) (m1 m2 : SignedState Nat),
     (forceMoveRules vt).supports c proof candidate = true ∧ proof[i]? = some m1 ∧
     proof[i + 1]? = some m2 :=
@@ -303,14 +303,14 @@ example : ∃ (vt : State Nat → State Nat → Bool) (c : FixedPart) (proof : S
     by decide, by decide, by decide⟩
 
 /-- `mover_determined_by_turn`. -/
-example : ∃ s t : State Nat, s.channel = t.channel ∧ s.turnNum = t.turnNum := ⟨stO, stO, rfl, rfl⟩
+theorem mover_determined_by_turn.nonvacuity : ∃ s t : State Nat, s.channel = t.channel ∧ s.turnNum = t.turnNum := ⟨stO, stO, rfl, rfl⟩
 
 /-- `reclaim_requires`. -/
-example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat),
+theorem reclaim_requires.nonvacuity : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat),
     s.reclaim l v = some s' := ⟨sR, cL, cV, _, rfl⟩
 
 /-- `reclaim_effects`. -/
-example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat) (oL oV : Allocation Nat)
+theorem reclaim_effects.nonvacuity : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat) (oL oV : Allocation Nat)
     (x : Coins) (left right : Address Nat),
     s.finalOutcome l.address = some (.allocation oL) ∧
     s.finalizedWith v.address = some (.allocation oV) ∧
@@ -320,7 +320,7 @@ example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (s' : Adjudicator Nat) (oL
     by decide, by decide, rfl⟩
 
 /-- `reclaim_can_happen`. -/
-example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
+theorem reclaim_can_happen.nonvacuity : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
     (left right : Address Nat),
     l.kind = .ledger ∧ v.kind = .virtual ∧
     s.finalOutcome l.address = some (.allocation oL) ∧
@@ -338,7 +338,7 @@ def sR2 : Adjudicator Nat :=
   { sR with status := [(cL, .finalized 0 (.allocation oL2) (.allocation oL2)),
       (cV, .finalized 0 (.allocation oV) (.allocation oV))] }
 
-example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
+theorem reclaim_fails_without_entries.nonvacuity : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (x : Coins)
     (left right : Address Nat),
     s.finalOutcome l.address = some (.allocation oL) ∧
     s.finalizedWith v.address = some (.allocation oV) ∧
@@ -348,11 +348,11 @@ example : ∃ (s : Adjudicator Nat) (l v : FixedPart) (oL oV : Allocation Nat) (
   ⟨sR2, cL, cV, oL2, oV, 2, d0, d1, by decide, by decide, by decide, by decide⟩
 
 /-- `mode_of_absent`. -/
-example : ∃ (s : Adjudicator Nat) (c : FixedPart), ∀ e ∈ s.status, e.1 ≠ c :=
+theorem mode_of_absent.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart), ∀ e ∈ s.status, e.1 ≠ c :=
   ⟨g0, c1, fun _ h => absurd h List.not_mem_nil⟩
 
 /-- `held_changes_only_by_deposit_payout`. -/
-example : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
+theorem held_changes_only_by_deposit_payout.nonvacuity : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
     s.apply apps0 caller op = some s' ∧ s'.held ≠ s.held :=
   ⟨g0, sDep, p0, _, g0_dep, by decide⟩
 
@@ -1134,14 +1134,14 @@ theorem netC_reach :
       simp only [Op.proofStates, List.mem_singleton] at h; subst h; exact netF_holds)
 
 /-- `directly_funded_pays`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
+theorem directly_funded_pays.nonvacuity : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     net.chain.finalOutcome c.address = some (.allocation o) ∧
     net.chain.DirectlyFunded c ∧ o.find (.external d) = some ⟨.external d, .alloc amt⟩ :=
   ⟨⟨sCon, [ssF], [ssF]⟩, c1, o1, 0, 1, canon_ok _ _, netC_reach, rfl, ⟨o1, rfl, by decide⟩, by decide⟩
 
 /-- `finalizable_funded_pays`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
+theorem finalizable_funded_pays.nonvacuity : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (d : Nat) (amt : Coins),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     net.chain.finalOutcome c.address = some (.allocation o) ∧
     FundedFor apps0 (canon p0) c o.total net ∧
@@ -1150,7 +1150,7 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (
     .done (show o1.total ≤ _ by decide), by decide⟩
 
 /-- `conclusion_proof_finalizable`. -/
-example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
+theorem conclusion_proof_finalizable.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
     (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
@@ -1163,7 +1163,7 @@ example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss :
     by decide, rfl, by decide, .inl (by decide), deadlineAfter_open (t := 0) rfl _⟩
 
 /-- `latest_state_finalizable`. -/
-example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat),
+theorem latest_state_finalizable.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
     net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = (c : FixedPart) ∧
@@ -1203,7 +1203,7 @@ theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
     (.send stO) (by simp)
 
 /-- `late_observer_can_checkpoint`. -/
-example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
+theorem late_observer_can_checkpoint.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
     (t : Nat) (ch : Challenge Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
@@ -1261,7 +1261,7 @@ theorem nFU_views_p0 : nFU.views p0 = ⟨gCon, [ssF], [⟨stF, [p0]⟩]⟩ := rf
 theorem nFU_views_q0 : nFU.views q0 = ⟨gCon, [ssF], []⟩ := rfl
 
 /-- `finalizable_unique`: both participants see `c1` finalized with `o1`. -/
-example : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (p q : Participant)
+theorem finalizable_unique.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (p q : Participant)
     (Ω Ω' : Outcome Nat), (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     p ≠ q ∧ Finalizable apps0 ((Ts apps0).T p) c Ω (v p) ∧
     Finalizable apps0 ((Ts apps0).T q) c Ω' (v q) := by
@@ -1273,14 +1273,14 @@ example : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (p q : Participa
 /-- `channel_finalizability_cases`: the genesis network is reachable, and
     `c`, `p0` are universally quantified by the theorem, so no further
     content is needed. -/
-example : ∃ (v : Views Nat) (n : Network Nat), (Nitro.network apps0 (Ts apps0)).Reachable n ∧
+theorem channel_finalizability_cases.nonvacuity : ∃ (v : Views Nat) (n : Network Nat), (Nitro.network apps0 (Ts apps0)).Reachable n ∧
     v = n.views :=
   ⟨(⟨g0, fun _ => [], fun _ => [], noDeposits⟩ : Network Nat).views, _,
     network_reachable_init apps0 (Ts apps0) noDeposits, rfl⟩
 
 
 /-- `finalizable_or_two_enabled`. -/
-example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε),
+theorem finalizable_or_two_enabled.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     (apps0 (c : FixedPart).appDef).NoUnilateralSupport ∧ p0 ∈ (c : FixedPart).participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
@@ -1292,7 +1292,7 @@ example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε),
 
 /-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
     is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `netC_reach`. -/
-example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
+theorem single_enabled_is_finalizable.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     (apps0 (c : FixedPart).appDef).NoUnilateralSupport ∧ p0 ∈ (c : FixedPart).participants ∧
     (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
@@ -1342,7 +1342,7 @@ theorem nFP_views_chain (r : Participant) : (nFP.views r).chain = g0 := rfl
 
 theorem nFP_chain : nFP.chain = g0 := rfl
 
-example : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (Ω : Outcome Nat)
+theorem funding_point_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (Ω : Outcome Nat)
     (vt : State Nat → State Nat → Bool),
     (Nitro.network apps1 (Ts apps1)).Reachable n ∧ v = n.views ∧
     apps1 c.appDef = forceMoveRules vt ∧ SetupPhaseKeepsOutcome vt c ∧
@@ -1384,7 +1384,7 @@ theorem nCF_views_p0 : nCF.views p0 = ⟨g0, [], [ssF]⟩ := rfl
 
 theorem nCF_views_chain (r : Participant) : (nCF.views r).chain = g0 := rfl
 
-example : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (Ω : Outcome Nat),
+theorem concluded_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (c : FixedPart) (Ω : Outcome Nat),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     apps0 c.appDef = consensusRules ∧ Concluded v c Ω ∧
     (∀ p, ∀ t ∈ (v p).sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = Ω) ∧
@@ -1428,7 +1428,7 @@ theorem netC2_reach : (Nitro.participant apps0 (canon p0)).Reachable netC2 :=
     (.deliver ⟨stF2, [q0]⟩) (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
       NetworkState.Unforged _ ⟨stF2, [q0]⟩) (fun op h => by cases h)
 
-example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
+theorem consensus_enabled_outcomes.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
     (Ω1 Ω2 Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
@@ -1483,7 +1483,7 @@ example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss :
 
 /-- `turbo_redistribution_unbeatable`. `net` is the genesis state itself: `Nitro.participant`'s own
     initial state. -/
-example : ∃ (net : NetworkState Nat p0) (ops : List (Participant × Op Nat)) (d : Nat) (x : Coins),
+theorem turbo_redistribution_unbeatable.nonvacuity : ∃ (net : NetworkState Nat p0) (ops : List (Participant × Op Nat)) (d : Nat) (x : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsDAG ∧ OnlyTransfers ops ∧
@@ -1496,7 +1496,7 @@ theorem zero_g0 : ∀ a : Address Nat, g0.balances.get a = 0 := fun _ => rfl
 
 /-- `deposit_bounds_value`: a deposit of 0 into an empty chain. `net` is the genesis state
     itself. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (d : Nat) (y x x' : Coins)
+theorem deposit_bounds_value.nonvacuity : ∃ (net : NetworkState Nat p0) (c : FixedPart) (d : Nat) (y x x' : Coins)
     (s' : Adjudicator Nat) (e : Coins),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     net.chain.deposit c.address e y = some s' ∧
@@ -1527,13 +1527,13 @@ theorem sP_reach : (Nitro.participant apps0 (canon p0)).Reachable
       simp only [Op.proofStates, List.mem_singleton] at h; subst h
       exact holds_intro _ _ (by decide) (fun _ h => by cases h))
 
-example : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
+theorem payout_to_other_affects_only_owner.nonvacuity : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     q ≠ d ∧ net.chain.transfer a (.external q) = some s' :=
   ⟨⟨sP, [ssP], [ssP]⟩, 0, 1, c1, _, canon_ok _ _, sP_reach, by decide, rfl⟩
 
 /-- `participant_can_prevent_cycles`. `net` is the genesis state itself. -/
-example : ∃ net : NetworkState Nat p0,
+theorem participant_can_prevent_cycles.nonvacuity : ∃ net : NetworkState Nat p0,
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     (∀ c : FixedPart, p0 ∈ c.participants → apps0 c.appDef = consensusRules) ∧
     (∀ c : FixedPart, p0 ∈ c.participants → ∃ t, net.chain.statusOf c = .open t) ∧
@@ -1542,7 +1542,7 @@ example : ∃ net : NetworkState Nat p0,
     fun _ _ => ⟨0, rfl⟩, g0_dag, rfl⟩
 
 /-- `turbo_value_upper_bound`. `net` is the genesis state itself. -/
-example : ∃ (net : NetworkState Nat p0) (n : Address Nat) (v x : Coins),
+theorem turbo_value_upper_bound.nonvacuity : ∃ (net : NetworkState Nat p0) (n : Address Nat) (v x : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsDAG ∧ net.chain.TurboValue n v ∧
@@ -1552,7 +1552,7 @@ example : ∃ (net : NetworkState Nat p0) (n : Address Nat) (v x : Coins),
     .done (Nat.zero_le _)⟩
 
 /-- `turbo_value_achievable`. `net` is the genesis state itself. -/
-example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
+theorem turbo_value_achievable.nonvacuity : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsTurboOutcomeNetwork ∧ net.chain.TurboValue (.external d) v :=
@@ -1560,7 +1560,7 @@ example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, g0_turbo _⟩
 
 /-- `turbo_value_is_value`. `net` is the genesis state itself. -/
-example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
+theorem turbo_value_is_value.nonvacuity : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsTurboOutcomeNetwork ∧ net.chain.TurboValue (.external d) v :=
@@ -1573,7 +1573,7 @@ theorem g0_exhausted : g0.TransferExhausted := by
     Adjudicator.genesis] at h
 
 /-- `turbo_order_independent`. -/
-example : ∃ (s : DAGOutcomeNetwork Nat) (ops1 ops2 : List (Participant × Op Nat)),
+theorem turbo_order_independent.nonvacuity : ∃ (s : DAGOutcomeNetwork Nat) (ops1 ops2 : List (Participant × Op Nat)),
     OnlyTransfers ops1 ∧ OnlyTransfers ops2 ∧
     (Adjudicator.applyAll apps0 ops1 (s : Adjudicator Nat)).TransferExhausted ∧
     (Adjudicator.applyAll apps0 ops2 (s : Adjudicator Nat)).TransferExhausted :=
@@ -1753,7 +1753,7 @@ theorem nLWF_finalizable : nLWF.views.FinalizableBy apps0 (Ts apps0) cLWF wLSF.o
     · rw [nLWF_views_q0]; intro t ht _ _; simp at ht; subst ht; rfl
 
 /-- `ledger_offload_funds_subchannel`, funded: `wLSF.c = 5 > 0`. -/
-example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
+theorem ledger_offload_funds_subchannel.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     w.Holds apps0 (Ts apps0) v ∧ w.χ.kind = .ledger ∧ 0 < w.c ∧
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
@@ -1776,7 +1776,7 @@ example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
         rw [this] at ht
         exact absurd ht List.not_mem_nil
 
-example : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
+theorem ledger_offload_funds_subchannel.nonvacuity_2 : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     w.Holds apps0 (Ts apps0) v ∧ w.χ.kind = .ledger ∧
     (∀ p, (v p).chain.finalOutcome w.χ.address = none) ∧
@@ -2073,8 +2073,8 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
   have hr' : r = p0 ∨ r = q0 := by simpa using hr
   rcases hr' with rfl | rfl
   · refine latest_state_finalizable apps0 ((Ts apps0).T p0) (canon_ok apps0 p0)
-      (net := (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views p0)
-      (Nitro.network_views_participant_reachable hreach p0)
+
+      ⟨(nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views p0, (Nitro.network_views_participant_reachable ⟨_, hreach⟩ p0)⟩
       ⟨c, by unfold FixedPart.IsTimed; rw [hdur]; decide⟩
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
       (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
@@ -2099,8 +2099,8 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
       · cases hfin
       · exact absurd hcc hne
   · refine latest_state_finalizable apps0 ((Ts apps0).T q0) (canon_ok apps0 q0)
-      (net := (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views q0)
-      (Nitro.network_views_participant_reachable hreach q0)
+
+      ⟨(nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views q0, (Nitro.network_views_participant_reachable ⟨_, hreach⟩ q0)⟩
       ⟨c, by unfold FixedPart.IsTimed; rw [hdur]; decide⟩
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
       (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
@@ -2153,7 +2153,7 @@ def nOpenF' : Network Nat := nTwoCh nLWF1 stLWF stXF
 theorem nOpenF'_reach : (Nitro.network apps0 (Ts apps0)).Reachable nOpenF' :=
   nTwoCh_reach nLWF1_reach stLWF_voucher stXF_voucher
 
-example : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB : Nat)
+theorem subchannel_open_value_preserving.nonvacuity : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB : Nat)
     (L χ : FixedPart) (a b a' b' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     (Nitro.network apps0 (Ts apps0)).Reachable n' ∧ v' = n'.views ∧
@@ -2188,7 +2188,7 @@ def nCloseF' : Network Nat := nOneCh nLWF1 stL1F
 theorem nCloseF'_reach : (Nitro.network apps0 (Ts apps0)).Reachable nCloseF' :=
   nOneCh_reach nLWF1_reach stL1F_voucher
 
-example : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a' b' : Coins),
+theorem subchannel_close_value_preserving.nonvacuity : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a' b' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
     (Nitro.network apps0 (Ts apps0)).Reachable n' ∧ v' = n'.views ∧
     a' + b' = w.c ∧ w.Holds apps0 (Ts apps0) v ∧
@@ -2210,11 +2210,11 @@ example : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a
 
 
 /-- `ledger_topup_reorder_safe`. -/
-example : ∃ A B χ : Address Nat, A ≠ B ∧ A ≠ χ ∧ B ≠ χ :=
+theorem ledger_topup_reorder_safe.nonvacuity : ∃ A B χ : Address Nat, A ≠ B ∧ A ≠ χ ∧ B ≠ χ :=
   ⟨d0, d1, c1.address, by decide, by decide, by decide⟩
 
 /-- `ledger_topup_deposit_funds`. -/
-example : ∃ (s s' : Adjudicator Nat) (L : FixedPart) (A B χ : Address Nat) (a b c a' : Coins),
+theorem ledger_topup_deposit_funds.nonvacuity : ∃ (s s' : Adjudicator Nat) (L : FixedPart) (A B χ : Address Nat) (a b c a' : Coins),
     A ≠ B ∧ A ≠ χ ∧ B ≠ χ ∧ s.balances.get L.address = a + b + c ∧
     s.deposit L.address (a + b + c) a' = some s' :=
   ⟨g0, _, c1, d0, d1, c3.address, 0, 0, 0, 0, by decide, by decide, by decide, rfl, rfl⟩
@@ -2239,7 +2239,7 @@ def nPWF : Network Nat := nTwoCh nLWF1 stPWLF stPWLF'
 theorem nPWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPWF :=
   nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher
 
-example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
+theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
     (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps0) (χ : FixedPart)
     (a b c a' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
@@ -2343,7 +2343,7 @@ theorem r2_wf : r2.WellFormed apps2 := by
     · simp [r2] at h
 
 /-- `satp_outcome_change_keeps_total`. -/
-example : ∃ (c : FixedPart) (alice bob : Participant) (proof : SupportProof Nat)
+theorem satp_outcome_change_keeps_total.nonvacuity : ∃ (c : FixedPart) (alice bob : Participant) (proof : SupportProof Nat)
     (candidate : State Nat) (s0 : SignedState Nat),
     validateOutcomeChange c alice bob proof candidate = true ∧ proof.head? = some s0 :=
   ⟨Vr, p0, q0, [⟨stV, [p0, q0]⟩], stV, _, by decide, rfl⟩
@@ -2360,7 +2360,7 @@ theorem sV_reach : ReachableSigned apps2 signed2 sV2 := by
   exact ⟨by decide, fun v hv => by cases hv; intro q hq; cases hq⟩
 
 /-- `satp_lemma_3_1`. -/
-example : ∃ (r : Route Nat) (alice bob : Participant) (signed : List (Participant × State Nat))
+theorem satp_lemma_3_1.nonvacuity : ∃ (r : Route Nat) (alice bob : Participant) (signed : List (Participant × State Nat))
     (s : Adjudicator Nat) (Ω : Outcome Nat),
     r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧ r.peers.head? = some alice ∧
     r.peers.getLast? = some bob ∧
@@ -2387,7 +2387,7 @@ theorem netV_reach : (Nitro.participant apps2 (canon p0)).Reachable netV :=
       fun v h hp => by cases h; exact absurd hp (by decide)⟩ :
       NetworkState.Unforged _ ⟨stV, [q0]⟩) (fun op h => by cases h)
 
-example : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat p0)
+theorem satp_peers_can_finalize.nonvacuity : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat p0)
     (s1 : SignedState Nat),
     Assumptions apps2 p0 (canon p0) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
     p0 ∈ r.peers ∧ r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧
@@ -2521,7 +2521,7 @@ theorem net3R_hR1 : ∀ t ∈ net3R.sent, (t.state.channel = Lm3 ∨ t.state.cha
 
 
 /-- `satp_theorem_3_2`. -/
-example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat)
+theorem satp_theorem_3_2.nonvacuity : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat)
     (Lm Lp : TimedChannel (canon P).ε) (om op : Allocation Nat) (balm balp : Coins)
     (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
@@ -2570,7 +2570,7 @@ theorem netB_reach : (Nitro.participant apps2 (canon q0)).Reachable netB :=
     (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨SmB, [p0]⟩)
     (fun op h => by cases h)
 
-example : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : TimedChannel (canon P).ε)
+theorem satp_intermediary_before_round2.nonvacuity : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : TimedChannel (canon P).ε)
     (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ 1 ≤ i ∧ i + 1 < r.peers.length ∧
     r.peers[i]? = some P ∧ r.ledgers[i - 1]? = some (Lm : FixedPart) ∧
@@ -2632,7 +2632,7 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
           exact fun q hq => absurd hq List.not_mem_nil))
     (.wait 2) trivial
 
-example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel (canon P).ε)
+theorem satp_end_user_recovers.nonvacuity : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel (canon P).ε)
     (o : GuaranteedOutcome Nat) (bal a b : Coins) (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
     r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧ P = alice ∧ r.peers[1]? = some P1 ∧
@@ -2697,7 +2697,7 @@ def sRC : Adjudicator Nat :=
     (Lm3, .finalized 0 (.allocation om3) (.allocation om3)),
     (Lp3, .finalized 0 (.allocation op3) (.allocation op3))] }
 
-example : ∃ (s : Adjudicator Nat) (r : Route Nat) (alice bob P Pprev Pnext : Participant)
+theorem satp_reclaim_credits_intermediary.nonvacuity : ∃ (s : Adjudicator Nat) (r : Route Nat) (alice bob P Pprev Pnext : Participant)
     (Lm Lp : FixedPart) (om op : Allocation Nat) (a b : Coins),
     (r.dest P ≠ r.dest Pprev ∧ r.dest P ≠ r.dest Pnext ∧ r.dest Pprev ≠ r.dest Pnext) ∧
     Lm.kind = .ledger ∧ Lp.kind = .ledger ∧ r.V.kind = .virtual ∧

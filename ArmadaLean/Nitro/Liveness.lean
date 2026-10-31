@@ -10,6 +10,8 @@ import ArmadaLean.Nitro.Safety
 import ArmadaLean.Nitro.Reachable
 import ArmadaLean.Types.Channel
 import ArmadaLean.Types.Outcome
+import ArmadaLean.Types.Reachable
+import ArmadaLean.SpecTools
 
 namespace ArmadaLean.Nitro
 
@@ -506,14 +508,15 @@ theorem directly_funded_round {apps : Apps E} {p : Participant} {T : Threat E p}
     counterexample put coins in a virtual-kind channel,
     `Reachable.balances_virtual_zero`). -/
 theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
-    (hf : net.chain.finalOutcome c.address = some (.allocation o))
-    (hfund : net.chain.DirectlyFunded c) (amt : Coins)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : FixedPart) (o : Allocation E) (d : E)
+    (hf : net.state.chain.finalOutcome c.address = some (.allocation o))
+    (hfund : net.state.chain.DirectlyFunded c) (amt : Coins)
     (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
     UnbeatableNoWait apps T
-      (fun net' => net.chain.balances.get (.external d) + o.owed (.external d) ≤
-        net'.chain.balances.get (.external d)) net := by
+      (fun net' => net.state.chain.balances.get (.external d) + o.owed (.external d) ≤
+        net'.chain.balances.get (.external d)) net.state := by
+  obtain_reach ⟨net, hr⟩ := net
   have hrc : Reachable apps net.chain := Nitro.participant_chain_reachable hr
   obtain ⟨o', hfo', htot'⟩ := hfund
   rw [hf] at hfo'
@@ -524,7 +527,7 @@ theorem directly_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
   cases hk : c.kind with
   | virtual =>
     have hzero : net.chain.balances.get (Address.channel c) = 0 :=
-      Reachable.balances_virtual_zero hrc c hk
+      Reachable.balances_virtual_zero ⟨_, (Nitro.chain_reachable_iff.mpr hrc)⟩ c hk
     have htot0 : o.total = 0 := by
       have := htot'
       rw [FixedPart.address_eq, hzero] at this
@@ -791,17 +794,18 @@ theorem conclude_round_finalized {apps : Apps E} {p : Participant} {T : Threat E
     before `p`'s conclude lands, because a challenge lasts at least `2 * ε`
     and no running challenge ends within `ε` (Nitro:537-539). -/
 theorem conclusion_proof_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (_hr : (Nitro.participant apps T).Reachable net) (c : TimedChannel T.ε) (ss : SignedState E)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε) (ss : SignedState E)
     (Ω : Outcome E) (hc : apps (c : FixedPart).appDef = consensusRules)
     (hp : p ∈ (c : FixedPart).participants)
-    (hh : net.Holds ss) (hproof : ConclusionProof (c : FixedPart) ss) (hΩ : ss.state.outcome = Ω)
-    (hsent : ∀ t ∈ net.sent, t.state.channel = (c : FixedPart) → t.state.isFinal = true →
+    (hh : net.state.Holds ss) (hproof : ConclusionProof (c : FixedPart) ss) (hΩ : ss.state.outcome = Ω)
+    (hsent : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) → t.state.isFinal = true →
       t.state.outcome = Ω)
-    (hchain : net.chain.finalizedWith (c : FixedPart).address = none ∨
-      net.Finalized (c : FixedPart) Ω)
-    (hpend : net.DeadlineAfter (c : FixedPart) T.ε) :
-    UnbeatableNoWait apps T (fun net' => net'.Finalized (c : FixedPart) Ω) net := by
+    (hchain : net.state.chain.finalizedWith (c : FixedPart).address = none ∨
+      net.state.Finalized (c : FixedPart) Ω)
+    (hpend : net.state.DeadlineAfter (c : FixedPart) T.ε) :
+    UnbeatableNoWait apps T (fun net' => net'.Finalized (c : FixedPart) Ω) net.state := by
+  obtain_reach ⟨net, _hr⟩ := net
   obtain ⟨c, hdur⟩ := c
   rcases hchain with h1 | h2
   · refine UnbeatableIn.move (.chain (.conclude c ss)) trivial
@@ -2315,19 +2319,20 @@ theorem wait_resolves_challenge {apps : Apps E} {p : Participant} {T : Threat E 
     signed no other state at that turn or above, and sees no chain record
     above it, can finalize that state's outcome. -/
 theorem latest_state_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (_hr : (Nitro.participant apps T).Reachable net) (c : TimedChannel T.ε) (ss : SignedState E)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε) (ss : SignedState E)
     (hc : apps (c : FixedPart).appDef = consensusRules) (hp : p ∈ (c : FixedPart).participants)
-    (hh : net.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = (c : FixedPart))
-    (hlatest : ∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
+    (hh : net.state.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = (c : FixedPart))
+    (hlatest : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       t.state.turnNum < ss.state.turnNum ∨ t.state = ss.state)
-    (hfinal : ∀ t ∈ net.sent, t.state.channel = (c : FixedPart) → t.state.isFinal = true →
+    (hfinal : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) → t.state.isFinal = true →
       t.state.outcome = ss.state.outcome)
-    (hst : net.Finalized (c : FixedPart) ss.state.outcome ∨
-      (∃ t, net.chain.statusOf (c : FixedPart) = .open t ∧ t ≤ ss.state.turnNum) ∨
-      (∃ t ch, net.chain.statusOf (c : FixedPart) = .challenged t ch ∧
-        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.chain.now + T.ε ≤ ch.deadline)) :
-    Finalizable apps T (c : FixedPart) ss.state.outcome net := by
+    (hst : net.state.Finalized (c : FixedPart) ss.state.outcome ∨
+      (∃ t, net.state.chain.statusOf (c : FixedPart) = .open t ∧ t ≤ ss.state.turnNum) ∨
+      (∃ t ch, net.state.chain.statusOf (c : FixedPart) = .challenged t ch ∧
+        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.state.chain.now + T.ε ≤ ch.deadline)) :
+    Finalizable apps T (c : FixedPart) ss.state.outcome net.state := by
+  obtain_reach ⟨net, _hr⟩ := net
   obtain ⟨c, hdur⟩ := c
   rcases hst with hfz | hst'
   · exact UnbeatableIn.done hfz
@@ -2382,7 +2387,6 @@ theorem latest_state_finalizable (apps : Apps E) {p : Participant} (T : Threat E
   · apply UnbeatableIn.done
     simpa [NetworkState.Finalized, NetworkState.applyHonest_chain] using hfz'
   · exact finish net1 T0 ch hchs hT0 hchal (le_of_lt hdd) hseq.sent_eq
-
 
 /-- Two-channel analogue of `latest_state_finalizable`: `p` holds the latest
     state of BOTH `c1` and `c2`, neither already finalized, each with its
@@ -2986,18 +2990,19 @@ theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E 
     finalized. The adversary can register that same state as a challenge, so
     the goal does not ask for Open mode. -/
 theorem late_observer_can_checkpoint (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (_hr : (Nitro.participant apps T).Reachable net) (c : TimedChannel T.ε) (ss : SignedState E)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε) (ss : SignedState E)
     (t : Nat) (ch : Challenge E) (hc : apps (c : FixedPart).appDef = consensusRules)
     (hp : p ∈ (c : FixedPart).participants)
-    (hh : net.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = (c : FixedPart))
-    (hsent : ∀ u ∈ net.sent, u.state.channel = (c : FixedPart) →
+    (hh : net.state.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = (c : FixedPart))
+    (hsent : ∀ u ∈ net.state.sent, u.state.channel = (c : FixedPart) →
       (u.state.turnNum < ss.state.turnNum ∨ u.state = ss.state) ∧ u.state.isFinal = false)
-    (hst : net.chain.statusOf (c : FixedPart) = .challenged t ch) (hgt : t < ss.state.turnNum)
-    (hnow : net.chain.now + T.ε ≤ ch.deadline) :
+    (hst : net.state.chain.statusOf (c : FixedPart) = .challenged t ch) (hgt : t < ss.state.turnNum)
+    (hnow : net.state.chain.now + T.ε ≤ ch.deadline) :
     UnbeatableNoWait apps T
       (fun net' => net'.chain.mode (c : FixedPart) ≠ .finalized ∧
-        ss.state.turnNum ≤ (net'.chain.statusOf (c : FixedPart)).turnNumRecord) net := by
+        ss.state.turnNum ≤ (net'.chain.statusOf (c : FixedPart)).turnNumRecord) net.state := by
+  obtain_reach ⟨net, _hr⟩ := net
   obtain ⟨c, hdur⟩ := c
   refine UnbeatableIn.move (.chain (.checkpoint c [ss] ss.state)) trivial
     (by simpa [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates] using hh) ?_
@@ -3706,13 +3711,14 @@ theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
     be beatable by the other participant's strategy." The proof plays the two
     strategies together, each in its own game (`finalizable_joint`). -/
 theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n) (hvn : v = n.views)
+    (n : Nitro.ReachableNetwork apps Ts) (hvn : v = n.state.views)
     (c : FixedPart) (p q : Participant) (hpq : p ≠ q) (Ω Ω' : Outcome E)
     (hp : Finalizable apps (Ts.T p) c Ω (v p)) (hq : Finalizable apps (Ts.T q) c Ω' (v q)) :
     Ω = Ω' := by
+  obtain_reach ⟨n, hr⟩ := n
   subst hvn
   have hsig := Nitro.network_received_signers hr
-  have hvouch := Nitro.network_received_voucher_signers hr
+  have hvouch := Nitro.network_received_voucher_signers ⟨_, hr⟩
   exact finalizable_joint hpq (Ts.ok p).toCapable (Ts.ok q).toCapable hp (n.views p) .refl rfl hq
     (n.views q) .refl rfl (ChanAgreeOrFin.refl c n.chain)
     ⟨fun r hr' => ⟨hsig p p r hr', hsig p q r hr'⟩, fun r hr' => ⟨hsig q p r hr', hsig q q r hr'⟩,
@@ -3724,8 +3730,8 @@ theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     participant has multiple finalizable outcomes ... 3. Multiple participants
     share one finalizable outcome ... 4. No finalizable outcomes." -/
 theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (c : FixedPart) (p0 : Participant) :
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (c : FixedPart) (p0 : Participant) :
     (∃ Ω, (v p0).Finalized c Ω) ∨
     (∃ p, p ∈ c.participants ∧ (∃ Ω, Finalizable apps (Ts.T p) c Ω (v p)) ∧
       ∀ q, q ∈ c.participants → q ≠ p → ∀ Ω, ¬ Finalizable apps (Ts.T q) c Ω (v q)) ∨
@@ -3733,6 +3739,7 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
       Finalizable apps (Ts.T p) c Ω (v p) ∧ Finalizable apps (Ts.T q) c Ω (v q) ∧
       ∀ r, r ∈ c.participants → ∀ Ω', Finalizable apps (Ts.T r) c Ω' (v r) → Ω' = Ω) ∨
     (∀ p, p ∈ c.participants → ∀ Ω, ¬ Finalizable apps (Ts.T p) c Ω (v p)) := by
+  obtain_reach ⟨n, hr⟩ := n
   by_cases hex : ∃ p ∈ c.participants, ∃ Ω, Finalizable apps (Ts.T p) c Ω (v p)
   · obtain ⟨p, hp, Ω, hΩ⟩ := hex
     by_cases hother :
@@ -3741,14 +3748,14 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
     · push_neg at hother
       obtain ⟨q, hq, hqp, Ω', hΩ'⟩ := hother
       have heq : Ω = Ω' :=
-        finalizable_unique apps Ts v n hr hvn c p q hqp.symm Ω Ω' hΩ hΩ'
+        finalizable_unique apps Ts v ⟨n, hr⟩ hvn c p q hqp.symm Ω Ω' hΩ hΩ'
       refine Or.inr (Or.inr (Or.inl ⟨Ω, p, q, hp, hq, hqp.symm, hΩ, heq ▸ hΩ', ?_⟩))
       intro r hr' Ω'' hΩ''
       by_cases hrp : r = p
       · subst hrp
-        have heq2 : Ω' = Ω'' := finalizable_unique apps Ts v n hr hvn c q r hqp Ω' Ω'' hΩ' hΩ''
+        have heq2 : Ω' = Ω'' := finalizable_unique apps Ts v ⟨n, hr⟩ hvn c q r hqp Ω' Ω'' hΩ' hΩ''
         exact (heq.trans heq2).symm
-      · exact (finalizable_unique apps Ts v n hr hvn c p r (fun h => hrp h.symm) Ω Ω'' hΩ hΩ'').symm
+      · exact (finalizable_unique apps Ts v ⟨n, hr⟩ hvn c p r (fun h => hrp h.symm) Ω Ω'' hΩ hΩ'').symm
   · push_neg at hex
     exact Or.inr (Or.inr (Or.inr hex))
 
@@ -3760,16 +3767,16 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
     counterexample `docs/counterexamples/finalizable_or_two_enabled.lean`
     shows the claim fails for an app that does not. -/
 theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : TimedChannel T.ε)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).NoUnilateralSupport)
     (hp : p ∈ (c : FixedPart).participants)
-    (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
+    (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
       candidate.channel = (c : FixedPart)) :
-    (∃ Ω, Finalizable apps T (c : FixedPart) Ω net) ∨
-    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps T (c : FixedPart) Ω1 net ∧
-      Enabled apps T (c : FixedPart) Ω2 net) := by
+    (∃ Ω, Finalizable apps T (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps T (c : FixedPart) Ω1 net.state ∧
+      Enabled apps T (c : FixedPart) Ω2 net.state) := by
   sorry
 
 /-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
@@ -3777,16 +3784,16 @@ theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat
     state of `c` it signed. Operator ruling 2026-10-30: the app must carry
     `Rules.NoUnilateralSupport`. -/
 theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : TimedChannel T.ε)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).NoUnilateralSupport)
     (hp : p ∈ (c : FixedPart).participants)
-    (hsupp : ∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
-      ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
+    (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
+      ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
-    (Ω : Outcome E) (hΩ : Enabled apps T (c : FixedPart) Ω net)
-    (huniq : ∀ Ω', Enabled apps T (c : FixedPart) Ω' net → Ω' = Ω) :
-    Finalizable apps T (c : FixedPart) Ω net := by
+    (Ω : Outcome E) (hΩ : Enabled apps T (c : FixedPart) Ω net.state)
+    (huniq : ∀ Ω', Enabled apps T (c : FixedPart) Ω' net.state → Ω' = Ω) :
+    Finalizable apps T (c : FixedPart) Ω net.state := by
   sorry
 
 /-- Nitro-23, ForceMove-B06, ForceMove-A06, ForceMove-A07. Nitro:635-636, Nitro:639-640: at the funding
@@ -3798,8 +3805,8 @@ theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Thr
     guarantee is per participant, for a participant that made no alternative setup
     moves (labbook/2026-10-31-funding-point-alternative-moves.md). -/
 theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
     (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
     (hvt : SetupPhaseAccepted vt c)
     (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
@@ -3812,8 +3819,8 @@ theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E ap
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
 theorem concluded_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (c : FixedPart) (Ω : Outcome E) (hc : apps c.appDef = consensusRules)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (hc : apps c.appDef = consensusRules)
     (h : Concluded v c Ω)
     (hsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = c → t.state.isFinal = true →
       t.state.outcome = Ω)
@@ -3821,12 +3828,13 @@ theorem concluded_universally_finalizable (apps : Apps E) (Ts : Threats E apps) 
     (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration)
     (hpend : ∀ p, (v p).DeadlineAfter c (Ts.T p).ε) :
     UniversallyFinalizable apps Ts v c Ω := by
+  obtain_reach ⟨n, hr⟩ := n
   subst hvn
   intro p hp
   obtain ⟨ss, hh, hproof, hΩ⟩ := h p hp
   exact UnbeatableIn.mono (fun _ _ => trivial)
-    (conclusion_proof_finalizable apps (Ts.T p) (Ts.ok p) (n.views p)
-      (Nitro.network_views_participant_reachable hr p) ⟨c, hdur p⟩ ss Ω hc hp hh hproof hΩ
+    (conclusion_proof_finalizable apps (Ts.T p) (Ts.ok p)
+      ⟨(n.views p), (Nitro.network_views_participant_reachable ⟨_, hr⟩ p)⟩ ⟨c, hdur p⟩ ss Ω hc hp hh hproof hΩ
       (hsent p) (hchain p) (hpend p))
 
 /-- The safety invariant used by `consensus_enabled_outcomes`: under the
@@ -4347,13 +4355,14 @@ theorem funded_entry_unbeatable {apps : Apps E} {p : Participant} {T : Threat E 
     Operator ruling 2026-10-29: `net` is a reachable network state, for the
     same reason as `directly_funded_pays`. -/
 theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (o : Allocation E) (d : E)
-    (hf : net.chain.finalOutcome c.address = some (.allocation o))
-    (hfund : FundedFor apps T c o.total net) (amt : Coins)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : FixedPart) (o : Allocation E) (d : E)
+    (hf : net.state.chain.finalOutcome c.address = some (.allocation o))
+    (hfund : FundedFor apps T c o.total net.state) (amt : Coins)
     (hd : o.find (.external d) = some ⟨.external d, .alloc amt⟩) :
-    CanObtain apps T (.external d) (net.chain.balances.get (.external d) + o.owed (.external d))
-      net := by
+    CanObtain apps T (.external d) (net.state.chain.balances.get (.external d) + o.owed (.external d))
+      net.state := by
+  obtain_reach ⟨net, hr⟩ := net
   have howed : o.owed (Address.external d) = amt := by simp [Allocation.owed, hd]
   rw [howed]
   have hU : UnbeatableIn apps T (fun _ => True)
@@ -4362,7 +4371,7 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
   refine UnbeatableIn.bind hU2 ?_
   rintro net' ⟨hR', o', amt', hf', htot', hfund', hd', hle'⟩
   have hDF : net'.chain.DirectlyFunded c := ⟨o', hf', le_trans htot' hfund'⟩
-  have hpay := directly_funded_pays apps T A net' hR' c o' d hf' hDF amt' hd'
+  have hpay := directly_funded_pays apps T A ⟨net', hR'⟩ c o' d hf' hDF amt' hd'
   have howed' : o'.owed (Address.external d) = amt' := by simp [Allocation.owed, hd']
   rw [howed'] at hpay
   have hpayMono : UnbeatableIn apps T (fun _ => True)
@@ -4372,7 +4381,6 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
   refine UnbeatableIn.imp ?_ hpayMono
   intro net'' hle''
   exact le_trans hle' hle''
-
 
 /-- The shared case analysis of `consensus_round_safe_nil` and
     `consensus_round_safe`, for one adversary move `m` that is not a
@@ -5350,19 +5358,20 @@ theorem consensus_checkpoint_resolves {apps : Apps E} {p : Participant} {T : Thr
     invariant this maintains at every state `Run` reaches. Since `Ω ∉ {Ω1,
     Ω2}`, `ConsensusSafe` after any round rules out `Ω` finalizing. -/
 theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : TimedChannel T.ε) (ss : SignedState E)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε) (ss : SignedState E)
     (Ω1 Ω2 : Outcome E) (hc : apps (c : FixedPart).appDef = consensusRules)
     (hp : p ∈ (c : FixedPart).participants)
-    (hh : net.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = (c : FixedPart))
+    (hh : net.state.Holds ss) (hall : ss.ByAll) (hchan : ss.state.channel = (c : FixedPart))
     (hΩ1 : ss.state.outcome = Ω1)
-    (hsent : ∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
+    (hsent : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       (t.state.turnNum < ss.state.turnNum ∨ t.state = ss.state ∨ t.state.outcome = Ω2) ∧
       (t.state.isFinal = true → t.state.outcome = Ω1 ∨ t.state.outcome = Ω2))
-    (hst : (∃ t, net.chain.statusOf (c : FixedPart) = .open t ∧ t ≤ ss.state.turnNum) ∨
-      (∃ t ch, net.chain.statusOf (c : FixedPart) = .challenged t ch ∧
-        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.chain.now + T.ε ≤ ch.deadline))
-    (Ω : Outcome E) (hen : Enabled apps T (c : FixedPart) Ω net) : Ω = Ω1 ∨ Ω = Ω2 := by
+    (hst : (∃ t, net.state.chain.statusOf (c : FixedPart) = .open t ∧ t ≤ ss.state.turnNum) ∨
+      (∃ t ch, net.state.chain.statusOf (c : FixedPart) = .challenged t ch ∧
+        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.state.chain.now + T.ε ≤ ch.deadline))
+    (Ω : Outcome E) (hen : Enabled apps T (c : FixedPart) Ω net.state) : Ω = Ω1 ∨ Ω = Ω2 := by
+  obtain_reach ⟨net, hr⟩ := net
   obtain ⟨c, hdur⟩ := c
   by_contra hΩne
   push Not at hΩne
@@ -5596,11 +5605,12 @@ theorem turbo_replay_unbeatable (apps : Apps E) {p : Participant} (T : Threat E 
     finalized channel's coins onward in the same round. -/
 theorem turbo_redistribution_unbeatable (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
-    (net : NetworkState E p) (hr : (Nitro.participant apps T).Reachable net)
-    (hdag : net.chain.IsDAG)
+    (net : Nitro.ReachableParticipant apps T)
+    (hdag : net.state.chain.IsDAG)
     (ops : List (Participant × Op E)) (hops : OnlyTransfers ops) (d : E) (x : Coins)
-    (hgoal : x ≤ (Adjudicator.applyAll apps ops net.chain).balances.get (.external d)) :
-    CanObtainIn apps T HonestMove.IsTransfer (.external d) x net := by
+    (hgoal : x ≤ (Adjudicator.applyAll apps ops net.state.chain).balances.get (.external d)) :
+    CanObtainIn apps T HonestMove.IsTransfer (.external d) x net.state := by
+  obtain_reach ⟨net, hr⟩ := net
   exact turbo_replay_unbeatable apps T hT d x ops hops net.chain net (Adjudicator.Ahead.refl _)
     hgoal
 
@@ -5608,10 +5618,10 @@ theorem turbo_redistribution_unbeatable (apps : Apps E) {p : Participant} (T : T
     any address and cannot increase the value of any address by more than the
     value of the deposit." -/
 theorem deposit_bounds_value (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (c : FixedPart) (d : E) (y x x' : Coins)
-    (s' : Adjudicator E) (e : Coins) (hd : net.chain.deposit c.address e y = some s')
-    (hv : Value apps T d net x) (hv' : Value apps T d { net with chain := s' } x') :
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : FixedPart) (d : E) (y x x' : Coins)
+    (s' : Adjudicator E) (e : Coins) (hd : net.state.chain.deposit c.address e y = some s')
+    (hv : Value apps T d net.state x) (hv' : Value apps T d { net.state with chain := s' } x') :
     x ≤ x' ∧ x' ≤ x + y := by
   sorry
 
@@ -5621,11 +5631,11 @@ theorem deposit_bounds_value (apps : Apps E) {p : Participant} (T : Threat E p)
     transfer of a finalized entry to an external destination. A payout to
     another destination `q` leaves the value at `d` unchanged. -/
 theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (hr : (Nitro.participant apps T).Reachable net) (d q : E) (hq : q ≠ d)
-    (a : FixedPart) (s' : Adjudicator E) (h : net.chain.transfer a (.external q) = some s')
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (d q : E) (hq : q ≠ d)
+    (a : FixedPart) (s' : Adjudicator E) (h : net.state.chain.transfer a (.external q) = some s')
     (x : Coins) :
-    Value apps T d net x ↔ Value apps T d { net with chain := s' } x := by
+    Value apps T d net.state x ↔ Value apps T d { net.state with chain := s' } x := by
   sorry
 
 /-- Under the consensus app, a channel's status never moves while its
@@ -5750,13 +5760,13 @@ theorem consensus_channel_stays_open {apps : Apps E} {p : Participant} {T : Thre
     prevent this from happening." Under the consensus app a participant who
     signs no state can keep every cycle away from its open channels. -/
 theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : NetworkState E p)
-    (_hr : (Nitro.participant apps T).Reachable net)
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
     (hc : ∀ c : FixedPart, p ∈ c.participants → apps c.appDef = consensusRules)
-    (hopen : ∀ c : FixedPart, p ∈ c.participants → ∃ t, net.chain.statusOf c = .open t)
-    (hdag : net.chain.IsDAG) (hsent : net.sent = []) :
+    (hopen : ∀ c : FixedPart, p ∈ c.participants → ∃ t, net.state.chain.statusOf c = .open t)
+    (hdag : net.state.chain.IsDAG) (hsent : net.state.sent = []) :
     Prevents apps T (fun net' => ∃ c : FixedPart, p ∈ c.participants ∧
-      Relation.TransGen net'.chain.Edge c.address c.address) net := by
+      Relation.TransGen net'.chain.Edge c.address c.address) net.state := by
+  obtain_reach ⟨net, _hr⟩ := net
   have hinv : ∀ {m : NetworkState E p}, Run apps T (fun _ => .wait 0) net m →
       m.sent = [] ∧ ∀ c' : FixedPart, p ∈ c'.participants → ∀ t,
         net.chain.statusOf c' = .open t → m.chain.statusOf c' = .open t := by
@@ -6525,10 +6535,11 @@ theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
     In the transfer-only game (Nitro:779-781), on a DAG of outcomes. -/
 theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
-    (net : NetworkState E p) (hr : (Nitro.participant apps T).Reachable net)
-    (hdag : net.chain.IsDAG) (n : Address E) (v x : Coins)
-    (hv : net.chain.TurboValue n v)
-    (h : CanObtainIn apps T HonestMove.IsTransfer n x net) : x ≤ v := by
+    (net : Nitro.ReachableParticipant apps T)
+    (hdag : net.state.chain.IsDAG) (n : Address E) (v x : Coins)
+    (hv : net.state.chain.TurboValue n v)
+    (h : CanObtainIn apps T HonestMove.IsTransfer n x net.state) : x ≤ v := by
+  obtain_reach ⟨net, hr⟩ := net
   -- `sg` is ahead of every state `p`'s strategy reaches: the adversary's
   -- and `p`'s transfers move nothing on `sg`
   -- (`symbolicTerminal_applyAll_unmoved`), and `Ahead.applyAll_sublist`
@@ -6581,10 +6592,10 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
     the transfer-only game, for an external destination. -/
 theorem turbo_value_achievable (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
-    (net : NetworkState E p) (hr : (Nitro.participant apps T).Reachable net)
-    (hturbo : net.chain.IsTurboOutcomeNetwork) (d : E) (v : Coins)
-    (hv : net.chain.TurboValue (.external d) v) :
-    CanObtainIn apps T HonestMove.IsTransfer (.external d) v net := by
+    (net : Nitro.ReachableParticipant apps T)
+    (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d : E) (v : Coins)
+    (hv : net.state.chain.TurboValue (.external d) v) :
+    CanObtainIn apps T HonestMove.IsTransfer (.external d) v net.state := by
   sorry
 
 /-- Nitro-18, Nitro-33, Nitro-34, Nitro-35. Nitro:482-484 with Nitro:835-839: on a Turbo DAG
@@ -6592,10 +6603,10 @@ theorem turbo_value_achievable (apps : Apps E) {p : Participant} (T : Threat E p
     `d`. -/
 theorem turbo_value_is_value (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
-    (net : NetworkState E p) (hr : (Nitro.participant apps T).Reachable net)
-    (hturbo : net.chain.IsTurboOutcomeNetwork) (d : E) (v : Coins)
-    (hv : net.chain.TurboValue (.external d) v) :
-    ValueIn apps T HonestMove.IsTransfer d net v := by
+    (net : Nitro.ReachableParticipant apps T)
+    (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d : E) (v : Coins)
+    (hv : net.state.chain.TurboValue (.external d) v) :
+    ValueIn apps T HonestMove.IsTransfer d net.state v := by
   sorry
 
 theorem Allocation.reduceOwed_self_of_find_alloc {o : Allocation E} {d : Address E} {amt : Coins}
@@ -7036,8 +7047,8 @@ theorem turbo_value_exists_unique (s : DAGOutcomeNetwork E) (n : Address E) :
     SATP assumes its result as a precondition (SATP:385-388), and go-nitro has no objective that
     runs it. The statement stays for reference. Armada does not depend on it. -/
 theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (w : LedgerWithSub E) (hw : w.Holds apps Ts v)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (w : LedgerWithSub E) (hw : w.Holds apps Ts v)
     (hχk : w.χ.kind = .ledger)
     (hχopen : ∀ p, (v p).chain.finalOutcome w.χ.address = none)
     (hχsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) :
@@ -7053,9 +7064,9 @@ theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v
     SATP assumes its result as a precondition (SATP:385-388), and go-nitro has no objective that
     runs it. The statement stays for reference. Armada does not depend on it. -/
 theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (v v' : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (n' : Network E)
-    (hr' : (Nitro.network apps Ts).Reachable n') (hvn' : v' = n'.views)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (n' : Nitro.ReachableNetwork apps Ts)
+    (hvn' : v' = n'.state.views)
     (A B : Participant) (dA dB : E) (L χ : FixedPart)
     (a b a' b' : Coins) (ha : a' ≤ a) (hb : b' ≤ b)
     (hLk : L.kind = .ledger) (hLc : L.RunsConsensus apps) (hLp : L.participants = [A, B])
@@ -7083,9 +7094,9 @@ theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (
     SATP assumes its result as a precondition (SATP:385-388), and go-nitro has no objective that
     runs it. The statement stays for reference. Armada does not depend on it. -/
 theorem subchannel_close_value_preserving (apps : Apps E) (Ts : Threats E apps) (v v' : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (n' : Network E)
-    (hr' : (Nitro.network apps Ts).Reachable n') (hvn' : v' = n'.views)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (n' : Nitro.ReachableNetwork apps Ts)
+    (hvn' : v' = n'.state.views)
     (w : LedgerWithSub E) (a' b' : Coins)
     (hc : a' + b' = w.c) (hw : w.Holds apps Ts v)
     (hχ : v.FinalizableBy apps Ts w.χ
@@ -8107,8 +8118,8 @@ theorem conclude_transfer_pays (apps : Apps E) {p : Participant} (T : Threat E p
     restatement adds `n`, `hr` and the link `hvn`, rather than rewriting
     every one of this theorem's existing uses of `v` to `n.views`. -/
 theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
-    (hvn : v = n.views) (A B : Participant) (dA dB : E)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (A B : Participant) (dA dB : E)
     (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps) (χ : FixedPart)
     (a b c a' : Coins)
     (hLp : (L : FixedPart).participants = [A, B])
@@ -8134,6 +8145,7 @@ theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Vie
       (v A) ∧
     FundedFor apps (Ts.T A) (L' : FixedPart) (a + b + c) (v A) ∧
     FundedFor apps (Ts.T B) (L' : FixedPart) (a + b + c) (v B) := by
+  obtain_reach ⟨n, hr⟩ := n
   obtain ⟨L, hLk⟩ := L
   obtain ⟨L', hL'k⟩ := L'
   dsimp only at hLp hL'p hLL' hbal hconc hsent hopen hdur hpend hL'open hL'sent hL'out hL'c ⊢
@@ -8468,12 +8480,13 @@ theorem satp_lemma_3_1 (apps : Apps E) (r : Route E) (alice bob : Participant)
       (st.turnNum ≤ 1 ∧ st.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
       (st.isFinal = true ∧ ∃ a b, PairOutcome (r.dest alice) (r.dest bob) st.outcome a b ∧
         a + b = r.a0 + r.b0))
-    (s : Adjudicator E) (hs : ReachableSigned apps signed s) (Ω : Outcome E)
-    (hfin : s.finalOutcome r.V.address = some Ω) :
+    (s : ReachableState (Nitro.signedChain apps signed)) (Ω : Outcome E)
+    (hfin : s.state.finalOutcome r.V.address = some Ω) :
     ∃ Ω0, Redistributed Ω0 Ω ∧
-      (((s.statusOf r.V).turnNumRecord = 0 ∧
+      (((s.state.statusOf r.V).turnNumRecord = 0 ∧
         Ω0 = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
        (∃ a b, PairOutcome (r.dest alice) (r.dest bob) Ω0 a b ∧ a + b = r.a0 + r.b0)) := by
+  obtain_reach ⟨s, hs : ReachableSigned apps signed s⟩ := s
   have horig := satpOrigin_reachableSigned hr hV halice hbob hsigned hs
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hfin
   unfold SatpOrigin at horig
@@ -9186,17 +9199,18 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
     (A : Assumptions apps p T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules) (hp : p ∈ r.peers)
     (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
-    (hdur : 2 * T.ε ≤ r.V.challengeDuration) (net : NetworkState E p)
-    (hnr : (Nitro.participant apps T).Reachable net) (s1 : SignedState E)
-    (hh : net.Holds s1) (hall : s1.ByAll) (hchan : s1.state.channel = r.V)
+    (hdur : 2 * T.ε ≤ r.V.challengeDuration) (net : Nitro.ReachableParticipant apps T)
+    (s1 : SignedState E)
+    (hh : net.state.Holds s1) (hall : s1.ByAll) (hchan : s1.state.channel = r.V)
     (hv1 : s1.state.turnNum = 1)
     (h1 : s1.state.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0)
-    (hsent : ∀ t ∈ net.sent, t.state.channel = r.V →
+    (hsent : ∀ t ∈ net.state.sent, t.state.channel = r.V →
       (t.state.turnNum ≤ 1 ∧ t.state.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0) ∨
       (∃ a b, PairOutcome (r.dest alice) (r.dest bob) t.state.outcome a b ∧ a + b = r.a0 + r.b0))
-    (hst : ∃ t, net.chain.statusOf r.V = .open t ∧ t ≤ 1) :
+    (hst : ∃ t, net.state.chain.statusOf r.V = .open t ∧ t ≤ 1) :
     Unbeatable apps T (fun net' => ∃ Ω a b, net'.Finalized r.V Ω ∧
-      PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧ a + b = r.a0 + r.b0) net := by
+      PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧ a + b = r.a0 + r.b0) net.state := by
+  obtain_reach ⟨net, hnr⟩ := net
   have hr' := hr
   obtain ⟨-, -, -, -, -, hVp, hVk, -⟩ := hr'
   have hckV : r.V.kind ≠ .ledger := by rw [hVk]; decide
@@ -9444,21 +9458,21 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (om op : Allocation E) (balm balp : Coins)
     (hom : r.LedgerAfterRound2 om Pprev P P balm r.b0)
     (hop : r.LedgerAfterRound2 op P Pnext P balp r.a0)
-    (net : NetworkState E P) (hnr : (Nitro.participant apps T).Reachable net)
-    (hHm : HoldsLatestLedger net (Lm : FixedPart) om)
-    (hHp : HoldsLatestLedger net (Lp : FixedPart) op)
-    (hVs : HoldsVirtualSetup net r alice bob true)
-    (hR1 : ∀ t ∈ net.sent,
+    (net : Nitro.ReachableParticipant apps T)
+    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om)
+    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op)
+    (hVs : HoldsVirtualSetup net.state r alice bob true)
+    (hR1 : ∀ t ∈ net.state.sent,
       (t.state.channel = (Lm : FixedPart) ∨ t.state.channel = (Lp : FixedPart)) →
       ∀ o, t.state.outcome = .allocation o → o.find r.V.address ≠ none →
-      ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0)
-    (hpend : net.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.DeadlineAfter (Lp : FixedPart) T.ε ∧
-      net.DeadlineAfter r.V T.ε)
-    (hchain : net.chain.finalizedWith (Lm : FixedPart).address = none ∧
-      net.chain.finalizedWith (Lp : FixedPart).address = none ∧
-      net.chain.finalizedWith r.V.address = none) :
+      ∃ ss, net.state.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0)
+    (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
+      net.state.DeadlineAfter r.V T.ε)
+    (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
+      net.state.chain.finalizedWith (Lp : FixedPart).address = none ∧
+      net.state.chain.finalizedWith r.V.address = none) :
     Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) balm balp
-      (net.chain.balances.get (.external (r.dest P)))) net := by
+      (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
   sorry
 
 omit [DecidableEq E] in
@@ -9866,14 +9880,15 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
     (hLp : r.ledgers[i]? = some (Lp : FixedPart))
     (om op : Allocation E) (balm balp : Coins)
     (hom : r.LedgerBeforeRound2 om P balm) (hop : r.LedgerBeforeRound2 op P balp)
-    (net : NetworkState E P) (hnr : (Nitro.participant apps T).Reachable net)
-    (hHm : HoldsLatestLedger net (Lm : FixedPart) om)
-    (hHp : HoldsLatestLedger net (Lp : FixedPart) op)
-    (hpend : net.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.DeadlineAfter (Lp : FixedPart) T.ε)
-    (hchain : net.chain.finalizedWith (Lm : FixedPart).address = none ∧
-      net.chain.finalizedWith (Lp : FixedPart).address = none) :
+    (net : Nitro.ReachableParticipant apps T)
+    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om)
+    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op)
+    (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε)
+    (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
+      net.state.chain.finalizedWith (Lp : FixedPart).address = none) :
     Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) balm balp
-      (net.chain.balances.get (.external (r.dest P)))) net := by
+      (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
+  obtain_reach ⟨net, hnr⟩ := net
   obtain ⟨Lm, hdurLm⟩ := Lm
   obtain ⟨Lp, hdurLp⟩ := Lp
   have hdur : 2 * T.ε ≤ Lm.challengeDuration ∧ 2 * T.ε ≤ Lp.challengeDuration := ⟨hdurLm, hdurLp⟩
@@ -9957,16 +9972,16 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     (hdurV : r.V.IsTimed T.ε)
     (o : GuaranteedOutcome E) (bal : Coins)
     (ho : r.LedgerAfterRound2 (o : Allocation E) P P1 P bal r.a0)
-    (net : NetworkState E P) (hnr : (Nitro.participant apps T).Reachable net)
-    (hH : HoldsLatestLedger net (L0 : FixedPart) (o : Allocation E))
-    (hVs : HoldsVirtualSetup net r alice bob true)
+    (net : Nitro.ReachableParticipant apps T)
+    (hH : HoldsLatestLedger net.state (L0 : FixedPart) (o : Allocation E))
+    (hVs : HoldsVirtualSetup net.state r alice bob true)
     (a b : Coins) (hab : a + b = r.a0 + r.b0)
-    (hfin : net.chain.finalOutcome r.V.address =
+    (hfin : net.state.chain.finalOutcome r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]))
-    (hpend : net.DeadlineAfter (L0 : FixedPart) T.ε)
-    (hchain : net.chain.finalizedWith (L0 : FixedPart).address = none) :
+    (hpend : net.state.DeadlineAfter (L0 : FixedPart) T.ε)
+    (hchain : net.state.chain.finalizedWith (L0 : FixedPart).address = none) :
     Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) bal a
-      (net.chain.balances.get (.external (r.dest P)))) net := by
+      (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
   sorry
 
 /-- SATP-15, SATP-20 (Protocol 3.3 step 3, SATP:484-485; SATP:550-553). After

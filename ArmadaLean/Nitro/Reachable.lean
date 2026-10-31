@@ -23,6 +23,7 @@ import ArmadaLean.Machine
 import ArmadaLean.Types.Reachable
 import ArmadaLean.Nitro.Strategy
 import ArmadaLean.Nitro.Lemmas
+import ArmadaLean.SpecTools
 
 section
 
@@ -184,9 +185,10 @@ theorem balances_virtual_zero_step {apps : Apps E} {s s' : Adjudicator E} {calle
     `Adjudicator.lean:100-152`). Genesis holds no balances at all
     (`Adjudicator.genesis`, `Balances.get` on `[]`); every step keeps a
     virtual channel's balance at zero (`balances_virtual_zero_step`). -/
-theorem Reachable.balances_virtual_zero {apps : Apps E} {s : Adjudicator E}
-    (hr : Reachable apps s) (c : FixedPart) (hk : c.kind = .virtual) :
-    s.balances.get (.channel c) = 0 := by
+theorem Reachable.balances_virtual_zero {apps : Apps E} (s : ReachableState (Nitro.chain apps))
+    (c : FixedPart) (hk : c.kind = .virtual) :
+    s.state.balances.get (.channel c) = 0 := by
+  obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   induction hr with
   | refl => rfl
   | tail _ hstep ih =>
@@ -276,8 +278,9 @@ theorem Nitro.participant_chain_reachable {apps : Apps E} {p : Participant} {T :
     adversary ever landing a call itself, so this is now sound on every
     path that grows `received`. -/
 theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T : Threat E p}
-    (B : Bounds apps p T) {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) :
-    ∀ ss ∈ net.received, net.Unforged ss := by
+    (B : Bounds apps p T) (net : Nitro.ReachableParticipant apps T) :
+    ∀ ss ∈ net.state.received, net.state.Unforged ss := by
+  obtain_reach ⟨net, h⟩ := net
   refine Machine.invariant (Nitro.participant apps T)
     (P := fun net => ∀ ss ∈ net.received, net.Unforged ss) ?_ ?_ net h
   · intro net hinit ss hss
@@ -848,10 +851,11 @@ theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n 
     forward for an old entry. Used by `finalizable_unique` (`Liveness.lean`,
     D7 voucher rule repaired, operator ruling 2026-10-31, armada-laconic
     `labbook/2026-10-31-funding-point-alternative-moves.md`). -/
-theorem Nitro.network_received_voucher_signers {apps : Apps E} {Ts : Threats E apps} {n : Network E}
-    (h : (Nitro.network apps Ts).Reachable n) :
-    ∀ p q : Participant, ∀ r ∈ (n.views p).received, ∀ v, r.state.voucher? = some v → q ∈ v.signers →
-      ∃ s ∈ (n.views q).sent, s.state.voucher? = some v := by
+theorem Nitro.network_received_voucher_signers {apps : Apps E} {Ts : Threats E apps} (n : Nitro.ReachableNetwork apps Ts)
+    :
+    ∀ p q : Participant, ∀ r ∈ (n.state.views p).received, ∀ v, r.state.voucher? = some v → q ∈ v.signers →
+      ∃ s ∈ (n.state.views q).sent, s.state.voucher? = some v := by
+  obtain_reach ⟨n, h⟩ := n
   refine Machine.invariant (Nitro.network apps Ts)
     (P := fun n => ∀ p q : Participant, ∀ r ∈ n.received p, ∀ v, r.state.voucher? = some v →
       q ∈ v.signers → ∃ s ∈ n.sent q, s.state.voucher? = some v) ?_ ?_ n h
@@ -1020,9 +1024,10 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
     `received`; every other move only ever grows `received`, for any
     participant, never removes from it, so a state already delivered to
     one of its recipients stays delivered. -/
-theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n : Network E}
-    (h : (Nitro.network apps Ts).Reachable n) :
-    ∀ p, ∀ ss ∈ (n.views p).sent, ∀ q ∈ ss.state.recipients p, ss ∈ (n.views q).received := by
+theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} (n : Nitro.ReachableNetwork apps Ts)
+    :
+    ∀ p, ∀ ss ∈ (n.state.views p).sent, ∀ q ∈ ss.state.recipients p, ss ∈ (n.state.views q).received := by
+  obtain_reach ⟨n, h⟩ := n
   refine Machine.invariant (Nitro.network apps Ts)
     (P := fun n => ∀ p, ∀ ss ∈ n.sent p, ∀ q ∈ ss.state.recipients p, ss ∈ n.received q)
     ?_ ?_ n h
@@ -1080,7 +1085,7 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
     `hr` alone. -/
 theorem Nitro.network_views_consistent {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) : n.views.Consistent :=
-  ⟨Network.views_chain_eq n, Nitro.network_views_delivered h, Nitro.network_views_signers h⟩
+  ⟨Network.views_chain_eq n, Nitro.network_views_delivered ⟨_, h⟩, Nitro.network_views_signers h⟩
 
 /-- `base`'s view after receiving every `p₀`-sent state in `sends` that
     names it a recipient, batched as one list (helper for
@@ -1150,8 +1155,9 @@ theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats 
     an adversary `.chain`/`.land` move outright, so there is no bystander
     case left to block. -/
 theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats E apps}
-    {n : Network E} (h : (Nitro.network apps Ts).Reachable n) (q : Participant) :
-    (Nitro.participant apps (Ts.T q)).Reachable (n.view q) := by
+    (n : Nitro.ReachableNetwork apps Ts) (q : Participant) :
+    (Nitro.participant apps (Ts.T q)).Reachable (n.state.view q) := by
+  obtain_reach ⟨n, h⟩ := n
   refine Machine.invariant (Nitro.network apps Ts)
     (P := fun n => (Nitro.participant apps (Ts.T q)).Reachable (n.view q)) ?_ ?_ n h
   · intro n hinit

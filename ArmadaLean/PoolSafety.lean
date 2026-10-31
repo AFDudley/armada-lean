@@ -3,6 +3,8 @@
 -/
 import ArmadaLean.Pool
 import ArmadaLean.PoolMachine
+import ArmadaLean.Types.Reachable
+import ArmadaLean.SpecTools
 
 /-! ### The core invariant: tokens held equal the value of unspent notes -/
 
@@ -182,8 +184,9 @@ vault's shares, :617-621). RAILGUN's documentation: "The Merkle Tree keeps track
 balances held by 0zk addresses in the system which can only be updated if proof that passes
 the cryptographic validation rules is submitted to the RAILGUN smart contracts"
 (docs.railgun.org/wiki/learn/using-private-tokens, line 5). -/
-theorem core_invariant {s : PoolState} (h : Reachable s) :
-    HeldInvariant s := by
+theorem core_invariant (s : ReachableState Pool.machine) :
+    HeldInvariant s.state := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
   | genesis r => exact genesis_invariant r
   | step _ hstep ih => exact step_preserves_invariant ih hstep
@@ -326,10 +329,11 @@ covers `transact` and `transactOwned`, since both call `_accumulateAndNullify`,
 TransactModule.sol:379-386). S-RG, "RAILGUN Core System & Protocol": "The contract
 checks to make sure: ... That it hasn't seen the nullifiers before, eliminating any
 double spends." -/
-theorem pool_no_double_spend {s0 s : PoolState}
-    (_h0 : Reachable s0) (hfrom : ReachableFrom s0 s) (tn : Nat)
-    {n : Term} (hn0 : n ∈ s0.spent tn) {ns : List Term} {spent' : NullifierSet}
+theorem pool_no_double_spend (s0 : ReachableState Pool.machine) {s : PoolState}
+    (hfrom : ReachableFrom s0.state s) (tn : Nat)
+    {n : Term} (hn0 : n ∈ s0.state.spent tn) {ns : List Term} {spent' : NullifierSet}
     (hmark : markSpent (s.spent tn) ns = some spent') : n ∉ ns := by
+  obtain_reach ⟨s0, _h0 : Reachable s0⟩ := s0
   intro hmem
   exact (owned_no_double_spend hmark).2 n hmem (spent_monotone_from hfrom tn n hn0)
 
@@ -498,10 +502,11 @@ treeNumber` precondition then means the named root is one of those pushed values
 the genesis root of that tree — never a caller's invention. S-RG, "RAILGUN Core System
 & Protocol": "The contract checks to make sure: ... The Merkle root is the current or a
 previous Merkle root, to prevent users from making up UTXOs." -/
-theorem transact_root_was_produced {s : PoolState}
-    (h : Reachable s) (tn : Nat) {root : Term} (hRoot : root ∈ s.rootsAt' tn) :
+theorem transact_root_was_produced (s : ReachableState Pool.machine)
+    (tn : Nat) {root : Term} (hRoot : root ∈ s.state.rootsAt' tn) :
     root ∈ rootsAt genesisTrees tn ∨
-      ∃ pushed : List Term, root ∈ pushed ∧ s.rootsAt' tn = pushed ++ rootsAt genesisTrees tn := by
+      ∃ pushed : List Term, root ∈ pushed ∧ s.state.rootsAt' tn = pushed ++ rootsAt genesisTrees tn := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
   obtain ⟨pushed, hpushed⟩ := rootsAt_grounded h tn
   rw [hpushed] at hRoot
   rcases List.mem_append.mp hRoot with h1 | h2
@@ -517,8 +522,9 @@ lifting `ArmadaLean.PoolOwned.preimageOf_consistent` from one transaction's batc
 (`recordPreimages`) to the pool's whole history (`applyRecords`, at every
 `shield`/`transact`/`transactOwned` step).
 Source: TransactModule.sol:590-604, ShieldModule.sol:71,136. -/
-theorem pool_preimageOf_consistent {s : PoolState}
-    (h : Reachable s) : RegistryConsistent s.preimageOf := by
+theorem pool_preimageOf_consistent (s : ReachableState Pool.machine)
+    : RegistryConsistent s.state.preimageOf := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
   | genesis r => intro c pre hc; simp [genesis] at hc
   | step _ hstep ih =>
@@ -659,10 +665,10 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
     positivity check is on the gross amount (`_validateCommitmentPreimage`,
     ShieldModule.sol:244). No proof, no honest-prover assumption: shield carries no
     SNARK. No pause and no capacity gate: a full tree rolls over to a new one. -/
-theorem shield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s) (token : Token)
+theorem shield_can_happen (s : ReachableState Pool.machine) (token : Token)
     (x : Nat) (npk : Term)
-    (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) :
-    ∃ s', Step s s' :=
+    (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.state.feeRatio x)) :
+    ∃ s', Step s.state s' := obtain_reach% ⟨s, _hr⟩ := s;
   ⟨_, Step.shield token x npk hValue hSpendable⟩
 
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
@@ -675,7 +681,7 @@ theorem shield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s) (toke
     contract, if any, equal to `caller` (`hAdapt`). `hLive` is the ghost liveness
     precondition, keyed by the `(treeNumber, leaf position)` pairs of the notes.
     Source: TransactModule.sol:43-96. -/
-theorem transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
+theorem transact_can_happen (s : ReachableState Pool.machine)
     (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N M : Nat} (caller : Term) (bp : BoundParams)
     (hAdapt : AdaptAllows bp caller) (hNoUnshield : bp.unshield = none)
@@ -683,7 +689,7 @@ theorem transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
-    (hRoot : root ∈ s.rootsAt' bp.treeNumber)
+    (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
       merkleRoot
@@ -694,15 +700,16 @@ theorem transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ s.spent bp.treeNumber)
+    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ s.state.spent bp.treeNumber)
     {rest : List ((Nat × Nat) × CommitmentPreimage)}
-    (hLive : removeAll (s.live token)
+    (hLive : removeAll (s.state.live token)
         (List.ofFn fun i =>
           ((bp.treeNumber, leavesIndices i),
             (⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn i), token, valueIn i⟩ :
               CommitmentPreimage)))
         = some rest) :
-    ∃ s', Step s s' := by
+    ∃ s', Step s.state s' := by
+  obtain_reach ⟨s, _hr⟩ := s
   let pub : TransactPublic N M :=
     { merkleRoot := root, boundParamsHash := hashBoundParams bp,
       nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
@@ -743,7 +750,7 @@ theorem transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     exactly `⟨token, recipient, value⟩`. `_validateTransaction`'s unshield checks
     (TransactModule.sol:295-331; Zokyo 2022-12-21 finding #1) bind the payout to the
     proof. -/
-theorem unshield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
+theorem unshield_can_happen (s : ReachableState Pool.machine)
     (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N : Nat} (caller : Term) (bp : BoundParams)
     (hAdapt : AdaptAllows bp caller) (recipient : Term) (value : Nat)
@@ -752,7 +759,7 @@ theorem unshield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool))
     (hN : N ≤ 8)
-    (hRoot : root ∈ s.rootsAt' bp.treeNumber)
+    (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
       merkleRoot
@@ -762,15 +769,16 @@ theorem unshield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i)) (hRangeOut : RangeChecked120 value)
     (hBalance : listSum (List.ofFn valueIn) = value)
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ s.spent bp.treeNumber)
+    (hFresh : ∀ i, nullifier (Term.val nullifyingKey) (leavesIndices i) ∉ s.state.spent bp.treeNumber)
     {rest : List ((Nat × Nat) × CommitmentPreimage)}
-    (hLive : removeAll (s.live token)
+    (hLive : removeAll (s.state.live token)
         (List.ofFn fun i =>
           ((bp.treeNumber, leavesIndices i),
             (⟨npk (masterPublicKey publicKey nullifyingKey) (randomIn i), token, valueIn i⟩ :
               CommitmentPreimage)))
         = some rest) :
-    ∃ s', Step s s' ∧ s'.payouts = s.payouts ++ [⟨token, recipient, value⟩] := by
+    ∃ s', Step s.state s' ∧ s'.payouts = s.state.payouts ++ [⟨token, recipient, value⟩] := by
+  obtain_reach ⟨s, _hr⟩ := s
   let pub : TransactPublic N 1 :=
     { merkleRoot := root, boundParamsHash := hashBoundParams bp,
       nullifiers := fun i => nullifier (Term.val nullifyingKey) (leavesIndices i),
@@ -819,14 +827,14 @@ theorem unshield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     can pay out to any recipient's note key; the step publishes no opening
     (`openings := []`).
     Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
-theorem owned_transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
+theorem owned_transact_can_happen (s : ReachableState Pool.machine)
     (hComplete : OwnedProofCompleteness)
     {N M : Nat} (ownerField : Term) (token : Token) (bp : BoundParams)
     (hNoUnshield : bp.unshield = none) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
-    (hRoot : root ∈ s.rootsAt' bp.treeNumber)
+    (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
     (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
       merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i))
@@ -835,15 +843,16 @@ theorem owned_transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable 
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ s.spent bp.treeNumber)
+    (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ s.state.spent bp.treeNumber)
     (caller : Term) (hCaller : caller = ownerField) (hAdapt : AdaptAllows bp caller)
     {rest : List ((Nat × Nat) × CommitmentPreimage)}
-    (hLive : removeAll (s.live token)
+    (hLive : removeAll (s.state.live token)
         (List.ofFn fun i =>
           ((bp.treeNumber, leavesIndices i),
             (⟨npk ownerField (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
         = some rest) :
-    ∃ s', Step s s' := by
+    ∃ s', Step s.state s' := by
+  obtain_reach ⟨s, _hr⟩ := s
   let pub : TransactOwnedPublic N M :=
     { merkleRoot := root, boundParamsHash := hashBoundParams bp,
       nullifiers := fun i => nullifier ownerField (leavesIndices i),
@@ -968,11 +977,12 @@ own, `s.rootsAt' tn` (`reachable_rootAt_matches_leavesAt`). `rootsAt' tn` never 
 an entry (`PrivacyPoolStorage.rootHistory`, PrivacyPoolStorage.sol:171), so the witness
 built from the latest leaf list verifies against a root the contract still accepts.
 The leaf is an `Option` lookup, not a lookup with a default value (finding P-8). -/
-theorem leaf_has_merkle_witness {s : PoolState} (h : Reachable s) (tn : Nat)
-    {i : Nat} {leaf : Term} (hleaf : (s.leavesAt' tn)[i]? = some leaf) :
-    merkleRoot leaf (treePath TreeDepth (s.leavesAt' tn) i) =
-        treeRoot TreeDepth (s.leavesAt' tn) ∧
-      treeRoot TreeDepth (s.leavesAt' tn) ∈ s.rootsAt' tn := by
+theorem leaf_has_merkle_witness (s : ReachableState Pool.machine) (tn : Nat)
+    {i : Nat} {leaf : Term} (hleaf : (s.state.leavesAt' tn)[i]? = some leaf) :
+    merkleRoot leaf (treePath TreeDepth (s.state.leavesAt' tn) i) =
+        treeRoot TreeDepth (s.state.leavesAt' tn) ∧
+      treeRoot TreeDepth (s.state.leavesAt' tn) ∈ s.state.rootsAt' tn := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
   obtain ⟨hi, _⟩ := List.getElem?_eq_some_iff.mp hleaf
   have hcap := reachable_leavesAt_capacity h tn
   have hilt : i < 2 ^ TreeDepth := Nat.lt_of_lt_of_le hi hcap
@@ -1689,9 +1699,9 @@ Proved from the ghost invariant `LiveSpentInvariant`: a position still live was 
 named by any earlier `transact`/`transactOwned`, because a spend that named it would
 have removed it from `live` at that same step (`removeAll_disjoint`, keyed by the
 invariant's no-duplicate-entry fact). -/
-theorem live_note_unspent {s : PoolState} (h : Reachable s) (t : Token) (tn pos : Nat)
-    (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.live t) (nk : Term) :
-    nullifier nk pos ∉ s.spent tn :=
+theorem live_note_unspent (s : ReachableState Pool.machine) (t : Token) (tn pos : Nat)
+    (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.state.live t) (nk : Term) :
+    nullifier nk pos ∉ s.state.spent tn := obtain_reach% ⟨s, h : Reachable s⟩ := s;
   (reachable_live_spent_invariant h).2.2.2.1 t tn pos pre hmem nk
 
 /-! ### A live entry's position names the leaf that holds its commitment -/
@@ -1839,9 +1849,10 @@ exactly `hashCommitment pre`. Kept as a lemma because a pool-level theorem needs
 The lookup is an `Option`; the statement implies the position exists (finding P-8).
 Proved from `reachable_live_leaf_matches` and the range part of
 `LiveSpentInvariant`. -/
-theorem live_leaf_matches {s : PoolState} (h : Reachable s) (t : Token) (tn pos : Nat)
-    (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.live t) :
-    (s.leavesAt' tn)[pos]? = some (hashCommitment pre) := by
+theorem live_leaf_matches (s : ReachableState Pool.machine) (t : Token) (tn pos : Nat)
+    (pre : CommitmentPreimage) (hmem : ((tn, pos), pre) ∈ s.state.live t) :
+    (s.state.leavesAt' tn)[pos]? = some (hashCommitment pre) := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
   have hmatch := reachable_live_leaf_matches h t tn pos pre hmem
   have hrange := (reachable_live_spent_invariant h).1 t tn pos pre hmem
   rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hrange] at hmatch
@@ -1919,8 +1930,9 @@ TransactOwned.circom:117-121), and a shield's note carries `Step.shield`'s
 this for liveness, not for safety: a note whose value failed the check could never be
 an input. The number 120 stays in the circuit layer (finding P-6). Kept because
 `owned_merge_can_happen` needs it for its inputs (finding P-5). -/
-theorem live_values_spendable {s : PoolState} (h : Reachable s) :
-    LiveValuesSpendable s := by
+theorem live_values_spendable (s : ReachableState Pool.machine) :
+    LiveValuesSpendable s.state := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
   | genesis r => exact genesis_live_values_spendable r
   | step _ hstep ih => exact step_preserves_live_values_spendable ih hstep
@@ -1959,13 +1971,14 @@ positions it spends, which differ from the pending positions
 (`live_positions_distinct_nullifiers`, `LiveSpentInvariant`). Replaces
 `transact_cannot_be_blocked`/`transactOwned_cannot_be_blocked`, which covered only the
 removed admin step (finding P-3). -/
-theorem spend_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
+theorem spend_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} (hstep : Step s.state s')
     {tn : Nat} {root nk : Term} {token : Token}
     {entries : List ((Nat × Nat) × CommitmentPreimage)}
     (hTree : ∀ e ∈ entries, e.1.1 = tn)
-    (hEnabled : SpendEnabled s tn root token entries (entries.map fun e => nullifier nk e.1.2))
-    (hDisjoint : ∀ e ∈ entries, ¬ Spends s s' token e) :
+    (hEnabled : SpendEnabled s.state tn root token entries (entries.map fun e => nullifier nk e.1.2))
+    (hDisjoint : ∀ e ∈ entries, ¬ Spends s.state s' token e) :
     SpendEnabled s' tn root token entries (entries.map fun e => nullifier nk e.1.2) := by
+  obtain_reach ⟨s, hs : Reachable s⟩ := s
   obtain ⟨hRoot, ⟨rest, hRemove⟩, spent', hNullify⟩ := hEnabled
   have hs' : Reachable s' := hs.step hstep
   have hRoot' : root ∈ s'.rootsAt' tn := by
@@ -2001,14 +2014,15 @@ theorem spend_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s 
 /-- `spend_not_blocked` for a pending `Step.transact`: its state checks stay true across
     any step that spends none of its input notes.
     Source: TransactModule.sol:373-399,538; operator ruling 2026-10-28 (pool symbolic types approval). -/
-theorem transact_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
+theorem transact_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} (hstep : Step s.state s')
     {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M} {bp : BoundParams}
     (hC : Constrained w pub)
-    (hEnabled : SpendEnabled s bp.treeNumber pub.merkleRoot w.token
+    (hEnabled : SpendEnabled s.state bp.treeNumber pub.merkleRoot w.token
       (transactSpentPositions bp.treeNumber w) (List.ofFn pub.nullifiers))
-    (hDisjoint : ∀ e ∈ transactSpentPositions bp.treeNumber w, ¬ Spends s s' w.token e) :
+    (hDisjoint : ∀ e ∈ transactSpentPositions bp.treeNumber w, ¬ Spends s.state s' w.token e) :
     SpendEnabled s' bp.treeNumber pub.merkleRoot w.token
       (transactSpentPositions bp.treeNumber w) (List.ofFn pub.nullifiers) := by
+  obtain_reach ⟨s, hs : Reachable s⟩ := s
   have hnulls : List.ofFn pub.nullifiers =
       (transactSpentPositions bp.treeNumber w).map
         (fun e => nullifier (Term.val w.nullifyingKey) e.1.2) := by
@@ -2023,19 +2037,20 @@ theorem transact_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step
     obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
     rw [← hi]
   rw [hnulls] at hEnabled ⊢
-  exact spend_not_blocked hs hstep hTree hEnabled hDisjoint
+  exact spend_not_blocked ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ hstep hTree hEnabled hDisjoint
 
 /-- `spend_not_blocked` for a pending `Step.transactOwned`: its state checks stay true
     across any step that spends none of its input notes.
     Source: TransactModule.sol:373-399,538; operator ruling 2026-10-28 (pool symbolic types approval). -/
-theorem transactOwned_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
+theorem transactOwned_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} (hstep : Step s.state s')
     {N M : Nat} {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M}
     {bp : BoundParams} (hC : OwnedConstrained w pub)
-    (hEnabled : SpendEnabled s bp.treeNumber pub.merkleRoot w.token
+    (hEnabled : SpendEnabled s.state bp.treeNumber pub.merkleRoot w.token
       (ownedSpentPositions bp.treeNumber pub w) (List.ofFn pub.nullifiers))
-    (hDisjoint : ∀ e ∈ ownedSpentPositions bp.treeNumber pub w, ¬ Spends s s' w.token e) :
+    (hDisjoint : ∀ e ∈ ownedSpentPositions bp.treeNumber pub w, ¬ Spends s.state s' w.token e) :
     SpendEnabled s' bp.treeNumber pub.merkleRoot w.token
       (ownedSpentPositions bp.treeNumber pub w) (List.ofFn pub.nullifiers) := by
+  obtain_reach ⟨s, hs : Reachable s⟩ := s
   have hnulls : List.ofFn pub.nullifiers =
       (ownedSpentPositions bp.treeNumber pub w).map
         (fun e => nullifier pub.ownerField e.1.2) := by
@@ -2050,7 +2065,7 @@ theorem transactOwned_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep :
     obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
     rw [← hi]
   rw [hnulls] at hEnabled ⊢
-  exact spend_not_blocked hs hstep hTree hEnabled hDisjoint
+  exact spend_not_blocked ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ hstep hTree hEnabled hDisjoint
 
 /-! ### A spend bound to an adapt contract (theorem 2 of the channel design) -/
 
@@ -2154,22 +2169,23 @@ The deployed owned circuits have one input only (`main_{1x1,1x2,1x3}_owned.circo
 The model's owned path admits `N ≤ 8`, so this theorem needs owned verifying keys with
 `N > 1` at deployment.
 Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
-theorem owned_merge_can_happen {s : PoolState} (hs : Reachable s) {N : Nat}
+theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
     (hN0 : 0 < N) (hN : N ≤ 8)
     (owner : Term) (token : Token) (bp : BoundParams)
     (hNoUnshield : bp.unshield = none) (hAdapt : AdaptAllows bp owner)
     (pos : Fin N → Nat) (pre : Fin N → CommitmentPreimage) (random : Fin N → Nat)
-    (hLive : ∀ i, ((bp.treeNumber, pos i), pre i) ∈ s.live token)
+    (hLive : ∀ i, ((bp.treeNumber, pos i), pre i) ∈ s.state.live token)
     (hDistinct : (List.ofFn pos).Pairwise (· ≠ ·))
     (hOpen : ∀ i, npk owner (random i) = (pre i).npk)
     (npkOut : Term)
     (hSum : Spendable (listSum (List.ofFn fun i => (pre i).value))) :
-    ∃ s', Step s s' ∧
+    ∃ s', Step s.state s' ∧
       (∀ i, ((bp.treeNumber, pos i), pre i) ∉ s'.live token) ∧
       (∃ tn' pos' : Nat, ((tn', pos'),
         (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage))
           ∈ s'.live token) ∧
-      s'.held token = s.held token := by
+      s'.held token = s.state.held token := by
+  obtain_reach ⟨s, hs : Reachable s⟩ := s
   have hi0 : Fin N := ⟨0, hN0⟩
   have hLenLt : ∀ i, pos i < (s.leavesAt' bp.treeNumber).length := fun i =>
     (reachable_live_spent_invariant hs).1 token bp.treeNumber (pos i) (pre i) (hLive i)
@@ -2183,13 +2199,13 @@ theorem owned_merge_can_happen {s : PoolState} (hs : Reachable s) {N : Nat}
     have h1 := hLenLt i
     omega
   have hLeafValue : ∀ i, (s.leavesAt' bp.treeNumber)[pos i]? = some (hashCommitment (pre i)) :=
-    fun i => live_leaf_matches hs token bp.treeNumber (pos i) (pre i) (hLive i)
+    fun i => live_leaf_matches ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ token bp.treeNumber (pos i) (pre i) (hLive i)
   have hTokenEq : ∀ i, (pre i).token = token :=
     fun i => reachable_live_token hs token ((bp.treeNumber, pos i), pre i) (hLive i)
   have hSpendIn : ∀ i, RangeChecked120 (pre i).value :=
-    fun i => live_values_spendable hs token ((bp.treeNumber, pos i), pre i) (hLive i)
+    fun i => live_values_spendable ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ token ((bp.treeNumber, pos i), pre i) (hLive i)
   have hFresh : ∀ i, nullifier owner (pos i) ∉ s.spent bp.treeNumber :=
-    fun i => live_note_unspent hs token bp.treeNumber (pos i) (pre i) (hLive i) owner
+    fun i => live_note_unspent ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ token bp.treeNumber (pos i) (pre i) (hLive i) owner
   let w : TransactOwnedWitness N 1 :=
     { token := token, randomIn := random,
       valueIn := fun i => (pre i).value,

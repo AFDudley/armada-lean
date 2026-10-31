@@ -8,6 +8,9 @@
 -/
 import ArmadaLean.Nitro.SATP
 import ArmadaLean.Nitro.Lemmas
+import ArmadaLean.Types.Reachable
+import ArmadaLean.SpecTools
+import ArmadaLean.Nitro.Reachable
 
 namespace ArmadaLean.Nitro
 
@@ -44,8 +47,9 @@ theorem balances_absent_zero (b : Balances E) (a : Address E) (h : ∀ e ∈ b, 
     balances." go-nitro: `holdings` is per channel, and a payout to an
     external destination leaves the contract (MultiAssetHolder.sol:401-402),
     so the coins held equal the sum of the channel balances. -/
-theorem held_eq_channel_balances (apps : Apps E) (s : Adjudicator E) (h : Reachable apps s) :
-    s.held = s.balances.channelTotal := by
+theorem held_eq_channel_balances (apps : Apps E) (s : ReachableState (Nitro.chain apps)) :
+    s.state.held = s.state.balances.channelTotal := by
+  obtain_reach ⟨s, h : Reachable apps s⟩ := s
   exact (Adjudicator.heldInv_reachable h).2
 
 omit [DecidableEq E] in
@@ -118,17 +122,18 @@ def Allocation.aheadOf (o : Allocation E) (k : Nat) : Coins :=
     the deposit is paid to no entry ahead of it. A reorganization that
     dropped an earlier deposit makes the guard fail
     (`deposit_requires_expectedHeld`); it is not a separate case. -/
-theorem deposit_respects_funding_order (apps : Apps E) (s s' : Adjudicator E) (hr : Reachable apps s)
+theorem deposit_respects_funding_order (apps : Apps E) (s : ReachableState (Nitro.chain apps)) (s' : Adjudicator E)
     (caller : Participant) (c : FixedPart) (o : Allocation E) (hdedup : o.dedup = o) (k : Nat)
     (e : Entry E) (he : o[k]? = some e)
-    (h : s.apply apps caller (.deposit c.address (o.aheadOf k) e.amount) = some s') :
-    s.balances.get c.address = o.aheadOf k ∧
+    (h : s.state.apply apps caller (.deposit c.address (o.aheadOf k) e.amount) = some s') :
+    s.state.balances.get c.address = o.aheadOf k ∧
     s'.balances.get c.address = o.aheadOf k + e.amount ∧
     (∀ j f, j < k → o[j]? = some f →
-      o.paidTo (s.balances.get c.address) f.dest = f.amount ∧
+      o.paidTo (s.state.balances.get c.address) f.dest = f.amount ∧
       o.paidTo (s'.balances.get c.address) f.dest = f.amount) ∧
     o.paidTo (s'.balances.get c.address) e.dest = e.amount ∧
     (∀ j f, k < j → o[j]? = some f → o.paidTo (s'.balances.get c.address) f.dest = 0) := by
+  obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   simp only [Adjudicator.apply_deposit] at h
   obtain ⟨-, he0, hb, -, -, -⟩ := Adjudicator.deposit_some h
   have hs' : s'.balances.get c.address = o.aheadOf k + e.amount := by
@@ -210,12 +215,13 @@ theorem deposit_to_external_fails (s : Adjudicator E) (d : E) (e x : Coins) :
     The hypothesis `hr` is from the operator ruling 2026-10-27 (counterexample
     in Counter.lean): on an unreachable state the coins held can be fewer
     than the payout. -/
-theorem held_falls_only_by_payout (apps : Apps E) (s s' : Adjudicator E) (hr : Reachable apps s)
+theorem held_falls_only_by_payout (apps : Apps E) (s : ReachableState (Nitro.chain apps)) (s' : Adjudicator E)
     (caller : Participant)
-    (op : Op E) (h : s.apply apps caller op = some s') (hlt : s'.held < s.held) :
+    (op : Op E) (h : s.state.apply apps caller op = some s') (hlt : s'.held < s.state.held) :
     op.isRedistribution = true ∧
-    ∃ d : E, s'.balances.get (.external d) = s.balances.get (.external d) + (s.held - s'.held) ∧
-      ∀ d', d' ≠ d → s'.balances.get (.external d') = s.balances.get (.external d') := by
+    ∃ d : E, s'.balances.get (.external d) = s.state.balances.get (.external d) + (s.state.held - s'.held) ∧
+      ∀ d', d' ≠ d → s'.balances.get (.external d') = s.state.balances.get (.external d') := by
+  obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   obtain ⟨-, hheld⟩ := Adjudicator.heldInv_reachable hr
   cases op with
   | transfer a b =>
@@ -332,16 +338,17 @@ theorem affords_when_fully_funded (held : Coins) (o : Allocation E) (d : Address
     contract. The hypothesis `hr` is from the operator ruling 2026-10-27
     (counterexample in Counter.lean): on an unreachable state the coins held
     can be fewer than the payout. -/
-theorem transfer_effects (apps : Apps E) (s : Adjudicator E) (hr : Reachable apps s) (a : FixedPart)
+theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps)) (a : FixedPart)
     (b : Address E) (s' : Adjudicator E)
-    (h : s.transfer a b = some s') :
-    ∃ o x, s.finalOutcome a.address = some (.allocation o) ∧
-      x = o.paidTo (s.balances.get a.address) b ∧
-      s'.balances.get a.address + x = s.balances.get a.address + (if b = a.address then x else 0) ∧
-      (b ≠ a.address → s'.balances.get b = s.balances.get b + x) ∧
-      (∀ d, d ≠ a.address → d ≠ b → s'.balances.get d = s.balances.get d) ∧
+    (h : s.state.transfer a b = some s') :
+    ∃ o x, s.state.finalOutcome a.address = some (.allocation o) ∧
+      x = o.paidTo (s.state.balances.get a.address) b ∧
+      s'.balances.get a.address + x = s.state.balances.get a.address + (if b = a.address then x else 0) ∧
+      (b ≠ a.address → s'.balances.get b = s.state.balances.get b + x) ∧
+      (∀ d, d ≠ a.address → d ≠ b → s'.balances.get d = s.state.balances.get d) ∧
       s'.finalOutcome a.address = some (.allocation (o.reduceOwed b x)) ∧
-      s'.held + (if b.isExternal then x else 0) = s.held ∧ s'.now = s.now := by
+      s'.held + (if b.isExternal then x else 0) = s.state.held ∧ s'.now = s.state.now := by
+  obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
   obtain ⟨o, _, x, hf, -, hx, hb, hh, hs, hn, -, -⟩ := Adjudicator.transfer_some h
   have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
@@ -450,11 +457,12 @@ theorem redistribution_ignores_caller (apps : Apps E) (s : Adjudicator E) (op : 
     the operator ruling 2026-10-27 (counterexample in Counter.lean): on an
     unreachable state an address can have two entries, or the coins held
     can be fewer than the payout. -/
-theorem redistribution_conserves_total (apps : Apps E) (s s' : Adjudicator E) (hr : Reachable apps s)
+theorem redistribution_conserves_total (apps : Apps E) (s : ReachableState (Nitro.chain apps)) (s' : Adjudicator E)
     (caller : Participant)
-    (op : Op E) (hop : op.isRedistribution = true) (h : s.apply apps caller op = some s') :
-    s'.balances.total = s.balances.total ∧
-    s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal := by
+    (op : Op E) (hop : op.isRedistribution = true) (h : s.state.apply apps caller op = some s') :
+    s'.balances.total = s.state.balances.total ∧
+    s'.held + s'.balances.paidOutTotal = s.state.held + s.state.balances.paidOutTotal := by
+  obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
   cases op with
   | transfer a b =>
@@ -587,13 +595,14 @@ theorem statusOrigin_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachab
     proof." go-nitro: only `challenge` and `_conclude` write a nonzero
     finalization time. A finalized outcome traces to one such step, and has only
     been redistributed since. -/
-theorem finalized_two_ways (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (Ω : Outcome E)
-    (hr : Reachable apps s) (hf : s.finalOutcome c.address = some Ω) :
+theorem finalized_two_ways (apps : Apps E) (s : ReachableState (Nitro.chain apps)) (c : FixedPart) (Ω : Outcome E)
+    (hf : s.state.finalOutcome c.address = some Ω) :
     ∃ s0 s1 caller, Reachable apps s0 ∧
       ((∃ ss, s0.apply apps caller (.conclude c ss) = some s1 ∧ ConclusionProof c ss ∧
           Redistributed ss.state.outcome Ω) ∨
        (∃ proof candidate, s0.apply apps caller (.challenge c proof candidate) = some s1 ∧
-          s0.now + c.challengeDuration ≤ s.now ∧ Redistributed candidate.outcome Ω)) := by
+          s0.now + c.challengeDuration ≤ s.state.now ∧ Redistributed candidate.outcome Ω)) := by
+  obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   have ho := statusOrigin_reachable hr c
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
   unfold StatusOrigin at ho

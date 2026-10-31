@@ -34,3 +34,5 @@ import ArmadaLean.Nitro.SATP
 import ArmadaLean.Nitro.Safety
 import ArmadaLean.Nitro.Liveness
 import ArmadaLean.Nitro.NonVacuity
+import ArmadaLean.Spec
+import ArmadaLean.Witness
