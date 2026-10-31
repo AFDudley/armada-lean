@@ -932,7 +932,7 @@ theorem latest_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Thr
       (n.chain.finalizedWith c.address = some ss.state.outcome ∨
         ∃ T0 ch, n.chain.statusOf c = .challenged T0 ch ∧ ss.state.turnNum ≤ T0 ∧
           ch.state = ss.state ∧ net'.chain.now < ch.deadline))
-    hseq ?_ ?_ ?_ ⟨hεbound, hlatest, hfinal, hbase⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hεbound, hlatest, hfinal, hbase⟩
   · exact hres.2.2.2
   · intro n ss' hnow _ ⟨hεb, hlat, hfin, hb⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
@@ -1065,7 +1065,7 @@ theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participan
         (∃ t0, n.chain.statusOf c = .open t0 ∧ t0 ≤ ss.state.turnNum) ∨
         (∃ t0 ch, n.chain.statusOf c = .challenged t0 ch ∧
           (t0 < ss.state.turnNum ∨ ch.state = ss.state) ∧ D < ch.deadline)))
-    hseq ?_ ?_ ?_ ⟨hεbound, hlatest, hfinal, hbase⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hεbound, hlatest, hfinal, hbase⟩
   · exact hres.2.2.2
   · intro n ss' hnow _ ⟨hεb, hlat, hfin, hb⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
@@ -1237,7 +1237,7 @@ theorem latest_round_keeps_status_nil_D {apps : Apps E} {p : Participant} {T : T
       (n.chain.finalizedWith c.address = some ss.state.outcome ∨
         ∃ T0 ch, n.chain.statusOf c = .challenged T0 ch ∧ ss.state.turnNum ≤ T0 ∧
           ch.state = ss.state ∧ D < ch.deadline))
-    hseq ?_ ?_ ?_ ⟨hlatest, hfinal, hbase⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hlatest, hfinal, hbase⟩
   · exact hres.2.2
   · intro n ss' _ _ ⟨hlat, hfin, hb⟩
     exact ⟨by rw [NetworkState.applyAdv_sent]; exact hlat,
@@ -2193,7 +2193,7 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
       ((∃ T0, n.chain.statusOf c = .open T0 ∧ ss.state.turnNum ≤ T0) ∨
         (∃ T0 ch, n.chain.statusOf c = .challenged T0 ch ∧ ss.state.turnNum ≤ T0 ∧
           net'.chain.now < ch.deadline)))
-    hseq ?_ ?_ ?_ ⟨hεbound, hsent, hbase⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hεbound, hsent, hbase⟩
   · exact hres.2.2
   · intro n ss' hnow _ ⟨hεb, hsnt, hb⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
@@ -2352,7 +2352,7 @@ theorem late_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant}
       ((∃ t0, n.chain.statusOf c = .open t0 ∧ t0 ≤ ss.state.turnNum) ∨
         (∃ t0 ch, n.chain.statusOf c = .challenged t0 ch ∧
           (t0 < ss.state.turnNum ∨ ch.state = ss.state) ∧ D < ch.deadline)))
-    hseq ?_ ?_ ?_ ⟨hεbound, hsent, hbase⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hεbound, hsent, hbase⟩
   · exact hres.2.2
   · intro n ss' hnow _ ⟨hεb, hsnt, hb⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
@@ -8468,7 +8468,8 @@ theorem SatpFinalizeInv_nil_roundSeq {apps : Apps E} {p : Participant} {T : Thre
       net''.sent = net.sent ∧ SatpFinalizeInv r alice bob M net'' := by
   intro t0 net' net'' hseq hsent' hI
   refine Threat.RoundSeq.nil_invariant
-    (Inv := fun n => n.sent = net.sent ∧ SatpFinalizeInv r alice bob M n) hseq ?_ ?_ ?_
+    (Inv := fun n => n.sent = net.sent ∧ SatpFinalizeInv r alice bob M n) hseq
+    ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩
     ⟨hsent', hI⟩
   · intro n ss _ _ ⟨hs, hI1⟩
     exact ⟨by rw [NetworkState.applyAdv_sent]; exact hs, SatpFinalizeInv_deliver_step apps ss hI1⟩
@@ -9792,7 +9793,7 @@ theorem satp_live_nil {apps : Apps E} {P : Participant} {T : Threat E P}
   have hres := Threat.RoundSeq.nil_invariant
     (Inv := fun n => net'.chain.now < n.chain.now + T.ε ∧
       HoldsVirtualSetup n r alice bob true ∧ SatpLive r n net'.chain.now)
-    hseq ?_ ?_ ?_ ⟨hεbound, hVs, hstatus⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hεbound, hVs, hstatus⟩
   · exact hres.2.2
   · intro n ss hnow _ ⟨hεb, hVsn, hstn⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
