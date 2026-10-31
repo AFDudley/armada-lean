@@ -6071,13 +6071,70 @@ theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Th
     `transfer` call on this state moves zero coins"
     (`symbolicTerminal_transfer_unmoved`). -/
 
+/-- `paidTo` reads only the deduplicated allocation (`Allocation.paidTo`'s
+    own definition goes through `o.dedup`), so it agrees with `paidTo` on
+    the allocation's own `dedup`. -/
+theorem Allocation.paidTo_dedup (o : Allocation E) (hg : Coins) (d : Address E) :
+    o.paidTo hg d = o.dedup.paidTo hg d := by
+  rw [Allocation.paidTo_eq_get, Allocation.paidTo_eq_get,
+    Allocation.dedup_eq_self_of_nodup (Allocation.dedup_nodup o)]
+
+/-- `chainPay`'s result does not depend on whether its starting allocation
+    is deduplicated: `find` is dedup-agnostic (`find_dedup`), so both runs
+    take the same branch at every step; `.2` (the leftover) matches
+    directly by induction, and `.1` (the paid allocation) matches up to
+    `dedup` (`dedup_reduceOwed` commutes `dedup` past the one step that
+    changes, `paidTo_dedup` keeps the step's own amount the same). Needed
+    because a channel's stored outcome has no proven `Nodup` invariant:
+    `symbolicAlloc` chains from the raw outcome (`AheadOf.kind` needs the
+    raw entry list), while `symbolicLeftover`, `requiredNodes` and
+    `chainPay_exhausted` all read the deduplicated view. -/
+theorem Allocation.chainPay_dedup (ds : List (Address E)) (o : Allocation E) (hg : Coins) :
+    (Allocation.chainPay ds o hg).1.dedup = (Allocation.chainPay ds o.dedup hg).1 ∧
+    (Allocation.chainPay ds o hg).2 = (Allocation.chainPay ds o.dedup hg).2 := by
+  induction ds generalizing o hg with
+  | nil => exact ⟨rfl, rfl⟩
+  | cons d ds ih =>
+    rw [Allocation.chainPay_cons, Allocation.chainPay_cons]
+    have hfeq : o.dedup.find d = o.find d := Allocation.find_dedup o d
+    cases hfo : o.find d with
+    | none => rw [hfeq, hfo]; exact ih o hg
+    | some e =>
+      rw [hfeq, hfo]
+      obtain ⟨dd, item⟩ := e
+      cases item with
+      | guarantee amt ps => dsimp only; exact ih o hg
+      | alloc amt =>
+        dsimp only
+        have hpaidTo : o.paidTo hg d = o.dedup.paidTo hg d := Allocation.paidTo_dedup o hg d
+        rw [hpaidTo]
+        have hded : (o.reduceOwed d (o.dedup.paidTo hg d)).dedup =
+            o.dedup.reduceOwed d (o.dedup.paidTo hg d) := by
+          rw [← hpaidTo]; exact Allocation.dedup_reduceOwed o d (o.paidTo hg d)
+        obtain ⟨ih1, ih2⟩ := ih (o.reduceOwed d (o.dedup.paidTo hg d)) (hg - o.dedup.paidTo hg d)
+        rw [hded] at ih1 ih2
+        exact ⟨ih1, ih2⟩
+
+/-- The leftover component of `chainPay_dedup`, named for direct use. -/
+theorem Allocation.chainPay_leftover_eq_dedup (ds : List (Address E)) (o : Allocation E)
+    (hg : Coins) :
+    (Allocation.chainPay ds o hg).2 = (Allocation.chainPay ds o.dedup hg).2 :=
+  (Allocation.chainPay_dedup ds o hg).2
+
 /-- Pay `c`'s own stored allocation through its own destinations, in `c`'s
     own priority order, out of the algorithm's recorded value at `c`
-    (`turboValueAlong`). The allocation `chainPay` leaves behind. -/
+    (`turboValueAlong`). Chains from the RAW stored outcome, not its
+    `dedup`: a channel's stored outcome has no proven `Nodup` invariant
+    anywhere in the model, and `AheadOf.kind` (`symbolicAlloc_AheadOf`)
+    needs to match the raw entry list `o` found in `s.finalOutcome`, not a
+    shorter, deduplicated view of it. The allocation `chainPay` leaves
+    behind; `symbolicAlloc_dedup_dest_eq` reads its `dedup`. -/
 noncomputable def Adjudicator.symbolicAlloc (s : Adjudicator E) (order : List (Address E))
     (c : Address E) : Allocation E :=
-  (Allocation.chainPay ((s.allocationOf c).map Entry.dest) (s.allocationOf c)
-    (s.turboValueAlong order c)).1
+  match s.finalOutcome c with
+  | some (.allocation o) =>
+    (Allocation.chainPay ((s.allocationOf c).map Entry.dest) o (s.turboValueAlong order c)).1
+  | none => []
 
 /-- The coins `chainPay` leaves unspent after paying `c`'s own allocation
     out of `turboValueAlong order c`. -/
@@ -6262,32 +6319,35 @@ theorem Allocation.map_dest_of_map_kind {og op : Allocation E}
     intro o; rw [List.map_map]; rfl
   rw [← hdest og, ← hdest op, h]
 
-/-- `symbolicAlloc`'s destinations are exactly `allocationOf`'s own, by
-    `chainPay_AheadOf`'s `kind` field (`AheadOf.refl`, the reflexive
-    instance). Unconditional: true whether or not `c` is finalized. -/
-theorem Adjudicator.symbolicAlloc_dest_eq (s : Adjudicator E) (order : List (Address E))
+/-- `symbolicAlloc`'s `dedup` has exactly `allocationOf`'s own
+    destinations: `chainPay_dedup` reads `symbolicAlloc`'s `dedup` as the
+    chain from the already-deduplicated outcome, and `chainPay_AheadOf`'s
+    `kind` field (`AheadOf.refl`, the reflexive instance) then matches
+    that chain's destinations to the deduplicated outcome's own. -/
+theorem Adjudicator.symbolicAlloc_dedup_dest_eq (s : Adjudicator E) (order : List (Address E))
     (c : Address E) :
-    (s.symbolicAlloc order c).map Entry.dest = (s.allocationOf c).map Entry.dest := by
-  unfold Adjudicator.symbolicAlloc
-  have hahead := Allocation.chainPay_AheadOf ((s.allocationOf c).map Entry.dest) (s.allocationOf c)
-    (s.allocationOf c) (s.turboValueAlong order c) (Allocation.AheadOf.refl _ _)
-  exact Allocation.map_dest_of_map_kind hahead.kind
+    (s.symbolicAlloc order c).dedup.map Entry.dest = (s.allocationOf c).map Entry.dest := by
+  unfold Adjudicator.symbolicAlloc Adjudicator.allocationOf
+  cases hfo : s.finalOutcome c with
+  | none => simp [Allocation.dedup]
+  | some outcome =>
+    cases outcome with
+    | allocation o =>
+      dsimp only
+      rw [(Allocation.chainPay_dedup (o.dedup.map Entry.dest) o (s.turboValueAlong order c)).1]
+      have hahead := Allocation.chainPay_AheadOf (o.dedup.map Entry.dest) o.dedup o.dedup
+        (s.turboValueAlong order c) (Allocation.AheadOf.refl _ _)
+      exact Allocation.map_dest_of_map_kind hahead.kind
 
-/-- `symbolicAlloc` is already its own `dedup`: its destinations match
-    `allocationOf`'s (`symbolicAlloc_dest_eq`), and `allocationOf`'s
-    destinations are `Nodup` (`allocationOf_nodup`). -/
-theorem Adjudicator.symbolicAlloc_dedup (s : Adjudicator E) (order : List (Address E))
-    (c : Address E) : (s.symbolicAlloc order c).dedup = s.symbolicAlloc order c := by
-  apply Allocation.dedup_eq_self_of_nodup
-  rw [Adjudicator.symbolicAlloc_dest_eq]
-  exact allocationOf_nodup s c
-
-/-- Point 3. `(s.symbolicTerminal order).allocationOf c`: `symbolicAlloc`
-    when `s` already finalized `c`, the empty allocation otherwise. -/
+/-- Point 3. `(s.symbolicTerminal order).allocationOf c`: `symbolicAlloc`'s
+    `dedup` when `s` already finalized `c`, the empty allocation
+    otherwise (`Adjudicator.allocationOf` always reads through `.dedup`,
+    so this is the raw `symbolicAlloc` dereferenced the same way `s`'s own
+    `allocationOf` dereferences its raw stored outcome). -/
 theorem Adjudicator.symbolicTerminal_allocationOf (s : Adjudicator E) (order : List (Address E))
     (c : Address E) :
     (s.symbolicTerminal order).allocationOf c =
-      if (s.finalOutcome c).isSome then s.symbolicAlloc order c else [] := by
+      if (s.finalOutcome c).isSome then (s.symbolicAlloc order c).dedup else [] := by
   cases c with
   | external e =>
     have h1 : (s.symbolicTerminal order).allocationOf (Address.external e) = [] :=
@@ -6296,22 +6356,22 @@ theorem Adjudicator.symbolicTerminal_allocationOf (s : Adjudicator E) (order : L
     rw [h1, h2]; simp
   | channel cc =>
     show (s.symbolicTerminal order).allocationOf cc.address =
-      if (s.finalOutcome cc.address).isSome then s.symbolicAlloc order cc.address else []
+      if (s.finalOutcome cc.address).isSome then (s.symbolicAlloc order cc.address).dedup else []
     unfold Adjudicator.allocationOf
     rw [Adjudicator.symbolicTerminal_finalOutcome]
     split_ifs with hcond
-    · exact Adjudicator.symbolicAlloc_dedup s order cc.address
+    · rfl
     · rw [Option.not_isSome_iff_eq_none.mp hcond]
 
 /-- `symbolicTerminal`'s own allocation at any address has the same
-    destinations as `s`'s: `symbolicAlloc_dest_eq` when `s` finalized it,
-    both sides empty otherwise. -/
+    destinations as `s`'s: `symbolicAlloc_dedup_dest_eq` when `s`
+    finalized it, both sides empty otherwise. -/
 theorem Adjudicator.symbolicTerminal_allocationOf_dest_eq (s : Adjudicator E)
     (order : List (Address E)) (n : Address E) :
     ((s.symbolicTerminal order).allocationOf n).map Entry.dest = (s.allocationOf n).map Entry.dest := by
   rw [Adjudicator.symbolicTerminal_allocationOf]
   split_ifs with hcond
-  · exact Adjudicator.symbolicAlloc_dest_eq s order n
+  · exact Adjudicator.symbolicAlloc_dedup_dest_eq s order n
   · have hnil : s.allocationOf n = [] := by
       unfold Adjudicator.allocationOf
       rw [Option.not_isSome_iff_eq_none.mp hcond]
@@ -6367,6 +6427,73 @@ theorem Allocation.reduceOwed_zero_of_find_alloc {o : Allocation E} {d : Address
     · rw [if_neg he] at h ⊢
       rw [ih h]
 
+/-- `symbolicAlloc` is `AheadOf` the raw outcome it chains from, with
+    `symbolicLeftover` as the budget it leaves behind: `chainPay_AheadOf`
+    applied reflexively (`og = op = o`, `AheadOf.refl`), bridged from
+    `symbolicAlloc`'s and `symbolicLeftover`'s two different internal
+    chains (raw-start vs. deduped-start) by `chainPay_leftover_eq_dedup`. -/
+theorem Adjudicator.symbolicAlloc_AheadOf (s : Adjudicator E) (order : List (Address E))
+    (c : FixedPart) (o : Allocation E) (hfo : s.finalOutcome c.address = some (.allocation o)) :
+    (s.symbolicAlloc order c.address).AheadOf o (s.symbolicLeftover order c.address) := by
+  have halloc : s.allocationOf c.address = o.dedup := by
+    unfold Adjudicator.allocationOf; rw [hfo]
+  have hahead := Allocation.chainPay_AheadOf ((s.allocationOf c.address).map Entry.dest) o o
+    (s.turboValueAlong order c.address) (Allocation.AheadOf.refl _ _)
+  have hleftover : (Allocation.chainPay ((s.allocationOf c.address).map Entry.dest) o
+      (s.turboValueAlong order c.address)).2 = s.symbolicLeftover order c.address := by
+    unfold Adjudicator.symbolicLeftover
+    rw [Allocation.chainPay_leftover_eq_dedup _ o, halloc]
+  unfold Adjudicator.symbolicAlloc
+  rw [hfo]
+  dsimp only
+  rw [hleftover] at hahead
+  exact hahead
+
+/-- The `x = 0` fact `symbolicTerminal_transfer_unmoved` and
+    `symbolicTerminal_transfer_unmoved_of_matches` both need: a real
+    `transfer` call reads `o.find b`/`o.paidTo` off `symbolicAlloc`'s raw
+    shape, but `paidTo` only ever depends on the deduplicated view
+    (`paidTo_dedup`), and that deduplicated view is exactly the `chainPay`
+    run `chainPay_exhausted` already covers (`chainPay_dedup`,
+    `s.allocationOf c.address = o.dedup`). -/
+theorem Adjudicator.symbolicAlloc_paidTo_eq_zero (s : Adjudicator E) (order : List (Address E))
+    (c : FixedPart) (b : Address E) (amt : Coins)
+    (hfind : (s.symbolicAlloc order c.address).find b = some (⟨b, .alloc amt⟩ : Entry E)) :
+    (s.symbolicAlloc order c.address).paidTo (s.symbolicLeftover order c.address) b = 0 := by
+  rw [Allocation.paidTo_dedup]
+  cases hfo : s.finalOutcome c.address with
+  | none =>
+    exfalso
+    have hsa : s.symbolicAlloc order c.address = [] := by
+      unfold Adjudicator.symbolicAlloc; rw [hfo]
+    rw [hsa] at hfind
+    simp [Allocation.find] at hfind
+  | some outcome =>
+    cases outcome with
+    | allocation o_test =>
+      have halloc : s.allocationOf c.address = o_test.dedup := by
+        unfold Adjudicator.allocationOf; rw [hfo]
+      have hsa : s.symbolicAlloc order c.address =
+          (Allocation.chainPay (o_test.dedup.map Entry.dest) o_test
+            (s.turboValueAlong order c.address)).1 := by
+        unfold Adjudicator.symbolicAlloc; rw [hfo, halloc]
+      have hleftover : s.symbolicLeftover order c.address =
+          (Allocation.chainPay (o_test.dedup.map Entry.dest) o_test.dedup
+            (s.turboValueAlong order c.address)).2 := by
+        unfold Adjudicator.symbolicLeftover; rw [halloc]
+      rw [hsa] at hfind ⊢
+      rw [hleftover]
+      have hded1 := (Allocation.chainPay_dedup (o_test.dedup.map Entry.dest) o_test
+        (s.turboValueAlong order c.address)).1
+      have hexh := Allocation.chainPay_exhausted o_test.dedup (s.turboValueAlong order c.address) b
+      have hfindo : (Allocation.chainPay (o_test.dedup.map Entry.dest) o_test.dedup
+          (s.turboValueAlong order c.address)).1.find b = some (⟨b, .alloc amt⟩ : Entry E) := by
+        rw [← hded1, Allocation.find_dedup]; exact hfind
+      rw [hfindo] at hexh
+      simp only [Option.elim, Item.isGuarantee, Bool.false_eq_true, false_or] at hexh
+      rw [hded1]
+      exact hexh
+
 /-- Point 5. `Adjudicator.TransferExhausted` demands raw `Balances E` list
     equality (`s'.balances = s.balances`), not a reading-level fact.
     `Balances.set` always moves its key to the front of the list
@@ -6406,19 +6533,7 @@ theorem Adjudicator.symbolicTerminal_transfer_unmoved (s : Adjudicator E) (hdag 
       have hbg : sg.balances.get a.address = s.symbolicLeftover order a.address :=
         s.symbolicTerminal_balances_get hdag order hord a.address
       rw [hx, hbg, hoeq]
-      have hexh := Allocation.chainPay_exhausted (s.allocationOf a.address)
-        (s.turboValueAlong order a.address) b
-      have hfindo : (Allocation.chainPay ((s.allocationOf a.address).map Entry.dest)
-          (s.allocationOf a.address) (s.turboValueAlong order a.address)).1.find b =
-          some (⟨b, .alloc amt⟩ : Entry E) := by
-        show (s.symbolicAlloc order a.address).find b = _
-        rw [← hoeq]; exact hfind
-      rw [hfindo] at hexh
-      simp only [Option.elim, Item.isGuarantee, Bool.false_eq_true, false_or] at hexh
-      show (Allocation.chainPay ((s.allocationOf a.address).map Entry.dest) (s.allocationOf a.address)
-        (s.turboValueAlong order a.address)).1.paidTo (s.symbolicLeftover order a.address) b = 0
-      unfold Adjudicator.symbolicLeftover
-      exact hexh
+      exact s.symbolicAlloc_paidTo_eq_zero order a b amt (hoeq ▸ hfind)
     refine ⟨fun n => ?_, fun n => ?_⟩
     · cases n with
       | external e => simp [Adjudicator.finalOutcome]
@@ -6467,19 +6582,7 @@ theorem symbolicTerminal_transfer_unmoved_of_matches (s : Adjudicator E) (hdag :
         rw [hbl a.address]
         exact s.symbolicTerminal_balances_get hdag order hord a.address
       rw [hx, hbg, hoeq]
-      have hexh := Allocation.chainPay_exhausted (s.allocationOf a.address)
-        (s.turboValueAlong order a.address) b
-      have hfindo : (Allocation.chainPay ((s.allocationOf a.address).map Entry.dest)
-          (s.allocationOf a.address) (s.turboValueAlong order a.address)).1.find b =
-          some (⟨b, .alloc amt⟩ : Entry E) := by
-        show (s.symbolicAlloc order a.address).find b = _
-        rw [← hoeq]; exact hfind
-      rw [hfindo] at hexh
-      simp only [Option.elim, Item.isGuarantee, Bool.false_eq_true, false_or] at hexh
-      show (Allocation.chainPay ((s.allocationOf a.address).map Entry.dest) (s.allocationOf a.address)
-        (s.turboValueAlong order a.address)).1.paidTo (s.symbolicLeftover order a.address) b = 0
-      unfold Adjudicator.symbolicLeftover
-      exact hexh
+      exact s.symbolicAlloc_paidTo_eq_zero order a b amt (hoeq ▸ hfind)
     refine ⟨fun n => ?_, fun n => ?_⟩
     · cases n with
       | external e => simp [Adjudicator.finalOutcome]
