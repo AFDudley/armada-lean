@@ -157,6 +157,48 @@ def Safe : ChannelStatus Nat → Prop
   | .finalized _ f _ => f ≠ Ωg
 
 def Inv (n : NetworkState Nat q0) : Prop := PSig n ∧ Safe (n.chain.statusOf c2)
+variable {E : Type} [DecidableEq E]
+
+/-- Every element of a `forceMoveRules` support proof is a state of `c`:
+    unfolds `forceMoveRules.supports`'s own `proof.all (channel = c)`
+    conjunct, dropped by `forceMove_supports_valid_run`. -/
+theorem forceMove_supports_all_channel {vt : State E → State E → Bool} {c : FixedPart}
+    {proof : SupportProof E} {candidate : State E}
+    (h : (forceMoveRules vt).supports c proof candidate = true) :
+    ∀ m ∈ proof, m.state.channel = c := by
+  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨-, -⟩, -⟩, hall⟩, -⟩ := h
+  intro m hm
+  exact of_decide_eq_true (List.all_eq_true.mp hall m hm)
+
+/-- `forceMoveRules.supports`'s own `proof.head?.all byMover` conjunct,
+    dropped by `forceMove_supports_valid_run`: the first state of the proof
+    is signed by its mover, same as every later one
+    (`forceMove_supports_valid_run`'s middle conjunct gives it for position
+    `i + 1`, never for position `0`). -/
+theorem forceMove_supports_head_byMover {vt : State E → State E → Bool} {c : FixedPart}
+    {proof : SupportProof E} {candidate : State E}
+    (h : (forceMoveRules vt).supports c proof candidate = true)
+    {m0 : SignedState E} (h0 : proof[0]? = some m0) : m0.ByMover := by
+  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨-, hhead⟩, -⟩, -⟩, -⟩ := h
+  have hm0 : proof.head? = some m0 := by
+    cases proof with
+    | nil => simp at h0
+    | cons a t => simpa using h0
+  rw [hm0] at hhead
+  exact (SignedState.byMover_iff m0).1 hhead
+
+omit [DecidableEq E] in
+/-- `ByMover`'s witness mover is the state's own `mover`, uniquely: once
+    `s.mover = some p` is known, `ByMover` forces `p` itself (not merely
+    some signer) into the signer list. -/
+theorem _root_.ArmadaLean.Nitro.SignedState.ByMover.signer_of_mover {ss : SignedState E} (hbm : ss.ByMover)
+    {p : Participant} (hmv : ss.state.mover = some p) : p ∈ ss.signers := by
+  obtain ⟨m, hm, hms⟩ := hbm
+  rw [hmv] at hm
+  cases hm
+  exact hms
 
 theorem p0_ne_q0 : p0 ≠ q0 := by decide
 
