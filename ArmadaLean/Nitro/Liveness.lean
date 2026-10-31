@@ -8076,7 +8076,11 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
     ledgers with no guarantee for `V` and its pre-protocol balances
     restored. `Pi`'s own signatures on `V` are the setup states
     (`HoldsVirtualSetup`); the game rule `Bounds.unforgeable` bounds the
-    rest. -/
+    rest. Operator ruling 2026-10-31: `P` signs a ledger state that funds
+    `V` only when it holds the all-signed pre-fund state of `V` (SATP:409,
+    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399).
+    `HoldsVirtualSetup` checks only what `P` sent; this premise is the
+    missing half of "commit", stated on `P`'s own signing. -/
 theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules)
@@ -8093,6 +8097,9 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (net : NetworkState E P) (hnr : (Nitro.participant apps T).Reachable net)
     (hHm : HoldsLatestLedger net Lm om) (hHp : HoldsLatestLedger net Lp op)
     (hVs : HoldsVirtualSetup net r alice bob true)
+    (hR1 : ∀ t ∈ net.sent, (t.state.channel = Lm ∨ t.state.channel = Lp) →
+      ∀ o, t.state.outcome = .allocation o → o.find r.V.address ≠ none →
+      ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0)
     (hpend : net.DeadlineAfter Lm T.ε ∧ net.DeadlineAfter Lp T.ε ∧ net.DeadlineAfter r.V T.ε)
     (hchain : net.chain.finalizedWith Lm.address = none ∧
       net.chain.finalizedWith Lp.address = none ∧ net.chain.finalizedWith r.V.address = none) :

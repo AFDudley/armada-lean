@@ -2422,6 +2422,65 @@ theorem net3_reach : (Nitro.participant apps2 (canon q0)).Reachable net3 :=
     (.deliver ⟨Sm, [p0]⟩)
     (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
 
+/-- `net3` extended: `q0` also received the all-signed pre-fund state of `V3`, delivered
+    right after `q0`'s own send of it and before `q0` sends either ledger state — operator
+    ruling 2026-10-31, `satp_theorem_3_2`'s new `hR1`. -/
+def net3R : NetworkState Nat q0 :=
+  ⟨g0, [⟨Sm, [p0]⟩, ⟨Sp, [w0]⟩, ⟨V0, [p0, q0, w0]⟩], [⟨Sm, [q0]⟩, ⟨Sp, [q0]⟩, ⟨V0, [q0]⟩]⟩
+
+theorem net3R_reach : (Nitro.participant apps2 (canon q0)).Reachable net3R :=
+  participant_reachable_adv
+    (participant_reachable_adv
+      (participant_reachable_honest
+        (participant_reachable_honest
+          (participant_reachable_adv
+            (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send V0)
+              (by simp))
+            (.deliver ⟨V0, [p0, q0, w0]⟩)
+            (⟨fun _ => ⟨⟨V0, [q0]⟩, by simp, rfl⟩,
+              fun v h hp => by
+                simp [V0, State.voucher?] at h; subst h; exact absurd hp List.not_mem_nil⟩ :
+              NetworkState.Unforged _ ⟨V0, [p0, q0, w0]⟩))
+          (.send Sp) (by simp))
+        (.send Sm) (by simp))
+      (.deliver ⟨Sp, [w0]⟩)
+      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩))
+    (.deliver ⟨Sm, [p0]⟩)
+    (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
+
+theorem net3R_latest_m : HoldsLatestLedger net3R Lm3 om3 :=
+  ⟨⟨Sm, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
+    by decide, .inl ⟨0, rfl, by decide⟩⟩
+
+theorem net3R_latest_p : HoldsLatestLedger net3R Lp3 op3 :=
+  ⟨⟨Sp, [q0, w0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
+    by decide, .inl ⟨0, rfl, by decide⟩⟩
+
+theorem net3R_virtualSetup : HoldsVirtualSetup net3R r3 p0 w0 true :=
+  ⟨fun t ht hc => by
+      simp [net3R] at ht
+      rcases ht with rfl | rfl | rfl <;>
+        first | exact ⟨rfl, rfl, .inl rfl⟩ | exact absurd hc (by decide),
+    ⟨V0, [q0]⟩, by simp [net3R], rfl, rfl⟩
+
+/-- `net3R` satisfies the new `hR1`: the all-signed pre-fund state of `V3` is the witness,
+    held via `q0`'s own send of it plus the extra `.deliver` `net3R_reach` adds. -/
+theorem net3R_hR1 : ∀ t ∈ net3R.sent, (t.state.channel = Lm3 ∨ t.state.channel = Lp3) →
+    ∀ o, t.state.outcome = .allocation o → o.find r3.V.address ≠ none →
+    ∃ ss, net3R.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r3.V ∧ ss.state.turnNum = 0 := by
+  intro t ht _ o ho _
+  refine ⟨⟨V0, [p0, q0, w0]⟩, ?_, by decide, rfl, rfl⟩
+  refine ⟨fun q hq => ?_, fun v hv q hq => ?_⟩
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+    rcases hq with rfl | rfl | rfl
+    · exact .inr ⟨⟨V0, [p0, q0, w0]⟩, by simp [net3R], rfl, by simp⟩
+    · exact .inl ⟨rfl, ⟨V0, [q0]⟩, by simp [net3R], rfl⟩
+    · exact .inr ⟨⟨V0, [p0, q0, w0]⟩, by simp [net3R], rfl, by simp⟩
+  · simp [V0, State.voucher?] at hv
+    subst hv
+    exact absurd hq List.not_mem_nil
+
+
 /-- `satp_theorem_3_2`. -/
 example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) (Lm Lp : FixedPart)
     (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
@@ -2435,19 +2494,17 @@ example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) 
     (Nitro.participant apps2 (canon P)).Reachable net ∧
     HoldsLatestLedger net Lm om ∧ HoldsLatestLedger net Lp op ∧
     HoldsVirtualSetup net r alice bob true ∧
+    (∀ t ∈ net.sent, (t.state.channel = Lm ∨ t.state.channel = Lp) →
+      ∀ o', t.state.outcome = .allocation o' → o'.find r.V.address ≠ none →
+      ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0) ∧
     (net.DeadlineAfter Lm (canon P).ε ∧ net.DeadlineAfter Lp (canon P).ε ∧
       net.DeadlineAfter r.V (canon P).ε) ∧
     (net.chain.finalizedWith Lm.address = none ∧ net.chain.finalizedWith Lp.address = none ∧
       net.chain.finalizedWith r.V.address = none) :=
-  ⟨r3, p0, w0, q0, p0, w0, 1, Lm3, Lp3, om3, op3, 1, 1, net3, canon_ok _ _, r3_wf, rfl, rfl, rfl,
+  ⟨r3, p0, w0, q0, p0, w0, 1, Lm3, Lp3, om3, op3, 1, 1, net3R, canon_ok _ _, r3_wf, rfl, rfl, rfl,
     le_rfl, by decide, rfl, rfl, rfl, rfl, rfl, ⟨by decide, by decide, by decide⟩,
     by unfold Route.LedgerAfterRound2; decide, by unfold Route.LedgerAfterRound2; decide,
-    net3_reach, net3_latest_m, net3_latest_p,
-    ⟨fun t ht hc => by
-        simp [net3] at ht
-        rcases ht with rfl | rfl | rfl <;>
-          first | exact ⟨rfl, rfl, .inl rfl⟩ | exact absurd hc (by decide),
-      ⟨⟨V0, [q0]⟩, by simp [net3], rfl, rfl⟩⟩,
+    net3R_reach, net3R_latest_m, net3R_latest_p, net3R_virtualSetup, net3R_hR1,
     ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _,
       deadlineAfter_open (t := 0) rfl _⟩, by decide⟩
 

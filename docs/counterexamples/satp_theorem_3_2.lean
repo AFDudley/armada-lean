@@ -1,31 +1,32 @@
 /-
-  Counterexample to `satp_theorem_3_2` (`Liveness.lean`).
+  Evidence against the PRE-2026-10-31 `satp_theorem_3_2` (`Liveness.lean`): the theorem as it
+  was stated before the operator ruling that added `hR1`.
 
-  `satp_theorem_3_2`'s own hypothesis `HoldsVirtualSetup net r alice bob true` bounds only
-  what the intermediary `q0` has SENT for the virtual channel `V`. It gives no bound, and no
-  witness, of anything `q0` has RECEIVED for `V`. `NetworkState.Holds` needs a claimed
-  co-signer's state to come from `received`; `satpVirtualRules`' every turn `q0` could use to
-  move `V` on its own needs `ByAll` (`consensusRules` at turn <= 1; `validStart`'s own `ByAll`
-  at the head of any `validateOutcomeChange` proof, turns 2 and 3). So if `q0` has received
-  nothing at all for `V`, `q0` can never submit a feasible `challenge`, `checkpoint` or
-  `conclude` call that targets `V` at all: `apply_fails_V3` below.
+  The pre-ruling `satp_theorem_3_2`'s hypothesis `HoldsVirtualSetup net r alice bob true`
+  bounded only what the intermediary `q0` had SENT for the virtual channel `V`. It gave no
+  bound, and no witness, of anything `q0` had RECEIVED for `V`. `NetworkState.Holds` needs a
+  claimed co-signer's state to come from `received`; `satpVirtualRules`' every turn `q0` could
+  use to move `V` on its own needs `ByAll` (`consensusRules` at turn <= 1; `validStart`'s own
+  `ByAll` at the head of any `validateOutcomeChange` proof, turns 2 and 3). So if `q0` had
+  received nothing at all for `V`, `q0` could never submit a feasible `challenge`,
+  `checkpoint` or `conclude` call that targets `V` at all: `apply_fails_V3` below.
 
-  This is a different, more basic gap than the "voucher stall" a prior pass found and the
+  This was a different, more basic gap than the "voucher stall" a prior pass found and the
   operator ruled resolved by a counter-challenge (`counter_after_adv_checkpoint`, pebble
   aln-a73): that mechanism answers an adversary move on `V`. It does not make the adversary
   move at all. The instance below, `net3` (`NonVacuity.lean`'s own existing nonvacuity witness
-  for this exact theorem, `NonVacuity.lean:2397-2452`), has an empty receive record for `V3`:
-  `net3.received = [⟨Sm, [p0]⟩, ⟨Sp, [w0]⟩]`, neither entry touching `V3`. The adversary,
-  controlling `p0` and `w0`, is free to leave `V3` untouched forever: nothing in the game
-  requires it to act. `V3` then never finalizes, so `Adjudicator.reclaim` on `Lm3` can never
-  run (it needs `V3` finalized), and `Lm3` can only ever finalize with `om3` (`cand_eq`, via
-  the same "nothing beats the one state anyone can get `q0`'s `ByAll` cosignature on" argument
-  the library's own `latest_state_finalizable` uses for a channel `q0` CAN act on), which
-  carries an un-reclaimable guarantee entry for `V3` (`r3.guarantee p0 q0`).
-  `IntermediaryRecovered`'s own `om.find r3.V.address = none` clause is then permanently out
+  before this ruling), has an empty receive record for `V3`: `net3.received = [⟨Sm, [p0]⟩,
+  ⟨Sp, [w0]⟩]`, neither entry touching `V3`. The adversary, controlling `p0` and `w0`, was
+  free to leave `V3` untouched forever: nothing in the game required it to act. `V3` then
+  never finalized, so `Adjudicator.reclaim` on `Lm3` could never run (it needs `V3`
+  finalized), and `Lm3` could only ever finalize with `om3` (`cand_eq`, via the same "nothing
+  beats the one state anyone can get `q0`'s `ByAll` cosignature on" argument the library's own
+  `latest_state_finalizable` uses for a channel `q0` CAN act on), which carries an
+  un-reclaimable guarantee entry for `V3` (`r3.guarantee p0 q0`).
+  `IntermediaryRecovered`'s own `om.find r3.V.address = none` clause was then permanently out
   of reach: `not_goal`. `UnbeatableIn` is inductively defined (a finite move-tree, by its own
   doc comment) — one adversary answer to every move of `q0` (land every one of `q0`'s own
-  pending calls, do nothing else) keeps that permanently, so no finite derivation exists:
+  pending calls, do nothing else) kept that permanently, so no finite derivation existed:
   `not_unbeatable`, by induction on the hypothetical `UnbeatableIn` proof.
 
   `net3_holds_no_V3_prefund` records the load-bearing fact precisely: `q0` holds no `ByAll`
@@ -33,6 +34,14 @@
   support at all") is false — `q0` trivially `Holds` its own singly-signed send `⟨V0, [q0]⟩` —
   `ByAll` is the fact `satpVirtualRules` and `validStart` actually need, and the one
   `apply_fails_V3` rests on.
+
+  Operator ruling 2026-10-31: `satp_theorem_3_2` gained the hypothesis `hR1`, the missing
+  half of "commit" (SATP:409, "Proceed when s0 is committed"; Definition 3.1, SATP:394-399)
+  stated on `P`'s own signing — exactly the fact `net3_holds_no_V3_prefund` shows `net3`
+  lacks. `net3_violates_hR1`, at the end of this file, shows `net3` (unmodified) no longer
+  satisfies the amended theorem's hypotheses at all, so it is no longer a counterexample to
+  it; the theorem's own `sorry` is otherwise unaffected by this file. `NonVacuity.lean`'s
+  `net3R` is the new nonvacuity witness, carrying the one extra fact `hR1` needs.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/satp_theorem_3_2.lean`.
@@ -717,26 +726,25 @@ theorem net3_holds_no_V3_prefund :
     exact hV r hr (by rw [hrs]; exact hchan)
 
 
-/-- `satp_theorem_3_2`, applied to `net3`, is false. -/
-example : False :=
-  netX_not_unbeatable
-    (satp_theorem_3_2 apps2 (canon q0) (canon_ok _ _) r3 p0 w0 r3_wf rfl rfl rfl 1 le_rfl (by decide)
-      rfl p0 w0 rfl rfl Lm3 Lp3 rfl rfl ⟨by decide, by decide, by decide⟩ om3 op3 1 1
-      (by unfold Route.LedgerAfterRound2; decide) (by unfold Route.LedgerAfterRound2; decide)
-      net3 net3_reach net3_latest_m net3_latest_p
-      ⟨fun t ht hc => by
-          simp [net3] at ht
-          rcases ht with rfl | rfl | rfl <;>
-            first | exact ⟨rfl, rfl, .inl rfl⟩ | exact absurd hc (by decide),
-        ⟨V0, [q0]⟩, by simp [net3], rfl, rfl⟩
-      ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _,
-        deadlineAfter_open (t := 0) rfl _⟩
-      ⟨by decide, by decide, by decide⟩)
+/-- Operator ruling 2026-10-31: `satp_theorem_3_2` gained `hR1`, the missing half of "commit"
+    (SATP:409) stated on `P`'s own signing. `net3` (unmodified) no longer satisfies the
+    theorem's hypotheses at all: it sent `Sm`, a guarantee-funded ledger state, and
+    `net3_holds_no_V3_prefund` already shows it holds no `ByAll` proof of `V3`'s pre-fund
+    state. The old `example : False` no longer applies — `satp_theorem_3_2` needs a
+    DIFFERENT witness now (`net3R`, `NonVacuity.lean`), which `net3R_hR1` shows does satisfy
+    `hR1`. -/
+theorem net3_violates_hR1 :
+    ¬ (∀ t ∈ net3.sent, (t.state.channel = Lm3 ∨ t.state.channel = Lp3) →
+      ∀ o, t.state.outcome = .allocation o → o.find V3.address ≠ none →
+      ∃ ss, net3.Holds ss ∧ ss.ByAll ∧ ss.state.channel = V3 ∧ ss.state.turnNum = 0) := by
+  intro h
+  exact net3_holds_no_V3_prefund (h ⟨Sm, [q0]⟩ (by simp [net3]) (.inl rfl) om3 rfl (by decide))
 
 #print axioms netX_not_unbeatable
 #print axioms net3_reach
 #print axioms net3_latest_m
 #print axioms net3_latest_p
 #print axioms net3_holds_no_V3_prefund
+#print axioms net3_violates_hR1
 
 end ArmadaLean.Nitro.Counterexample.Theorem32
