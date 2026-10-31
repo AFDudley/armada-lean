@@ -313,6 +313,19 @@ partial def splitFacts (g : MVarId) (done : FVarIdSet) : MetaM MVarId := g.withC
       return ← splitFacts sub.mvarId (done.insert keep)
   return g
 
+/-- The embedded property of a non-Prop local `e` whose type is a refined type
+    in the `Subtype` form (`TimedChannel ε`, `GuaranteedOutcome E`, …): `none`
+    when `e`'s type does not unfold to `Subtype`. The example's own context
+    carries such a local whole (`splitFacts` destructs only `Exists`/`And`),
+    so its property is not otherwise a usable fact; this exposes it as one,
+    matching the obligation that `openPremise` creates for the same shape in
+    the premise (`spec_premise%`'s `Subtype` branch). -/
+def subtypeProjections (e : Expr) : MetaM (Option Expr) := do
+  let ty ← whnf (← inferType e)
+  unless ty.isAppOfArity ``Subtype 2 do return none
+  try some <$> mkAppM ``Subtype.property #[e] catch _ => return none
+
+
 /-- `spec_witness e` proves a goal `spec_premise% D` from the example proof `e`.
     It splits every `∃` and `∧` of `e` into local facts. It then closes each
     hypothesis of the premise with one of these facts (unification fixes the
@@ -337,7 +350,9 @@ elab "spec_witness " e:ident : tactic => do
     let (pf, vals, obls) ← openPremise (← g.getType)
     let hyps ← (← getLCtx).foldlM (init := #[]) fun acc ld => do
       if ld.isImplementationDetail then return acc
-      if ← isProp ld.type then return acc.push ld.toExpr else return acc
+      if ← isProp ld.type then return acc.push ld.toExpr
+      else if let some pf ← subtypeProjections ld.toExpr then return acc.push pf
+      else return acc
     let left ← matchObligations (← reachIffs) hyps obls.toList
     for v in vals do closeValue cands v
     for o in left do
