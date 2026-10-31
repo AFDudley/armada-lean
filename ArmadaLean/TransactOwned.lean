@@ -177,7 +177,8 @@ by collision resistance (`Term.hash2_inj`, `Term.hash3_inj`, by construction)
 the same commitment value cannot arise from two different `ownerField`
 terms. This is the Poseidon-injectivity core of owner binding
 (`owned_owner_binding` in ArmadaLean.PoolOwned adds the pool's authorization
-check on top). -/
+check on top).
+Source: TransactOwned.circom:66-76. -/
 theorem commitment_owner_inj {owner₁ owner₂ : Term} {r₁ r₂ value : Nat} {token : Token}
     (h : commitment (npk owner₁ r₁) token value =
          commitment (npk owner₂ r₂) token value) :
@@ -196,7 +197,8 @@ Keccak `Term.hash` term, tagged `.keccak`. A Poseidon output and a Keccak
 output never agree, by construction (`Term.poseidon_ne_keccak`), so these two
 `npk` shapes can never collide, whatever randomness, spending key or address
 inputs either side chooses. This is the Dolev-Yao substitute for an on-circuit
-domain tag: see the module comment. -/
+domain tag: see the module comment.
+Source: TransactOwned.circom:66-70, Transact.circom:75-78. -/
 theorem user_npk_ne_contract_npk {pk : Nat × Nat} {nk r₁ : Nat}
     {addrInputs : List Term} {r₂ : Nat} :
     npk (masterPublicKey pk nk) r₁ ≠ npk (Term.keccak addrInputs) r₂ := by

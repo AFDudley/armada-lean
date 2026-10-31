@@ -202,7 +202,8 @@ is built: the `hC`/`caller`/`hCaller` a `Step.transactOwned` term already requir
 exactly what this needs. If input `i`'s true creator was `trueOwner` (`hSameNote`: the
 spent commitment is the one `trueOwner` genuinely created), the step's `caller` must be
 `trueOwner`'s own address — the second half of the brief's first harm, for the owned
-path. -/
+path.
+Source: TransactModule.sol:636-639. -/
 theorem transactOwned_spends_only_owned {N M : Nat} {w : TransactOwnedWitness N M}
     {pub : TransactOwnedPublic N M} (hC : OwnedConstrained w pub) (i : Fin N)
     {trueOwner : Term} {trueRandom : Nat}
@@ -325,7 +326,8 @@ two), distinct leaf positions always derive distinct nullifiers. This is the fac
 makes identifying a live note by its position sound in the first place: `PoolState
 .live`'s `((treeNumber, position), preimage)` entries (module comment, Pool.lean) can
 never be confused by the nullifier a spend proof publishes for one of them, because no
-other live position could ever produce that same nullifier under the same key. -/
+other live position could ever produce that same nullifier under the same key.
+Source: Transact.circom:97-101, TransactOwned.circom:89-97. -/
 theorem live_positions_distinct_nullifiers {nk : Term} {p₁ p₂ : Nat} (hpos : p₁ ≠ p₂) :
     nullifier nk p₁ ≠ nullifier nk p₂ :=
   fun h => hpos (nullifier_pos_inj h)
@@ -495,7 +497,8 @@ theorem transact_root_was_produced {s : PoolState}
 `preimageOf`, at any reachable state, hashes to the commitment it is recorded under —
 lifting `ArmadaLean.PoolOwned.preimageOf_consistent` from one transaction's batch
 (`recordPreimages`) to the pool's whole history (`applyRecords`, at every
-`shield`/`transact`/`transactOwned` step). -/
+`shield`/`transact`/`transactOwned` step).
+Source: TransactModule.sol:590-604, ShieldModule.sol:71,136. -/
 theorem pool_preimageOf_consistent {s : PoolState}
     (h : Reachable s) : RegistryConsistent s.preimageOf := by
   induction h with
@@ -582,7 +585,8 @@ constraints hold (`Constrained`, by construction), `verify` accepts (`hComplete
 .complete`), and the nullifiers are fresh so a later `markSpent` call does not revert
 (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers` to turn the holder's
 genuinely-distinct note positions into pairwise-distinct nullifiers, exactly as
-`owned_spend_can_happen` does). -/
+`owned_spend_can_happen` does).
+Source: Transact.circom:57-186. -/
 theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) (publicKey : Nat × Nat)
     (nullifyingKey : Nat) (token : Token) (boundParamsHash : Term) (root : Term)
@@ -651,7 +655,8 @@ theorem shield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s) (toke
     `distinct_leaves_distinct_nullifiers`) shows the nullifiers are fresh. `bp` is the
     transaction's bound parameters, with no unshield (`hNoUnshield`) and an adapt
     contract, if any, equal to `caller` (`hAdapt`). `hLive` is the ghost liveness
-    precondition, keyed by the `(treeNumber, leaf position)` pairs of the notes. -/
+    precondition, keyed by the `(treeNumber, leaf position)` pairs of the notes.
+    Source: TransactModule.sol:43-96. -/
 theorem transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (hComplete : TransactProofCompleteness)
     (hSig : HonestSignature) {N M : Nat} (caller : Term) (bp : BoundParams)
@@ -794,7 +799,8 @@ theorem unshield_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (`transactOwned_spends_only_owned` is the matching safety theorem), and `bp` the
     bound parameters (no unshield, adapt contract `caller` or none). An owned transact
     can pay out to any recipient's note key; the step publishes no opening
-    (`openings := []`). -/
+    (`openings := []`).
+    Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem owned_transact_can_happen {s : PoolState} (_hr : Pool.machine.Reachable s)
     (hComplete : OwnedProofCompleteness)
     {N M : Nat} (ownerField : Term) (token : Token) (bp : BoundParams)
@@ -1975,7 +1981,8 @@ theorem spend_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s 
   exact ⟨hRoot', ⟨rest', hRemove'⟩, spent'', hNullify'⟩
 
 /-- `spend_not_blocked` for a pending `Step.transact`: its state checks stay true across
-    any step that spends none of its input notes. -/
+    any step that spends none of its input notes.
+    Source: TransactModule.sol:373-399,538; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem transact_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
     {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M} {bp : BoundParams}
     (hC : Constrained w pub)
@@ -2001,7 +2008,8 @@ theorem transact_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step
   exact spend_not_blocked hs hstep hTree hEnabled hDisjoint
 
 /-- `spend_not_blocked` for a pending `Step.transactOwned`: its state checks stay true
-    across any step that spends none of its input notes. -/
+    across any step that spends none of its input notes.
+    Source: TransactModule.sol:373-399,538; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem transactOwned_not_blocked {s s' : PoolState} (hs : Reachable s) (hstep : Step s s')
     {N M : Nat} {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M}
     {bp : BoundParams} (hC : OwnedConstrained w pub)
@@ -2126,7 +2134,8 @@ conserved. The witness comes from public data (`owned_spend_witness_exists`,
 
 The deployed owned circuits have one input only (`main_{1x1,1x2,1x3}_owned.circom`).
 The model's owned path admits `N ≤ 8`, so this theorem needs owned verifying keys with
-`N > 1` at deployment. -/
+`N > 1` at deployment.
+Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem owned_merge_can_happen {s : PoolState} (hs : Reachable s) {N : Nat}
     (hN0 : 0 < N) (hN : N ≤ 8)
     (owner : Term) (token : Token) (bp : BoundParams)

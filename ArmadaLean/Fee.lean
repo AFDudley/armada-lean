@@ -45,7 +45,8 @@ def shieldFee (r : FeeRatio) (amount : Nat) : Nat := amount * r.num / r.den
 def shieldBase (r : FeeRatio) (amount : Nat) : Nat := amount - shieldFee r amount
 
 /-- **The fee never exceeds the shielded amount.** `base` in `_getFee` is well defined
-    and the subtraction cannot underflow. -/
+    and the subtraction cannot underflow.
+    Source: ShieldModule.sol:353-371. -/
 theorem fee_bounded (r : FeeRatio) (amount : Nat) : shieldFee r amount ≤ amount := by
   unfold shieldFee
   rw [Nat.div_le_iff_le_mul_add_pred r.den_pos]
@@ -63,14 +64,16 @@ theorem fee_conservation (r : FeeRatio) (amount : Nat) :
   Nat.sub_add_cancel (fee_bounded r amount)
 
 /-- **The fee is monotone in the shielded amount.** Shielding more never reduces the
-    absolute fee. -/
+    absolute fee.
+    Source: ShieldModule.sol:353-371. -/
 theorem fee_monotone (r : FeeRatio) {a b : Nat} (hab : a ≤ b) :
     shieldFee r a ≤ shieldFee r b :=
   Nat.div_le_div_right (Nat.mul_le_mul_right r.num hab)
 
 /-- **Rounding threshold.** A shield whose `amount * num` is below `den` pays no fee:
     floor division rounds it down to zero. At the contract's 50 basis points
-    (`num = 50`, `den = 10000`) this is every amount below 200. -/
+    (`num = 50`, `den = 10000`) this is every amount below 200.
+    Source: ShieldModule.sol:353-371. -/
 theorem fee_zero_below_threshold (r : FeeRatio) (amount : Nat) (h : amount * r.num < r.den) :
     shieldFee r amount = 0 :=
   Nat.div_eq_of_lt h
@@ -78,7 +81,8 @@ theorem fee_zero_below_threshold (r : FeeRatio) (amount : Nat) (h : amount * r.n
 /-- **A shield of a positive gross amount creates a note of positive value.** Because the
     fee is capped below 100% (`FeeRatio.fee_capped`, `maxFeePercent < 100`), the floor of
     `x * num / den` is at most `x * maxFeePercent / 100`, which is below `x` for every
-    `x > 0`. No larger minimum `x` is needed: floor division only lowers the fee. -/
+    `x > 0`. No larger minimum `x` is needed: floor division only lowers the fee.
+    Source: ShieldModule.sol:353-371. -/
 theorem shieldBase_pos (r : FeeRatio) {x : Nat} (hx : 0 < x) : 0 < shieldBase r x := by
   have hcap : maxFeePercent < 100 := by decide
   have hdiv : shieldFee r x * r.den ≤ x * r.num := Nat.div_mul_le_self (x * r.num) r.den

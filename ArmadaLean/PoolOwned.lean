@@ -169,7 +169,8 @@ nullifiers `ns` it just marked are pairwise distinct from each other and
 none of them was already in `spent` beforehand. Applied to a whole history
 of calls (each one's `spent` is the previous call's `spent'`), this is
 exactly "no nullifier is ever marked twice": a note's nullifier can only
-ever pass this check once, in the one call that first spends it. -/
+ever pass this check once, in the one call that first spends it.
+Source: TransactModule.sol:379-386. -/
 theorem owned_no_double_spend {spent spent' : NullifierSet} {ns : List Term}
     (h : markSpent spent ns = some spent') :
     ns.Pairwise (· ≠ ·) ∧ ∀ n ∈ ns, n ∉ spent := by

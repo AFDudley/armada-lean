@@ -83,7 +83,8 @@ theorem unshieldTerm_inj {a b : Option Unshield} (h : unshieldTerm a = unshieldT
       simp_all [unshieldTerm, Term.keccak]
 
 /-- **Two different bound-parameter records never give the same hash.** By
-    construction of the symbolic hash (`Term.hash.inj`), not by assumption. -/
+    construction of the symbolic hash (`Term.hash.inj`), not by assumption.
+    Source: PrivacyPoolStorage.sol:46-57. -/
 theorem hashBoundParams_inj {bp₁ bp₂ : BoundParams}
     (h : hashBoundParams bp₁ = hashBoundParams bp₂) : bp₁ = bp₂ := by
   unfold hashBoundParams Term.keccak at h

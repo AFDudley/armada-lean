@@ -176,7 +176,8 @@ output commitments are computed by deterministic hash chains from the witness
 (:97-101, :105-113), so two public-input vectors constrained by the same
 witness agree on every security-critical output. There is no under-constrained
 freedom an attacker could exploit to keep the same witness while altering the
-published nullifiers or commitments. -/
+published nullifiers or commitments.
+Source: Transact.circom:97-101, 105-113. -/
 theorem transact_public_outputs_determined {N M : Nat} (w : TransactWitness N M)
     (p₁ p₂ : TransactPublic N M) (h₁ : Constrained w p₁) (h₂ : Constrained w p₂) :
     (∀ i, p₁.nullifiers i = p₂.nullifiers i) ∧
