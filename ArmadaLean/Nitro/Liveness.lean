@@ -6549,7 +6549,10 @@ theorem turbo_value_exists_unique (s : Adjudicator E) (hdag : s.IsDAG) (n : Addr
     adversary can transfer `L → χ` and then `χ → q` within one prefix, so
     `χ` must not finalize during the strategy, as `ledger_partial_withdrawal`
     already requires of its receiving ledger.
-    Operator ruling 2026-10-30 (aln-147 counterexample): χ is a ledger channel, because transfer credits only a fundable channel (Adjudicator.transfer, Address.fundable) and a channel funded by an allocation is a ledger channel (nitro-repair §6.3). -/
+    Operator ruling 2026-10-30 (aln-147 counterexample): χ is a ledger channel, because transfer credits only a fundable channel (Adjudicator.transfer, Address.fundable) and a channel funded by an allocation is a ledger channel (nitro-repair §6.3).
+    Out of scope (operator ruling 2026-10-31): a Nitro 2019 §5.3-§5.4 sub-channel construction.
+    SATP assumes its result as a precondition (SATP:385-388), and go-nitro has no objective that
+    runs it. The statement stays for reference. Armada does not depend on it. -/
 theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (w : LedgerWithSub E) (hw : w.Holds apps Ts v)
@@ -6563,7 +6566,10 @@ theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v
     `⟦L : x⟧, [L ↦ (A : a, B : b)]_{A,B}` and `[χ ↦ (A : a', B : b')]_{A,B}`
     with `a' ≤ a`, `b' ≤ b`, the update
     `[L ↦ (A : a − a', B : b − b', χ : a' + b')]_{A,B}` preserves the value
-    of `A` and `B` at their destinations `dA` and `dB`. -/
+    of `A` and `B` at their destinations `dA` and `dB`.
+    Out of scope (operator ruling 2026-10-31): a Nitro 2019 §5.3-§5.4 sub-channel construction.
+    SATP assumes its result as a precondition (SATP:385-388), and go-nitro has no objective that
+    runs it. The statement stays for reference. Armada does not depend on it. -/
 theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (v v' : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (n' : Network E)
@@ -6589,7 +6595,10 @@ theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (
     `[L ↦ (A : a, B : b, χ : c)]_{A,B}` and the concluded
     `[χ ↦ (A : a', B : b')]_{A,B}` with `a' + b' = c`, the update
     `[L ↦ (A : a + a', B : b + b')]_{A,B}` preserves the value of `A` and
-    `B`. -/
+    `B`.
+    Out of scope (operator ruling 2026-10-31): a Nitro 2019 §5.3-§5.4 sub-channel construction.
+    SATP assumes its result as a precondition (SATP:385-388), and go-nitro has no objective that
+    runs it. The statement stays for reference. Armada does not depend on it. -/
 theorem subchannel_close_value_preserving (apps : Apps E) (Ts : Threats E apps) (v v' : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (n' : Network E)

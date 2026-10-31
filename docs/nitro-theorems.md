@@ -431,3 +431,10 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `satp_intermediary_before_round2` | `Liveness.lean` | Theorem 3.2 Cases 1-2: before Round 2 the intermediary keeps its balances. | SATP-20 | SATP:522-537 |
 | `satp_end_user_recovers` | `Liveness.lean` | The end-user analogue of Theorem 3.2 for Alice. | SATP-20 | SATP:500-501 |
 | `satp_reclaim_credits_intermediary` | `Liveness.lean` | Two reclaims credit the intermediary with a + b and delete the guarantees. | SATP-15, SATP-20 | SATP:484-485 |
+
+Out of scope (operator ruling 2026-10-31): the three Nitro 2019 §5.3-§5.4 sub-channel theorems
+marked above. SATP assumes their result as a precondition: "we assume as a precondition that all
+ledger channels are fully-funded – each item listed in its outcome" (SATP:385-388). go-nitro has
+no objective that funds a sub-channel from a ledger allocation (`protocols/readme.md`). The
+statements stay for reference. Armada does not depend on them, and no proof work is dispatched on
+them. Their open proofs still count in `scripts/check.sh` until the spec-module check replaces it.
