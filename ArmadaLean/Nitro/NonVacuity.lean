@@ -1081,6 +1081,25 @@ theorem g0_topo : g0.IsTopologicalOrder [] := by
 
 theorem g0_turbo (n : Address Nat) : g0.TurboValue n 0 := ⟨[], g0_topo, rfl⟩
 
+/-- The genesis chain has no allocation anywhere: `status` is empty, so
+    every channel reads the default open status, which has no final
+    outcome. -/
+theorem g0_allocationOf (n : Address Nat) : g0.allocationOf n = [] := by
+  cases n <;> simp [Adjudicator.allocationOf, g0, Adjudicator.genesis, Adjudicator.finalOutcome,
+    Adjudicator.statusOf]
+
+/-- The genesis chain has no node at all, so it trivially stays in Turbo
+    scope: no channel is a source (`g0_allocationOf`) and no entry exists to
+    name a destination. -/
+theorem g0_turboScope : g0.TurboScope := by
+  refine ⟨fun c hc => absurd (g0_allocationOf (.channel c)) hc, fun n e he => ?_⟩
+  rw [g0_allocationOf n] at he
+  exact absurd he List.not_mem_nil
+
+/-- The genesis chain is a `TurboOutcomeNetwork`: a DAG (`g0_dag`) in Turbo
+    scope (`g0_turboScope`). -/
+theorem g0_turboOutcomeNetwork : g0.IsTurboOutcomeNetwork := ⟨g0_dag, g0_turboScope⟩
+
 
 /-! ## `Liveness.lean` -/
 
@@ -1127,32 +1146,34 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (o : Allocation Nat) (
     .done (show o1.total ≤ _ by decide), by decide⟩
 
 /-- `conclusion_proof_finalizable`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat) (Ω : Outcome Nat),
+example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
+    (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
-    net.Holds ss ∧ ConclusionProof c ss ∧ ss.state.outcome = Ω ∧
-    (∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = Ω) ∧
-    (net.chain.finalizedWith c.address = none ∨ net.Finalized c Ω) ∧
-    2 * (canon p0).ε ≤ c.challengeDuration ∧ net.DeadlineAfter c (canon p0).ε :=
-  ⟨netF, c1, ssF, _, canon_ok _ _, netF_reach, rfl, by decide, netF_holds, by decide, rfl,
-    by decide, .inl (by decide), by decide, deadlineAfter_open (t := 0) rfl _⟩
+    apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
+    net.Holds ss ∧ ConclusionProof (c : FixedPart) ss ∧ ss.state.outcome = Ω ∧
+    (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) → t.state.isFinal = true →
+      t.state.outcome = Ω) ∧
+    (net.chain.finalizedWith (c : FixedPart).address = none ∨ net.Finalized (c : FixedPart) Ω) ∧
+    net.DeadlineAfter (c : FixedPart) (canon p0).ε :=
+  ⟨netF, ⟨c1, by decide⟩, ssF, _, canon_ok _ _, netF_reach, rfl, by decide, netF_holds,
+    by decide, rfl, by decide, .inl (by decide), deadlineAfter_open (t := 0) rfl _⟩
 
 /-- `latest_state_finalizable`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat),
+example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
-    net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = c ∧
-    (∀ t ∈ net.sent, t.state.channel = c →
+    apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
+    net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = (c : FixedPart) ∧
+    (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
       t.state.turnNum < ss.state.turnNum ∨ t.state = ss.state) ∧
-    (∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true →
+    (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) → t.state.isFinal = true →
       t.state.outcome = ss.state.outcome) ∧
-    2 * (canon p0).ε ≤ c.challengeDuration ∧
-    (net.Finalized c ss.state.outcome ∨
-      (∃ t, net.chain.statusOf c = .open t ∧ t ≤ ss.state.turnNum) ∨
-      (∃ t ch, net.chain.statusOf c = .challenged t ch ∧
-        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.chain.now + (canon p0).ε ≤ ch.deadline)) :=
-  ⟨netF, c1, ssF, canon_ok _ _, netF_reach, rfl, by decide, netF_holds, by decide, rfl, by decide,
-    by decide, by decide, .inr (.inl ⟨0, rfl, le_rfl⟩)⟩
+    (net.Finalized (c : FixedPart) ss.state.outcome ∨
+      (∃ t, net.chain.statusOf (c : FixedPart) = .open t ∧ t ≤ ss.state.turnNum) ∨
+      (∃ t ch, net.chain.statusOf (c : FixedPart) = .challenged t ch ∧
+        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧
+        net.chain.now + (canon p0).ε ≤ ch.deadline)) :=
+  ⟨netF, ⟨c1, by decide⟩, ssF, canon_ok _ _, netF_reach, rfl, by decide, netF_holds, by decide,
+    rfl, by decide, by decide, .inr (.inl ⟨0, rfl, le_rfl⟩)⟩
 
 /-- `c1` challenged at turn 0, deadline 2 (`g0.now + c1.challengeDuration`): reached by `p0`
     sending `stO0`, then `p0`'s own honest challenge with it (only `c1`'s own participant may
@@ -1178,17 +1199,17 @@ theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
     (.send stO) (by simp)
 
 /-- `late_observer_can_checkpoint`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat) (t : Nat)
-    (ch : Challenge Nat),
+example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
+    (t : Nat) (ch : Challenge Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
-    net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = c ∧
-    (∀ u ∈ net.sent, u.state.channel = c →
+    apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
+    net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = (c : FixedPart) ∧
+    (∀ u ∈ net.sent, u.state.channel = (c : FixedPart) →
       (u.state.turnNum < ss.state.turnNum ∨ u.state = ss.state) ∧ u.state.isFinal = false) ∧
-    net.chain.statusOf c = .challenged t ch ∧ t < ss.state.turnNum ∧
-    net.chain.now + (canon p0).ε ≤ ch.deadline ∧ 2 * (canon p0).ε ≤ c.challengeDuration :=
-  ⟨netO, c1, ssO, 0, ⟨stO0, 2⟩, canon_ok _ _, netO_reach, rfl, by decide,
-    holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, by decide, rfl, by decide,
+    net.chain.statusOf (c : FixedPart) = .challenged t ch ∧ t < ss.state.turnNum ∧
+    net.chain.now + (canon p0).ε ≤ ch.deadline :=
+  ⟨netO, ⟨c1, by decide⟩, ssO, 0, ⟨stO0, 2⟩, canon_ok _ _, netO_reach, rfl, by decide,
+    holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, by decide, rfl,
     by decide, by decide⟩
 
 /-- `p0` concludes `c1` with `o1` directly from genesis: `conclude` needs no
@@ -1255,26 +1276,27 @@ example : ∃ (v : Views Nat) (n : Network Nat), (Nitro.network apps0 (Ts apps0)
 
 
 /-- `finalizable_or_two_enabled`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart),
+example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    (apps0 c.appDef).NoUnilateralSupport ∧ p0 ∈ c.participants ∧
+    (apps0 (c : FixedPart).appDef).NoUnilateralSupport ∧ p0 ∈ (c : FixedPart).participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
-      (apps0 c.appDef).supports c proof candidate = true ∧ candidate.channel = c) ∧
-    2 * (canon p0).ε ≤ c.challengeDuration :=
-  ⟨netF, c1, canon_ok _ _, netF_reach, consensusRules_noUnilateralSupport, by decide,
+      (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
+      candidate.channel = (c : FixedPart)) :=
+  ⟨netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach, consensusRules_noUnilateralSupport, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
-      by decide, rfl⟩, by decide⟩
+      by decide, rfl⟩⟩
 
 /-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
     is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `netC_reach`. -/
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
+example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    (apps0 c.appDef).NoUnilateralSupport ∧ p0 ∈ c.participants ∧
-    (∀ t ∈ net.sent, t.state.channel = c → ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
-      (apps0 c.appDef).supports c proof t.state = true) ∧
-    2 * (canon p0).ε ≤ c.challengeDuration ∧ Enabled apps0 (canon p0) c Ω net ∧
-    (∀ Ω', Enabled apps0 (canon p0) c Ω' net → Ω' = Ω) :=
-  ⟨⟨sCon, [ssF], [ssF]⟩, c1, .allocation o1, canon_ok _ _, netC_reach,
+    (apps0 (c : FixedPart).appDef).NoUnilateralSupport ∧ p0 ∈ (c : FixedPart).participants ∧
+    (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
+      ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
+      (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true) ∧
+    Enabled apps0 (canon p0) (c : FixedPart) Ω net ∧
+    (∀ Ω', Enabled apps0 (canon p0) (c : FixedPart) Ω' net → Ω' = Ω) :=
+  ⟨⟨sCon, [ssF], [ssF]⟩, ⟨c1, by decide⟩, .allocation o1, canon_ok _ _, netC_reach,
     consensusRules_noUnilateralSupport, by decide,
     (fun t h _ => by
       rw [List.mem_singleton] at h; subst h
@@ -1282,7 +1304,7 @@ example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (Ω : Outcome Nat),
         rw [List.mem_singleton] at h'; subst h'
         exact holds_intro _ _ (by decide) (fun _ h => by cases h),
         by decide⟩),
-    by decide, fun ⟨σ, hfeas, hσ⟩ => by
+    fun ⟨σ, hfeas, hσ⟩ => by
       obtain ⟨n2, hround⟩ := Threat.Round.exists (canon p0)
         (hfeas (⟨sCon, [ssF], [ssF]⟩ : NetworkState Nat p0))
       exact hσ _ n2 .refl hround (hround.1.finalizedWith_mono rfl),
@@ -1402,23 +1424,23 @@ theorem netC2_reach : (Nitro.participant apps0 (canon p0)).Reachable netC2 :=
     (.deliver ⟨stF2, [q0]⟩) (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
       NetworkState.Unforged _ ⟨stF2, [q0]⟩)
 
-example : ∃ (net : NetworkState Nat p0) (c : FixedPart) (ss : SignedState Nat)
+example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
     (Ω1 Ω2 Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    apps0 c.appDef = consensusRules ∧ p0 ∈ c.participants ∧
-    net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = c ∧ ss.state.outcome = Ω1 ∧
-    (∀ t ∈ net.sent, t.state.channel = c →
+    apps0 (c : FixedPart).appDef = consensusRules ∧ p0 ∈ (c : FixedPart).participants ∧
+    net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = (c : FixedPart) ∧ ss.state.outcome = Ω1 ∧
+    (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
       (t.state.turnNum < ss.state.turnNum ∨ t.state = ss.state ∨ t.state.outcome = Ω2) ∧
       (t.state.isFinal = true → t.state.outcome = Ω1 ∨ t.state.outcome = Ω2)) ∧
-    2 * (canon p0).ε ≤ c.challengeDuration ∧
-    ((∃ t, net.chain.statusOf c = .open t ∧ t ≤ ss.state.turnNum) ∨
-      (∃ t ch, net.chain.statusOf c = .challenged t ch ∧
-        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net.chain.now + (canon p0).ε ≤ ch.deadline)) ∧
-    Enabled apps0 (canon p0) c Ω net := by
-  refine ⟨netC2, c2, ⟨stF2, [p0, q0]⟩, .allocation o1, .allocation o1, .allocation o1,
-    canon_ok _ _, netC2_reach, rfl, by decide,
+    ((∃ t, net.chain.statusOf (c : FixedPart) = .open t ∧ t ≤ ss.state.turnNum) ∨
+      (∃ t ch, net.chain.statusOf (c : FixedPart) = .challenged t ch ∧
+        (t < ss.state.turnNum ∨ ch.state = ss.state) ∧
+        net.chain.now + (canon p0).ε ≤ ch.deadline)) ∧
+    Enabled apps0 (canon p0) (c : FixedPart) Ω net := by
+  refine ⟨netC2, ⟨c2, by decide⟩, ⟨stF2, [p0, q0]⟩, .allocation o1, .allocation o1,
+    .allocation o1, canon_ok _ _, netC2_reach, rfl, by decide,
     holds_intro _ _ (by decide) (fun _ h => by cases h), by decide,
-    rfl, rfl, by decide, by decide, .inl ⟨0, rfl, le_rfl⟩, ?_⟩
+    rfl, rfl, by decide, .inl ⟨0, rfl, le_rfl⟩, ?_⟩
   rintro ⟨σ, hfeas, hσ⟩
   have hmC2feas : (canon p0).feasible netC2 mC2 :=
     ⟨by decide, fun ss hss => by
@@ -1519,26 +1541,27 @@ example : ∃ net : NetworkState Nat p0,
 example : ∃ (net : NetworkState Nat p0) (n : Address Nat) (v x : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
-    net.chain.IsDAG ∧ net.chain.TurboValue n v ∧
+    net.chain.IsTurboOutcomeNetwork ∧ net.chain.TurboValue n v ∧
     CanObtainIn apps0 (turboT p0) HonestMove.IsTransfer n x net :=
   ⟨⟨g0, [], []⟩, d0, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
-    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _, .done (Nat.zero_le _)⟩
+    participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, g0_turbo _,
+    .done (Nat.zero_le _)⟩
 
 /-- `turbo_value_achievable`. `net` is the genesis state itself. -/
 example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
-    net.chain.IsDAG ∧ net.chain.TurboValue (.external d) v :=
+    net.chain.IsTurboOutcomeNetwork ∧ net.chain.TurboValue (.external d) v :=
   ⟨⟨g0, [], []⟩, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
-    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _⟩
+    participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, g0_turbo _⟩
 
 /-- `turbo_value_is_value`. `net` is the genesis state itself. -/
 example : ∃ (net : NetworkState Nat p0) (d : Nat) (v : Coins),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
-    net.chain.IsDAG ∧ net.chain.TurboValue (.external d) v :=
+    net.chain.IsTurboOutcomeNetwork ∧ net.chain.TurboValue (.external d) v :=
   ⟨⟨g0, [], []⟩, 0, 0, turboT_bounds _ _, turboT_only _, turboT_capable _,
-    participant_reachable_init apps0 (turboT p0), g0_dag, g0_turbo _⟩
+    participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, g0_turbo _⟩
 
 theorem g0_exhausted : g0.TransferExhausted := by
   intro a b s' h
@@ -1546,15 +1569,16 @@ theorem g0_exhausted : g0.TransferExhausted := by
     Adjudicator.genesis] at h
 
 /-- `turbo_order_independent`. -/
-example : ∃ (s : Adjudicator Nat) (ops1 ops2 : List (Participant × Op Nat)),
-    s.IsDAG ∧ OnlyTransfers ops1 ∧ OnlyTransfers ops2 ∧
-    (Adjudicator.applyAll apps0 ops1 s).TransferExhausted ∧
-    (Adjudicator.applyAll apps0 ops2 s).TransferExhausted :=
-  ⟨g0, [], [], g0_dag, fun _ h => absurd h List.not_mem_nil, fun _ h => absurd h List.not_mem_nil,
-    g0_exhausted, g0_exhausted⟩
+example : ∃ (s : TurboOutcomeNetwork Nat) (ops1 ops2 : List (Participant × Op Nat)),
+    OnlyTransfers ops1 ∧ OnlyTransfers ops2 ∧
+    (Adjudicator.applyAll apps0 ops1 (s : Adjudicator Nat)).TransferExhausted ∧
+    (Adjudicator.applyAll apps0 ops2 (s : Adjudicator Nat)).TransferExhausted :=
+  ⟨⟨g0, g0_turboOutcomeNetwork⟩, [], [], fun _ h => absurd h List.not_mem_nil,
+    fun _ h => absurd h List.not_mem_nil, g0_exhausted, g0_exhausted⟩
 
 /-- `turbo_value_exists_unique`. -/
-example : ∃ s : Adjudicator Nat, s.IsDAG := ⟨g0, g0_dag⟩
+example : TurboOutcomeNetwork Nat := ⟨g0, g0_turboOutcomeNetwork⟩
+
 
 /-! ### Ledger constructions: `A = p0` at `0`, `B = q0` at `1`. -/
 
@@ -2046,9 +2070,10 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
   rcases hr' with rfl | rfl
   · refine latest_state_finalizable apps0 ((Ts apps0).T p0) (canon_ok apps0 p0)
       (net := (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views p0)
-      (Nitro.network_views_participant_reachable hreach p0) c
+      (Nitro.network_views_participant_reachable hreach p0)
+      ⟨c, by unfold FixedPart.IsTimed; rw [hdur]; decide⟩
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
-      (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_ (by rw [hdur]; decide)
+      (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
     · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
@@ -2071,9 +2096,10 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
       · exact absurd hcc hne
   · refine latest_state_finalizable apps0 ((Ts apps0).T q0) (canon_ok apps0 q0)
       (net := (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views q0)
-      (Nitro.network_views_participant_reachable hreach q0) c
+      (Nitro.network_views_participant_reachable hreach q0)
+      ⟨c, by unfold FixedPart.IsTimed; rw [hdur]; decide⟩
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
-      (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_ (by rw [hdur]; decide)
+      (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
     · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
@@ -2210,24 +2236,27 @@ theorem nPWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPWF :=
   nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher
 
 example : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
-    (L L' χ : FixedPart) (a b c a' : Coins),
+    (L L' : LedgerChannel apps0) (χ : FixedPart) (a b c a' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
-    IsLedgerChannel apps0 L ∧ IsLedgerChannel apps0 L' ∧ L.participants = [A, B] ∧
-    L'.participants = [A, B] ∧ L ≠ L' ∧ v.HoldsBalance L.address (a + b + c + a') ∧
-    Concluded v L (.allocation [alloc L'.address (a + b + c), alloc (.external dA) a']) ∧
-    (∀ p, ∀ t ∈ (v p).sent, t.state.channel = L → t.state.isFinal = true →
-      t.state.outcome = .allocation [alloc L'.address (a + b + c), alloc (.external dA) a']) ∧
-    (∀ p, (v p).chain.finalizedWith L.address = none) ∧
-    (∀ p, 2 * ((Ts apps0).T p).ε ≤ L.challengeDuration ∧
-      2 * ((Ts apps0).T p).ε ≤ L'.challengeDuration) ∧
-    (∀ p, (v p).DeadlineAfter L ((Ts apps0).T p).ε ∧
-      (v p).DeadlineAfter L' (2 * ((Ts apps0).T p).ε)) ∧
-    (∀ p, (v p).chain.finalOutcome L'.address = none) ∧
-    (∀ p, ∀ t ∈ (v p).sent, t.state.channel = L' → t.state.isFinal = false) ∧
-    v.FinalizableBy apps0 (Ts apps0) L'
+    (L : FixedPart).participants = [A, B] ∧ (L' : FixedPart).participants = [A, B] ∧
+    (L : FixedPart) ≠ (L' : FixedPart) ∧
+    v.HoldsBalance (L : FixedPart).address (a + b + c + a') ∧
+    Concluded v (L : FixedPart)
+      (.allocation [alloc (L' : FixedPart).address (a + b + c), alloc (.external dA) a']) ∧
+    (∀ p, ∀ t ∈ (v p).sent, t.state.channel = (L : FixedPart) → t.state.isFinal = true →
+      t.state.outcome =
+        .allocation [alloc (L' : FixedPart).address (a + b + c), alloc (.external dA) a']) ∧
+    (∀ p, (v p).chain.finalizedWith (L : FixedPart).address = none) ∧
+    (∀ p, 2 * ((Ts apps0).T p).ε ≤ (L : FixedPart).challengeDuration ∧
+      2 * ((Ts apps0).T p).ε ≤ (L' : FixedPart).challengeDuration) ∧
+    (∀ p, (v p).DeadlineAfter (L : FixedPart) ((Ts apps0).T p).ε ∧
+      (v p).DeadlineAfter (L' : FixedPart) (2 * ((Ts apps0).T p).ε)) ∧
+    (∀ p, (v p).chain.finalOutcome (L' : FixedPart).address = none) ∧
+    (∀ p, ∀ t ∈ (v p).sent, t.state.channel = (L' : FixedPart) → t.state.isFinal = false) ∧
+    v.FinalizableBy apps0 (Ts apps0) (L' : FixedPart)
       (.allocation [alloc (.external dA) a, alloc (.external dB) b, alloc χ.address c]) [A, B] := by
-  refine ⟨nPWF.views, nPWF, p0, q0, 0, 1, cLWF, cL2F, c3, 1, 1, 1, 2, nPWF_reach, rfl, ⟨rfl, rfl⟩,
-    ⟨rfl, rfl⟩, rfl, rfl, cLWF_ne_cL2F, ?_, ?_, ?_,
+  refine ⟨nPWF.views, nPWF, p0, q0, 0, 1, ⟨cLWF, ⟨rfl, rfl⟩⟩, ⟨cL2F, ⟨rfl, rfl⟩⟩, c3, 1, 1, 1, 2,
+    nPWF_reach, rfl, rfl, rfl, cLWF_ne_cL2F, ?_, ?_, ?_,
     fun r => by simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_finalizedWith _,
     fun _ => ⟨(by decide : 2 * 1 ≤ 2), (by decide : 2 * 1 ≤ 2)⟩, ?_,
     fun r => by simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_finalOutcome _, ?_,
@@ -2482,27 +2511,28 @@ theorem net3R_hR1 : ∀ t ∈ net3R.sent, (t.state.channel = Lm3 ∨ t.state.cha
 
 
 /-- `satp_theorem_3_2`. -/
-example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat) (Lm Lp : FixedPart)
-    (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
+example : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat)
+    (Lm Lp : TimedChannel (canon P).ε) (om op : Allocation Nat) (balm balp : Coins)
+    (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
     r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧ 1 ≤ i ∧ i + 1 < r.peers.length ∧
     r.peers[i]? = some P ∧ r.peers[i - 1]? = some Pprev ∧ r.peers[i + 1]? = some Pnext ∧
-    r.ledgers[i - 1]? = some Lm ∧ r.ledgers[i]? = some Lp ∧
-    (2 * (canon P).ε ≤ Lm.challengeDuration ∧ 2 * (canon P).ε ≤ Lp.challengeDuration ∧
-      2 * (canon P).ε ≤ r.V.challengeDuration) ∧
+    r.ledgers[i - 1]? = some (Lm : FixedPart) ∧ r.ledgers[i]? = some (Lp : FixedPart) ∧
+    r.V.IsTimed (canon P).ε ∧
     r.LedgerAfterRound2 om Pprev P P balm r.b0 ∧ r.LedgerAfterRound2 op P Pnext P balp r.a0 ∧
     (Nitro.participant apps2 (canon P)).Reachable net ∧
-    HoldsLatestLedger net Lm om ∧ HoldsLatestLedger net Lp op ∧
+    HoldsLatestLedger net (Lm : FixedPart) om ∧ HoldsLatestLedger net (Lp : FixedPart) op ∧
     HoldsVirtualSetup net r alice bob true ∧
-    (∀ t ∈ net.sent, (t.state.channel = Lm ∨ t.state.channel = Lp) →
+    (∀ t ∈ net.sent, (t.state.channel = (Lm : FixedPart) ∨ t.state.channel = (Lp : FixedPart)) →
       ∀ o', t.state.outcome = .allocation o' → o'.find r.V.address ≠ none →
       ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0) ∧
-    (net.DeadlineAfter Lm (canon P).ε ∧ net.DeadlineAfter Lp (canon P).ε ∧
-      net.DeadlineAfter r.V (canon P).ε) ∧
-    (net.chain.finalizedWith Lm.address = none ∧ net.chain.finalizedWith Lp.address = none ∧
+    (net.DeadlineAfter (Lm : FixedPart) (canon P).ε ∧
+      net.DeadlineAfter (Lp : FixedPart) (canon P).ε ∧ net.DeadlineAfter r.V (canon P).ε) ∧
+    (net.chain.finalizedWith (Lm : FixedPart).address = none ∧
+      net.chain.finalizedWith (Lp : FixedPart).address = none ∧
       net.chain.finalizedWith r.V.address = none) :=
-  ⟨r3, p0, w0, q0, p0, w0, 1, Lm3, Lp3, om3, op3, 1, 1, net3R, canon_ok _ _, r3_wf, rfl, rfl, rfl,
-    le_rfl, by decide, rfl, rfl, rfl, rfl, rfl, ⟨by decide, by decide, by decide⟩,
+  ⟨r3, p0, w0, q0, p0, w0, 1, ⟨Lm3, by decide⟩, ⟨Lp3, by decide⟩, om3, op3, 1, 1, net3R,
+    canon_ok _ _, r3_wf, rfl, rfl, rfl, le_rfl, by decide, rfl, rfl, rfl, rfl, rfl, by decide,
     by unfold Route.LedgerAfterRound2; decide, by unfold Route.LedgerAfterRound2; decide,
     net3R_reach, net3R_latest_m, net3R_latest_p, net3R_virtualSetup, net3R_hR1,
     ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _,
@@ -2528,18 +2558,20 @@ theorem netB_reach : (Nitro.participant apps2 (canon q0)).Reachable netB :=
     (.deliver ⟨SmB, [p0]⟩)
     (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨SmB, [p0]⟩)
 
-example : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : FixedPart)
+example : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : TimedChannel (canon P).ε)
     (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ 1 ≤ i ∧ i + 1 < r.peers.length ∧
-    r.peers[i]? = some P ∧ r.ledgers[i - 1]? = some Lm ∧ r.ledgers[i]? = some Lp ∧
-    (2 * (canon P).ε ≤ Lm.challengeDuration ∧ 2 * (canon P).ε ≤ Lp.challengeDuration) ∧
+    r.peers[i]? = some P ∧ r.ledgers[i - 1]? = some (Lm : FixedPart) ∧
+    r.ledgers[i]? = some (Lp : FixedPart) ∧
     r.LedgerBeforeRound2 om P balm ∧ r.LedgerBeforeRound2 op P balp ∧
     (Nitro.participant apps2 (canon P)).Reachable net ∧
-    HoldsLatestLedger net Lm om ∧ HoldsLatestLedger net Lp op ∧
-    (net.DeadlineAfter Lm (canon P).ε ∧ net.DeadlineAfter Lp (canon P).ε) ∧
-    (net.chain.finalizedWith Lm.address = none ∧ net.chain.finalizedWith Lp.address = none) :=
-  ⟨r3, q0, 1, Lm3, Lp3, omB, omB, 1, 1, netB, canon_ok _ _, r3_wf, le_rfl, by decide, rfl, rfl, rfl,
-    ⟨by decide, by decide⟩, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, netB_reach,
+    HoldsLatestLedger net (Lm : FixedPart) om ∧ HoldsLatestLedger net (Lp : FixedPart) op ∧
+    (net.DeadlineAfter (Lm : FixedPart) (canon P).ε ∧
+      net.DeadlineAfter (Lp : FixedPart) (canon P).ε) ∧
+    (net.chain.finalizedWith (Lm : FixedPart).address = none ∧
+      net.chain.finalizedWith (Lp : FixedPart).address = none) :=
+  ⟨r3, q0, 1, ⟨Lm3, by decide⟩, ⟨Lp3, by decide⟩, omB, omB, 1, 1, netB, canon_ok _ _, r3_wf, le_rfl,
+    by decide, rfl, rfl, rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, netB_reach,
     ⟨⟨SmB, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
       by decide, .inl ⟨0, rfl, by decide⟩⟩,
     ⟨⟨SpB, [q0, w0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
@@ -2588,46 +2620,44 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
           exact fun q hq => absurd hq List.not_mem_nil))
     (.wait 2) trivial
 
-example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : FixedPart) (o : Allocation Nat)
-    (bal a b : Coins) (net : NetworkState Nat P),
+example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel (canon P).ε)
+    (o : GuaranteedOutcome Nat) (bal a b : Coins) (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
     r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧ P = alice ∧ r.peers[1]? = some P1 ∧
-    r.ledgers[0]? = some L0 ∧
-    (2 * (canon P).ε ≤ L0.challengeDuration ∧ 2 * (canon P).ε ≤ r.V.challengeDuration) ∧
-    r.LedgerAfterRound2 o P P1 P bal r.a0 ∧
-    (∀ e ∈ o, ∀ x ps, e.item = .guarantee x ps → ∀ d ∈ ps, d.isExternal = true) ∧
+    r.ledgers[0]? = some (L0 : FixedPart) ∧
+    r.V.IsTimed (canon P).ε ∧
+    r.LedgerAfterRound2 (o : Allocation Nat) P P1 P bal r.a0 ∧
     (Nitro.participant apps2 (canon P)).Reachable net ∧
-    HoldsLatestLedger net L0 o ∧
+    HoldsLatestLedger net (L0 : FixedPart) (o : Allocation Nat) ∧
     HoldsVirtualSetup net r alice bob true ∧ a + b = r.a0 + r.b0 ∧
     net.chain.finalOutcome r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
-    net.DeadlineAfter L0 (canon P).ε ∧ net.chain.finalizedWith L0.address = none := by
-  refine ⟨r2, p0, q0, p0, q0, Lr, o0, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl, rfl, rfl, rfl, rfl,
-    rfl, ⟨by decide, by decide⟩, by unfold Route.LedgerAfterRound2; decide,
-    (by
-      intro e he
-      simp only [o0, List.mem_cons, List.not_mem_nil, or_false] at he
-      rcases he with h1 | h2 | h3
-      · subst h1
-        intro x ps hxps
-        intro d hd
-        have hf : False := by cases hxps
-        exact hf.elim
-      · subst h2
-        intro x ps hxps
-        intro d hd
-        have hf : False := by cases hxps
-        exact hf.elim
-      · subst h3
-        intro x ps hxps
-        simp only [Route.guarantee, Item.guarantee.injEq] at hxps
-        obtain ⟨hx, hps⟩ := hxps
-        subst hps
-        intro d hd
-        simp only [List.mem_cons, List.not_mem_nil, or_false] at hd
-        rcases hd with rfl | rfl <;> rfl
-    ), netE_reach,
+    net.DeadlineAfter (L0 : FixedPart) (canon P).ε ∧
+    net.chain.finalizedWith (L0 : FixedPart).address = none := by
+  refine ⟨r2, p0, q0, p0, q0, ⟨Lr, by decide⟩, ⟨o0, ?_⟩, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl,
+    rfl, rfl, rfl, rfl, rfl, by decide, by unfold Route.LedgerAfterRound2; decide, netE_reach,
     ⟨⟨S0, [p0, q0]⟩, ?_, by decide, rfl, rfl, rfl, ?_, ?_⟩, ⟨?_, ?_⟩, rfl, by decide, ?_, by decide⟩
+  · intro e he
+    simp only [o0, List.mem_cons, List.not_mem_nil, or_false] at he
+    rcases he with h1 | h2 | h3
+    · subst h1
+      intro x ps hxps
+      intro d hd
+      have hf : False := by cases hxps
+      exact hf.elim
+    · subst h2
+      intro x ps hxps
+      intro d hd
+      have hf : False := by cases hxps
+      exact hf.elim
+    · subst h3
+      intro x ps hxps
+      simp only [Route.guarantee, Item.guarantee.injEq] at hxps
+      obtain ⟨hx, hps⟩ := hxps
+      subst hps
+      intro d hd
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hd
+      rcases hd with rfl | rfl <;> rfl
   · refine ⟨fun q hq => ?_, fun v hv => ?_⟩
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
       rcases hq with rfl | rfl
