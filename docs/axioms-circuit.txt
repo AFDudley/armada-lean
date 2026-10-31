@@ -28,11 +28,12 @@
 integer equality, given Num2Bits(120) range checks :120-129 and N ≤ 8, M ≤ 4.)
 'transact_value_conserved' depends on axioms: [EdDSAVerify, propext, Quot.sound]
 
-== transact_no_double_spend ==
-(Finding 2 fix: pairwise leaf distinctness :145-161 lifts to pairwise-distinct
-published nullifiers :97-101 via Term.hash2's collision resistance, proved by
-construction — ArmadaLean.Poseidon.)
-'transact_no_double_spend' depends on axioms: [EdDSAVerify]
+== transact_inputs_distinct_nullifiers ==
+(Pairwise leaf distinctness within one proof, :145-161 of commit e79919d, lifts to
+pairwise-distinct nullifiers of that proof :97-101 via Term.hash2's collision
+resistance, proved by construction — ArmadaLean.Poseidon. One proof only: the
+circuit cannot see earlier spends; the contract's spent map rejects them.)
+'transact_inputs_distinct_nullifiers' depends on axioms: [EdDSAVerify]
 
 == merkleRoot_inj_leaf ==
 (A Merkle membership proof binds exactly one leaf to the root; with the root
@@ -53,8 +54,8 @@ note key, built from a Keccak address term — two different hash-function tags 
 assumption needed.)
 'user_npk_ne_contract_npk' does not depend on any axioms.
 
-# Note: transact_value_conserved / transact_no_double_spend mention EdDSAVerify only
+# Note: transact_value_conserved / transact_inputs_distinct_nullifiers mention EdDSAVerify only
 # because their statements quantify over the `Constrained` constraint structure, which
 # itself references that symbol (the circuit's signature check, `Constrained.sig`); the
-# value/double-spend arguments themselves use only the range-check, distinctness, and
+# value and distinct-nullifier arguments themselves use only the range-check, distinctness, and
 # Term.hash2_inj facts, none of which are axioms.

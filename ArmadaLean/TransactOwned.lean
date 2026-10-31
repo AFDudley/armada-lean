@@ -23,18 +23,21 @@
   * `ownerField` and the per-input `npk` are circuit public inputs/outputs
     (:32-39), so the pool and the owning contract can read them back.
 
-  DEPARTURE (circuit, confirmed by reading the source file): Transact.circom
-  has an input leaf-distinctness block (SECURITY_REVIEW.md Finding 2 fix,
-  Transact.circom:145-161, `IsEqual(...).out === 0` for every pair of leaf
-  indices) that TransactOwned.circom does not repeat — grepping
-  TransactOwned.circom for `IsEqual` returns no match. This is safe only
-  because `nullifier = Poseidon(ownerField, leafIndex)` is a pure function of
-  the leaf index: two inputs that reuse one leaf index are forced to publish
-  the same nullifier value, and the pool's own nullifier-marking loop
-  (TransactModule.sol:379-386, modeled in ArmadaLean.PoolOwned) reverts the
-  whole call the second time that value is marked. `owned_no_double_spend`
-  in ArmadaLean.PoolOwned proves the pool-level guarantee directly; it does
-  not assume this missing circuit field.
+  DEPARTURE (circuit, confirmed by reading the source files): Transact.circom
+  with commit `e79919d` (branch `feat/public-ceremony`) has an input
+  leaf-distinctness block (Transact.circom:145-161, `IsEqual(...).out === 0`
+  for every pair of leaf indices of one proof). TransactOwned.circom has no
+  such block on any branch: grepping it for `IsEqual` returns no match. So
+  nothing in the owned circuit stops one proof from publishing the same
+  nullifier twice. That is safe only because `nullifier = Poseidon(ownerField,
+  leafIndex)` is a pure function of the leaf index: two inputs that reuse one
+  leaf index publish the same nullifier value, and the pool's
+  nullifier-marking loop (TransactModule.sol:379-386, modeled in
+  ArmadaLean.PoolOwned) reverts the whole call the second time that value is
+  marked. The circuit cannot see earlier spends on any branch: the contract's
+  spent map is the only no-double-spend check. `owned_no_double_spend` in
+  ArmadaLean.PoolOwned proves the pool-level guarantee directly; it does not
+  assume a circuit field.
 
   Both circuits compute `npk = Poseidon(X, random)` with the same two-argument
   formula and no on-circuit tag distinguishing which circuit produced `X`

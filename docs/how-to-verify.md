@@ -61,7 +61,7 @@ exactly which assumptions any theorem depends on:
 cat > /tmp/check_axioms.lean <<'EOF'
 import ArmadaLean
 #print axioms transact_value_conserved
-#print axioms transact_no_double_spend
+#print axioms transact_inputs_distinct_nullifiers
 #print axioms merkleRoot_inj_leaf
 #print axioms no_wraparound_minting
 #print axioms inflation_attack_profitable

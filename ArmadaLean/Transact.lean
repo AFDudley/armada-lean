@@ -6,11 +6,30 @@
 
   * `transact_public_outputs_determined` — the security-critical public outputs
     are uniquely determined by the witness (no under-constrained freedom);
-  * `transact_no_double_spend` — the published nullifiers are pairwise distinct
-    (SECURITY_REVIEW.md Finding 2 fix);
+  * `transact_inputs_distinct_nullifiers` — the nullifiers one proof publishes
+    are pairwise distinct (the input-distinctness block, :145-161);
   * `transact_value_conserved` — input value equals output value as integers
     (SECURITY_REVIEW.md Finding 1 fix; the in-field check at :141-143 cannot be
     exploited by wraparound).
+
+  Circuit version (operator ruling 2026-10-31: the model follows the newest Armada
+  system). The model is `Transact.circom` with commit `e79919d` ("circuit:
+  constrain input notes pairwise distinct", branch `feat/public-ceremony`,
+  ship-armada/armada-circuits PR #1). Upstream `main` (`ef2682f`) and the fork's
+  `integrated` (`9699ba9`) do not have the input-distinctness block. On those
+  versions nothing in the circuit stops one proof from publishing the same
+  nullifier twice.
+
+  What the circuit cannot check. The circuit has no input that holds the set of
+  spent nullifiers, so it cannot see an earlier spend. The block at :145-161
+  compares only the inputs of the same proof with each other. A note spent in an
+  earlier transaction is rejected only by the contract: `_accumulateAndNullify`
+  checks and marks each nullifier in turn (TransactModule.sol:379-386; Railgun
+  has the same loop, RailgunLogic.sol:493-510, Railgun-Privacy/contract
+  `36bcf5ed`). That loop also rejects a nullifier that one proof lists twice, so
+  on a correct contract the circuit block adds no second, independent layer. No
+  double-spend is a contract property: `pool_no_double_spend` (PoolSafety.lean)
+  and `owned_no_double_spend` (PoolOwned.lean) state it.
 
   Commitments, nullifiers, note public keys, master public keys, Merkle roots and
   the bound-parameters hash are `Term`s (`ArmadaLean.Poseidon`, the symbolic
@@ -143,8 +162,10 @@ structure Constrained {N M : Nat} (w : TransactWitness N M)
       (`sumIn === sumOut`, :131-143); upgraded to integer equality by
       `transact_value_conserved`. -/
   balance : fieldEq (listSum (List.ofFn w.valueIn)) (listSum (List.ofFn w.valueOut))
-  /-- 4b: input notes are pairwise distinct — the `IsEqual(...).out === 0`
-      checks at :145-161 (SECURITY_REVIEW.md Finding 2 fix). -/
+  /-- 4b: the inputs of one proof are pairwise distinct — the `IsEqual(...).out === 0`
+      checks at :145-161 (commit `e79919d`, `feat/public-ceremony`; not on upstream
+      `main` or the fork's `integrated`). This compares the inputs of one proof with
+      each other only; it says nothing about earlier spends (module comment). -/
   distinct : ∀ i j, i ≠ j → w.leavesIndices i ≠ w.leavesIndices j
   /-- 5–6: EdDSA signature over the message hash verifies (:163-186). -/
   sig : EdDSAVerify w.publicKey w.signature (msgHashOf pub)
@@ -165,12 +186,16 @@ theorem transact_public_outputs_determined {N M : Nat} (w : TransactWitness N M)
   · intro j; rw [h₁.outputs j, h₂.outputs j]
 
 /--
-**No double-spend within a transaction** (SECURITY_REVIEW.md Finding 2 fix):
-the pairwise leaf-distinctness constraints (:145-161) plus collision
-resistance of `Term.hash2` (by construction, `ArmadaLean.Poseidon`) force the
-published nullifiers to be pairwise distinct, so the same note cannot be
-consumed twice by one transaction. -/
-theorem transact_no_double_spend {N M : Nat} (w : TransactWitness N M)
+**The nullifiers one proof publishes are pairwise distinct**: the input-distinctness
+block (:145-161, commit `e79919d`) plus collision resistance of `Term.hash2` (by
+construction, `ArmadaLean.Poseidon`) force the nullifiers of one proof to differ, so
+one proof cannot list the same note twice and count its value twice toward `sumIn`.
+This is not a no-double-spend theorem. The circuit cannot see earlier spends, and a
+note spent in an earlier transaction is rejected only by the contract's nullifier
+map (`pool_no_double_spend`, `owned_no_double_spend`; module comment). Renamed from
+`transact_no_double_spend` by operator ruling 2026-10-31, because that name claimed
+more than the statement proves. -/
+theorem transact_inputs_distinct_nullifiers {N M : Nat} (w : TransactWitness N M)
     (pub : TransactPublic N M) (h : Constrained w pub) :
     ∀ i j, i ≠ j → pub.nullifiers i ≠ pub.nullifiers j := by
   intro i j hij hn
