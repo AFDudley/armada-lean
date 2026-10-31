@@ -893,13 +893,13 @@ theorem Op.latest_record_step {apps : Apps E} {c : FixedPart} {caller : Particip
     subst ht
     obtain ⟨o, -, -, hfo, -⟩ := Adjudicator.transfer_some h
     rw [hlive] at hfo
-    exact absurd hfo (by simp)
+    exact absurd hfo (by simp only [reduceCtorEq, not_false_eq_true])
   | reclaim l v =>
     simp only [Op.targets] at ht
     subst ht
     obtain ⟨oL, -, -, -, -, hfo, -⟩ := Adjudicator.reclaim_some h
     rw [hlive] at hfo
-    exact absurd hfo (by simp)
+    exact absurd hfo (by simp only [reduceCtorEq, not_false_eq_true])
   | challenge c' proof cand =>
     simp only [Op.targets] at ht
     subst ht
@@ -1052,7 +1052,8 @@ theorem latest_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Thr
               · subst hop
                 refine Or.inl ?_
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hΩ' := hfinal x hxmem (hxeq ▸ hcp.1) (hxeq ▸ hcp.2.1)
                 simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hnew,
@@ -1210,7 +1211,8 @@ theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participan
               · subst hop
                 refine Or.inl ?_
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hΩ' := hfinal x hxmem (hxeq ▸ hcp.1) (hxeq ▸ hcp.2.1)
                 simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hnew,
@@ -1258,7 +1260,8 @@ theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participan
               · subst hop
                 refine Or.inl ?_
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hΩ' := hfinal x hxmem (hxeq ▸ hcp.1) (hxeq ▸ hcp.2.1)
                 simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hnew,
@@ -1403,7 +1406,8 @@ theorem latest_round_keeps_status_nil_D {apps : Apps E} {p : Participant} {T : T
               · subst hop
                 refine Or.inl ?_
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hΩ' := hfinal x hxmem (hxeq ▸ hcp.1) (hxeq ▸ hcp.2.1)
                 simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hnew,
@@ -1998,7 +2002,8 @@ theorem latest_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat 
               · subst hop
                 refine Or.inl ?_
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hΩ' := hfinal x hxmem (hxeq ▸ hcp.1) (hxeq ▸ hcp.2.1)
                 simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hnew,
@@ -2045,7 +2050,8 @@ theorem latest_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat 
               · subst hop
                 refine Or.inl ?_
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hΩ' := hfinal x hxmem (hxeq ▸ hcp.1) (hxeq ▸ hcp.2.1)
                 simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hnew,
@@ -2644,7 +2650,8 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
               · subst hop
                 exfalso
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hnf := (hsent x hxmem (by rw [hxeq]; exact hcp.1)).2
                 have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hcp.2.1
@@ -2684,7 +2691,8 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
               · subst hop
                 exfalso
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hnf := (hsent x hxmem (by rw [hxeq]; exact hcp.1)).2
                 have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hcp.2.1
@@ -2907,7 +2915,8 @@ theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E 
               · subst hop
                 exfalso
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hnf := (hsent x hxmem (by rw [hxeq]; exact hcp.1)).2
                 have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hcp.2.1
@@ -2952,7 +2961,8 @@ theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E 
               · subst hop
                 exfalso
                 have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by
+                  simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
                 have hnf := (hsent x hxmem (by rw [hxeq]; exact hcp.1)).2
                 have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hcp.2.1
