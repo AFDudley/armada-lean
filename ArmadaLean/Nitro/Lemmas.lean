@@ -1073,6 +1073,235 @@ theorem total_remove_le (o : Allocation E) (d : Address E) :
     · simp only [ne_eq, he, not_false_eq_true, decide_true, if_true, if_false, total_cons]
       grind
 
+
+/-! ### `chainPay`: paying an allocation's own destinations in order -/
+
+/-- Pay every destination in `ds`, in order, out of one allocation's own
+    coins (`AheadOf.pay_left`, one call per destination). A destination
+    whose current first entry is not an allocation item (already paid down
+    to a zero-owed item in an earlier call does not change this; a
+    guarantee item never does) is skipped. -/
+def chainPay : List (Address E) → Allocation E → Coins → Allocation E × Coins
+  | [], og, hg => (og, hg)
+  | d :: ds, og, hg =>
+    match og.find d with
+    | some ⟨_, .alloc _⟩ => chainPay ds (og.reduceOwed d (og.paidTo hg d)) (hg - og.paidTo hg d)
+    | _ => chainPay ds og hg
+
+/-- One unfolding step of `chainPay`, in the shape the definition's match
+    gives. -/
+theorem chainPay_cons (d : Address E) (ds : List (Address E)) (og : Allocation E) (hg : Coins) :
+    chainPay (d :: ds) og hg =
+      match og.find d with
+      | some ⟨_, .alloc _⟩ => chainPay ds (og.reduceOwed d (og.paidTo hg d)) (hg - og.paidTo hg d)
+      | _ => chainPay ds og hg := rfl
+
+/-- Chaining `AheadOf.pay_left` over an allocation's own destinations, in
+    its own priority order, keeps it ahead of any fixed allocation it
+    started ahead of. Each step is a no-op (`og`, `hg` unchanged) or exactly
+    one `AheadOf.pay_left` call, which `AheadOf.pay_left` already shows
+    keeps `AheadOf` true. -/
+theorem chainPay_AheadOf (ds : List (Address E)) (og op : Allocation E) (hg : Coins)
+    (h : og.AheadOf op hg) :
+    (chainPay ds og hg).1.AheadOf op (chainPay ds og hg).2 := by
+  induction ds generalizing og hg with
+  | nil => exact h
+  | cons d ds ih =>
+    rw [chainPay_cons]
+    cases hf : og.find d with
+    | none => exact ih _ _ h
+    | some entry =>
+      obtain ⟨dd, item⟩ := entry
+      have hdd : dd = d := find_dest hf
+      cases item with
+      | alloc amt =>
+        subst dd
+        exact ih _ _ (AheadOf.pay_left h hf)
+      | guarantee amt ps => exact ih _ _ h
+
+/-- Paying `c`'s own first entry down to zero owed to it never raises the
+    gap between the running budget and `c`'s own (unchanged) coins due
+    before it: either `c`'s whole owed amount was paid (new owed `0`), or
+    the budget ran out exactly at `c`'s coins due before it. -/
+theorem paidTo_reduceOwed_self_zero (o : Allocation E) (hg : Coins) (c : Address E) :
+    (o.reduceOwed c (o.paidTo hg c)).paidTo (hg - o.paidTo hg c) c = 0 := by
+  have hxo : o.paidTo hg c ≤ o.owed c := paidTo_le_owed hg o c
+  have h1 := dueBefore_reduceOwed o c c hxo
+  rw [if_neg (not_precedes_self o c)] at h1
+  have h3 := owed_reduceOwed o c c (o.paidTo hg c)
+  rw [if_pos rfl] at h3
+  have hm := paidTo_eq_min hg o c
+  rw [paidTo_eq_min]
+  unfold Coins at *
+  omega
+
+/-- A destination's own first entry is one summand of the coins due before
+    any destination it precedes: `c`'s own entry is inside the prefix of
+    `o`'s destinations that lies before `d`. -/
+theorem owed_le_total_takeWhile_of_mem {o : Allocation E} {c : Address E} {p : Address E → Bool}
+    (hc : c ∈ (o.map Entry.dest).takeWhile p) :
+    o.owed c ≤ Allocation.total (o.takeWhile (fun e => p e.dest)) := by
+  induction o with
+  | nil => simp at hc
+  | cons e t ih =>
+    rw [List.map_cons, List.takeWhile_cons] at hc
+    rw [owed_cons, List.takeWhile_cons]
+    by_cases hp : p e.dest
+    · simp only [hp, if_true] at hc ⊢
+      rw [List.mem_cons] at hc
+      rw [total_cons]
+      by_cases hec : e.dest = c
+      · simp [hec]
+      · rw [if_neg hec]
+        have hc' : c ∈ (t.map Entry.dest).takeWhile p := hc.resolve_left (Ne.symm hec)
+        exact le_trans (ih hc') (Nat.le_add_left _ _)
+    · simp [hp] at hc
+
+/-- When `c` precedes `d` in priority order, `c`'s own entry is one of the
+    entries due before `d`. -/
+theorem owed_le_dueBefore_of_precedes {o : Allocation E} {c d : Address E} (h : o.Precedes c d) :
+    o.owed c ≤ o.dueBefore d := by
+  unfold dueBefore
+  rw [← owed_dedup]
+  exact owed_le_total_takeWhile_of_mem h
+
+/-- Paying some destination `c` never un-zeroes a destination `d` whose
+    `paidTo` is already zero: paying `c` only lowers the running budget and
+    only lowers (never raises) `d`'s own coins due before it
+    (`dueBefore_reduceOwed`), so the gap that was already non-positive
+    stays non-positive. When `c` precedes `d`, `c`'s own owed amount (so
+    also the lower amount `og.paidTo hg c`) is at most `d`'s coins due
+    before it (`owed_le_dueBefore_of_precedes`), which keeps the budget-side
+    subtraction from wrapping. -/
+theorem paidTo_zero_reduceOwed (og : Allocation E) (hg : Coins) (d c : Address E)
+    (h0 : og.paidTo hg d = 0) :
+    (og.reduceOwed c (og.paidTo hg c)).paidTo (hg - og.paidTo hg c) d = 0 := by
+  have hxo : og.paidTo hg c ≤ og.owed c := paidTo_le_owed hg og c
+  have hxh : og.paidTo hg c ≤ hg := paidTo_le_held hg og c
+  have h1 := dueBefore_reduceOwed og d c hxo
+  have h3 := owed_reduceOwed og c d (og.paidTo hg c)
+  have hm := paidTo_eq_min hg og d
+  rw [h0] at hm
+  rw [paidTo_eq_min]
+  by_cases hdc : d = c
+  · subst hdc
+    rw [if_pos rfl] at h3
+    rw [if_neg (not_precedes_self og _)] at h1
+    unfold Coins at *
+    omega
+  · rw [if_neg hdc] at h3
+    by_cases hp : og.Precedes c d
+    · rw [if_pos hp] at h1
+      have hxd : og.paidTo hg c ≤ og.dueBefore d := le_trans hxo (owed_le_dueBefore_of_precedes hp)
+      unfold Coins at *
+      omega
+    · rw [if_neg hp] at h1
+      unfold Coins at *
+      omega
+
+/-- Once a destination's `paidTo` is zero at some point along a `chainPay`
+    run, it stays zero for the rest of the run: every further step is a
+    no-op or one more `paidTo_zero_reduceOwed` step. -/
+theorem chainPay_paidTo_invariant (ds : List (Address E)) (og : Allocation E) (hg : Coins)
+    (d : Address E) (h0 : og.paidTo hg d = 0) :
+    (chainPay ds og hg).1.paidTo (chainPay ds og hg).2 d = 0 := by
+  induction ds generalizing og hg with
+  | nil => exact h0
+  | cons e ds ih =>
+    rw [chainPay_cons]
+    cases hf : og.find e with
+    | none => exact ih _ _ h0
+    | some entry =>
+      obtain ⟨ee, item⟩ := entry
+      cases item with
+      | alloc amt => exact ih _ _ (paidTo_zero_reduceOwed og hg d e h0)
+      | guarantee amt ps => exact ih _ _ h0
+
+/-- A destination `d` that is in the list `ds` a `chainPay` run processes,
+    and whose current first entry (at the point the run reaches it) is an
+    allocation item, ends the run with `paidTo = 0`: the step that reaches
+    `d` zeroes it (`paidTo_reduceOwed_self_zero`), and `chainPay_paidTo_invariant`
+    keeps it zero through every later step. -/
+theorem chainPay_processes_alloc (ds : List (Address E)) (og : Allocation E) (hg : Coins)
+    (d : Address E) (hd : d ∈ ds) (amt : Coins) (hf : og.find d = some ⟨d, .alloc amt⟩) :
+    (chainPay ds og hg).1.paidTo (chainPay ds og hg).2 d = 0 := by
+  induction ds generalizing og hg with
+  | nil => exact absurd hd (List.not_mem_nil)
+  | cons e ds ih =>
+    rw [chainPay_cons]
+    rcases eq_or_ne e d with hed | hed
+    · subst hed
+      rw [hf]
+      exact chainPay_paidTo_invariant ds _ _ e (paidTo_reduceOwed_self_zero og hg e)
+    · have hd' : d ∈ ds := (List.mem_cons.1 hd).resolve_left (Ne.symm hed)
+      cases hfe : og.find e with
+      | none => exact ih _ _ hd' hf
+      | some entry =>
+        obtain ⟨ee, item⟩ := entry
+        cases item with
+        | alloc amt' =>
+          have hfd' : (og.reduceOwed e (og.paidTo hg e)).find d = some ⟨d, .alloc amt⟩ := by
+            rw [find_reduceOwed, if_neg (Ne.symm hed), hf]
+          exact ih _ _ hd' hfd'
+        | guarantee amt' ps => exact ih _ _ hd' hf
+
+/-- A destination found in an allocation is one of its entries' destinations. -/
+theorem find_mem_map_dest {o : Allocation E} {d : Address E} {f : Entry E}
+    (h : o.find d = some f) : f.dest ∈ o.map Entry.dest := by
+  induction o with
+  | nil => simp at h
+  | cons e t ih =>
+    rw [find_cons] at h
+    by_cases he : e.dest = d
+    · rw [if_pos he] at h
+      cases h
+      simp
+    · rw [if_neg he] at h
+      exact List.mem_cons_of_mem _ (ih h)
+
+/-- Two allocations with the same entry kinds find matching
+    whether-a-guarantee entries at every destination. -/
+theorem find_some_of_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.map Entry.kind)
+    {d : Address E} {f : Entry E} (hf : o.find d = some f) :
+    ∃ f', o'.find d = some f' ∧ f'.item.isGuarantee = f.item.isGuarantee := by
+  have hk := find_map_kind h d
+  rw [hf] at hk
+  cases hc : o'.find d with
+  | none => rw [hc] at hk; simp at hk
+  | some g' =>
+    refine ⟨g', rfl, ?_⟩
+    rw [hc] at hk
+    simp [Entry.kind] at hk
+    exact hk.2.symm
+
+/-- Processing every destination of an allocation `o`, in `o`'s own
+    priority order, exhausts it: every address either has no entry left, or
+    its entry is a guarantee (never touched, `AheadOf.kind`), or its
+    `paidTo` against the leftover budget is `0` (`chainPay_processes_alloc`). -/
+theorem chainPay_exhausted (o : Allocation E) (hg : Coins) (d : Address E) :
+    ((chainPay (o.map Entry.dest) o hg).1.find d).elim True
+      (fun e => e.item.isGuarantee = true ∨
+        (chainPay (o.map Entry.dest) o hg).1.paidTo (chainPay (o.map Entry.dest) o hg).2 d = 0) := by
+  have hahead := chainPay_AheadOf (o.map Entry.dest) o o hg (AheadOf.refl o hg)
+  cases hfod : o.find d with
+  | none =>
+    have hk := find_map_kind hahead.kind d
+    rw [hfod] at hk
+    cases hc : (chainPay (o.map Entry.dest) o hg).1.find d with
+    | none => trivial
+    | some f' => rw [hc] at hk; simp at hk
+  | some f =>
+    obtain ⟨fd, fi⟩ := f
+    have hfd : fd = d := find_dest hfod
+    subst fd
+    obtain ⟨f', hf', hkind⟩ := find_some_of_map_kind hahead.kind.symm hfod
+    rw [hf']
+    cases fi with
+    | alloc amt =>
+      have hmem : d ∈ o.map Entry.dest := find_mem_map_dest hfod
+      exact Or.inr (chainPay_processes_alloc (o.map Entry.dest) o hg d hmem amt hfod)
+    | guarantee x ps => exact Or.inl hkind
+
 end Allocation
 
 /-! ## Channels (`Channel.lean`) -/

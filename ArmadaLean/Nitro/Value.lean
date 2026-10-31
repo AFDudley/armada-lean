@@ -878,4 +878,225 @@ def Threat.TransfersOnly {p : Participant} (T : Threat E p) : Prop :=
 def Threat.CapableTransfers {p : Participant} (T : Threat E p) : Prop :=
   ∀ net caller a b, caller ≠ p → T.feasible net (.chain caller (.transfer a b))
 
+/-! ### Credit decomposition: `payoutValues` and `turboValueAlong`
+
+    `payoutValues_get_eq_add_paidTo` reads one node's processing step as a
+    single `Allocation.paidTo` credit. `turboValueAlong_eq_add_credits`
+    reads the whole algorithm's answer at `d` as the starting balance plus
+    one `paidTo` credit from every node whose own (stabilized) allocation
+    owes `d` a non-guarantee amount. -/
+
+/-- One processing step's net credit to one destination, in terms of
+    `Allocation.paidTo`: `payoutValues` raises `vals.get d` by `o`'s
+    priority-order payout to `d`, unless `d`'s first entry in `o` is a
+    guarantee, which contributes no credit (`payoutValues`'s own skip). -/
+theorem payoutValues_get_eq_add_paidTo (vals : Balances E) (remaining : Coins) (o : Allocation E)
+    (hnd : (o.map Entry.dest).Nodup) (d : Address E) :
+    (payoutValues vals remaining o).get d =
+      vals.get d +
+        (if (o.find d).elim false (fun e => !e.item.isGuarantee) then o.paidTo remaining d
+          else 0) := by
+  induction o generalizing vals remaining with
+  | nil => simp [payoutValues]
+  | cons e rest ih =>
+    have hned : e.dest ∉ rest.map Entry.dest := (List.nodup_cons.1 hnd).1
+    have hndr : (rest.map Entry.dest).Nodup := (List.nodup_cons.1 hnd).2
+    rw [Allocation.find_cons]
+    by_cases hde : e.dest = d
+    · have hdnotrest : d ∉ rest.map Entry.dest := by rw [← hde]; exact hned
+      have hne' : ∀ e' ∈ rest, e'.dest ≠ d := fun e' he' hcontra =>
+        hdnotrest (List.mem_map.mpr ⟨e', he', hcontra⟩)
+      have hpaid : Allocation.paidTo remaining (e :: rest) d = min e.amount remaining := by
+        rw [Allocation.paidTo_eq_get, Allocation.dedup_eq_self_of_nodup hnd,
+          Allocation.payout_cons, Balances.get_cons, if_pos hde.symm]
+      rw [if_pos hde, hpaid]
+      simp only [payoutValues]
+      by_cases hg : e.item.isGuarantee
+      · rw [if_pos hg, payoutValues_get_ne _ _ rest d hne']
+        simp [hg]
+      · rw [if_neg hg, payoutValues_get_ne _ _ rest d hne', Balances.get_add, if_pos hde.symm]
+        rw [hde]
+        simp [hg]
+    · rw [if_neg hde]
+      have hpaid : Allocation.paidTo remaining (e :: rest) d =
+          Allocation.paidTo (remaining - min e.amount remaining) rest d := by
+        conv_lhs => rw [Allocation.paidTo_eq_get, Allocation.dedup_eq_self_of_nodup hnd,
+          Allocation.payout_cons, Balances.get_cons, if_neg (Ne.symm hde)]
+        rw [Allocation.paidTo_eq_get, Allocation.dedup_eq_self_of_nodup hndr]
+      rw [hpaid]
+      simp only [payoutValues]
+      by_cases hg : e.item.isGuarantee
+      · rw [if_pos hg]
+        exact ih vals (remaining - min e.amount remaining) hndr
+      · rw [if_neg hg,
+          ih (vals.add e.dest (min e.amount remaining)) (remaining - min e.amount remaining) hndr,
+          Balances.get_add, if_neg (Ne.symm hde)]
+
+/-! ### `turboValues` list-structure facts, used to stabilize one node's
+    reading at the moment the algorithm processes it. -/
+
+/-- `turboValues` folds over the list structurally: processing an append is
+    processing the first part, then the second, on the result. -/
+theorem turboValues_append (s : Adjudicator E) (l1 l2 : List (Address E)) (vals : Balances E) :
+    s.turboValues (l1 ++ l2) vals = s.turboValues l2 (s.turboValues l1 vals) := by
+  induction l1 generalizing vals with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.cons_append, Adjudicator.turboValues]
+    exact ih _
+
+/-- Folding `turboValues` over a list none of whose nodes' own allocations
+    credit `c` leaves `c`'s recorded value untouched. -/
+theorem turboValues_get_ne (s : Adjudicator E) (L : List (Address E)) (c : Address E)
+    (h : ∀ m ∈ L, ∀ e ∈ s.allocationOf m, e.dest ≠ c) (vals : Balances E) :
+    (s.turboValues L vals).get c = vals.get c := by
+  induction L generalizing vals with
+  | nil => rfl
+  | cons m rest ih =>
+    simp only [Adjudicator.turboValues]
+    rw [ih (fun m' hm' => h m' (List.mem_cons_of_mem _ hm'))]
+    exact payoutValues_get_ne vals (vals.get m) (s.allocationOf m) c (h m List.mem_cons_self)
+
+/-- `takeWhile` over an explicit split that the predicate holds on the
+    prefix and fails at the split point stops exactly at the prefix. -/
+theorem takeWhile_append_eq_of_forall_true_of_false {α : Type} (p : α → Bool)
+    (pre post : List α) (a : α) (hpre : ∀ x ∈ pre, p x = true) (ha : p a = false) :
+    (pre ++ a :: post).takeWhile p = pre := by
+  induction pre with
+  | nil => simp [ha]
+  | cons x xs ih =>
+    have hx : p x = true := hpre x List.mem_cons_self
+    simp only [List.cons_append, List.takeWhile_cons, hx, if_true]
+    exact congrArg (x :: ·) (ih (fun y hy => hpre y (List.mem_cons_of_mem _ hy)))
+
+/-- An external destination never has a finalized outcome (Nitro:263-264),
+    so its own allocation is always empty. -/
+theorem allocationOf_eq_nil_of_isExternal (s : Adjudicator E) {c : Address E}
+    (hc : c.isExternal = true) : s.allocationOf c = [] := by
+  cases c with
+  | external a => rfl
+  | channel cc => simp [Address.isExternal] at hc
+
+/-- Every node's own allocation has Nodup destinations: it is always the
+    `.dedup` of a finalized outcome, or empty. -/
+theorem allocationOf_nodup (s : Adjudicator E) (c : Address E) :
+    ((s.allocationOf c).map Entry.dest).Nodup := by
+  unfold Adjudicator.allocationOf
+  cases s.finalOutcome c with
+  | none => simp
+  | some outcome =>
+    cases outcome with
+    | allocation o => exact Allocation.dedup_nodup o
+
+/-- The algorithm's recorded value at `c`, once the full order is folded,
+    already agrees with the value fed into `c`'s own processing step: no
+    node after `c` in a valid topological order can credit `c` (its own
+    predecessors in `s.Edge` all come first, by `IsTopologicalOrder`), and
+    `c` cannot credit itself (a self-edge would be a 1-cycle, excluded by
+    `s.IsDAG`). So folding the rest of the order past `c`'s position never
+    moves `c`'s reading again. -/
+theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (hdag : s.IsDAG)
+    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (vals : Balances E)
+    (c : Address E) (hc : c ∈ order) (hcext : c.isExternal = false) :
+    (s.turboValues order vals).get c =
+      (s.turboValues (order.takeWhile (fun x => decide (x ≠ c))) vals).get c := by
+  obtain ⟨pre, post, heq, hcpre⟩ := List.eq_append_cons_of_mem hc
+  have htw : order.takeWhile (fun x => decide (x ≠ c)) = pre := by
+    rw [heq]
+    refine takeWhile_append_eq_of_forall_true_of_false _ pre post c (fun x hx => ?_) (by simp)
+    have hxc : x ≠ c := fun h => hcpre (h ▸ hx)
+    simpa using hxc
+  rw [htw, heq, turboValues_append]
+  simp only [Adjudicator.turboValues]
+  have hnoself : ∀ e ∈ s.allocationOf c, e.dest ≠ c := fun e he hcontra =>
+    hdag.irrefl c (Relation.TransGen.single ⟨hcext, e, he, hcontra⟩)
+  have hnopost : ∀ m ∈ post, ∀ e ∈ s.allocationOf m, e.dest ≠ c := by
+    intro m hm e he hec
+    obtain ⟨post1, post2, hpost_eq, -⟩ := List.eq_append_cons_of_mem hm
+    have hle : order = pre ++ c :: (post1 ++ m :: post2) := by rw [heq, hpost_eq]
+    have hvalid' : ∀ m d, m ∈ order → d ∈ order → s.Edge m d →
+        ∃ i j : Nat, order[i]? = some m ∧ order[j]? = some d ∧ i < j :=
+      fun m d _ _ hed => hord.2.1 m d hed
+    exact not_edge_of_before_split s.Edge order hord.1 hvalid' pre post1 post2 m c hle
+      ⟨hcext, e, he, hec⟩
+  rw [turboValues_get_ne s post c hnopost]
+  exact payoutValues_get_ne (s.turboValues pre vals) ((s.turboValues pre vals).get c)
+    (s.allocationOf c) c hnoself
+
+/-- Whether `c`'s own allocation owes `d` through a non-guarantee entry
+    (same guard `payoutValues_get_eq_add_paidTo` reads). -/
+def Adjudicator.CreditsTo (s : Adjudicator E) (c d : Address E) : Bool :=
+  ((s.allocationOf c).find d).elim false (fun e => !e.item.isGuarantee)
+
+theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
+    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (d : Address E) :
+    ∀ suf pre : List (Address E), order = pre ++ suf →
+      (s.turboValues suf (s.turboValues pre s.balances)).get d =
+        (s.turboValues pre s.balances).get d +
+          ((suf.filter (s.CreditsTo · d)).map
+            (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
+  intro suf
+  induction suf with
+  | nil => intro pre _; simp [Adjudicator.turboValues]
+  | cons c rest ih =>
+    intro pre heq
+    have heq' : order = (pre ++ [c]) ++ rest := by rw [heq]; simp
+    have hstep : s.turboValues (pre ++ [c]) s.balances =
+        payoutValues (s.turboValues pre s.balances) ((s.turboValues pre s.balances).get c)
+          (s.allocationOf c) := by
+      rw [turboValues_append]; rfl
+    have hih := ih (pre ++ [c]) heq'
+    rw [hstep] at hih
+    simp only [Adjudicator.turboValues]
+    rw [hih]
+    have hcmem : c ∈ order := heq ▸ (List.mem_append.mpr (Or.inr List.mem_cons_self))
+    have hA := payoutValues_get_eq_add_paidTo (s.turboValues pre s.balances)
+      ((s.turboValues pre s.balances).get c) (s.allocationOf c) (allocationOf_nodup s c) d
+    by_cases hP : s.CreditsTo c d = true
+    · rw [List.filter_cons_of_pos (p := fun x => s.CreditsTo x d) (a := c) hP,
+        List.map_cons, List.sum_cons]
+      have hallocne : s.allocationOf c ≠ [] := by
+        intro hempty
+        simp [Adjudicator.CreditsTo, hempty, Allocation.find] at hP
+      have hcext : c.isExternal = false := by
+        by_contra hb
+        exact hallocne (allocationOf_eq_nil_of_isExternal s (by simpa using hb))
+      have hstab : (s.turboValues pre s.balances).get c = s.turboValueAlong order c := by
+        unfold Adjudicator.turboValueAlong
+        have htw : order.takeWhile (fun x => decide (x ≠ c)) = pre := by
+          have hnd := hord.1
+          rw [heq, List.nodup_append] at hnd
+          have hcnotpre : c ∉ pre := fun hcp => hnd.2.2 c hcp c List.mem_cons_self rfl
+          rw [heq]
+          refine takeWhile_append_eq_of_forall_true_of_false _ pre rest c
+            (fun x hx => ?_) (by simp)
+          have hxc : x ≠ c := fun h => hcnotpre (h ▸ hx)
+          simpa using hxc
+        rw [turboValues_get_eq_takeWhile s hdag order hord s.balances c hcmem hcext, htw]
+      rw [Adjudicator.CreditsTo] at hP
+      rw [hP, if_pos rfl] at hA
+      rw [hA, hstab]
+      exact Nat.add_assoc _ _ _
+    · rw [List.filter_cons_of_neg (p := fun x => s.CreditsTo x d) (a := c) hP]
+      have hPfalse : s.CreditsTo c d = false := Bool.eq_false_iff.mpr hP
+      rw [Adjudicator.CreditsTo] at hPfalse
+      rw [hPfalse, if_neg (by simp)] at hA
+      rw [hA, Nat.add_zero]
+
+/-- Nitro:818-835 step 4's value at `d`, decomposed into the starting
+    balance plus one `Allocation.paidTo` credit from every node in `order`
+    whose own allocation owes `d` a non-guarantee amount: each such node's
+    processing-time reading equals its final, stabilized reading
+    (`turboValues_get_eq_takeWhile`), so the credit can be read off the
+    algorithm's final answer at that node. -/
+theorem turboValueAlong_eq_add_credits (s : Adjudicator E) (hdag : s.IsDAG)
+    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (d : Address E) :
+    s.turboValueAlong order d =
+      s.balances.get d +
+        ((order.filter (s.CreditsTo · d)).map
+          (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
+  have h := turboValueAlong_eq_add_credits_aux s hdag order hord d order [] (by simp)
+  simpa [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h
+
+
 end ArmadaLean.Nitro
