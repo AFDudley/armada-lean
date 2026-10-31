@@ -636,6 +636,15 @@ def AtFundingPoint (v : Views E) (c : FixedPart) (Ω : Outcome E) : Prop :=
     ∃ ss, (v p).Holds ss ∧ ss.state.channel = c ∧ ss.state.turnNum = k ∧
       ss.state.outcome = Ω ∧ ss.state.isFinal = false ∧ ss.ByMover) ∧
   (∀ p ∈ c.participants, ∀ ss ∈ (v p).sent, ss.state.channel = c → ss.state.turnNum < c.n)
+/-- ForceMove §3.1.5 (ForceMove:782-794): `p` made no alternative moves on `c`
+    during the setup phase (turns below `c.n`): it sent at most one state per turn.
+    A participant that signs two states at one turn gives the next player the choice
+    (operator ruling 2026-10-31; armada-laconic
+    `labbook/2026-10-31-funding-point-alternative-moves.md`). -/
+def MadeNoAlternativeSetupMoves {p : Participant} (net : NetworkState E p) (c : FixedPart) : Prop :=
+  ∀ s1 ∈ net.sent, ∀ s2 ∈ net.sent, s1.state.channel = c → s2.state.channel = c →
+    s1.state.turnNum = s2.state.turnNum → s1.state.turnNum < c.n → s1.state = s2.state
+
 
 /-- Nitro:637-638: "When a single conclusion proof is known to each participant.
     In this state, we say the channel is in the concluded state." -/

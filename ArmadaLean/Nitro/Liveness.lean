@@ -4035,7 +4035,9 @@ theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Thr
     universally finalizable. ForceMove:862-871: the prefund states are "exactly what
     they need to launch a challenge on-chain to recover their funds". The
     setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
-    and the game library accepts its transitions. -/
+    and the game library accepts its transitions. Operator ruling 2026-10-31: the
+    guarantee is per participant, for a participant that made no alternative setup
+    moves (labbook/2026-10-31-funding-point-alternative-moves.md). -/
 theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Network E) (hr : (Nitro.network apps Ts).Reachable n)
     (hvn : v = n.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
@@ -4043,7 +4045,8 @@ theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E ap
     (hvt : SetupPhaseAccepted vt c)
     (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
     (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) :
-    UniversallyFinalizable apps Ts v c Ω := by
+    ∀ p ∈ c.participants, MadeNoAlternativeSetupMoves (v p) c →
+      Finalizable apps (Ts.T p) c Ω (v p) := by
   sorry
 
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
