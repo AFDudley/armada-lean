@@ -960,8 +960,11 @@ theorem participant_reachable_land {apps : Apps E} {p : Participant} {T : Threat
 
 theorem participant_reachable_adv {apps : Apps E} {p : Participant} {T : Threat E p}
     {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) (m : AdvMove E)
-    (hm : T.feasible net m) : (Nitro.participant apps T).Reachable (net.applyAdv apps m) :=
-  h.tail (Or.inr (Or.inr (Or.inl ⟨m, hm, rfl⟩)))
+    (hm : T.feasible net m) (hnoland : ∀ op, m ≠ .land op) :
+    (Nitro.participant apps T).Reachable (net.applyAdv apps m) :=
+  h.tail (Or.inr (Or.inr (Or.inl (⟨m, hm, hnoland, Eq.refl (net.applyAdv apps m)⟩ :
+    ∃ m' : AdvMove E, T.feasible net m' ∧ (∀ op, m' ≠ .land op) ∧
+      net.applyAdv apps m = net.applyAdv apps m'))))
 
 /-- Every wallet-funded genesis network is reachable: `Nitro.network.init`
     leaves `wallet` unconstrained (D10 ruling). -/
@@ -1115,7 +1118,8 @@ theorem netF_holds : netF.Holds ssF :=
 theorem netF_reach : (Nitro.participant apps0 (canon p0)).Reachable netF :=
   participant_reachable_honest
     (participant_reachable_adv (participant_reachable_init apps0 (canon p0))
-      (.chain q0 (.deposit c1.address 0 1)) ⟨by decide, fun ss h => absurd h List.not_mem_nil⟩)
+      (.chain q0 (.deposit c1.address 0 1)) ⟨by decide, fun ss h => absurd h List.not_mem_nil⟩
+      (fun op h => by cases h))
     (.send stF) (by simp)
 
 /-- `⟨sCon, [ssF], [ssF]⟩` is reachable: `netF_reach`, then `p0`'s own call landing (the
@@ -1422,7 +1426,7 @@ theorem netC2_reach : (Nitro.participant apps0 (canon p0)).Reachable netC2 :=
     (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stF2)
       (by simp))
     (.deliver ⟨stF2, [q0]⟩) (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
-      NetworkState.Unforged _ ⟨stF2, [q0]⟩)
+      NetworkState.Unforged _ ⟨stF2, [q0]⟩) (fun op h => by cases h)
 
 example : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
     (Ω1 Ω2 Ω : Outcome Nat),
@@ -2381,7 +2385,7 @@ theorem netV_reach : (Nitro.participant apps2 (canon p0)).Reachable netV :=
       (by simp))
     (.deliver ⟨stV, [q0]⟩) (⟨fun h => absurd h (by decide),
       fun v h hp => by cases h; exact absurd hp (by decide)⟩ :
-      NetworkState.Unforged _ ⟨stV, [q0]⟩)
+      NetworkState.Unforged _ ⟨stV, [q0]⟩) (fun op h => by cases h)
 
 example : ∃ (r : Route Nat) (alice bob : Participant) (net : NetworkState Nat p0)
     (s1 : SignedState Nat),
@@ -2448,9 +2452,11 @@ theorem net3_reach : (Nitro.participant apps2 (canon q0)).Reachable net3 :=
           (.send Sp) (by simp))
         (.send Sm) (by simp))
       (.deliver ⟨Sp, [w0]⟩)
-      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩))
+      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
+      (fun op h => by cases h))
     (.deliver ⟨Sm, [p0]⟩)
     (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
+    (fun op h => by cases h)
 
 /-- `net3` extended: `q0` also received the all-signed pre-fund state of `V3`, delivered
     right after `q0`'s own send of it and before `q0` sends either ledger state — operator
@@ -2470,13 +2476,16 @@ theorem net3R_reach : (Nitro.participant apps2 (canon q0)).Reachable net3R :=
             (⟨fun _ => ⟨⟨V0, [q0]⟩, by simp, rfl⟩,
               fun v h hp => by
                 simp [V0, State.voucher?] at h; subst h; exact absurd hp List.not_mem_nil⟩ :
-              NetworkState.Unforged _ ⟨V0, [p0, q0, w0]⟩))
+              NetworkState.Unforged _ ⟨V0, [p0, q0, w0]⟩)
+            (fun op h => by cases h))
           (.send Sp) (by simp))
         (.send Sm) (by simp))
       (.deliver ⟨Sp, [w0]⟩)
-      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩))
+      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
+      (fun op h => by cases h))
     (.deliver ⟨Sm, [p0]⟩)
     (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
+    (fun op h => by cases h)
 
 theorem net3R_latest_m : HoldsLatestLedger net3R Lm3 om3 :=
   ⟨⟨Sm, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
@@ -2555,9 +2564,11 @@ theorem netB_reach : (Nitro.participant apps2 (canon q0)).Reachable netB :=
         (.send SmB) (by simp))
       (.deliver ⟨SpB, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
-        NetworkState.Unforged _ ⟨SpB, [w0]⟩))
+        NetworkState.Unforged _ ⟨SpB, [w0]⟩)
+      (fun op h => by cases h))
     (.deliver ⟨SmB, [p0]⟩)
     (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨SmB, [p0]⟩)
+    (fun op h => by cases h)
 
 example : ∃ (r : Route Nat) (P : Participant) (i : Nat) (Lm Lp : TimedChannel (canon P).ε)
     (om op : Allocation Nat) (balm balp : Coins) (net : NetworkState Nat P),
@@ -2603,11 +2614,11 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
               (.send V0r) (by simp))
             (.deliver ⟨V0r, [q0]⟩) (by
               refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
-              cases h; exact absurd hp (by decide)))
+              cases h; exact absurd hp (by decide)) (fun op h => by cases h))
           (.send S0) (by simp))
         (.deliver ⟨S0, [q0]⟩) (by
           refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
-          cases h))
+          cases h) (fun op h => by cases h))
       (.challenge Vr [⟨V0r, [p0, q0]⟩] V0r)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h

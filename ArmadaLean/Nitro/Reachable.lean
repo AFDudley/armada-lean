@@ -155,8 +155,16 @@ variable {E : Type} [DecidableEq E]
     one of its own currently-feasible calls directly (`land`, the
     explicit-time game's two-phase issue/land split collapsed back to one
     step, sound for bare reachability — this file's header), one
-    feasible move of the adversary `T` (`NetworkState.applyAdv`,
-    `Threat.feasible`), or `p` landing a deposit (D10 ruling,
+    feasible NON-LANDING move of the adversary `T` (`NetworkState.applyAdv`,
+    `Threat.feasible`, gated `∀ op, m ≠ .land op` — operator ruling
+    2026-10-31: signatures cannot be forged anywhere in armada-lean, so the
+    adversary's own move never itself produces a landing; the gate matches
+    `Threat.RoundSeq.other`'s own `hnoland` field exactly, and
+    `Strategy.lean:215-218`'s doc comment, which already says `feasible` "is
+    never consulted for `.land`" — landings come only from the honest-
+    landing disjunct below and the deposit disjunct, so the unforgeability
+    assumption (`Bounds.unforgeable`/`unforgeableDeliver`) holds on every
+    path that grows `received`), or `p` landing a deposit (D10 ruling,
     `Network.deposit`'s own doc comment): `NetworkState` carries no
     wallet, so `p`'s own machine admits ANY amount, a sound
     over-approximation of the wallet-bounded `Nitro.network` step (this
@@ -173,7 +181,7 @@ def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
   step := fun net net' =>
     (∃ m : HonestMove E, m.Feasible net ∧ net' = net.applyHonest m) ∨
     (∃ op : Op E, op.HonestFeasible net ∧ net' = net.applyAdv apps (.land op)) ∨
-    (∃ m : AdvMove E, T.feasible net m ∧ net' = net.applyAdv apps m) ∨
+    (∃ m : AdvMove E, T.feasible net m ∧ (∀ op, m ≠ .land op) ∧ net' = net.applyAdv apps m) ∨
     (∃ a : Address E, ∃ e x : Coins, net' = net.applyAdv apps (.land (.deposit a e x)))
 
 /-- `Nitro.chain apps`: the chain alone as a `Machine`, from
@@ -208,7 +216,7 @@ theorem Nitro.participant_chain_reachable {apps : Apps E} {p : Participant} {T :
     rw [hinit]
     exact Relation.ReflTransGen.refl
   · intro net net' hP hstep
-    rcases hstep with ⟨m, -, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, rfl⟩ | ⟨a, e, x, rfl⟩
+    rcases hstep with ⟨m, -, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, -, rfl⟩ | ⟨a, e, x, rfl⟩
     · exact NetworkState.applyHonest_chain_reachable net m hP
     · exact NetworkState.applyAdv_chain_reachable net (.land op) hP
     · exact NetworkState.applyAdv_chain_reachable net m hP
@@ -971,7 +979,8 @@ theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats 
         · exact hvg st List.mem_cons_self v hv hqv
       obtain ⟨s₀, hinit, hsteps⟩ := ihrest
       refine ⟨s₀, hinit, hsteps.tail (Or.inr (Or.inr (Or.inl
-        ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged, ?_⟩)))⟩
+        ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged,
+          (fun op h => by cases h), ?_⟩)))⟩
       simp [NetworkState.recvBatch, hqr]
     · simpa [NetworkState.recvBatch, List.filter_cons, hqr] using ihrest
 
@@ -1037,7 +1046,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
               (n.view q).applyAdv apps (.tick dt) := by
             simp [Network.applyHonest, Network.view, NetworkState.applyAdv_tick apps]
           rw [heq]
-          exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
+          exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt,
+            (fun op h => by cases h), rfl⟩)))
     · by_cases hqp0 : q = p₀
       · subst hqp0
         have heq : (Network.land apps n q op).view q = (n.view q).applyAdv apps (.land op) := by
@@ -1063,7 +1073,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
           exact ⟨fun hqsg => hsg q hqsg, fun v hv hqv => hvoucher v hv q hqv⟩
         have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ op) :=
           (Ts.ok q).toCapable.capable (n.view q) p₀ op (Ne.symm hqp0) hUnforged
-        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.chain p₀ op, hcap, rfl⟩)))
+        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.chain p₀ op, hcap, (fun op' h => by cases h),
+          rfl⟩)))
     · by_cases hqp0 : q = p₀
       · subst hqp0
         have heq : (Network.applyAdv apps n q m).view q = (n.view q).applyAdv apps m := by
@@ -1073,7 +1084,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
           | tick dt => simp [NetworkState.applyAdv_tick apps, Network.view]
           | land op => exact absurd rfl (hnoland op)
         rw [heq]
-        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨m, hfeas, rfl⟩)))
+        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨m, hfeas, hnoland, rfl⟩)))
       · cases m with
         | chain caller op => exact absurd rfl (hnochain caller op)
         | deliver ss =>
@@ -1086,7 +1097,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
               (n.view q).applyAdv apps (.tick dt) := by
             simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv_tick apps]
           rw [heq]
-          exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt, rfl⟩)))
+          exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt,
+            (fun op h => by cases h), rfl⟩)))
         | land op => exact absurd rfl (hnoland op)
     · by_cases hqp0 : q = p₀
       · subst hqp0
@@ -1116,7 +1128,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ (.deposit (.channel c) e x)) :=
           (Ts.ok q).toCapable.capable (n.view q) p₀ (.deposit (.channel c) e x) (Ne.symm hqp0)
             hUnforged
-        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.chain p₀ (.deposit (.channel c) e x), hcap, rfl⟩)))
+        exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.chain p₀ (.deposit (.channel c) e x), hcap,
+          (fun op h => by cases h), rfl⟩)))
 
 /-- **Wallet conservation (D10 ruling).** No coin is created: the chain's
     `held` plus every coin it ever paid to an external destination is
