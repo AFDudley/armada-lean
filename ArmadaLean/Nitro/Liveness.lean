@@ -3719,16 +3719,42 @@ theorem SigOK.mono {p q : Participant} {sp sq sp' sq' : List (SignedState E)}
   · obtain ⟨s, hs, he⟩ := h.1 hm; exact ⟨s, hp s hs, he⟩
   · obtain ⟨s, hs, he⟩ := h.2 hm; exact ⟨s, hq s hs, he⟩
 
+/-- The voucher `p` or `q` signs, on a signed state that carries it, is on
+    a state each of them sent carrying the same voucher. The voucher
+    analog of `SigOK` (D7 voucher rule repaired, operator ruling
+    2026-10-31, armada-laconic
+    `labbook/2026-10-31-funding-point-alternative-moves.md`). -/
+def VoucherOK (p q : Participant) (sp sq : List (SignedState E)) (r : SignedState E) : Prop :=
+  ∀ v, r.state.voucher? = some v →
+    (p ∈ v.signers → ∃ s ∈ sp, s.state.voucher? = some v) ∧
+    (q ∈ v.signers → ∃ s ∈ sq, s.state.voucher? = some v)
+
+omit [DecidableEq E] in
+theorem VoucherOK.swap {p q : Participant} {sp sq : List (SignedState E)} {r : SignedState E}
+    (h : VoucherOK p q sp sq r) : VoucherOK q p sq sp r := fun v hv => ⟨(h v hv).2, (h v hv).1⟩
+
+omit [DecidableEq E] in
+theorem VoucherOK.mono {p q : Participant} {sp sq sp' sq' : List (SignedState E)}
+    {r : SignedState E} (h : VoucherOK p q sp sq r) (hp : ∀ s ∈ sp, s ∈ sp')
+    (hq : ∀ s ∈ sq, s ∈ sq') : VoucherOK p q sp' sq' r := fun v hv => by
+  refine ⟨fun hm => ?_, fun hm => ?_⟩
+  · obtain ⟨s, hs, he⟩ := (h v hv).1 hm; exact ⟨s, hp s hs, he⟩
+  · obtain ⟨s, hs, he⟩ := (h v hv).2 hm; exact ⟨s, hq s hs, he⟩
+
 /-- Every signature of `p` or of `q` that either view received is on a
-    state its signer sent, in that signer's own view. -/
+    state its signer sent, in that signer's own view, and likewise for
+    every voucher a received state carries. -/
 def JointGenuine {p q : Participant} (Sp : NetworkState E p) (Sq : NetworkState E q) : Prop :=
   (∀ r ∈ Sp.received, SigOK p q Sp.sent Sq.sent r) ∧
-  (∀ r ∈ Sq.received, SigOK p q Sp.sent Sq.sent r)
+  (∀ r ∈ Sq.received, SigOK p q Sp.sent Sq.sent r) ∧
+  (∀ r ∈ Sp.received, VoucherOK p q Sp.sent Sq.sent r) ∧
+  (∀ r ∈ Sq.received, VoucherOK p q Sp.sent Sq.sent r)
 
 omit [DecidableEq E] in
 theorem JointGenuine.symm {p q : Participant} {Sp : NetworkState E p} {Sq : NetworkState E q}
     (h : JointGenuine Sp Sq) : JointGenuine Sq Sp :=
-  ⟨fun r hr => (h.2 r hr).swap, fun r hr => (h.1 r hr).swap⟩
+  ⟨fun r hr => (h.2.1 r hr).swap, fun r hr => (h.1 r hr).swap,
+    fun r hr => (h.2.2.2 r hr).swap, fun r hr => (h.2.2.1 r hr).swap⟩
 
 omit [DecidableEq E] in
 theorem NetworkState.Unforged.of_sent {p : Participant} {net net' : NetworkState E p}
@@ -3738,12 +3764,15 @@ theorem NetworkState.Unforged.of_sent {p : Participant} {net net' : NetworkState
   exact h
 
 omit [DecidableEq E] in
-/-- A state `x` holds carries genuine signatures of `x` and of `y`, so the
-    adversary of `y` may submit it (`NetworkState.Unforged`). -/
+/-- A state `x` holds carries genuine signatures of `x` and of `y`, and
+    genuine vouchers of `x` and of `y`, so the adversary of `y` may submit
+    it (`NetworkState.Unforged`). -/
 theorem NetworkState.Holds.sigOK {x y : Participant} (hxy : x ≠ y) {nx Sx : NetworkState E x}
     {Sy : NetworkState E y} (hrecv : ∀ r ∈ nx.received, r ∈ Sx.received)
     (hsent : nx.sent = Sx.sent) (hG : ∀ r ∈ Sx.received, SigOK x y Sx.sent Sy.sent r)
-    {ss : SignedState E} (hh : nx.Holds ss) : SigOK x y Sx.sent Sy.sent ss ∧ Sy.Unforged ss := by
+    (hV : ∀ r ∈ Sx.received, VoucherOK x y Sx.sent Sy.sent r)
+    {ss : SignedState E} (hh : nx.Holds ss) :
+    SigOK x y Sx.sent Sy.sent ss ∧ VoucherOK x y Sx.sent Sy.sent ss ∧ Sy.Unforged ss := by
   obtain ⟨h1, h2⟩ := hh
   have hx : x ∈ ss.signers → ∃ s ∈ Sx.sent, s.state = ss.state := fun hm => by
     rcases h1 x hm with ⟨-, s, hs, hse⟩ | ⟨r, hr, hre, hrx⟩
@@ -3755,11 +3784,15 @@ theorem NetworkState.Holds.sigOK {x y : Participant} (hxy : x ≠ y) {nx Sx : Ne
     · exact absurd hyx.symm hxy
     · obtain ⟨s, hs, hse⟩ := (hG r (hrecv r hr)).2 hry
       exact ⟨s, hs, hse.trans hre⟩
-  refine ⟨⟨hx, hy⟩, hy, fun v hv hyv => ?_⟩
-  rcases h2 v hv y hyv with ⟨hyx, -⟩ | ⟨r, hr, hrv, hry⟩
-  · exact absurd hyx.symm hxy
-  · obtain ⟨s, hs, hse⟩ := (hG r (hrecv r hr)).2 hry
-    exact ⟨s, hs, by rw [hse]; exact hrv⟩
+  have hvv : VoucherOK x y Sx.sent Sy.sent ss := fun v hv => by
+    refine ⟨fun hxv => ?_, fun hyv => ?_⟩
+    · rcases h2 v hv x hxv with ⟨-, s, hs, hse⟩ | ⟨r, hr, hrv⟩
+      · exact ⟨s, hsent ▸ hs, hse⟩
+      · exact (hV r (hrecv r hr) v hrv).1 hxv
+    · rcases h2 v hv y hyv with ⟨hyx, -⟩ | ⟨r, hr, hrv⟩
+      · exact absurd hyx.symm hxy
+      · exact (hV r (hrecv r hr) v hrv).2 hyv
+  exact ⟨⟨hx, hy⟩, hvv, hy, fun v hv hyv => (hvv v hv).2 hyv⟩
 
 /-- **One reaction's calls, in both views.** Participant `x` lands its
     pending `calls` in its own round (`Threat.RoundSeq.land`, in order, with
@@ -3774,36 +3807,38 @@ theorem mirror_land {apps : Apps E} {x y : Participant} (hxy : x ≠ y) {Tx : Th
     ∀ (calls : List (Op E)) (Sx : NetworkState E x) (Sy : NetworkState E y),
       Sx.sent = sx → Sy.sent = sy →
       (∀ op ∈ calls, (∀ dt, op ≠ .tick dt) ∧
-        ∀ ss ∈ op.proofStates, SigOK x y sx sy ss ∧ Sy.Unforged ss) →
+        ∀ ss ∈ op.proofStates, SigOK x y sx sy ss ∧ VoucherOK x y sx sy ss ∧ Sy.Unforged ss) →
       ChanAgreeOrFin c Sx.chain Sy.chain →
       (∀ r ∈ Sx.received, SigOK x y sx sy r) → (∀ r ∈ Sy.received, SigOK x y sx sy r) →
+      (∀ r ∈ Sx.received, VoucherOK x y sx sy r) → (∀ r ∈ Sy.received, VoucherOK x y sx sy r) →
       ∃ Sx' Sy', Tx.RoundSeq apps t calls Sx Sx' ∧ OtherSteps apps Ty Sy Sy' ∧
         ChanAgreeOrFin c Sx'.chain Sy'.chain ∧
         (∀ r ∈ Sx'.received, SigOK x y sx sy r) ∧ (∀ r ∈ Sy'.received, SigOK x y sx sy r) ∧
+        (∀ r ∈ Sx'.received, VoucherOK x y sx sy r) ∧ (∀ r ∈ Sy'.received, VoucherOK x y sx sy r) ∧
         Sx'.chain.now = Sx.chain.now ∧ Sy'.chain.now = Sy.chain.now ∧ Sx'.sent = sx ∧
         Sy'.sent = sy := by
   intro calls
   induction calls with
   | nil =>
-    intro Sx Sy hsx hsy _ hag hgx hgy
-    exact ⟨Sx, Sy, .nil, .refl, hag, hgx, hgy, rfl, rfl, hsx, hsy⟩
+    intro Sx Sy hsx hsy _ hag hgx hgy hvx hvy
+    exact ⟨Sx, Sy, .nil, .refl, hag, hgx, hgy, hvx, hvy, rfl, rfl, hsx, hsy⟩
   | cons op rest ih =>
-    intro Sx Sy hsx hsy hcalls hag hgx hgy
+    intro Sx Sy hsx hsy hcalls hag hgx hgy hvx hvy
     obtain ⟨hnt, hss⟩ := hcalls op List.mem_cons_self
     have hfeas : Ty.feasible Sy (.chain x op) :=
-      Cy.capable Sy x op hxy (fun ss h => (hss ss h).2)
+      Cy.capable Sy x op hxy (fun ss h => (hss ss h).2.2)
     have hag1 : ChanAgreeOrFin c (Sx.applyAdv apps (.land op)).chain
         (Sy.applyAdv apps (.chain x op)).chain := by
       rw [NetworkState.applyAdv_land_chain, NetworkState.applyAdv_chain_chain]
       exact hag.apply x hnt
     have hrest : ∀ op' ∈ rest, (∀ dt, op' ≠ .tick dt) ∧
-        ∀ ss ∈ op'.proofStates, SigOK x y sx sy ss ∧
+        ∀ ss ∈ op'.proofStates, SigOK x y sx sy ss ∧ VoucherOK x y sx sy ss ∧
           (Sy.applyAdv apps (.chain x op)).Unforged ss := by
       intro op' hop'
       obtain ⟨hnt', hss'⟩ := hcalls op' (List.mem_cons_of_mem _ hop')
-      exact ⟨hnt', fun ss h => ⟨(hss' ss h).1,
-        (hss' ss h).2.of_sent (NetworkState.applyAdv_sent apps Sy _).symm⟩⟩
-    obtain ⟨Sx', Sy', hseq, hSy, hag', hgx', hgy', hnx, hny, hsx', hsy'⟩ :=
+      exact ⟨hnt', fun ss h => ⟨(hss' ss h).1, (hss' ss h).2.1,
+        (hss' ss h).2.2.of_sent (NetworkState.applyAdv_sent apps Sy _).symm⟩⟩
+    obtain ⟨Sx', Sy', hseq, hSy, hag', hgx', hgy', hvx', hvy', hnx, hny, hsx', hsy'⟩ :=
       ih (Sx.applyAdv apps (.land op)) (Sy.applyAdv apps (.chain x op))
         (by rw [NetworkState.applyAdv_sent, hsx]) (by rw [NetworkState.applyAdv_sent, hsy])
         hrest hag1
@@ -3811,9 +3846,13 @@ theorem mirror_land {apps : Apps E} {x y : Participant} (hxy : x ≠ y) {Tx : Th
           (fun h => (hss r h).1) (hgx r))
         (fun r hr => (NetworkState.applyAdv_chain_received apps Sy x op r hr).elim
           (fun h => (hss r h).1) (hgy r))
+        (fun r hr => (NetworkState.applyAdv_land_received apps Sx op r hr).elim
+          (fun h => (hss r h).2.1) (hvx r))
+        (fun r hr => (NetworkState.applyAdv_chain_received apps Sy x op r hr).elim
+          (fun h => (hss r h).2.1) (hvy r))
     refine ⟨Sx', Sy', .land (l1 := []) (l2 := rest) rfl hseq,
       (OtherSteps.refl.tail hfeas (fun _ h => by cases h) (fun _ h => by cases h)).trans hSy,
-      hag', hgx', hgy', ?_, ?_, hsx', hsy'⟩
+      hag', hgx', hgy', hvx', hvy', ?_, ?_, hsx', hsy'⟩
     · rw [hnx, NetworkState.applyAdv_land_chain, Adjudicator.apply_getD_now hnt]
     · rw [hny, NetworkState.applyAdv_chain_chain, Adjudicator.apply_getD_now hnt]
 
@@ -3870,14 +3909,15 @@ theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
       | react rp =>
         -- `p` issues its reaction; its calls run in `q`'s view as adversary moves.
         have hcalls : ∀ op ∈ rp.calls, (∀ dt, op ≠ .tick dt) ∧
-            ∀ ss ∈ op.proofStates, SigOK p q Sp.sent Sq.sent ss ∧ Sq.Unforged ss := by
+            ∀ ss ∈ op.proofStates, SigOK p q Sp.sent Sq.sent ss ∧ VoucherOK p q Sp.sent Sq.sent ss ∧
+              Sq.Unforged ss := by
           intro op hop
           have hf : op.HonestFeasible np := hfeasp op hop
           exact ⟨hf.not_tick, fun ss hss =>
-            (hf.holds ss hss).sigOK hpq hSp.received_subset hSp.sent_eq.symm hgen.1⟩
-        obtain ⟨Sp', Sq', hseq, hSq', hag', hgp', hgq', hnp', hnq', hsp', hsq'⟩ :=
+            (hf.holds ss hss).sigOK hpq hSp.received_subset hSp.sent_eq.symm hgen.1 hgen.2.2.1⟩
+        obtain ⟨Sp', Sq', hseq, hSq', hag', hgp', hgq', hvp', hvq', hnp', hnq', hsp', hsq'⟩ :=
           mirror_land hpq Cq c np.chain.now Sp.sent Sq.sent rp.calls Sp Sq rfl rfl hcalls
-            (Or.inl hA) hgen.1 hgen.2
+            (Or.inl hA) hgen.1 hgen.2.1 hgen.2.2.1 hgen.2.2.2
         have hround : Tp.Round apps (.react rp) np Sp' :=
           ⟨hSp.roundSeq hseq, by rw [hnp', hnp]; exact Nat.lt_add_of_pos_right Tp.ε_pos⟩
         have hsub : ∀ s ∈ Sp.sent, s ∈ (Sp'.applyHonest (.react rp)).sent := by
@@ -3886,23 +3926,26 @@ theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
           rw [hsp']
           exact List.mem_append_right _ hs
         refine ihp Sp' hround (Sp'.applyHonest (.react rp)) .refl rfl hUq Sq' (hSq.trans hSq')
-          (by rw [hnq', hnq]) hag' ⟨fun r hr => ?_, fun r hr => ?_⟩
+          (by rw [hnq', hnq]) hag' ⟨fun r hr => ?_, fun r hr => ?_, fun r hr => ?_, fun r hr => ?_⟩
         · exact (hgp' r hr).mono hsub (fun s hs => by rw [hsq']; exact hs)
         · exact (hgq' r hr).mono hsub (fun s hs => by rw [hsq']; exact hs)
+        · exact (hvp' r hr).mono hsub (fun s hs => by rw [hsq']; exact hs)
+        · exact (hvq' r hr).mono hsub (fun s hs => by rw [hsq']; exact hs)
       | wait dp =>
         cases mq with
         | react rq =>
           -- `q` issues its reaction; its calls run in `p`'s open round.
           have hcalls : ∀ op ∈ rq.calls, (∀ dt, op ≠ .tick dt) ∧
-              ∀ ss ∈ op.proofStates, SigOK q p Sq.sent Sp.sent ss ∧ Sp.Unforged ss := by
+              ∀ ss ∈ op.proofStates, SigOK q p Sq.sent Sp.sent ss ∧ VoucherOK q p Sq.sent Sp.sent ss ∧
+                Sp.Unforged ss := by
             intro op hop
             have hf : op.HonestFeasible nq := hfeasq op hop
             exact ⟨hf.not_tick, fun ss hss =>
               (hf.holds ss hss).sigOK (Ne.symm hpq) hSq.received_subset hSq.sent_eq.symm
-                hgen.symm.1⟩
-          obtain ⟨Sq', Sp', hseq, hSp', hag', hgq', hgp', hnq', hnp', hsq', hsp'⟩ :=
+                hgen.symm.1 hgen.symm.2.2.1⟩
+          obtain ⟨Sq', Sp', hseq, hSp', hag', hgq', hgp', hvq', hvp', hnq', hnp', hsq', hsp'⟩ :=
             mirror_land (Ne.symm hpq) Cp c nq.chain.now Sq.sent Sp.sent rq.calls Sq Sp rfl rfl
-              hcalls (Or.inl hA.symm) hgen.symm.1 hgen.symm.2
+              hcalls (Or.inl hA.symm) hgen.symm.1 hgen.symm.2.1 hgen.symm.2.2.1 hgen.symm.2.2.2
           have hround : Tq.Round apps (.react rq) nq Sq' :=
             ⟨hSq.roundSeq hseq, by rw [hnq', hnq]; exact Nat.lt_add_of_pos_right Tq.ε_pos⟩
           have hsub : ∀ s ∈ Sq.sent, s ∈ (Sq'.applyHonest (.react rq)).sent := by
@@ -3911,9 +3954,12 @@ theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
             rw [hsq']
             exact List.mem_append_right _ hs
           refine ihq Sq' hround Sp' (hSp.trans hSp') (by rw [hnp', hnp])
-            (Sq'.applyHonest (.react rq)) .refl rfl hag'.symm ⟨fun r hr => ?_, fun r hr => ?_⟩
+            (Sq'.applyHonest (.react rq)) .refl rfl hag'.symm
+            ⟨fun r hr => ?_, fun r hr => ?_, fun r hr => ?_, fun r hr => ?_⟩
           · exact ((hgp' r hr).mono hsub (fun s hs => by rw [hsp']; exact hs)).swap
           · exact ((hgq' r hr).mono hsub (fun s hs => by rw [hsp']; exact hs)).swap
+          · exact ((hvp' r hr).mono hsub (fun s hs => by rw [hsp']; exact hs)).swap
+          · exact ((hvq' r hr).mono hsub (fun s hs => by rw [hsp']; exact hs)).swap
         | wait dq =>
           have hroundp : Tp.Round apps (.wait dp) np Sp :=
             ⟨hSp.roundSeq .nil, by rw [hnp]; exact Nat.lt_add_of_pos_right Tp.ε_pos⟩
@@ -3959,9 +4005,12 @@ theorem finalizable_unique (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     Ω = Ω' := by
   subst hvn
   have hsig := Nitro.network_received_signers hr
+  have hvouch := Nitro.network_received_voucher_signers hr
   exact finalizable_joint hpq (Ts.ok p).toCapable (Ts.ok q).toCapable hp (n.views p) .refl rfl hq
     (n.views q) .refl rfl (ChanAgreeOrFin.refl c n.chain)
-    ⟨fun r hr' => ⟨hsig p p r hr', hsig p q r hr'⟩, fun r hr' => ⟨hsig q p r hr', hsig q q r hr'⟩⟩
+    ⟨fun r hr' => ⟨hsig p p r hr', hsig p q r hr'⟩, fun r hr' => ⟨hsig q p r hr', hsig q q r hr'⟩,
+      fun r hr' v hv => ⟨hvouch p p r hr' v hv, hvouch p q r hr' v hv⟩,
+      fun r hr' v hv => ⟨hvouch q p r hr' v hv, hvouch q q r hr' v hv⟩⟩
 
 /-- Nitro-22. Nitro:597-611: "exactly one of the following statements is true
     about a channel χ at any point in time: 1. Finalized outcome ... 2. One
@@ -4115,9 +4164,9 @@ theorem NetworkState.Holds.mono {p : Participant} {net net' : NetworkState E p}
   · rcases h1 q hq with ⟨hqp, s, hs, hse⟩ | ⟨r, hr, hre, hrq⟩
     · exact Or.inl ⟨hqp, s, hsent ▸ hs, hse⟩
     · exact Or.inr ⟨r, hrecv r hr, hre, hrq⟩
-  · rcases h2 v hv q hq with ⟨hqp, s, hs, hse⟩ | ⟨r, hr, hre, hrq⟩
+  · rcases h2 v hv q hq with ⟨hqp, s, hs, hse⟩ | ⟨r, hr, hre⟩
     · exact Or.inl ⟨hqp, s, hsent ▸ hs, hse⟩
-    · exact Or.inr ⟨r, hrecv r hr, hre, hrq⟩
+    · exact Or.inr ⟨r, hrecv r hr, hre⟩
 
 /-- `UnbeatableIn` is monotone in its goal: a strategy for `G1` is a strategy
     for any `G2` it implies pointwise. Used to restate a reached
