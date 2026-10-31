@@ -545,6 +545,79 @@ theorem Nitro.network_chain_reachable {apps : Apps E} {Ts : Threats E apps} {n :
     · exact Network.applyAdv_chain_reachable n p m hP
     · exact Network.deposit_chain_reachable n p (.channel c) e x hP
 
+/-- **How one `Nitro.network` step changes `(chain, sent, received, wallet)`.**
+    One level deeper than `Nitro.network`'s own step relation (above): an
+    honest move is a `.react` (only the sender's own `sent` and the
+    recipients' `received` grow, gated `VoucherSendable`) or a `.wait` (only
+    `chain` ticks); landing a call either fails (`n' = n`) or succeeds
+    (`chain` advances, every `received` gains the call's proof states, gated
+    `Sendable`, and the mover's own feasibility excludes a landed `op` ever
+    being a deposit); the adversary's own moves are only `.deliver` (gated
+    `Sendable`, only the acting participant's `received` grows) and `.tick`
+    (only `chain` ticks), by the caller rule (`hnochain`/`hnoland`); a
+    deposit either fails (`n' = n`) or succeeds (`chain` advances, only the
+    depositor's `wallet` falls, by at most its own balance). Combines the
+    already-proved per-field simp lemmas
+    (`Network.applyHonest_react_sent`/`_received`, `Network.land_of_none`/
+    `_of_some`, `Network.applyAdv_deliver`/`_tick`,
+    `Network.deposit_sent`/`_received`), so a consumer states its step case
+    once, not once per field per branch (`writing-lean.md` §6). The two
+    "nothing changes" shapes (a failed landed call, a failed deposit) and
+    the two "only `chain` ticks" shapes (`.wait`, adversary `.tick`) collapse
+    to one branch each: every known consumer treats them alike. -/
+theorem Nitro.network.step_frame {apps : Apps E} {Ts : Threats E apps} {n n' : Network E}
+    (hstep : (Nitro.network apps Ts).step n n') :
+    ∃ p₀ : Participant,
+      (∃ r : Reaction E, (∀ st ∈ r.sends, n.VoucherSendable st) ∧
+        n'.chain = n.chain ∧
+        n'.sent = (fun q => if q = p₀ then
+          r.sends.map (fun st => (⟨st, [p₀]⟩ : SignedState E)) ++ n.sent q else n.sent q) ∧
+        n'.received = (fun q =>
+          (r.sends.filter (fun st => decide (q ∈ st.recipients p₀))).map
+            (fun st => (⟨st, [p₀]⟩ : SignedState E)) ++ n.received q) ∧
+        n'.wallet = n.wallet) ∨
+      (∃ dt : Time, n'.chain = n.chain.tick dt ∧ n'.sent = n.sent ∧
+        n'.received = n.received ∧ n'.wallet = n.wallet) ∨
+      n' = n ∨
+      (∃ (op : Op E) (s' : Adjudicator E), op.HonestFeasible (n.view p₀) ∧
+        n.chain.apply apps p₀ op = some s' ∧ (∀ ss ∈ op.proofStates, n.Sendable ss) ∧
+        n'.chain = s' ∧ n'.sent = n.sent ∧
+        n'.received = (fun q => op.proofStates ++ n.received q) ∧ n'.wallet = n.wallet) ∨
+      (∃ ss : SignedState E, n.Sendable ss ∧
+        n'.chain = n.chain ∧ n'.sent = n.sent ∧
+        n'.received = (fun q => if q = p₀ then ss :: n.received q else n.received q) ∧
+        n'.wallet = n.wallet) ∨
+      (∃ (c : FixedPart) (e x : Coins) (s' : Adjudicator E), x ≤ n.wallet p₀ ∧
+        n.chain.deposit (.channel c) e x = some s' ∧
+        n'.chain = s' ∧ n'.sent = n.sent ∧ n'.received = n.received ∧
+        n'.wallet = (fun q => if q = p₀ then n.wallet p₀ - x else n.wallet q)) := by
+  obtain ⟨p₀, ⟨m, -, hvgate, rfl⟩ | ⟨op, hfeas, hsgate, rfl⟩ |
+      ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ | ⟨c, e, x, hxle, rfl⟩⟩ := hstep
+  · refine ⟨p₀, ?_⟩
+    cases m with
+    | react r => exact Or.inl ⟨r, hvgate r rfl, rfl, rfl, rfl, rfl⟩
+    | wait dt => exact Or.inr (Or.inl ⟨dt, rfl, rfl, rfl, rfl⟩)
+  · refine ⟨p₀, ?_⟩
+    cases hop : n.chain.apply apps p₀ op with
+    | none => exact Or.inr (Or.inr (Or.inl (Network.land_of_none hop)))
+    | some s' =>
+      refine Or.inr (Or.inr (Or.inr (Or.inl ⟨op, s', hfeas, hop, hsgate, ?_, ?_, ?_, ?_⟩))) <;>
+        simp only [Network.land_of_some hop]
+  · refine ⟨p₀, ?_⟩
+    cases m with
+    | chain caller op => exact absurd rfl (hnochain caller op)
+    | deliver ss =>
+      exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨ss, hdgate ss rfl, rfl, rfl, rfl, rfl⟩))))
+    | tick dt => exact Or.inr (Or.inl ⟨dt, rfl, rfl, rfl, rfl⟩)
+    | land op => exact absurd rfl (hnoland op)
+  · refine ⟨p₀, ?_⟩
+    cases hdep : n.chain.deposit (.channel c) e x with
+    | none => exact Or.inr (Or.inr (Or.inl (by simp only [Network.deposit, hdep])))
+    | some s' =>
+      refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
+        ⟨c, e, x, s', hxle, hdep, ?_, ?_, ?_, ?_⟩)))) <;>
+        simp only [Network.deposit, hdep]
+
 /-- **Every signature a view received is genuine, in every reachable
     `Network`.** A state `p` received that names `q` as a signer is a
     state `q` really sent. `p` and `q` can be one participant: `p`'s own
@@ -570,82 +643,48 @@ theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n 
     rw [hrecv] at hr
     simp at hr
   · intro n n' hP hstep p q r hr hqr
-    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ |
-        ⟨c, e, x, -, rfl⟩⟩ :=
-      hstep
-    · cases m with
-      | react rr =>
-        rw [Network.applyHonest_react_received] at hr
-        rw [List.mem_append] at hr
-        rcases hr with hnew | hold
-        · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
-          obtain ⟨hst', -⟩ := List.mem_filter.mp hst
-          rw [← hseq] at hqr
-          simp only [List.mem_singleton] at hqr
-          refine ⟨⟨st, [p₀]⟩, ?_, by rw [← hseq]⟩
-          rw [Network.applyHonest_react_sent, if_pos hqr]
-          exact List.mem_append_left _ (List.mem_map.mpr ⟨st, hst', rfl⟩)
-        · obtain ⟨s, hs, hseq⟩ := hP p q r hold hqr
-          refine ⟨s, ?_, hseq⟩
-          rw [Network.applyHonest_react_sent]
-          by_cases hqp0 : q = p₀
-          · rw [if_pos hqp0]; exact List.mem_append_right _ hs
-          · rw [if_neg hqp0]; exact hs
-      | wait dt =>
-        have hrecv : (Network.applyHonest n p₀ (.wait dt)).received p = n.received p := by
-          simp [Network.applyHonest]
-        have hsent : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
-          simp [Network.applyHonest]
-        rw [hrecv] at hr
-        rw [hsent]
-        exact hP p q r hr hqr
-    · cases hop : n.chain.apply apps p₀ op with
-      | none =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by
-          simp [Network.land_of_none, hop]
-        have hrecv : (Network.land apps n p₀ op).received p = n.received p := by
-          simp [Network.land_of_none, hop]
-        rw [hsent]
-        rw [hrecv] at hr
-        exact hP p q r hr hqr
-      | some s' =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by
-          simp [Network.land_of_some, hop]
-        have hrecv : (Network.land apps n p₀ op).received p = op.proofStates ++ n.received p := by
-          simp [Network.land_of_some, hop]
-        rw [hsent]
-        rw [hrecv] at hr
-        rcases List.mem_append.mp hr with hnew | hold
-        · exact (hsgate r hnew).1 q hqr
+    obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
+    rcases hframe with
+        ⟨rr, -, -, hsent, hrecv, -⟩ | ⟨dt, -, hsent, hrecv, -⟩ | hunchanged |
+        ⟨op, s', -, -, hsgate, -, hsent, hrecv, -⟩ | ⟨ss, hgate, -, hsent, hrecv, -⟩ |
+        ⟨c, e, x, s', -, -, -, hsent, hrecv, -⟩
+    · simp only [hrecv] at hr
+      rw [List.mem_append] at hr
+      rcases hr with hnew | hold
+      · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
+        obtain ⟨hst', -⟩ := List.mem_filter.mp hst
+        rw [← hseq] at hqr
+        simp only [List.mem_singleton] at hqr
+        refine ⟨⟨st, [p₀]⟩, ?_, by rw [← hseq]⟩
+        simp only [hsent, if_pos hqr]
+        exact List.mem_append_left _ (List.mem_map.mpr ⟨st, hst', rfl⟩)
+      · obtain ⟨s, hs, hseq⟩ := hP p q r hold hqr
+        refine ⟨s, ?_, hseq⟩
+        simp only [hsent]
+        by_cases hqp0 : q = p₀
+        · rw [if_pos hqp0]; exact List.mem_append_right _ hs
+        · rw [if_neg hqp0]; exact hs
+    · rw [hsent]
+      rw [hrecv] at hr
+      exact hP p q r hr hqr
+    · subst hunchanged
+      exact hP p q r hr hqr
+    · simp only [hrecv] at hr
+      rw [hsent]
+      rcases List.mem_append.mp hr with hnew | hold
+      · exact (hsgate r hnew).1 q hqr
+      · exact hP p q r hold hqr
+    · rw [hsent]
+      simp only [hrecv] at hr
+      by_cases hpp0 : p = p₀
+      · rw [if_pos hpp0] at hr
+        rcases List.mem_cons.mp hr with rfl | hold
+        · exact hgate.1 q hqr
         · exact hP p q r hold hqr
-    · cases m with
-      | chain caller op => exact absurd rfl (hnochain caller op)
-      | deliver ss =>
-        have hsent : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
-          simp [Network.applyAdv_deliver]
-        have hrecv : (Network.applyAdv apps n p₀ (.deliver ss)).received p =
-            if p = p₀ then ss :: n.received p else n.received p := by
-          simp [Network.applyAdv_deliver]
-        rw [hsent]
-        rw [hrecv] at hr
-        by_cases hpp0 : p = p₀
-        · rw [if_pos hpp0] at hr
-          rcases List.mem_cons.mp hr with rfl | hold
-          · exact (hdgate r rfl).1 q hqr
-          · exact hP p q r hold hqr
-        · rw [if_neg hpp0] at hr
-          exact hP p q r hr hqr
-      | tick dt =>
-        have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received p = n.received p := by
-          simp [Network.applyAdv_tick]
-        have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv_tick]
-        rw [hrecv] at hr
-        rw [hsent]
+      · rw [if_neg hpp0] at hr
         exact hP p q r hr hqr
-      | land op => exact absurd rfl (hnoland op)
-    · rw [Network.deposit_received] at hr
-      rw [Network.deposit_sent]
+    · rw [hsent]
+      rw [hrecv] at hr
       exact hP p q r hr hqr
 
 /-- **Every voucher signature a view's received state carries is
@@ -672,84 +711,50 @@ theorem Nitro.network_received_voucher_signers {apps : Apps E} {Ts : Threats E a
     rw [hrecv] at hr
     simp at hr
   · intro n n' hP hstep p q r hr v hv hq
-    obtain ⟨p₀, ⟨m, -, hvgate, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ |
-        ⟨c, e, x, -, rfl⟩⟩ :=
-      hstep
-    · cases m with
-      | react rr =>
-        rw [Network.applyHonest_react_received] at hr
-        rw [List.mem_append] at hr
-        rcases hr with hnew | hold
-        · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
-          obtain ⟨hst', -⟩ := List.mem_filter.mp hst
-          rw [← hseq] at hv
-          obtain ⟨s, hs, hse⟩ := hvgate rr rfl st hst' v hv q hq
-          refine ⟨s, ?_, hse⟩
-          rw [Network.applyHonest_react_sent]
-          by_cases hqp0 : q = p₀
-          · rw [if_pos hqp0]; exact List.mem_append_right _ hs
-          · rw [if_neg hqp0]; exact hs
-        · obtain ⟨s, hs, hse⟩ := hP p q r hold v hv hq
-          refine ⟨s, ?_, hse⟩
-          rw [Network.applyHonest_react_sent]
-          by_cases hqp0 : q = p₀
-          · rw [if_pos hqp0]; exact List.mem_append_right _ hs
-          · rw [if_neg hqp0]; exact hs
-      | wait dt =>
-        have hrecv : (Network.applyHonest n p₀ (.wait dt)).received p = n.received p := by
-          simp [Network.applyHonest]
-        have hsent : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
-          simp [Network.applyHonest]
-        rw [hrecv] at hr
-        rw [hsent]
-        exact hP p q r hr v hv hq
-    · cases hop : n.chain.apply apps p₀ op with
-      | none =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by
-          simp [Network.land_of_none, hop]
-        have hrecv : (Network.land apps n p₀ op).received p = n.received p := by
-          simp [Network.land_of_none, hop]
-        rw [hsent]
-        rw [hrecv] at hr
-        exact hP p q r hr v hv hq
-      | some s' =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by
-          simp [Network.land_of_some, hop]
-        have hrecv : (Network.land apps n p₀ op).received p = op.proofStates ++ n.received p := by
-          simp [Network.land_of_some, hop]
-        rw [hsent]
-        rw [hrecv] at hr
-        rcases List.mem_append.mp hr with hnew | hold
-        · exact (hsgate r hnew).2 v hv q hq
+    obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
+    rcases hframe with
+        ⟨rr, hvgate, -, hsent, hrecv, -⟩ | ⟨dt, -, hsent, hrecv, -⟩ | hunchanged |
+        ⟨op, s', -, -, hsgate, -, hsent, hrecv, -⟩ | ⟨ss, hgate, -, hsent, hrecv, -⟩ |
+        ⟨c, e, x, s', -, -, -, hsent, hrecv, -⟩
+    · simp only [hrecv] at hr
+      rw [List.mem_append] at hr
+      rcases hr with hnew | hold
+      · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
+        obtain ⟨hst', -⟩ := List.mem_filter.mp hst
+        rw [← hseq] at hv
+        obtain ⟨s, hs, hse⟩ := hvgate st hst' v hv q hq
+        refine ⟨s, ?_, hse⟩
+        simp only [hsent]
+        by_cases hqp0 : q = p₀
+        · rw [if_pos hqp0]; exact List.mem_append_right _ hs
+        · rw [if_neg hqp0]; exact hs
+      · obtain ⟨s, hs, hse⟩ := hP p q r hold v hv hq
+        refine ⟨s, ?_, hse⟩
+        simp only [hsent]
+        by_cases hqp0 : q = p₀
+        · rw [if_pos hqp0]; exact List.mem_append_right _ hs
+        · rw [if_neg hqp0]; exact hs
+    · rw [hsent]
+      rw [hrecv] at hr
+      exact hP p q r hr v hv hq
+    · subst hunchanged
+      exact hP p q r hr v hv hq
+    · simp only [hrecv] at hr
+      rw [hsent]
+      rcases List.mem_append.mp hr with hnew | hold
+      · exact (hsgate r hnew).2 v hv q hq
+      · exact hP p q r hold v hv hq
+    · rw [hsent]
+      simp only [hrecv] at hr
+      by_cases hpp0 : p = p₀
+      · rw [if_pos hpp0] at hr
+        rcases List.mem_cons.mp hr with rfl | hold
+        · exact hgate.2 v hv q hq
         · exact hP p q r hold v hv hq
-    · cases m with
-      | chain caller op => exact absurd rfl (hnochain caller op)
-      | deliver ss =>
-        have hsent : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
-          simp [Network.applyAdv_deliver]
-        have hrecv : (Network.applyAdv apps n p₀ (.deliver ss)).received p =
-            if p = p₀ then ss :: n.received p else n.received p := by
-          simp [Network.applyAdv_deliver]
-        rw [hsent]
-        rw [hrecv] at hr
-        by_cases hpp0 : p = p₀
-        · rw [if_pos hpp0] at hr
-          rcases List.mem_cons.mp hr with rfl | hold
-          · exact (hdgate r rfl).2 v hv q hq
-          · exact hP p q r hold v hv hq
-        · rw [if_neg hpp0] at hr
-          exact hP p q r hr v hv hq
-      | tick dt =>
-        have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received p = n.received p := by
-          simp [Network.applyAdv_tick]
-        have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv_tick]
-        rw [hrecv] at hr
-        rw [hsent]
+      · rw [if_neg hpp0] at hr
         exact hP p q r hr v hv hq
-      | land op => exact absurd rfl (hnoland op)
-    · rw [Network.deposit_received] at hr
-      rw [Network.deposit_sent]
+    · rw [hsent]
+      rw [hrecv] at hr
       exact hP p q r hr v hv hq
 
 /-- **`Views.Consistent`'s third conjunct holds for every reachable
@@ -803,96 +808,58 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
     · intro q st; rw [hs]; simp
   · intro n n' hP hstep
     obtain ⟨signed, hreach, hmirror⟩ := hP
-    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, hsgate, rfl⟩ | ⟨m, -, -, hnochain, hnoland, rfl⟩ |
-        ⟨c, e, x, -, rfl⟩⟩ := hstep
-    · cases m with
-      | react rr =>
-        refine ⟨rr.sends.map (fun st => (p₀, st)) ++ signed, ?_, ?_⟩
-        · simpa using ReachableSigned.mono (fun x hx => List.mem_append_right _ hx) hreach
-        · intro q st
-          rw [Network.applyHonest_react_sent, List.mem_append, List.mem_map]
-          by_cases hqp0 : q = p₀
-          · simp only [if_pos hqp0, List.mem_append, List.mem_map]
-            constructor
-            · rintro (⟨st', hst', hseq⟩ | hmem)
-              · rw [Prod.mk.injEq] at hseq
-                exact ⟨⟨st', [p₀]⟩, Or.inl ⟨st', hst', rfl⟩, hseq.2⟩
-              · obtain ⟨s, hs, hseq⟩ := (hmirror q st).mp hmem
-                exact ⟨s, Or.inr hs, hseq⟩
-            · rintro ⟨s, (⟨st', hst', hseq⟩ | hmem), hstate⟩
-              · subst hseq
-                exact Or.inl ⟨st', hst', by rw [Prod.mk.injEq]; exact ⟨hqp0.symm, hstate⟩⟩
-              · exact Or.inr ((hmirror q st).mpr ⟨s, hmem, hstate⟩)
-          · simp only [if_neg hqp0]
-            constructor
-            · rintro (⟨st', hst', hseq⟩ | hmem)
-              · rw [Prod.mk.injEq] at hseq
-                exact absurd hseq.1.symm hqp0
-              · exact (hmirror q st).mp hmem
-            · intro hmem
-              exact Or.inr ((hmirror q st).mpr hmem)
-      | wait dt =>
-        have hc : (Network.applyHonest n p₀ (.wait dt)).chain = n.chain.tick dt := by
-          simp [Network.applyHonest]
-        have hs : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
-          simp [Network.applyHonest]
-        refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
-        rw [hc]
-        refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
-        simp [Op.proofStates]
-    · cases hop : n.chain.apply apps p₀ op with
-      | none =>
-        refine ⟨signed, ?_, ?_⟩
-        · have hc : (Network.land apps n p₀ op).chain = n.chain := by simp [Network.land_of_none, hop]
-          rw [hc]; exact hreach
-        · have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_none, hop]
-          rw [hs]; exact hmirror
-      | some s' =>
-        have hc : (Network.land apps n p₀ op).chain = s' := by simp [Network.land_of_some, hop]
-        have hs : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_some, hop]
-        refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
-        rw [hc]
-        refine hreach.tail ⟨p₀, op, _, _, ?_, hop⟩
-        intro ss hss
-        obtain ⟨hsg, hvoucher⟩ := hsgate ss hss
-        refine ⟨fun q' hq' => ?_, fun v hv q' hq' => ?_⟩
-        · obtain ⟨s, hs', hseq⟩ := hsg q' hq'
-          exact (hmirror q' ss.state).mpr ⟨s, hs', hseq⟩
-        · obtain ⟨s, hs', hseq⟩ := hvoucher v hv q' hq'
-          exact ⟨s.state, (hmirror q' s.state).mpr ⟨s, hs', rfl⟩, hseq⟩
-    · cases m with
-      | chain caller op => exact absurd rfl (hnochain caller op)
-      | deliver ss =>
-        have hc : (Network.applyAdv apps n p₀ (.deliver ss)).chain = n.chain := by
-          simp [Network.applyAdv_deliver]
-        have hs : (Network.applyAdv apps n p₀ (.deliver ss)).sent = n.sent := by
-          simp [Network.applyAdv_deliver]
-        exact ⟨signed, by rw [hc]; exact hreach, by rw [hs]; exact hmirror⟩
-      | tick dt =>
-        have hc : (Network.applyAdv apps n p₀ (.tick dt)).chain = n.chain.tick dt := by
-          simp [Network.applyAdv_tick]
-        have hs : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv_tick]
-        refine ⟨signed, ?_, by rw [hs]; exact hmirror⟩
-        rw [hc]
-        refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
-        simp [Op.proofStates]
-      | land op => exact absurd rfl (hnoland op)
-    · cases hop : n.chain.deposit (.channel c) e x with
-      | none =>
-        refine ⟨signed, ?_, ?_⟩
-        · have hceq : (Network.deposit n p₀ (.channel c) e x).chain = n.chain := by
-            simp [Network.deposit, hop]
-          rw [hceq]; exact hreach
-        · simp only [Network.deposit_sent]; exact hmirror
-      | some s' =>
-        have hceq : (Network.deposit n p₀ (.channel c) e x).chain = s' := by
-          simp [Network.deposit, hop]
-        refine ⟨signed, ?_, by simp only [Network.deposit_sent]; exact hmirror⟩
-        rw [hceq]
-        refine hreach.tail ⟨p₀, .deposit (.channel c) e x, _, _, ?_, hop⟩
-        intro ss hss
-        simp [Op.proofStates] at hss
+    obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
+    rcases hframe with
+        ⟨rr, -, hchain, hsent, -, -⟩ | ⟨dt, hchain, hsent, -, -⟩ | hunchanged |
+        ⟨op, s', -, hop, hsgate, hchain, hsent, -, -⟩ | ⟨ss, -, hchain, hsent, -, -⟩ |
+        ⟨c, e, x, s', -, hdep, hchain, hsent, -, -⟩
+    · refine ⟨rr.sends.map (fun st => (p₀, st)) ++ signed, ?_, ?_⟩
+      · rw [hchain]
+        simpa only using ReachableSigned.mono (fun x hx => List.mem_append_right _ hx) hreach
+      · intro q st
+        simp only [hsent, List.mem_append, List.mem_map]
+        by_cases hqp0 : q = p₀
+        · simp only [if_pos hqp0, List.mem_append, List.mem_map]
+          constructor
+          · rintro (⟨st', hst', hseq⟩ | hmem)
+            · rw [Prod.mk.injEq] at hseq
+              exact ⟨⟨st', [p₀]⟩, Or.inl ⟨st', hst', rfl⟩, hseq.2⟩
+            · obtain ⟨s, hs, hseq⟩ := (hmirror q st).mp hmem
+              exact ⟨s, Or.inr hs, hseq⟩
+          · rintro ⟨s, (⟨st', hst', hseq⟩ | hmem), hstate⟩
+            · subst hseq
+              exact Or.inl ⟨st', hst', by rw [Prod.mk.injEq]; exact ⟨hqp0.symm, hstate⟩⟩
+            · exact Or.inr ((hmirror q st).mpr ⟨s, hmem, hstate⟩)
+        · simp only [if_neg hqp0]
+          constructor
+          · rintro (⟨st', hst', hseq⟩ | hmem)
+            · rw [Prod.mk.injEq] at hseq
+              exact absurd hseq.1.symm hqp0
+            · exact (hmirror q st).mp hmem
+          · intro hmem
+            exact Or.inr ((hmirror q st).mpr hmem)
+    · refine ⟨signed, ?_, by rw [hsent]; exact hmirror⟩
+      rw [hchain]
+      refine hreach.tail ⟨p₀, .tick dt, _, _, ?_, rfl⟩
+      simp only [Op.proofStates, List.not_mem_nil, IsEmpty.forall_iff, implies_true]
+    · subst hunchanged
+      exact ⟨signed, hreach, hmirror⟩
+    · refine ⟨signed, ?_, by rw [hsent]; exact hmirror⟩
+      rw [hchain]
+      refine hreach.tail ⟨p₀, op, _, _, ?_, hop⟩
+      intro ss hss
+      obtain ⟨hsg, hvoucher⟩ := hsgate ss hss
+      refine ⟨fun q' hq' => ?_, fun v hv q' hq' => ?_⟩
+      · obtain ⟨s, hs', hseq⟩ := hsg q' hq'
+        exact (hmirror q' ss.state).mpr ⟨s, hs', hseq⟩
+      · obtain ⟨s, hs', hseq⟩ := hvoucher v hv q' hq'
+        exact ⟨s.state, (hmirror q' s.state).mpr ⟨s, hs', rfl⟩, hseq⟩
+    · exact ⟨signed, by rw [hchain]; exact hreach, by rw [hsent]; exact hmirror⟩
+    · refine ⟨signed, ?_, by rw [hsent]; exact hmirror⟩
+      rw [hchain]
+      refine hreach.tail ⟨p₀, .deposit (.channel c) e x, _, _, ?_, hdep⟩
+      intro ss hss
+      simp only [Op.proofStates, List.not_mem_nil] at hss
 
 /-- **`Views.Consistent`'s second conjunct holds for every reachable
     `Network`.** Operator ruling 2026-10-29: the network is synchronous by
@@ -915,75 +882,44 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} {n :
     rw [hs] at hss
     simp at hss
   · intro n n' hP hstep p ss hss q hq
-    obtain ⟨p₀, ⟨m, -, -, rfl⟩ | ⟨op, -, -, rfl⟩ | ⟨m, -, hdgate, hnochain, hnoland, rfl⟩ |
-        ⟨c, e, x, -, rfl⟩⟩ := hstep
-    · cases m with
-      | react rr =>
-        rw [Network.applyHonest_react_sent] at hss
-        rw [Network.applyHonest_react_received]
-        by_cases hpp0 : p = p₀
-        · rw [if_pos hpp0] at hss
-          rcases List.mem_append.mp hss with hnew | hold
-          · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
-            subst hseq
-            rw [List.mem_append]
-            refine Or.inl (List.mem_map.mpr ⟨st, ?_, rfl⟩)
-            rw [List.mem_filter]
-            refine ⟨hst, ?_⟩
-            rw [hpp0] at hq
-            simpa using hq
-          · rw [List.mem_append]
-            exact Or.inr (hP p ss hold q hq)
-        · rw [if_neg hpp0] at hss
+    obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
+    rcases hframe with
+        ⟨rr, -, -, hsent, hrecv, -⟩ | ⟨dt, -, hsent, hrecv, -⟩ | hunchanged |
+        ⟨op, s', -, -, -, -, hsent, hrecv, -⟩ | ⟨ss', -, -, hsent, hrecv, -⟩ |
+        ⟨c, e, x, s', -, -, -, hsent, hrecv, -⟩
+    · simp only [hsent] at hss
+      simp only [hrecv]
+      by_cases hpp0 : p = p₀
+      · rw [if_pos hpp0] at hss
+        rcases List.mem_append.mp hss with hnew | hold
+        · obtain ⟨st, hst, hseq⟩ := List.mem_map.mp hnew
+          subst hseq
           rw [List.mem_append]
-          exact Or.inr (hP p ss hss q hq)
-      | wait dt =>
-        have hrecv : (Network.applyHonest n p₀ (.wait dt)).received q = n.received q := by
-          simp [Network.applyHonest]
-        have hsent : (Network.applyHonest n p₀ (.wait dt)).sent = n.sent := by
-          simp [Network.applyHonest]
-        rw [hsent] at hss
-        rw [hrecv]
-        exact hP p ss hss q hq
-    · cases hop : n.chain.apply apps p₀ op with
-      | none =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_none, hop]
-        have hrecv : (Network.land apps n p₀ op).received q = n.received q := by
-          simp [Network.land_of_none, hop]
-        rw [hsent] at hss
-        rw [hrecv]
-        exact hP p ss hss q hq
-      | some s' =>
-        have hsent : (Network.land apps n p₀ op).sent = n.sent := by simp [Network.land_of_some, hop]
-        have hrecv : (Network.land apps n p₀ op).received q = op.proofStates ++ n.received q := by
-          simp [Network.land_of_some, hop]
-        rw [hsent] at hss
-        rw [hrecv]
-        exact List.mem_append_right _ (hP p ss hss q hq)
-    · cases m with
-      | chain caller op => exact absurd rfl (hnochain caller op)
-      | deliver ss' =>
-        have hsent : (Network.applyAdv apps n p₀ (.deliver ss')).sent = n.sent := by
-          simp [Network.applyAdv_deliver]
-        have hrecv : (Network.applyAdv apps n p₀ (.deliver ss')).received q =
-            if q = p₀ then ss' :: n.received q else n.received q := by
-          simp [Network.applyAdv_deliver]
-        rw [hsent] at hss
-        rw [hrecv]
-        by_cases hqp0 : q = p₀
-        · rw [if_pos hqp0]; exact List.mem_cons_of_mem _ (hP p ss hss q hq)
-        · rw [if_neg hqp0]; exact hP p ss hss q hq
-      | tick dt =>
-        have hsent : (Network.applyAdv apps n p₀ (.tick dt)).sent = n.sent := by
-          simp [Network.applyAdv_tick]
-        have hrecv : (Network.applyAdv apps n p₀ (.tick dt)).received q = n.received q := by
-          simp [Network.applyAdv_tick]
-        rw [hsent] at hss
-        rw [hrecv]
-        exact hP p ss hss q hq
-      | land op => exact absurd rfl (hnoland op)
-    · rw [Network.deposit_sent] at hss
-      rw [Network.deposit_received]
+          refine Or.inl (List.mem_map.mpr ⟨st, ?_, rfl⟩)
+          rw [List.mem_filter]
+          refine ⟨hst, ?_⟩
+          rw [hpp0] at hq
+          simpa only [decide_eq_true_eq] using hq
+        · rw [List.mem_append]
+          exact Or.inr (hP p ss hold q hq)
+      · rw [if_neg hpp0] at hss
+        rw [List.mem_append]
+        exact Or.inr (hP p ss hss q hq)
+    · rw [hsent] at hss
+      rw [hrecv]
+      exact hP p ss hss q hq
+    · subst hunchanged
+      exact hP p ss hss q hq
+    · rw [hsent] at hss
+      simp only [hrecv]
+      exact List.mem_append_right _ (hP p ss hss q hq)
+    · rw [hsent] at hss
+      simp only [hrecv]
+      by_cases hqp0 : q = p₀
+      · rw [if_pos hqp0]; exact List.mem_cons_of_mem _ (hP p ss hss q hq)
+      · rw [if_neg hqp0]; exact hP p ss hss q hq
+    · rw [hsent] at hss
+      rw [hrecv]
       exact hP p ss hss q hq
 
 /-- **Every reachable `Network`'s views are `Views.Consistent`**, all
@@ -1204,72 +1140,49 @@ theorem Nitro.network_conservation {apps : Apps E} {Ts : Threats E apps} {n0 n :
   induction hsteps with
   | refl =>
     obtain ⟨hc0, -, -⟩ := hinit
-    exact ⟨[], by rw [hc0]; rfl, by intro p; simp⟩
+    exact ⟨[], by rw [hc0]; rfl,
+      by intro p; simp only [List.filter_nil, List.map_nil, List.sum_nil, add_zero]⟩
   | @tail n1 n2 hs1 hstep ih =>
     obtain ⟨deposits, hheld, hwallet⟩ := ih
     have hr1 : (Nitro.network apps Ts).Reachable n1 := ⟨n0, hinit, hs1⟩
-    obtain ⟨p, ⟨m, -, -, rfl⟩ | ⟨op, hopfeas, -, rfl⟩ | ⟨m, -, -, hnochain, hnoland, rfl⟩ |
-        ⟨c, e, x, hxle, rfl⟩⟩ := hstep
-    · cases m with
-      | react r =>
-        exact ⟨deposits, by simpa using hheld, by simpa [Network.applyHonest] using hwallet⟩
-      | wait dt =>
-        exact ⟨deposits, by simpa [Network.applyHonest, Adjudicator.tick] using hheld,
-          by simpa [Network.applyHonest] using hwallet⟩
+    obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
+    rcases hframe with
+        ⟨r, -, hchain, -, -, hwal⟩ | ⟨dt, hchain, -, -, hwal⟩ | hunchanged |
+        ⟨op, s', hopfeas, hop, -, hchain, -, -, hwal⟩ | ⟨ss, -, hchain, -, -, hwal⟩ |
+        ⟨c, e, x, s', hxle, hdep, hchain, -, -, hwal⟩
+    · exact ⟨deposits, by rw [hchain]; exact hheld, by rw [hwal]; exact hwallet⟩
+    · exact ⟨deposits, by rw [hchain]; simpa only [Adjudicator.tick] using hheld,
+        by rw [hwal]; exact hwallet⟩
+    · subst hunchanged
+      exact ⟨deposits, hheld, hwallet⟩
     · have hnodep : ∀ a e x, op ≠ Op.deposit a e x := by
         intro a e x heq
         rw [heq] at hopfeas
-        simp [Op.HonestFeasible] at hopfeas
-      cases hop : n1.chain.apply apps p op with
-      | none =>
-        have hnc : Network.land apps n1 p op = n1 := by simp [Network.land_of_none, hop]
-        exact ⟨deposits, by rw [hnc]; exact hheld, by rw [hnc]; exact hwallet⟩
-      | some s' =>
-        have hnc1 : (Network.land apps n1 p op).chain = s' := by
-          simp [Network.land_of_some, hop]
-        have hnc2 : (Network.land apps n1 p op).wallet = n1.wallet := by
-          simp [Network.land_of_some, hop]
-        have hhi : n1.chain.HeldInv :=
-          Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
-        have hstep' := Adjudicator.held_paidOut_step_no_deposit hhi hnodep hop
-        exact ⟨deposits, by rw [hnc1, hstep']; exact hheld, by rw [hnc2]; exact hwallet⟩
-    · cases m with
-      | chain caller op => exact absurd rfl (hnochain caller op)
-      | deliver ss =>
-        exact ⟨deposits, by simpa [Network.applyAdv_deliver] using hheld,
-          by simpa [Network.applyAdv_deliver] using hwallet⟩
-      | tick dt =>
-        exact ⟨deposits, by simpa [Network.applyAdv_tick, Adjudicator.tick] using hheld,
-          by simpa [Network.applyAdv_tick] using hwallet⟩
-      | land op => exact absurd rfl (hnoland op)
-    · cases hdep : n1.chain.deposit (.channel c) e x with
-      | none =>
-        have hnc : Network.deposit n1 p (.channel c) e x = n1 := by simp [Network.deposit, hdep]
-        exact ⟨deposits, by rw [hnc]; exact hheld, by rw [hnc]; exact hwallet⟩
-      | some s' =>
-        have hnc1 : (Network.deposit n1 p (.channel c) e x).chain = s' := by
-          simp [Network.deposit, hdep]
-        have hnc2 : (Network.deposit n1 p (.channel c) e x).wallet =
-            fun q => if q = p then n1.wallet p - x else n1.wallet q := by
-          simp [Network.deposit, hdep]
-        have hhi : n1.chain.HeldInv :=
-          Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
-        have hopEq : n1.chain.apply apps p (.deposit (.channel c) e x) = some s' := hdep
-        have hstep' := Adjudicator.held_paidOut_step_deposit hhi hopEq
-        refine ⟨(p, x) :: deposits, ?_, ?_⟩
-        · rw [hnc1]
-          simp only [List.map_cons, List.sum_cons]
-          rw [hstep', hheld, Nat.add_comm]
-        · intro q
-          rw [hnc2]
-          by_cases hqp : q = p
-          · subst hqp
-            rw [hwallet q]
-            simp
-            rw [← Nat.add_assoc, Nat.sub_add_cancel hxle]
-          · have hw := hwallet q
-            simp [hqp, Ne.symm hqp]
-            exact hw
+        simp only [Op.HonestFeasible] at hopfeas
+      have hhi : n1.chain.HeldInv :=
+        Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
+      have hstep' := Adjudicator.held_paidOut_step_no_deposit hhi hnodep hop
+      exact ⟨deposits, by rw [hchain, hstep']; exact hheld, by rw [hwal]; exact hwallet⟩
+    · exact ⟨deposits, by rw [hchain]; exact hheld, by rw [hwal]; exact hwallet⟩
+    · have hhi : n1.chain.HeldInv :=
+        Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
+      have hopEq : n1.chain.apply apps p₀ (.deposit (.channel c) e x) = some s' := hdep
+      have hstep' := Adjudicator.held_paidOut_step_deposit hhi hopEq
+      refine ⟨(p₀, x) :: deposits, ?_, ?_⟩
+      · rw [hchain]
+        simp only [List.map_cons, List.sum_cons]
+        rw [hstep', hheld, Nat.add_comm]
+      · intro q
+        rw [hwal]
+        by_cases hqp : q = p₀
+        · subst hqp
+          rw [hwallet q]
+          simp only [↓reduceIte, decide_true, List.filter_cons_of_pos, List.map_cons, List.sum_cons]
+          rw [← Nat.add_assoc, Nat.sub_add_cancel hxle]
+        · have hw := hwallet q
+          simp only [hqp, ↓reduceIte, Ne.symm hqp, decide_false, Bool.false_eq_true,
+            not_false_eq_true, List.filter_cons_of_neg]
+          exact hw
 
 /-- **D10 fix: a reachable network can hold a positive balance in a ledger
     channel.** One deposit from genesis closes the gap the ruling found
