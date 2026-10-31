@@ -4611,6 +4611,31 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
   exact le_trans hle' hle''
 
 
+/-- The shared case analysis of `consensus_round_safe_nil` and
+    `consensus_round_safe`, for one adversary move `m` that is not a
+    `tick` and not a `land` (`Threat.RoundSeq.other`). `ConsensusSafe`
+    over `net1`/`net2` carries across `m` to `net1.applyAdv apps m`/`net2`,
+    and the round's own clock bound (`hεbound`) and `p`'s own sent-list
+    bound (`hsent`) carry across `m` the same way. This is
+    `verification.md` §6a's core of the 513-line block duplicated in both
+    theorems. Body `sorry` on `draft/crs-core`; see §6a. -/
+theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat E p}
+    (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω1 Ω2 : Outcome E}
+    (hc : apps c.appDef = consensusRules) (hp : p ∈ c.participants) (hΩ1 : ss.state.outcome = Ω1)
+    (hdur : 2 * T.ε ≤ c.challengeDuration) {net1 net2 : NetworkState E p} {m : AdvMove E}
+    (hfeas : T.feasible net1 m) (hnotick : ∀ dt, m ≠ .tick dt) (hnoland : ∀ op, m ≠ .land op)
+    (hεbound : net2.chain.now < net1.chain.now + T.ε)
+    (hsent : ∀ t0 ∈ net1.sent, t0.state.channel = c →
+      (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state ∨ t0.state.outcome = Ω2) ∧
+      (t0.state.isFinal = true → t0.state.outcome = Ω1 ∨ t0.state.outcome = Ω2))
+    (hbase : ConsensusSafe c ss Ω1 Ω2 net1 net2) :
+    net2.chain.now < (net1.applyAdv apps m).chain.now + T.ε ∧
+    (∀ t0 ∈ (net1.applyAdv apps m).sent, t0.state.channel = c →
+      (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state ∨ t0.state.outcome = Ω2) ∧
+      (t0.state.isFinal = true → t0.state.outcome = Ω1 ∨ t0.state.outcome = Ω2)) ∧
+    ConsensusSafe c ss Ω1 Ω2 (net1.applyAdv apps m) net2 := by
+  sorry
+
 /-- `ConsensusSafe` over a round's play with nothing of `p`'s own still
     pending: every operation that reaches channel `c` here is an adversary
     one, not `p`'s own checkpoint, so the invariant carries exactly as
