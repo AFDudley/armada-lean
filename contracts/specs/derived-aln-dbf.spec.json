@@ -1,0 +1,95 @@
+{
+  "id": "derived-aln-dbf",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `turbo_order_independent` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `turbo_order_independent`'s proof body is `sorry`. `scripts/check.sh --json turbo_order_independent` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json turbo_order_independent` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem turbo_order_independent",
+  "restatement": "The theorem `turbo_order_independent`, declared in `ArmadaLean/Nitro/Liveness.lean`, must carry a genuine, complete Lean proof. The proof body must contain no `sorry` placeholder, so the claim is actually established, not merely assumed on trust. The theorem's exact statement \u2014 its name, its hypotheses, and its conclusion \u2014 must stay exactly as it is written today. The worker proves the existing claim. The worker does not restate, weaken, or generalize the claim to make the proof easier.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The theorem `turbo_order_independent` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement does not change."
+    }
+  ],
+  "goal": "Close the open proof gap in `turbo_order_independent` with a real Lean proof, while leaving the theorem's own statement untouched.",
+  "acceptance_criteria": [
+    "After the fix, running the repo's own check script and asking about turbo_order_independent shows the theorem's proof no longer contains a stand-in placeholder, and the whole project still builds cleanly.",
+    "After the fix, running the repo's own check script confirms every previously-approved theorem's exact wording, including turbo_order_independent's, still matches the frozen baseline recorded before the fix."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, running the repo's own check script and asking about turbo_order_independent shows the theorem's proof no longer contains a stand-in placeholder, and the whole project still builds cleanly."
+    },
+    {
+      "id": "c2",
+      "text": "After the fix, running the repo's own check script confirms every previously-approved theorem's exact wording, including turbo_order_independent's, still matches the frozen baseline recorded before the fix."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After the fix, running the repo's own check script and asking about turbo_order_independent shows the theorem's proof no longer contains a stand-in placeholder, and the whole project still builds cleanly.",
+      "proves": "Proves restatement clause c1: turbo_order_independent has a real proof with no sorry left in its own proof body.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_order_independent"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "theorem_in_sorry",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "field": "build_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "After the fix, running the repo's own check script confirms every previously-approved theorem's exact wording, including turbo_order_independent's, still matches the frozen baseline recorded before the fix.",
+      "proves": "Proves restatement clause c2: closing the proof did not change the theorem's statement.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_order_independent"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "field": "signatures_ok",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
