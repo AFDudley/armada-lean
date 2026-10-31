@@ -2634,10 +2634,8 @@ example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel 
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
     net.DeadlineAfter (L0 : FixedPart) (canon P).ε ∧
     net.chain.finalizedWith (L0 : FixedPart).address = none := by
-  refine ⟨r2, p0, q0, p0, q0, ⟨Lr, by decide⟩, ⟨o0, ?_⟩, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl,
-    rfl, rfl, rfl, rfl, rfl, by decide, by unfold Route.LedgerAfterRound2; decide, netE_reach,
-    ⟨⟨S0, [p0, q0]⟩, ?_, by decide, rfl, rfl, rfl, ?_, ?_⟩, ⟨?_, ?_⟩, rfl, by decide, ?_, by decide⟩
-  · intro e he
+  refine ⟨r2, p0, q0, p0, q0, ⟨Lr, by decide⟩, ⟨o0, by
+    intro e he
     simp only [o0, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with h1 | h2 | h3
     · subst h1
@@ -2657,7 +2655,9 @@ example : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel 
       subst hps
       intro d hd
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hd
-      rcases hd with rfl | rfl <;> rfl
+      rcases hd with rfl | rfl <;> rfl⟩, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl,
+    rfl, rfl, rfl, rfl, rfl, by decide, by unfold Route.LedgerAfterRound2; decide, netE_reach,
+    ⟨⟨S0, [p0, q0]⟩, ?_, by decide, rfl, rfl, rfl, ?_, ?_⟩, ⟨?_, ?_⟩, rfl, by decide, ?_, by decide⟩
   · refine ⟨fun q hq => ?_, fun v hv => ?_⟩
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
       rcases hq with rfl | rfl
