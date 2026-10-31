@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-eb2",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `turbo_value_achievable` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `turbo_value_achievable`'s proof body is `sorry`. `scripts/check.sh --json turbo_value_achievable` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json turbo_value_achievable` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem turbo_value_achievable",
+  "restatement": "Right now the Lean theorem `turbo_value_achievable`, declared in `ArmadaLean/Nitro/Liveness.lean`, has a proof body that is the single tactic `sorry`. `sorry` tells Lean to accept the theorem without proof, so the theorem is unproven. The requirement is that a worker write a real Lean proof for `turbo_value_achievable`, so its proof body no longer contains `sorry` anywhere. A real proof must also be one the Lean compiler actually accepts; deleting the word `sorry` without supplying working tactics would break the build, and that must not happen. The theorem's statement \u2014 its hypotheses and its conclusion \u2014 must stay exactly as it is now; only the proof body changes. The change is observed by running `scripts/check.sh --json turbo_value_achievable` from the repository root and reading the single JSON object it prints. That object reports, among other fields, whether `turbo_value_achievable` still appears in the list of theorems whose proof body contains `sorry`, whether the whole repository still builds, and whether every approved theorem's statement text, including this theorem's own statement, still matches the frozen baseline recorded in `scripts/sigs-baseline.tsv`.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`turbo_value_achievable` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body."
+    },
+    {
+      "id": "c2",
+      "text": "The repository's Lean build still succeeds, so the new proof body is one the Lean compiler actually accepts, not text with the word `sorry` simply deleted."
+    },
+    {
+      "id": "c3",
+      "text": "The theorem's statement does not change."
+    }
+  ],
+  "goal": "Replace the `sorry` proof body of theorem `turbo_value_achievable` in `ArmadaLean/Nitro/Liveness.lean` with a real Lean proof, without changing the theorem's statement, while the repository still builds.",
+  "acceptance_criteria": [
+    "Running the project's check script and asking it about `turbo_value_achievable` shows the theorem is no longer on the list of proofs that still say `sorry`.",
+    "Running the project's check script shows the whole repository still builds, so the new proof is real code the Lean compiler accepts, not just a deleted word.",
+    "Running the project's check script shows every approved theorem's recorded statement, including `turbo_value_achievable`'s own statement, still matches the frozen baseline, so the theorem's wording did not change."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check script and asking it about `turbo_value_achievable` shows the theorem is no longer on the list of proofs that still say `sorry`."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check script shows the whole repository still builds, so the new proof is real code the Lean compiler accepts, not just a deleted word."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check script shows every approved theorem's recorded statement, including `turbo_value_achievable`'s own statement, still matches the frozen baseline, so the theorem's wording did not change."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check script and asking it about `turbo_value_achievable` shows the theorem is no longer on the list of proofs that still say `sorry`.",
+      "proves": "The theorem's own proof body no longer contains `sorry`.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_achievable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the project's check script shows the whole repository still builds, so the new proof is real code the Lean compiler accepts, not just a deleted word.",
+      "proves": "The repository builds successfully with the new proof in place.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_achievable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running the project's check script shows every approved theorem's recorded statement, including `turbo_value_achievable`'s own statement, still matches the frozen baseline, so the theorem's wording did not change.",
+      "proves": "The theorem's statement (its hypotheses and conclusion) is unchanged.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_achievable"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
