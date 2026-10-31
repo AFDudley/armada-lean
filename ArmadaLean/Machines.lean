@@ -23,9 +23,12 @@
   `lake env lean ArmadaLean/Machines.lean` to capture its `MACHINE` lines and build its set of
   system state types from them (`scripts/reach.py`'s own doc comment).
 
-  Lists `Pool.machine`, `Nitro.chain`, `Nitro.participant`, `Nitro.network` as of this writing
-  (`ArmadaLean/PoolMachine.lean`, `ArmadaLean/Nitro/Reachable.lean`); all four are declared at the
-  root, not inside a namespace (see `Nitro.participant`'s own doc comment for why), so the scan
+  Lists `Pool.machine`, `Nitro.chain`, `Nitro.signedChain`, `Nitro.participant`, `Nitro.network`
+  as of this writing (`ArmadaLean/PoolMachine.lean`, `ArmadaLean/Nitro/Reachable.lean`).
+  `Nitro.signedChain` (added 2026-10-31) is the chain whose steps use only a given list of
+  signatures; its reachable states are `ReachableSigned` (`Nitro.signedChain_reachable_iff`), so a
+  statement over them takes the type `ReachableState (Nitro.signedChain apps signed)`. All five are
+  declared at the root, not inside a namespace (see `Nitro.participant`'s own doc comment for why), so the scan
   does not filter by name prefix — it inspects every `def` in the checked environment, including
   ones outside the `ArmadaLean` namespace, and relies on `Machine` itself (unqualified, declared
   once in `ArmadaLean/Machine.lean`) being the one marker that matters.

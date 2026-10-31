@@ -3,6 +3,8 @@
   Root module: imports all verified components.
 -/
 import ArmadaLean.Machine
+import ArmadaLean.Types.Reachable
+import ArmadaLean.SpecTools
 import ArmadaLean.Field
 import ArmadaLean.Poseidon
 import ArmadaLean.Token

@@ -20,8 +20,58 @@
   needs the refinement, only the game (`UnbeatableIn`) does.
 -/
 import ArmadaLean.Machine
+import ArmadaLean.Types.Reachable
 import ArmadaLean.Nitro.Strategy
 import ArmadaLean.Nitro.Lemmas
+
+section
+
+open ArmadaLean.Nitro
+
+variable {E : Type} [DecidableEq E]
+
+/-- `Nitro.chain apps`: the chain alone as a `Machine`, from
+    `Adjudicator.genesis` by one `Step` at a time. -/
+def Nitro.chain (apps : Apps E) : Machine (Adjudicator E) where
+  init := fun s => s = Adjudicator.genesis
+  step := Step apps
+
+/-- `Nitro.chain apps`'s `Machine.Reachable` is exactly `Adjudicator.lean`'s
+    `Reachable apps` (`Adjudicator.lean:308`): both are the empty state
+    closed under `Step apps` by `Relation.ReflTransGen`. -/
+theorem Nitro.chain_reachable_iff {apps : Apps E} {s : Adjudicator E} :
+    (Nitro.chain apps).Reachable s ↔ Reachable apps s := by
+  constructor
+  · rintro ⟨s₀, rfl, hsteps⟩
+    exact hsteps
+  · intro hr
+    exact ⟨Adjudicator.genesis, rfl, hr⟩
+
+/-- `Nitro.signedChain apps signed`: the chain alone as a `Machine` whose steps
+    use only the signatures in `signed` (`SignedStep`, `Adjudicator.lean:323`),
+    from `Adjudicator.genesis`. Its reachable states are `ReachableSigned apps
+    signed` (`Adjudicator.lean:331`; SATP:168: forging a signature is
+    infeasible), so a statement over them takes the type
+    `ReachableState (Nitro.signedChain apps signed)` (operator decision
+    2026-10-31: reachability is a type). -/
+def Nitro.signedChain (apps : Apps E) (signed : List (Participant × State E)) :
+    Machine (Adjudicator E) where
+  init := fun s => s = Adjudicator.genesis
+  step := SignedStep apps signed
+
+/-- `Nitro.signedChain apps signed`'s `Machine.Reachable` is exactly
+    `ReachableSigned apps signed` (`Adjudicator.lean:331`): both are the empty
+    state closed under `SignedStep apps signed` by `Relation.ReflTransGen`. -/
+theorem Nitro.signedChain_reachable_iff {apps : Apps E} {signed : List (Participant × State E)}
+    {s : Adjudicator E} :
+    (Nitro.signedChain apps signed).Reachable s ↔ ReachableSigned apps signed s := by
+  constructor
+  · rintro ⟨s₀, rfl, hsteps⟩
+    exact hsteps
+  · intro hr
+    exact ⟨Adjudicator.genesis, rfl, hr⟩
+
+end
 
 namespace ArmadaLean.Nitro
 
@@ -184,22 +234,10 @@ def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
     (∃ m : AdvMove E, T.feasible net m ∧ (∀ op, m ≠ .land op) ∧ net' = net.applyAdv apps m) ∨
     (∃ a : Address E, ∃ e x : Coins, net' = net.applyAdv apps (.land (.deposit a e x)))
 
-/-- `Nitro.chain apps`: the chain alone as a `Machine`, from
-    `Adjudicator.genesis` by one `Step` at a time. -/
-def Nitro.chain (apps : Apps E) : Machine (Adjudicator E) where
-  init := fun s => s = Adjudicator.genesis
-  step := Step apps
-
-/-- `Nitro.chain apps`'s `Machine.Reachable` is exactly `Adjudicator.lean`'s
-    `Reachable apps` (`Adjudicator.lean:308`): both are the empty state
-    closed under `Step apps` by `Relation.ReflTransGen`. -/
-theorem Nitro.chain_reachable_iff {apps : Apps E} {s : Adjudicator E} :
-    (Nitro.chain apps).Reachable s ↔ Reachable apps s := by
-  constructor
-  · rintro ⟨s₀, rfl, hsteps⟩
-    exact hsteps
-  · intro hr
-    exact ⟨Adjudicator.genesis, rfl, hr⟩
+/-- The reachable states of `p`'s own machine (`Nitro.participant`), as a type
+    (`ArmadaLean/Types/Reachable.lean`; operator decision 2026-10-31). -/
+abbrev Nitro.ReachableParticipant (apps : Apps E) {p : Participant} (T : Threat E p) : Type :=
+  ReachableState (Nitro.participant apps T)
 
 /-- **The chain of a reachable network state is reachable.** By
     `Machine.invariant` over `Nitro.participant apps T`, with
@@ -632,6 +670,11 @@ def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) wh
       (∀ caller op, m ≠ .chain caller op) ∧ (∀ op, m ≠ .land op) ∧
       n' = Network.applyAdv apps n p m) ∨
     (∃ c : FixedPart, ∃ e x : Coins, x ≤ n.wallet p ∧ n' = Network.deposit n p (.channel c) e x)
+
+/-- The reachable states of the network game (`Nitro.network`), as a type
+    (`ArmadaLean/Types/Reachable.lean`; operator decision 2026-10-31). -/
+abbrev Nitro.ReachableNetwork (apps : Apps E) (Ts : Threats E apps) : Type :=
+  ReachableState (Nitro.network apps Ts)
 
 /-- **The chain of a reachable `Network` is reachable.** By
     `Machine.invariant`, using `Network.applyHonest_chain_reachable` /
