@@ -163,7 +163,25 @@ trivially satisfies it (no tokens, no notes), and `step_preserves_invariant` sho
 `Step` preserves it, using `transact_balance`/`transactOwned_balance` (which themselves
 derive from `transact_value_conserved`/`transactOwned_value_conserved` under the
 registered-shape bound `hN`/`hM`, not an assumed hypothesis) for
-`transact`/`transactOwned`, and direct construction for `shield`. -/
+`transact`/`transactOwned`, and direct construction for `shield`.
+Sources. Each step moves tokens and note value by the same amount: a shield pulls exactly
+the note's value into the pool and checks the received amount,
+`require(balanceAfter - balanceBefore == base, …)` (ShieldModule.sol:300-309); an unshield
+pays exactly the unshield note's value out, `token.safeTransfer(recipient, _note.value)`
+(TransactModule.sol:406-422); a spend marks each input note's nullifier once
+(TransactModule.sol:379-386); and a proof's inputs equal its outputs, `sumIn === sumOut`
+(Transact.circom:143 at commit `e79919d`). S-RG ("RAILGUN Core System & Protocol",
+`ArmadaLean.Pool` module comment) states the same split: "Deposit amount + input amounts =
+withdrawal amount + output amounts, so no one can create tokens out of thin air", and the
+contract "transfers tokens from the user wallet to itself … or transfers tokens from itself
+to the specified user wallet address". armada-poc states this exact invariant as a Foundry
+invariant test, `invariant_poolCoversUnspentNotesPerToken`: `assertEq(usdc.balanceOf(address(pool)),
+handler.ghostTotal(address(usdc)), "USDC notes not backed")`
+(PrivacyPoolSolvencyInvariant.t.sol:475-478; upstream `64436c14` extends it to the yield
+vault's shares, :617-621). RAILGUN's documentation: "The Merkle Tree keeps track of all
+balances held by 0zk addresses in the system which can only be updated if proof that passes
+the cryptographic validation rules is submitted to the RAILGUN smart contracts"
+(docs.railgun.org/wiki/learn/using-private-tokens, line 5). -/
 theorem core_invariant {s : PoolState} (h : Reachable s) :
     HeldInvariant s := by
   induction h with
