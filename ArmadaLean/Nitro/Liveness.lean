@@ -4625,6 +4625,7 @@ theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat 
     (hdur : 2 * T.ε ≤ c.challengeDuration) {net1 net2 : NetworkState E p} {m : AdvMove E}
     (hfeas : T.feasible net1 m) (hnotick : ∀ dt, m ≠ .tick dt) (hnoland : ∀ op, m ≠ .land op)
     (hεbound : net2.chain.now < net1.chain.now + T.ε)
+    (hnow : (net1.applyAdv apps m).chain.now ≤ net2.chain.now)
     (hsent : ∀ t0 ∈ net1.sent, t0.state.channel = c →
       (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state ∨ t0.state.outcome = Ω2) ∧
       (t0.state.isFinal = true → t0.state.outcome = Ω1 ∨ t0.state.outcome = Ω2))
