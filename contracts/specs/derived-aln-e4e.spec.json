@@ -1,0 +1,124 @@
+{
+  "id": "derived-aln-e4e",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `ledger_offload_funds_subchannel` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `ledger_offload_funds_subchannel`'s proof body is `sorry`. `scripts/check.sh --json ledger_offload_funds_subchannel` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json ledger_offload_funds_subchannel` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem ledger_offload_funds_subchannel",
+  "restatement": "The theorem `ledger_offload_funds_subchannel` in `ArmadaLean/Nitro/Liveness.lean` needs a real proof. Its proof body now reads `sorry`. Lean does not check a `sorry` proof. A `sorry` proof is an unverified claim dressed as a proven one. `docs/how-to-verify.md` warns that a `sorry` proof can fake a result. The worker must write a real proof of the theorem's current stated claim. The worker must not change the theorem's statement text. The worker must keep the whole project building. A person confirms the fix by running `scripts/check.sh --json ledger_offload_funds_subchannel` from the repo root. The printed JSON object's `theorem_in_sorry` field must read `false`. Its `build_ok` field must read `true`. Its `signatures_ok` field must read `true`.",
+  "restatement_clauses": [
+    {
+      "id": "no_sorry",
+      "text": "`ledger_offload_funds_subchannel`'s own proof body in `ArmadaLean/Nitro/Liveness.lean` contains no `sorry`."
+    },
+    {
+      "id": "build_ok",
+      "text": "The project still builds after the change. `lake build` exits 0."
+    },
+    {
+      "id": "statement_unchanged",
+      "text": "The theorem's stated claim, its type signature, keeps the same text as before the change."
+    }
+  ],
+  "goal": "Replace the `sorry` in `ledger_offload_funds_subchannel`'s proof body with a complete, checked Lean proof of its unchanged stated claim. Keep the project building.",
+  "acceptance_criteria": [
+    "A person runs the project's check script and reads the printed result for this theorem. The result shows the theorem's own proof no longer stands in a placeholder in place of a real proof.",
+    "A person runs the project's check script and reads the printed result. The result shows the whole project still compiles.",
+    "A person runs the project's check script and reads the printed result. The result shows no theorem's stated claim changed text."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "A person runs the project's check script and reads the printed result for this theorem. The result shows the theorem's own proof no longer stands in a placeholder in place of a real proof."
+    },
+    {
+      "id": "c2",
+      "text": "A person runs the project's check script and reads the printed result. The result shows the whole project still compiles."
+    },
+    {
+      "id": "c3",
+      "text": "A person runs the project's check script and reads the printed result. The result shows no theorem's stated claim changed text."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "A person runs the project's check script and reads the printed result for this theorem. The result shows the theorem's own proof no longer stands in a placeholder in place of a real proof.",
+      "proves": "The theorem's own proof body no longer contains a sorry placeholder.",
+      "restatement_clause_id": "no_sorry",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_offload_funds_subchannel"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "A person runs the project's check script and reads the printed result. The result shows the whole project still compiles.",
+      "proves": "The new proof does not break the project's build.",
+      "restatement_clause_id": "build_ok",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_offload_funds_subchannel"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "description": "A person runs the project's check script and reads the printed result. The result shows no theorem's stated claim changed text.",
+      "proves": "The theorem's statement stayed the same while its proof was completed.",
+      "restatement_clause_id": "statement_unchanged",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "ledger_offload_funds_subchannel"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
