@@ -2699,79 +2699,44 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
           cases h : net1.chain.apply apps caller op with
           | none => exact Or.inl ⟨T0, ho, hT0⟩
           | some s' =>
-            have hfo1 : net1.chain.finalOutcome c.address = none := by
-              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ho,
-                ChannelStatus.finalOutcome_open]
-            have hU : ∀ ss' ∈ op.proofStates, p ∈ ss'.signers →
-                ∃ x ∈ net1.sent, x.state = ss'.state :=
-              fun ss' hmem hsig => (hbounds.unforgeable net1 caller op hfeas ss' hmem).1 hsig
-            cases op with
-            | deposit a e x =>
-              obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-              exact Or.inl ⟨T0, by rw [Adjudicator.statusOf_of_status hs]; exact ho, hT0⟩
-            | tick dt =>
-              have hs' : net1.chain.tick dt = s' := by simpa using h
-              subst hs'
-              exact Or.inl ⟨T0, by rw [Adjudicator.tick_statusOf]; exact ho, hT0⟩
-            | transfer a b =>
-              by_cases hac : a = c
-              · subst hac
-                obtain ⟨o, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
-                rw [hfo1] at hfo; exact absurd hfo (by simp)
-              · obtain ⟨_, _, _, _, _, _, _, _, hs, _, _, _⟩ := Adjudicator.transfer_some h
-                exact Or.inl ⟨T0, by
-                  rw [Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus,
-                    if_neg (Ne.symm hac)]; exact ho, hT0⟩
-            | reclaim l v =>
-              by_cases hlc : l = c
-              · subst hlc
-                obtain ⟨oL, -, -, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.reclaim_some h
-                rw [hfo1] at hfo; exact absurd hfo (by simp)
-              · obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hsr, _, _⟩ := Adjudicator.reclaim_some h
-                exact Or.inl ⟨T0, by
-                  rw [hsr, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hlc)]; exact ho, hT0⟩
-            | challenge c' proof cand =>
-              by_cases hcc : c' = c
-              · subst hcc
-                obtain ⟨⟨-, hs, -, hmode⟩, rfl⟩ := Adjudicator.challenge_some h
+            by_cases htarget : Op.targets op c
+            · have hU : ∀ ss' ∈ op.proofStates, p ∈ ss'.signers →
+                  ∃ x ∈ net1.sent, x.state = ss'.state :=
+                fun ss' hmem hsig => (hbounds.unforgeable net1 caller op hfeas ss' hmem).1 hsig
+              have hfo1 : net1.chain.finalOutcome c.address = none := by
+                simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ho,
+                  ChannelStatus.finalOutcome_open]
+              rcases Op.latest_record_step h htarget hfo1 with
+                  ⟨proof, cand, hop, hs, -, hmode, hnew⟩ |
+                  ⟨proof, cand, hop, hs, -, hlt2, _⟩ |
+                  ⟨ss', hop, hcp, _⟩
+              · subst hop
                 have hcbd : cand.turnNum ≤ ss.state.turnNum := hcb proof cand hU hs
                 rcases hmode with ⟨-, hle2⟩ | ⟨hmo, -⟩
                 · rw [ho, ChannelStatus.turnNumRecord_open] at hle2
                   refine Or.inr ⟨cand.turnNum,
-                    Challenge.mk cand (net1.chain.now + c'.challengeDuration),
-                    by rw [Adjudicator.statusOf_setStatus, if_pos rfl], by omega, ?_⟩
+                    Challenge.mk cand (net1.chain.now + c.challengeDuration), hnew, by omega, ?_⟩
                   have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-                  have hge : T.ε ≤ c'.challengeDuration := le_trans hself hdur
+                  have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
                   exact lt_of_lt_of_le hεbound (Nat.add_le_add_left hge net1.chain.now)
                 · exfalso
                   rw [Adjudicator.mode_eq, ho] at hmo
                   simp [ChannelStatus.mode_open] at hmo
-              · obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
-                exact Or.inl ⟨T0, by
-                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact ho, hT0⟩
-            | checkpoint c' proof cand =>
-              by_cases hcc : c' = c
-              · exfalso; subst hcc
-                obtain ⟨⟨-, hs, -, hlt2⟩, -⟩ := Adjudicator.checkpoint_some h
+              · subst hop
+                exfalso
                 have hcbd : cand.turnNum ≤ ss.state.turnNum := hcb proof cand hU hs
                 rw [ho, ChannelStatus.turnNumRecord_open] at hlt2
                 omega
-              · obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
-                exact Or.inl ⟨T0, by
-                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact ho, hT0⟩
-            | conclude c' ss' =>
-              by_cases hcc : c' = c
-              · exfalso; subst hcc
-                obtain ⟨⟨-, hproof'⟩, -⟩ := Adjudicator.conclude_some h
-                have hp' : p ∈ ss'.signers := hproof'.2.2 p (hproof'.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c' ss').proofStates := by simp [Op.proofStates]
+              · subst hop
+                exfalso
+                have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
-                have hnf := (hsent x hxmem (by rw [hxeq]; exact hproof'.1)).2
-                have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hproof'.2.1
+                have hnf := (hsent x hxmem (by rw [hxeq]; exact hcp.1)).2
+                have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hcp.2.1
                 simp [hnf] at hxfinal
-              · obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
-                exact Or.inl ⟨T0, by
-                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact ho, hT0⟩
+            · rw [statusOf_apply_of_not_targets h htarget]
+              exact Or.inl ⟨T0, ho, hT0⟩
         · have hmono : net1.chain.now ≤ net2.chain.now :=
             le_trans (NetworkState.applyAdv_now_le apps net1 (.chain caller op)) hrest.now_le
           have hltdl : net1.chain.now < ch.deadline := lt_of_le_of_lt hmono hdd
@@ -2781,71 +2746,37 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
           cases h : net1.chain.apply apps caller op with
           | none => exact Or.inr ⟨T0, ch, hst, hT0, hdd⟩
           | some s' =>
-            have hfo1 : net1.chain.finalOutcome c.address = none := by
-              simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hst,
-                ChannelStatus.finalOutcome_challenged, if_neg (not_le.mpr hltdl)]
-            have hU : ∀ ss' ∈ op.proofStates, p ∈ ss'.signers →
-                ∃ x ∈ net1.sent, x.state = ss'.state :=
-              fun ss' hmem hsig => (hbounds.unforgeable net1 caller op hfeas ss' hmem).1 hsig
-            cases op with
-            | deposit a e x =>
-              obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
-              exact Or.inr ⟨T0, ch, by rw [Adjudicator.statusOf_of_status hs]; exact hst, hT0, hdd⟩
-            | tick dt =>
-              have hs' : net1.chain.tick dt = s' := by simpa using h
-              subst hs'
-              exact Or.inr ⟨T0, ch, by rw [Adjudicator.tick_statusOf]; exact hst, hT0, hdd⟩
-            | transfer a b =>
-              by_cases hac : a = c
-              · subst hac
-                obtain ⟨o, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_some h
-                rw [hfo1] at hfo; exact absurd hfo (by simp)
-              · obtain ⟨_, _, _, _, _, _, _, _, hs, _, _, _⟩ := Adjudicator.transfer_some h
-                exact Or.inr ⟨T0, ch, by
-                  rw [Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus,
-                    if_neg (Ne.symm hac)]; exact hst, hT0, hdd⟩
-            | reclaim l v =>
-              by_cases hlc : l = c
-              · subst hlc
-                obtain ⟨oL, -, -, -, -, hfo, -, -, -, -, -, -, -, -⟩ := Adjudicator.reclaim_some h
-                rw [hfo1] at hfo; exact absurd hfo (by simp)
-              · obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hsr, _, _⟩ := Adjudicator.reclaim_some h
-                exact Or.inr ⟨T0, ch, by
-                  rw [hsr, Adjudicator.statusOf_setStatus, if_neg (Ne.symm hlc)]; exact hst, hT0,
-                  hdd⟩
-            | challenge c' proof cand =>
-              by_cases hcc : c' = c
-              · exfalso; subst hcc
-                obtain ⟨⟨-, hs, -, hmode⟩, -⟩ := Adjudicator.challenge_some h
+            by_cases htarget : Op.targets op c
+            · have hU : ∀ ss' ∈ op.proofStates, p ∈ ss'.signers →
+                  ∃ x ∈ net1.sent, x.state = ss'.state :=
+                fun ss' hmem hsig => (hbounds.unforgeable net1 caller op hfeas ss' hmem).1 hsig
+              have hfo1 : net1.chain.finalOutcome c.address = none := by
+                simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hst,
+                  ChannelStatus.finalOutcome_challenged, if_neg (not_le.mpr hltdl)]
+              rcases Op.latest_record_step h htarget hfo1 with
+                  ⟨proof, cand, hop, hs, -, hmode, _⟩ |
+                  ⟨proof, cand, hop, hs, -, hlt2, _⟩ |
+                  ⟨ss', hop, hcp, _⟩
+              · subst hop
+                exfalso
                 have hcbd : cand.turnNum ≤ ss.state.turnNum := hcb proof cand hU hs
                 rcases hmode with ⟨hmo, -⟩ | ⟨-, hlt2⟩
                 · rw [hm1] at hmo; exact absurd hmo (by decide)
                 · rw [hst, ChannelStatus.turnNumRecord_challenged] at hlt2; omega
-              · obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
-                exact Or.inr ⟨T0, ch, by
-                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact hst, hT0, hdd⟩
-            | checkpoint c' proof cand =>
-              by_cases hcc : c' = c
-              · exfalso; subst hcc
-                obtain ⟨⟨-, hs, -, hlt2⟩, -⟩ := Adjudicator.checkpoint_some h
+              · subst hop
+                exfalso
                 have hcbd : cand.turnNum ≤ ss.state.turnNum := hcb proof cand hU hs
                 rw [hst, ChannelStatus.turnNumRecord_challenged] at hlt2; omega
-              · obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
-                exact Or.inr ⟨T0, ch, by
-                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact hst, hT0, hdd⟩
-            | conclude c' ss' =>
-              by_cases hcc : c' = c
-              · exfalso; subst hcc
-                obtain ⟨⟨-, hproof'⟩, -⟩ := Adjudicator.conclude_some h
-                have hp' : p ∈ ss'.signers := hproof'.2.2 p (hproof'.1 ▸ hp)
-                have hmem : ss' ∈ (Op.conclude c' ss').proofStates := by simp [Op.proofStates]
+              · subst hop
+                exfalso
+                have hp' : p ∈ ss'.signers := hcp.2.2 p (hcp.1 ▸ hp)
+                have hmem : ss' ∈ (Op.conclude c ss').proofStates := by simp [Op.proofStates]
                 obtain ⟨x, hxmem, hxeq⟩ := hU ss' hmem hp'
-                have hnf := (hsent x hxmem (by rw [hxeq]; exact hproof'.1)).2
-                have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hproof'.2.1
+                have hnf := (hsent x hxmem (by rw [hxeq]; exact hcp.1)).2
+                have hxfinal : x.state.isFinal = true := by rw [hxeq]; exact hcp.2.1
                 simp [hnf] at hxfinal
-              · obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
-                exact Or.inr ⟨T0, ch, by
-                  rw [Adjudicator.statusOf_setStatus, if_neg (Ne.symm hcc)]; exact hst, hT0, hdd⟩
+            · rw [statusOf_apply_of_not_targets h htarget]
+              exact Or.inr ⟨T0, ch, hst, hT0, hdd⟩
     have hbase' := step hbase
     have hεbound' : net2.chain.now < (net1.applyAdv apps m).chain.now + T.ε :=
       lt_of_lt_of_le hεbound (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps net1 m) T.ε)
