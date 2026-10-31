@@ -15,4 +15,10 @@ lean_lib «ArmadaLean» where
   -- whole checked environment for `Machine` values, so `lake build` must
   -- build it independently (`ArmadaLean.lean` cannot import it back without
   -- a cycle). See `ArmadaLean/Machines.lean`'s own doc comment.
+  -- Mathlib's `says` re-runs every recorded search when the environment variable `CI`
+  -- is set (`Mathlib/Tactic/Says.lean`). Agent shells here set `CI=true`, which doubled
+  -- the search cost of every build (measured 2026-10-31). Normal builds run only the
+  -- recorded proof; `scripts/verify_says.sh` re-verifies on purpose
+  -- (`-Dsays.verify=true`). type-doctrine.md section 4a rule 5.
+  leanOptions := #[⟨`weak.says.no_verify_in_CI, true⟩]
   roots := #[`ArmadaLean, `ArmadaLean.Machines]
