@@ -475,7 +475,15 @@ def process_file(path: str) -> dict:
         cursor = 0
         located = []  # (start, end, record)
         for rec in resolved_records:
-            idx = current.find(rec["marker"], cursor)
+            # Anchor the search to the record's own original line. Two
+            # records on different lines can produce byte-identical marker
+            # text (same says-replacement), and a file already carrying an
+            # earlier identical marker from a previous run (a site this
+            # round did not touch) would otherwise match first, mapping
+            # this record to the WRONG location and corrupting it on
+            # revert.
+            start_hint = max(cursor, lstarts[rec["line"]])
+            idx = current.find(rec["marker"], start_hint)
             if idx == -1:
                 continue
             located.append((idx, idx + len(rec["marker"]), rec))
