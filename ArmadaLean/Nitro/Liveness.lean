@@ -2322,20 +2322,22 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
     or below `ss.state.turnNum`, or challenged at a turn at or below it (or matching
     `ss.state`), with a deadline still ahead") is preserved, decoupled from its own `RoundSeq`
     endpoint: the deadline bound is checked against an independently-fixed `D` (with
-    `net'.chain.now ≤ D` supplied once), mirroring `latest_round_keeps_status_nil_prelanding`.
-    No `hsupp`-derived turn bound is needed on the escalating branch here (unlike the POST-land
-    `late_round_keeps_status_nil`): any successful challenge/checkpoint's own candidate is
-    already at or below `ss.state.turnNum` by `hsupp` alone, which is exactly the BELOW
-    conclusion's own shape. Used by `late_round_keeps_status` to carry the PRE-land invariant
-    from `net` to the state right before `p`'s own checkpoint call lands, against the ROUND's
-    own fixed end rather than that segment's own endpoint. -/
+    `net'.chain.now ≤ D` supplied once). The window premise is the weakest one the proof
+    uses: `D < net.chain.now + c.challengeDuration`, so a challenge registered anywhere in the
+    segment has its deadline after `D`. A caller with the round's own ε-bound and
+    `2 * T.ε ≤ c.challengeDuration` derives it in one step. No `hsupp`-derived turn bound is
+    needed on the escalating branch here (unlike the POST-land `late_round_keeps_status_nil`):
+    any successful challenge/checkpoint's own candidate is already at or below
+    `ss.state.turnNum` by `hsupp` alone, which is exactly the BELOW conclusion's own shape.
+    Used by `late_round_keeps_status` to carry the PRE-land invariant from `net` to the state
+    right before `p`'s own checkpoint call lands, against the ROUND's own fixed end rather
+    than that segment's own endpoint. -/
 theorem late_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {D : Time}
-    (hc : apps c.appDef = consensusRules) (hp : p ∈ c.participants)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) :
+    (hc : apps c.appDef = consensusRules) (hp : p ∈ c.participants) :
     ∀ {net net' : NetworkState E p} {t : Time}, Threat.RoundSeq apps T t [] net net' →
       net'.chain.now ≤ D →
-      D < net.chain.now + T.ε →
+      D < net.chain.now + c.challengeDuration →
       (∀ t0 ∈ net.sent, t0.state.channel = c →
         (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state) ∧ t0.state.isFinal = false) →
       ((∃ t0, net.chain.statusOf c = .open t0 ∧ t0 ≤ ss.state.turnNum) ∨
@@ -2344,29 +2346,29 @@ theorem late_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant}
       (∃ t0, net'.chain.statusOf c = .open t0 ∧ t0 ≤ ss.state.turnNum) ∨
         (∃ t0 ch, net'.chain.statusOf c = .challenged t0 ch ∧
           (t0 < ss.state.turnNum ∨ ch.state = ss.state) ∧ D < ch.deadline) := by
-  intro net net' t hseq hDbound hεbound hsent hbase
+  intro net net' t hseq hDbound hcdbound hsent hbase
   have hres := Threat.RoundSeq.nil_invariant
-    (Inv := fun n => (D < n.chain.now + T.ε) ∧
+    (Inv := fun n => (D < n.chain.now + c.challengeDuration) ∧
       (∀ t0 ∈ n.sent, t0.state.channel = c →
         (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state) ∧ t0.state.isFinal = false) ∧
       ((∃ t0, n.chain.statusOf c = .open t0 ∧ t0 ≤ ss.state.turnNum) ∨
         (∃ t0 ch, n.chain.statusOf c = .challenged t0 ch ∧
           (t0 < ss.state.turnNum ∨ ch.state = ss.state) ∧ D < ch.deadline)))
-    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hεbound, hsent, hbase⟩
+    hseq ⟨fun _ h _ => (h : False).elim, ?_, ?_, ?_⟩ ⟨hcdbound, hsent, hbase⟩
   · exact hres.2.2
   · intro n ss' hnow _ ⟨hεb, hsnt, hb⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
-      (.deliver ss')) T.ε), by rw [NetworkState.applyAdv_sent]; exact hsnt, hb⟩
+      (.deliver ss')) c.challengeDuration), by rw [NetworkState.applyAdv_sent]; exact hsnt, hb⟩
   · intro n dt hnow _ ⟨hεb, hsnt, hb⟩
     refine ⟨lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
-      (.tick dt)) T.ε), by rw [NetworkState.applyAdv_sent]; exact hsnt, ?_⟩
+      (.tick dt)) c.challengeDuration), by rw [NetworkState.applyAdv_sent]; exact hsnt, ?_⟩
     rcases hb with ⟨t0, ho, hle⟩ | ⟨t0, ch, hst, hdis, hdd⟩
     · exact Or.inl ⟨t0, by simpa [NetworkState.applyAdv] using ho, hle⟩
     · exact Or.inr ⟨t0, ch, by simpa [NetworkState.applyAdv] using hst, hdis, hdd⟩
   · intro n caller op hnow hfeas ⟨hεb, hsnt, hb⟩
-    have hεb' : D < (n.applyAdv apps (.chain caller op)).chain.now + T.ε :=
+    have hεb' : D < (n.applyAdv apps (.chain caller op)).chain.now + c.challengeDuration :=
       lt_of_lt_of_le hεb (Nat.add_le_add_right (NetworkState.applyAdv_now_le apps n
-        (.chain caller op)) T.ε)
+        (.chain caller op)) c.challengeDuration)
     have hsnt' : ∀ t0 ∈ (n.applyAdv apps (.chain caller op)).sent, t0.state.channel = c →
         (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state) ∧ t0.state.isFinal = false := by
       rw [NetworkState.applyAdv_sent]; exact hsnt
@@ -2403,16 +2405,10 @@ theorem late_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant}
               ⟨ss', hop, hcp, _⟩
           · subst hop
             rcases hsupp proof cand hU hs with hlt | heqc
-            · refine Or.inr ⟨cand.turnNum,
-                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inl hlt, ?_⟩
-              have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
-              exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
-            · refine Or.inr ⟨cand.turnNum,
-                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inr heqc, ?_⟩
-              have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
-              exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
+            · exact Or.inr ⟨cand.turnNum,
+                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inl hlt, hεb⟩
+            · exact Or.inr ⟨cand.turnNum,
+                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inr heqc, hεb⟩
           · subst hop
             refine Or.inl ⟨cand.turnNum, hnew, ?_⟩
             rcases hsupp proof cand hU hs with hlt | heqc
@@ -2447,16 +2443,10 @@ theorem late_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant}
               ⟨ss', hop, hcp, _⟩
           · subst hop
             rcases hsupp proof cand hU hs with hlt | heqc
-            · refine Or.inr ⟨cand.turnNum,
-                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inl hlt, ?_⟩
-              have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
-              exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
-            · refine Or.inr ⟨cand.turnNum,
-                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inr heqc, ?_⟩
-              have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
-              exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
+            · exact Or.inr ⟨cand.turnNum,
+                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inl hlt, hεb⟩
+            · exact Or.inr ⟨cand.turnNum,
+                Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inr heqc, hεb⟩
           · subst hop
             refine Or.inl ⟨cand.turnNum, hnew, ?_⟩
             rcases hsupp proof cand hU hs with hlt | heqc
@@ -2513,8 +2503,11 @@ theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E 
       hpost.now_le
   have hεbound1 : net'.chain.now < n1.chain.now + T.ε :=
     lt_of_lt_of_le hεbound (Nat.add_le_add_right hpre.now_le T.ε)
-  have hbase1 := late_round_keeps_status_nil_prelanding hbounds hc hp hdur
-    (D := net'.chain.now) hpre hmono0 hεbound hsent hbase
+  have hcdbound : net'.chain.now < net.chain.now + c.challengeDuration :=
+    lt_of_lt_of_le hεbound (Nat.add_le_add_left
+      (le_trans (by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε) hdur) net.chain.now)
+  have hbase1 := late_round_keeps_status_nil_prelanding hbounds hc hp
+    (D := net'.chain.now) hpre hmono0 hcdbound hsent hbase
   have hbase_land :
       (∃ T0, (n1.applyAdv apps (.land (Op.checkpoint c [ss] ss.state))).chain.statusOf c =
         .open T0 ∧ ss.state.turnNum ≤ T0) ∨
