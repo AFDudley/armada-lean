@@ -45,10 +45,21 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result: only the pool theorems that still wait for a proof (their types
-are approved, armada-laconic `labbook/2026-10-28-pool-symbolic-types-approval.md`),
-and the `ArmadaLean/Nitro/Liveness.lean` theorems that still wait for a proof
-(their types are approved, tag `nitro-proofs-approved-2026-10-28`).
+Expected result: only the `ArmadaLean/Nitro/Liveness.lean` theorems that still
+wait for a proof (their types are approved, tag `nitro-proofs-approved-2026-10-28`),
+and the non-vacuity witnesses of `ArmadaLean/Witness/` that are still open.
+
+The acceptance check computes the same set from Lean itself, with no stored list:
+
+```bash
+scripts/check.sh
+```
+
+It prints one `SORRY <name>` line per spec theorem whose `#print axioms` contains
+`sorryAx`, then `SORRY_COUNT <n>`, and one `WITNESS_OPEN <name>` line per open
+witness. A spec theorem is a theorem whose doc comment cites its source; its
+statement is a `Spec` definition in `ArmadaLean/Spec/`, and `lake build` fails when
+the theorem's type differs from it. `docs/spec-module-design.md` explains each check.
 
 ## 4. Audit the assumptions (the important part)
 

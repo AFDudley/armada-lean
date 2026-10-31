@@ -1,26 +1,23 @@
 # scripts/
 
 The gate's acceptance check (`.exophial/config.yaml` `gate.command`:
-`lake build && scripts/check.sh`) and its helpers.
+`lake build && scripts/check.sh`) and its helpers. Design record:
+`docs/spec-module-design.md`. The check stores no list of names, counts or
+signatures; every set it reports is computed on each run.
 
-- `check.sh` — docs/lean/verification.md section 1, moved into the tracked
-  tree and adapted for the whole `ArmadaLean` directory. Builds, checks the
-  sorry count against a ceiling, checks every theorem's axioms, checks every
-  approved theorem's statement text against `sigs-baseline.tsv`, and checks
-  the Nitro non-vacuity witness module carries no sorry
-  (docs/lean/verification.md section 5a).
-- `sigs.py` — prints `FILE<TAB>FULLNAME<TAB>SIGNATURE` for every `theorem` in
-  one or more Lean files. Tracks a namespace stack over nested
-  `namespace`/`section` blocks, so a theorem declared inside two nested
-  namespaces gets both segments in its `FULLNAME`.
+- `check.sh` — the gate entry point. It runs `spec_check.py` with its arguments
+  (`--json [THEOREM]` prints one JSON object).
+- `spec_check.py` — the check: `lake build`, then the report. It decides spec
+  membership, and prints `PASS`/`FAIL` per check, one `SORRY <name>` line per
+  open spec theorem and `SORRY_COUNT <n>`.
+- `spec_report.lean` — the report: run with `lake env lean scripts/spec_report.lean`.
+  It reads the checked environment (axioms, spec bindings, state types,
+  witnesses) and prints one JSON object.
+- `spec_lib.py` — the membership rule (doc-comment citations,
+  `writing-lean.md` §11), the out-of-scope and "Every state" markers, and Lean
+  text helpers.
+- `convert_spec.py` — the conversion to the spec-module form. It runs on any
+  branch that builds; a second run changes nothing.
 - `declsizes.py` — docs/lean/verification.md section 1's declaration-size
   script (`worker-briefs.md` design check D5).
-- `sigs-baseline.tsv` — a frozen `sigs.py` snapshot of every theorem in
-  `ArmadaLean/` at this commit. `check.sh` compares against this COMMITTED
-  file, never `git show`: the gate container's tree carries no `.git`
-  (REPO_INIT.md), so a git-based baseline compare is unreachable there and
-  silently passes every statement. Re-generate it (operator/coordinator
-  only, when a new tag ratifies a changed approved statement):
-  `python3 scripts/sigs.py $(find ArmadaLean -name '*.lean' | sort) > scripts/sigs-baseline.tsv`.
-- `git-hooks/` — `exophial init`-installed pre-commit hook scripts; see its
-  own `CLAUDE.md`.
+- `git-hooks/` — the pre-commit hook scripts; see its own `CLAUDE.md`.

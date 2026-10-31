@@ -2,8 +2,8 @@
   ArmadaLean.Machines — the machine registry, scanned, not hand-maintained.
   Operator rulings 2026-10-29 (`armada-laconic/labbook/2026-10-29-nitro-reachability-ruling.md`,
   `armada-laconic/labbook/2026-10-29-machine-types-for-approval.md`, `docs/lean/writing-lean.md`
-  §11): reachability is decided at typing time, and `scripts/check.sh`'s reachability gate must
-  see every declared `Machine` (`ArmadaLean/Machine.lean`), not a hand-typed list of state types.
+  §11): reachability is decided at typing time, and the spec check must see every declared
+  `Machine` (`ArmadaLean/Machine.lean`), not a hand-typed list of state types.
 
   A hand-written `def machines : List (Σ S : Type, Machine S) := [...]` would need one entry added
   by hand every time a worker declares a new `Machine`. Lean checks that each entry TYPE-CHECKS,
@@ -19,9 +19,9 @@
   found by this scan with no separate registration step, because the scan does not consult source
   text or a maintained list — it consults `Lean.Environment`, the same data `lake build` itself
   used to accept the file. `lakefile.lean` lists `ArmadaLean.Machines` as a second build root
-  (alongside `ArmadaLean`) so `lake build` always runs this scan, and `scripts/reach.py` runs
-  `lake env lean ArmadaLean/Machines.lean` to capture its `MACHINE` lines and build its set of
-  system state types from them (`scripts/reach.py`'s own doc comment).
+  (alongside `ArmadaLean`) so `lake build` always runs this scan and prints the registry. The
+  spec check computes the same set of state types with `ArmadaLean.SpecTools.stateHeads`
+  (`scripts/spec_report.lean`, `docs/spec-module-design.md` §4).
 
   Lists `Pool.machine`, `Nitro.chain`, `Nitro.signedChain`, `Nitro.participant`, `Nitro.network`
   as of this writing (`ArmadaLean/PoolMachine.lean`, `ArmadaLean/Nitro/Reachable.lean`).
@@ -50,9 +50,7 @@ partial def ArmadaLean.Machines.stripForall (e : Expr) : Expr :=
 -- Every `def` in the checked environment whose statement, with its leading
 -- `∀` binders stripped, is an application `Machine S` (`ArmadaLean.Machine`,
 -- arity 1): printed as `MACHINE <name> : <S>`, one line per machine, sorted
--- by name for a stable diff. `scripts/reach.py` parses exactly this output
--- (`^MACHINE \S+ : (.+)$`); nothing else in this file's output matters to
--- it. A doc comment (`/-- -/`) cannot attach to `#eval`, so this is a plain
+-- by name for a stable diff, for a reader of the build log. A doc comment (`/-- -/`) cannot attach to `#eval`, so this is a plain
 -- comment.
 #eval show MetaM Unit from do
   let env ← getEnv
