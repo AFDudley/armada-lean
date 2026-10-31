@@ -4616,9 +4616,9 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
     `tick` and not a `land` (`Threat.RoundSeq.other`). `ConsensusSafe`
     over `net1`/`net2` carries across `m` to `net1.applyAdv apps m`/`net2`,
     and the round's own clock bound (`hεbound`) and `p`'s own sent-list
-    bound (`hsent`) carry across `m` the same way. This is
-    `verification.md` §6a's core of the 513-line block duplicated in both
-    theorems. Body `sorry` on `draft/crs-core`; see §6a. -/
+    bound (`hsent`) carry across `m` the same way. `hnow` is the clock bound of
+    the rest of the round (`Threat.RoundSeq.now_le`). This is the shared core
+    of the block that both theorems carried in full (`verification.md` §6a). -/
 theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω1 Ω2 : Outcome E}
     (hc : apps c.appDef = consensusRules) (hp : p ∈ c.participants) (hΩ1 : ss.state.outcome = Ω1)
