@@ -123,6 +123,19 @@ def Op.HonestFeasible {p : Participant} (net : NetworkState E p) : Op E → Prop
   | .tick .. => False
   | op => ∀ ss ∈ op.proofStates, net.Holds ss
 
+/-- A feasible call's own feasibility, unfolded to its one non-trivial
+    shape (`deposit`/`tick` cannot be feasible calls). -/
+theorem Op.HonestFeasible.mem {p : Participant} {net : NetworkState E p} {op : Op E}
+    (h : op.HonestFeasible net) : ∀ ss ∈ op.proofStates, net.Holds ss := by
+  cases op with
+  | deposit a e x => exact absurd h (by simp [Op.HonestFeasible])
+  | tick dt => exact absurd h (by simp [Op.HonestFeasible])
+  | transfer a b => exact h
+  | reclaim l v => exact h
+  | challenge c proof cand => exact h
+  | checkpoint c proof cand => exact h
+  | conclude c ss => exact h
+
 /-- A reaction is feasible when every one of its calls is. -/
 def Reaction.Feasible {p : Participant} (net : NetworkState E p) (r : Reaction E) : Prop :=
   ∀ op ∈ r.calls, op.HonestFeasible net
@@ -470,6 +483,45 @@ theorem Threat.Round.exists {apps : Apps E} {p : Participant} (T : Threat E p)
 def NetworkState.Unforged {p : Participant} (net : NetworkState E p) (ss : SignedState E) : Prop :=
   (p ∈ ss.signers → ∃ s ∈ net.sent, s.state = ss.state) ∧
   ∀ v, ss.state.voucher? = some v → p ∈ v.signers → ∃ s ∈ net.sent, s.state.voucher? = some v
+
+/-- A held state's own unforged-ness follows from the unforged-ness of every
+    already-received state: `Holds`'s signer clause either points straight at
+    `net.sent` or at a received state carrying the same signer, whose own
+    `Unforged` (by hypothesis) closes the loop. Likewise for the voucher
+    clause. -/
+theorem NetworkState.Holds.unforged {p : Participant} {net : NetworkState E p}
+    {ss : SignedState E} (hH : net.Holds ss)
+    (hind : ∀ r ∈ net.received, net.Unforged r) : net.Unforged ss := by
+  constructor
+  · intro hp
+    rcases hH.1 p hp with ⟨-, hs⟩ | ⟨r, hr, hreq, hrsig⟩
+    · exact hs
+    · obtain ⟨s, hs, hseq⟩ := (hind r hr).1 hrsig
+      exact ⟨s, hs, hseq.trans hreq⟩
+  · intro v hv hp
+    rcases hH.2 v hv p hp with ⟨-, hs⟩ | ⟨r, hr, hrv⟩
+    · exact hs
+    · exact (hind r hr).2 v hrv hp
+
+omit [DecidableEq E] in
+/-- `Unforged` depends only on `net.sent`: lift it across a step that
+    leaves `sent` unchanged, regardless of what else moves. -/
+theorem NetworkState.Unforged.of_sent {p : Participant} {net net' : NetworkState E p}
+    {ss : SignedState E} (hs : net.sent = net'.sent) (h : net.Unforged ss) : net'.Unforged ss := by
+  unfold NetworkState.Unforged at *
+  rw [← hs]
+  exact h
+
+omit [DecidableEq E] in
+/-- `Unforged` lifts across a step that only GROWS `sent` (e.g. an honest
+    `.react`, which appends freshly-sent states but never removes an
+    existing one): a witness in the smaller `net.sent` is still a witness
+    in the larger `net'.sent`. -/
+theorem NetworkState.Unforged.mono {p : Participant} {net net' : NetworkState E p}
+    {ss : SignedState E} (hs : net.sent ⊆ net'.sent) (h : net.Unforged ss) : net'.Unforged ss := by
+  unfold NetworkState.Unforged at *
+  exact ⟨fun hp => (h.1 hp).imp (fun s ⟨hmem, heq⟩ => ⟨hs hmem, heq⟩),
+    fun v hv hp => (h.2 v hv hp).imp (fun s ⟨hmem, heq⟩ => ⟨hs hmem, heq⟩)⟩
 
 /-- The bounds on the adversary `T`, as named hypotheses. -/
 structure Bounds (apps : Apps E) (p : Participant) (T : Threat E p) : Prop where

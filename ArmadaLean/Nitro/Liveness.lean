@@ -3471,13 +3471,6 @@ theorem JointGenuine.symm {p q : Participant} {Sp : NetworkState E p} {Sq : Netw
     fun r hr => (h.2.2.2 r hr).swap, fun r hr => (h.2.2.1 r hr).swap⟩
 
 omit [DecidableEq E] in
-theorem NetworkState.Unforged.of_sent {p : Participant} {net net' : NetworkState E p}
-    {ss : SignedState E} (hs : net.sent = net'.sent) (h : net.Unforged ss) : net'.Unforged ss := by
-  unfold NetworkState.Unforged at *
-  rw [← hs]
-  exact h
-
-omit [DecidableEq E] in
 /-- A state `x` holds carries genuine signatures of `x` and of `y`, and
     genuine vouchers of `x` and of `y`, so the adversary of `y` may submit
     it (`NetworkState.Unforged`). -/

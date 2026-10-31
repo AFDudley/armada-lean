@@ -222,6 +222,104 @@ theorem Nitro.participant_chain_reachable {apps : Apps E} {p : Participant} {T :
     · exact NetworkState.applyAdv_chain_reachable net m hP
     · exact NetworkState.applyAdv_chain_reachable net (.land (.deposit a e x)) hP
 
+
+/-- **Every received state of a reachable `Nitro.participant` is unforged**
+    (operator ruling 2026-10-31: signatures cannot be forged anywhere in
+    armada-lean). By `Machine.invariant`: the initial state's `received` is
+    empty, vacuously true; each step either leaves `received` untouched
+    (an honest `.react`/`.wait`, or an adversary `.tick`/`.chain`/`.deliver`
+    that targets no new state beyond what `Bounds` already bounds), or
+    prepends `op.proofStates` for a landing (`p`'s own, honest-feasible —
+    `Op.HonestFeasible.mem` plus `NetworkState.Holds.unforged` close the
+    loop against the inductive hypothesis — or the adversary's own
+    `.chain caller op`, bound directly by `Bounds.unforgeable`), or a
+    single `.deliver ss`, bound by `Bounds.unforgeableDeliver`. The repaired
+    step relation (`Nitro.participant`'s own doc comment) rules out the
+    adversary ever landing a call itself, so this is now sound on every
+    path that grows `received`. -/
+theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T : Threat E p}
+    (B : Bounds apps p T) {net : NetworkState E p} (h : (Nitro.participant apps T).Reachable net) :
+    ∀ ss ∈ net.received, net.Unforged ss := by
+  refine Machine.invariant (Nitro.participant apps T)
+    (P := fun net => ∀ ss ∈ net.received, net.Unforged ss) ?_ ?_ net h
+  · intro net hinit ss hss
+    rw [hinit] at hss
+    exact absurd hss (List.not_mem_nil)
+  · intro net net' hP hstep
+    rcases hstep with ⟨m, hm, rfl⟩ | ⟨op, hop, rfl⟩ | ⟨m, hm, hnoland, rfl⟩ | ⟨a, e, x, rfl⟩
+    · intro ss hss
+      have hsent : net.sent ⊆ (net.applyHonest m).sent := by
+        cases m with
+        | react r =>
+          intro x hx
+          simp only [NetworkState.applyHonest, List.mem_append]
+          exact Or.inr hx
+        | wait dt => simp [NetworkState.applyHonest]
+      have hrecv : (net.applyHonest m).received = net.received := by
+        cases m with
+        | react r => rfl
+        | wait dt => rfl
+      rw [hrecv] at hss
+      exact NetworkState.Unforged.mono hsent (hP ss hss)
+    · have hsent : net.sent = (net.applyAdv apps (.land op)).sent := by
+        cases hap : net.chain.apply apps p op with
+        | none => simp [NetworkState.applyAdv, hap]
+        | some s' => simp [NetworkState.applyAdv, hap]
+      intro ss hss
+      cases hap : net.chain.apply apps p op with
+      | none =>
+        simp only [NetworkState.applyAdv, hap] at hss
+        exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+      | some s' =>
+        simp only [NetworkState.applyAdv, hap, List.mem_append] at hss
+        rcases hss with hss | hss
+        · exact NetworkState.Unforged.of_sent hsent
+            (NetworkState.Holds.unforged (Op.HonestFeasible.mem hop ss hss) hP)
+        · exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+    · have hsent : net.sent = (net.applyAdv apps m).sent := by
+        cases m with
+        | chain caller op =>
+          cases hap : net.chain.apply apps caller op with
+          | none => simp [NetworkState.applyAdv, hap]
+          | some s' => simp [NetworkState.applyAdv, hap]
+        | deliver ss' => simp [NetworkState.applyAdv]
+        | tick dt => simp [NetworkState.applyAdv]
+        | land op => exact absurd rfl (hnoland op)
+      intro ss hss
+      cases m with
+      | chain caller op =>
+        cases hap : net.chain.apply apps caller op with
+        | none =>
+          simp only [NetworkState.applyAdv, hap] at hss
+          exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+        | some s' =>
+          simp only [NetworkState.applyAdv, hap, List.mem_append] at hss
+          rcases hss with hss | hss
+          · exact NetworkState.Unforged.of_sent hsent (B.unforgeable net caller op hm ss hss)
+          · exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+      | deliver ss' =>
+        simp only [NetworkState.applyAdv, List.mem_cons] at hss
+        rcases hss with heq | hss
+        · rw [heq]
+          exact NetworkState.Unforged.of_sent hsent (B.unforgeableDeliver net ss' hm)
+        · exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+      | tick dt =>
+        simp only [NetworkState.applyAdv] at hss
+        exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+      | land op => exact absurd rfl (hnoland op)
+    · have hsent : net.sent = (net.applyAdv apps (.land (.deposit a e x))).sent := by
+        cases hap : net.chain.apply apps p (.deposit a e x) with
+        | none => simp [NetworkState.applyAdv, hap]
+        | some s' => simp [NetworkState.applyAdv, hap]
+      intro ss hss
+      cases hap : net.chain.apply apps p (.deposit a e x) with
+      | none =>
+        simp only [NetworkState.applyAdv, hap] at hss
+        exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+      | some s' =>
+        simp only [NetworkState.applyAdv, hap, Op.proofStates, List.nil_append] at hss
+        exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+
 /-- A full network state: ONE shared chain, and each participant's own
     `sent`/`received`. Coordinator finding 2026-10-29: `Machine.interleave`
     over one `Nitro.participant` machine per participant is wrong, because
