@@ -8964,7 +8964,7 @@ theorem satp_net_pairOutcome {p : Participant} {net : NetworkState E p} {r : Rou
     reusable re-challenge witness (the proof and candidate of whichever
     checkpoint most recently won, held because D9 publishes a successful
     call's proof states and D7 lets a received state carry its voucher
-    signatures, `counter_after_adv_checkpoint`); `.challenged` and
+    signatures, `holds_of_mem_received`); `.challenged` and
     `.finalized` carry a total-preserving pair outcome
     (`satp_net_pairOutcome`). The turn stays within `M`
     (`satp_net_pairOutcome`'s own bound). -/
@@ -9180,30 +9180,6 @@ theorem SatpFinalizeInv_nil_roundSeq {apps : Apps E} {p : Participant} {T : Thre
     have hsent1' : (n1.applyAdv apps m).sent = net.sent := by
       rw [NetworkState.applyAdv_sent]; exact hsent1
     exact ih hpnil hsent1' hI1'
-
-/-- `p`'s own counter-challenge, replaying the invariant's own `.open`
-    witness `(proof, candidate)`: if it lands, the new `.challenged` status
-    carries exactly that witness's own, already-established bound; if the
-    channel has moved on and it fails, the net is unaffected
-    (`NetworkState.applyAdv_land_none`) and whatever `SatpFinalizeInv`
-    already holds carries through (`SatpFinalizeInv_unaffected`). -/
-theorem SatpFinalizeInv_land_challenge (apps : Apps E) {p : Participant} {r : Route E}
-    {alice bob : Participant} {M : Nat} {proof : SupportProof E} {candidate : State E}
-    (hturn : candidate.turnNum ≤ M)
-    (hbound : ∃ a b, PairOutcome (r.dest alice) (r.dest bob) candidate.outcome a b ∧
-      a + b = r.a0 + r.b0)
-    {net : NetworkState E p} (hI : SatpFinalizeInv r alice bob M net) :
-    SatpFinalizeInv r alice bob M (net.applyAdv apps (.land (.challenge r.V proof candidate))) := by
-  cases h : net.chain.apply apps p (.challenge r.V proof candidate) with
-  | none =>
-    exact SatpFinalizeInv_unaffected apps (.land (.challenge r.V proof candidate))
-      (by rw [NetworkState.applyAdv_land_none apps h]) hI
-  | some s' =>
-    obtain ⟨-, hseq⟩ := Adjudicator.challenge_some h
-    unfold SatpFinalizeInv
-    simp only [NetworkState.applyAdv, h]
-    rw [hseq, Adjudicator.statusOf_setStatus, if_pos rfl]
-    exact ⟨hturn, hbound⟩
 
 /-- `turnNumRecord_monotone`, restated for one successful `Adjudicator.apply`:
     the turn record of `c` only grows, except a `conclude` of `c` itself,
@@ -9535,7 +9511,8 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
     (hst : ∃ t, net.chain.statusOf r.V = .open t ∧ t ≤ 1) :
     Unbeatable apps T (fun net' => ∃ Ω a b, net'.Finalized r.V Ω ∧
       PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧ a + b = r.a0 + r.b0) net := by
-  obtain ⟨-, -, -, -, -, hVp, hVk, -⟩ := hr
+  have hr' := hr
+  obtain ⟨-, -, -, -, -, hVp, hVk, -⟩ := hr'
   have hckV : r.V.kind ≠ .ledger := by rw [hVk]; decide
   have hpV : p ∈ r.V.participants := by rw [hVp]; exact hp
   set M := virtualTurnBound r.V net.sent with hM_def
@@ -9550,8 +9527,7 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
     have hlastV : r.V.participants.getLast? = some bob := by rw [hVp]; exact hbob
     simp only [hheadV, hlastV]
     rw [if_pos (by rw [hv1])]
-    simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq]
-    exact ⟨⟨rfl, hchan⟩, hall⟩
+    simp [consensusRules, hchan, hall]
   have hI0 : SatpFinalizeInv r alice bob M net := by
     obtain ⟨t, hopen, ht1⟩ := hst
     unfold SatpFinalizeInv
@@ -9561,24 +9537,58 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
     intro ss hss
     rw [List.mem_singleton] at hss
     rw [hss]; exact hh
+  -- Nested proof: the strong induction below needs `ih` in scope.
+  have hnil : ∀ {t0 : Time} {n1 n2 : NetworkState E p}, Threat.RoundSeq apps T t0 [] n1 n2 →
+      n1.sent = net.sent → SatpFinalizeInv r alice bob M n1 →
+      n2.sent = net.sent ∧ SatpFinalizeInv r alice bob M n2 :=
+    fun hseq => SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice hbob hsent hMb hseq
   suffices hgo : ∀ budget : Nat, ∀ net' : NetworkState E p, net'.sent = net.sent →
       SatpFinalizeInv r alice bob M net' →
       M - (net'.chain.statusOf r.V).turnNumRecord ≤ budget →
-      UnbeatableIn apps T (fun _ => True)
-        (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
-          a + b = r.a0 + r.b0) net' by
+      UnbeatableIn apps T (fun _ => True) (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
+            a + b = r.a0 + r.b0) net' by
     exact hgo (M - (net.chain.statusOf r.V).turnNumRecord) net rfl hI0 (le_refl _)
   intro budget
   induction budget using Nat.strong_induction_on with
   | _ budget ih =>
     intro net' hsent' hI hbudget
+    have doneFin : ∀ (n : NetworkState E p) (tr : Nat) (f o : Outcome E),
+        SatpFinalizeInv r alice bob M n → n.chain.statusOf r.V = .finalized tr f o →
+        UnbeatableIn apps T (fun _ => True) (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
+            a + b = r.a0 + r.b0) n := by
+      intro n tr f o hIn hfeq
+      apply UnbeatableIn.done
+      unfold SatpFinalizeInv at hIn
+      rw [hfeq] at hIn
+      obtain ⟨a, b, hpo, hab⟩ := hIn
+      refine ⟨f, a, b, ?_, hpo, hab⟩
+      show n.chain.finalizedWith r.V.address = some f
+      simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hfeq,
+        ChannelStatus.finalizedWith_finalized]
+    have recurse : ∀ n : NetworkState E p, n.sent = net.sent → SatpFinalizeInv r alice bob M n →
+        (M - (n.chain.statusOf r.V).turnNumRecord < budget ∨
+          M < (n.chain.statusOf r.V).turnNumRecord) →
+        UnbeatableIn apps T (fun _ => True) (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
+            a + b = r.a0 + r.b0) n := by
+      intro n hsn hIn hlt
+      cases hsn' : n.chain.statusOf r.V with
+      | finalized tr f o => exact doneFin n tr f o hIn hsn'
+      | challenged tn ch =>
+        have htM : tn ≤ M := by
+          have h := hIn; unfold SatpFinalizeInv at h; rw [hsn'] at h; exact h.1
+        rw [hsn', ChannelStatus.turnNumRecord_challenged] at hlt
+        exact ih (M - tn) (by omega) n hsn hIn (by rw [hsn', ChannelStatus.turnNumRecord_challenged])
+      | «open» tn =>
+        have htM : tn ≤ M := by
+          have h := hIn; unfold SatpFinalizeInv at h; rw [hsn'] at h; exact h.1
+        rw [hsn', ChannelStatus.turnNumRecord_open] at hlt
+        exact ih (M - tn) (by omega) n hsn hIn (by rw [hsn', ChannelStatus.turnNumRecord_open])
     have finishChallenged : ∀ (net2 : NetworkState E p) (T0 : Nat) (ch : Challenge E),
         net2.sent = net.sent → net2.chain.statusOf r.V = .challenged T0 ch → T0 ≤ M →
         (∃ a b, PairOutcome (r.dest alice) (r.dest bob) ch.state.outcome a b ∧
           a + b = r.a0 + r.b0) →
         M - T0 ≤ budget →
-        UnbeatableIn apps T (fun _ => True)
-          (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
+        UnbeatableIn apps T (fun _ => True) (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
             a + b = r.a0 + r.b0) net2 := by
       intro net2 T0 ch hsent2 hstatus2 hT0M hbnd2 hbudget2
       by_cases hexp : ch.deadline ≤ net2.chain.now
@@ -9588,11 +9598,27 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
         show net2.chain.finalizedWith r.V.address = some ch.state.outcome
         simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hstatus2,
           ChannelStatus.finalizedWith_challenged, if_pos hexp]
-      · push_neg at hexp
+      · rw [not_le] at hexp
         refine UnbeatableIn.move (.wait (ch.deadline - net2.chain.now)) trivial trivial ?_
         intro net3 hround2
         obtain ⟨hseq2, -⟩ := hround2
-        have hsent3 : net3.sent = net.sent := by rw [← hsent2]; exact hseq2.sent_eq
+        have hI2 : SatpFinalizeInv r alice bob M net2 := by
+          unfold SatpFinalizeInv; rw [hstatus2]; exact ⟨hT0M, hbnd2⟩
+        obtain ⟨hsent3, hI3⟩ := hnil hseq2 hsent2 hI2
+        have hItick : SatpFinalizeInv r alice bob M
+            (net3.applyHonest (.wait (ch.deadline - net2.chain.now))) := by
+          show SatpFinalizeInv r alice bob M
+            (net3.applyAdv apps (.tick (ch.deadline - net2.chain.now)))
+          exact SatpFinalizeInv_tick_step apps _ hI3
+        have hsenttick : (net3.applyHonest (.wait (ch.deadline - net2.chain.now))).sent =
+            net.sent := by
+          show (net3.applyAdv apps (.tick (ch.deadline - net2.chain.now))).sent = net.sent
+          rw [NetworkState.applyAdv_sent]; exact hsent3
+        have hstatustick : (net3.applyHonest (.wait (ch.deadline - net2.chain.now))).chain.statusOf
+            r.V = net3.chain.statusOf r.V := by
+          show (net3.chain.tick (ch.deadline - net2.chain.now)).statusOf r.V =
+            net3.chain.statusOf r.V
+          exact Adjudicator.tick_statusOf _ _ _
         rcases statusOf_strict_roundSeq r.V hckV hseq2 hstatus2 with heqch | hgt | hfinr
         · apply UnbeatableIn.done
           have hmono3 : net2.chain.now ≤ net3.chain.now := hseq2.now_le
@@ -9609,54 +9635,20 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
           simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
             Adjudicator.tick_statusOf, heqch, Adjudicator.tick_now,
             ChannelStatus.finalizedWith_challenged, if_pos hge]
-        · have hI3 : SatpFinalizeInv r alice bob M net3 :=
-            (SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice hbob hsent hMb hseq2
-              hsent2 (by unfold SatpFinalizeInv; rw [hstatus2]; exact ⟨hT0M, hbnd2⟩)).2
-          have hItick : SatpFinalizeInv r alice bob M
-              (net3.applyHonest (.wait (ch.deadline - net2.chain.now))) := by
-            show SatpFinalizeInv r alice bob M
-              (net3.applyAdv apps (.tick (ch.deadline - net2.chain.now)))
-            exact SatpFinalizeInv_tick_step apps _ hI3
-          have hstatustick : (net3.applyHonest (.wait (ch.deadline - net2.chain.now))).chain.statusOf r.V = net3.chain.statusOf r.V := by
-            show (net3.chain.tick (ch.deadline - net2.chain.now)).statusOf r.V =
-              net3.chain.statusOf r.V
-            exact Adjudicator.tick_statusOf _ _ _
-          have hbudgettick : M - ((net3.applyHonest
-              (.wait (ch.deadline - net2.chain.now))).chain.statusOf r.V).turnNumRecord <
-              budget := by
-            rw [hstatustick]; omega
-          exact ih _ hbudgettick _ hsent3 hItick (le_refl _)
+        · exact recurse _ hsenttick hItick (by rw [hstatustick]; omega)
         · obtain ⟨tr, f, o, hfeq⟩ := hfinr
-          apply UnbeatableIn.done
-          have hI3 : SatpFinalizeInv r alice bob M net3 :=
-            (SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice hbob hsent hMb hseq2
-              hsent2 (by unfold SatpFinalizeInv; rw [hstatus2]; exact ⟨hT0M, hbnd2⟩)).2
-          unfold SatpFinalizeInv at hI3
-          rw [hfeq] at hI3
-          obtain ⟨a, b, hpo, hab⟩ := hI3
-          refine ⟨f, a, b, ?_, hpo, hab⟩
-          show (net3.applyHonest (.wait (ch.deadline - net2.chain.now))).chain.finalizedWith
-            r.V.address = some f
-          simp only [NetworkState.applyHonest]
-          simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
-            Adjudicator.tick_statusOf, hfeq, Adjudicator.tick_now,
-            ChannelStatus.finalizedWith_finalized]
+          exact doneFin _ tr f o hItick (by rw [hstatustick]; exact hfeq)
     cases hstatus : net'.chain.statusOf r.V with
-    | finalized t f o =>
-      apply UnbeatableIn.done
-      unfold SatpFinalizeInv at hI
-      rw [hstatus] at hI
-      obtain ⟨a, b, hpo, hab⟩ := hI
-      refine ⟨f, a, b, ?_, hpo, hab⟩
-      show net'.chain.finalizedWith r.V.address = some f
-      simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hstatus,
-        ChannelStatus.finalizedWith_finalized]
+    | finalized t f o => exact doneFin net' t f o hI hstatus
     | challenged t ch =>
+      rw [hstatus, ChannelStatus.turnNumRecord_challenged] at hbudget
       unfold SatpFinalizeInv at hI
       rw [hstatus] at hI
       obtain ⟨htM, hbnd⟩ := hI
       exact finishChallenged net' t ch hsent' hstatus htM hbnd hbudget
     | «open» t =>
+      rw [hstatus, ChannelStatus.turnNumRecord_open] at hbudget
+      have hIat := hI
       unfold SatpFinalizeInv at hI
       rw [hstatus] at hI
       obtain ⟨htM, proof, candidate, htc, hcM, hsup, hchanc, hHolds, hbnd⟩ := hI
@@ -9664,115 +9656,79 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
         (by simpa [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates] using hHolds) ?_
       intro net1 hround
       obtain ⟨net1a, hseq1, hseq2⟩ := Threat.Round.single hround
-      have hIat : SatpFinalizeInv r alice bob M net' := by
-        unfold SatpFinalizeInv; rw [hstatus]
-        exact ⟨htM, proof, candidate, htc, hcM, hsup, hchanc, hHolds, hbnd⟩
-      obtain ⟨hsent1a, hI1a⟩ :=
-        SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice hbob hsent hMb hseq1 hsent'
-          hIat
-      show UnbeatableIn apps T (fun _ => True)
-        (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
-          a + b = r.a0 + r.b0)
-        (net1.applyHonest (HonestMove.chain (.challenge r.V proof candidate)))
+      obtain ⟨hsent1a, hI1a⟩ := hnil hseq1 hsent' hIat
       rw [NetworkState.applyHonest_chain]
-      have hRest : ∀ (net_mid : NetworkState E p) (T0 : Nat) (ch0 : Challenge E), t ≤ T0 →
-          T0 ≤ M →
+      have hRest : ∀ {t0 : Time} (net_mid : NetworkState E p) (T0 : Nat) (ch0 : Challenge E),
+          t ≤ T0 → T0 ≤ M →
           (∃ a b, PairOutcome (r.dest alice) (r.dest bob) ch0.state.outcome a b ∧
             a + b = r.a0 + r.b0) →
           net_mid.sent = net.sent →
-          Threat.RoundSeq apps T net_mid.chain.now [] net_mid net1 →
+          Threat.RoundSeq apps T t0 [] net_mid net1 →
           net_mid.chain.statusOf r.V = .challenged T0 ch0 →
-          UnbeatableIn apps T (fun _ => True)
-            (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
-              a + b = r.a0 + r.b0) net1 := by
-        intro net_mid T0 ch0 htT0 hT0M hbndch0 hsentmid hseq hstatusmid
+          UnbeatableIn apps T (fun _ => True) (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
+            a + b = r.a0 + r.b0) net1 := by
+        intro t0 net_mid T0 ch0 htT0 hT0M hbndch0 hsentmid hseq hstatusmid
+        have hImid : SatpFinalizeInv r alice bob M net_mid := by
+          unfold SatpFinalizeInv; rw [hstatusmid]; exact ⟨hT0M, hbndch0⟩
+        obtain ⟨hsent1, hI1⟩ := hnil hseq hsentmid hImid
         rcases statusOf_strict_roundSeq r.V hckV hseq hstatusmid with heqch | hgt | hfinr
-        · have hsent1 : net1.sent = net.sent := by rw [← hsentmid]; exact hseq.sent_eq
-          exact finishChallenged net1 T0 ch0 hsent1 heqch hT0M hbndch0 (by omega)
-        · obtain ⟨hsent1, hI1⟩ := SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice
-            hbob hsent hMb hseq hsentmid (by unfold SatpFinalizeInv; rw [hstatusmid]; exact ⟨hT0M, hbndch0⟩)
-          exact ih _ (by omega) _ hsent1 hI1 (le_refl _)
+        · exact finishChallenged net1 T0 ch0 hsent1 heqch hT0M hbndch0 (by omega)
+        · exact recurse net1 hsent1 hI1 (by omega)
         · obtain ⟨tr, f, o, hfeq⟩ := hfinr
-          apply UnbeatableIn.done
-          obtain ⟨hsent1, hI1⟩ := SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice
-            hbob hsent hMb hseq hsentmid (by unfold SatpFinalizeInv; rw [hstatusmid]; exact ⟨hT0M, hbndch0⟩)
-          unfold SatpFinalizeInv at hI1
-          rw [hfeq] at hI1
-          obtain ⟨a, b, hpo, hab⟩ := hI1
-          refine ⟨f, a, b, ?_, hpo, hab⟩
-          show net1.chain.finalizedWith r.V.address = some f
-          simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hfeq,
-            ChannelStatus.finalizedWith_finalized]
-      have hRecurseOpen : t < (net1a.chain.statusOf r.V).turnNumRecord →
-          Threat.RoundSeq apps T net1a.chain.now [] net1a net1 →
-          UnbeatableIn apps T (fun _ => True)
-            (fun n => ∃ Ω a b, n.Finalized r.V Ω ∧ PairOutcome (r.dest alice) (r.dest bob) Ω a b ∧
-              a + b = r.a0 + r.b0) net1 := by
-        intro hgtt hseq
-        rcases turnNumRecord_mono_roundSeq hseq r.V hckV with hle | hfinr
-        · obtain ⟨hsent1, hI1⟩ := SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice
-            hbob hsent hMb hseq hsent1a hI1a
-          exact ih _ (by omega) _ hsent1 hI1 (le_refl _)
-        · obtain ⟨tr, f, o, hfeq⟩ := hfinr
-          apply UnbeatableIn.done
-          obtain ⟨hsent1, hI1⟩ := SatpFinalizeInv_nil_roundSeq A.toBounds hr hV h4M hp halice
-            hbob hsent hMb hseq hsent1a hI1a
-          unfold SatpFinalizeInv at hI1
-          rw [hfeq] at hI1
-          obtain ⟨a, b, hpo, hab⟩ := hI1
-          refine ⟨f, a, b, ?_, hpo, hab⟩
-          show net1.chain.finalizedWith r.V.address = some f
-          simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hfeq,
-            ChannelStatus.finalizedWith_finalized]
+          exact doneFin net1 tr f o hI1 hfeq
       cases hstep : net1a.chain.apply apps p (.challenge r.V proof candidate) with
       | none =>
         rw [NetworkState.applyAdv_land_none apps hstep] at hseq2
+        obtain ⟨hsent1, hI1⟩ := hnil hseq2 hsent1a hI1a
         cases hstatus1a : net1a.chain.statusOf r.V with
         | finalized t1a f1a o1a =>
-          apply UnbeatableIn.done
-          unfold SatpFinalizeInv at hI1a
-          rw [hstatus1a] at hI1a
           obtain ⟨o1', ho1'⟩ := statusOf_frozen_once_finalized_roundSeq r.V hckV hseq2 hstatus1a
-          obtain ⟨a, b, hpo, hab⟩ := hI1a
-          refine ⟨f1a, a, b, ?_, hpo, hab⟩
-          show net1.chain.finalizedWith r.V.address = some f1a
-          simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel, ho1',
-            ChannelStatus.finalizedWith_finalized]
+          exact doneFin net1 t1a f1a o1' hI1 ho1'
         | challenged t1a ch1a =>
-          unfold SatpFinalizeInv at hI1a
-          rw [hstatus1a] at hI1a
-          obtain ⟨ht1aM, hbnd1a⟩ := hI1a
+          have hI1a' := hI1a
+          unfold SatpFinalizeInv at hI1a'
+          rw [hstatus1a] at hI1a'
+          obtain ⟨ht1aM, hbnd1a⟩ := hI1a'
           have ht1at : t ≤ t1a := by
             rcases turnNumRecord_mono_roundSeq hseq1 r.V hckV with hle | hfin0
             · rw [hstatus, hstatus1a] at hle
               simpa using hle
             · obtain ⟨tr0, f0, o0, hfeq0⟩ := hfin0
               rw [hfeq0] at hstatus1a
-              exact absurd hstatus1a (by simp)
+              cases hstatus1a
           exact hRest net1a t1a ch1a ht1at ht1aM hbnd1a hsent1a hseq2 hstatus1a
         | «open» t1a =>
           have hgt1 : candidate.turnNum < t1a := by
             by_contra hcon
-            push_neg at hcon
-            apply hstep
-            unfold Adjudicator.challenge
-            rw [if_pos]
-            refine ⟨hpV, hsup, hchanc, Or.inl ⟨?_, ?_⟩⟩
-            · rw [Adjudicator.mode_eq, hstatus1a]
-            · rw [hstatus1a]; exact hcon
-          have hgtfull : t < t1a := lt_of_le_of_lt htc hgt1
-          exact hRecurseOpen (by rw [hstatus1a]; exact hgtfull) hseq2
+            rw [not_lt] at hcon
+            have hcond : p ∈ r.V.participants ∧
+                (apps r.V.appDef).supports r.V proof candidate = true ∧ candidate.channel = r.V ∧
+                ((net1a.chain.mode r.V = .open ∧
+                    (net1a.chain.statusOf r.V).turnNumRecord ≤ candidate.turnNum) ∨
+                 (net1a.chain.mode r.V = .challenge ∧
+                    (net1a.chain.statusOf r.V).turnNumRecord < candidate.turnNum)) := by
+              refine ⟨hpV, by rw [hV]; exact hsup, hchanc, Or.inl ⟨?_, ?_⟩⟩
+              · rw [Adjudicator.mode_eq, hstatus1a]; rfl
+              · rw [hstatus1a, ChannelStatus.turnNumRecord_open]; exact hcon
+            rw [Adjudicator.apply_challenge] at hstep
+            unfold Adjudicator.challenge at hstep
+            rw [if_pos hcond] at hstep
+            cases hstep
+          rcases turnNumRecord_mono_roundSeq hseq2 r.V hckV with hle | hfinr
+          · rw [hstatus1a, ChannelStatus.turnNumRecord_open] at hle
+            exact recurse net1 hsent1 hI1 (by omega)
+          · obtain ⟨tr, f, o, hfeq⟩ := hfinr
+            exact doneFin net1 tr f o hI1 hfeq
       | some s' =>
-        obtain ⟨-, hseqc⟩ := Adjudicator.challenge_some hstep
-        have hmid : (net1a.applyAdv apps (.land (.challenge r.V proof candidate))).chain.statusOf r.V = .challenged candidate.turnNum ⟨candidate, s'.now +
-              r.V.challengeDuration⟩ := by
-          rw [NetworkState.applyAdv_land_some apps hstep, hseqc, Adjudicator.statusOf_setStatus,
+        obtain ⟨-, rfl⟩ := Adjudicator.challenge_some hstep
+        have hmid : (net1a.applyAdv apps (.land (.challenge r.V proof candidate))).chain.statusOf
+            r.V = .challenged candidate.turnNum
+              ⟨candidate, net1a.chain.now + r.V.challengeDuration⟩ := by
+          rw [NetworkState.applyAdv_land_some apps hstep, Adjudicator.statusOf_setStatus,
             if_pos rfl]
         have hsentmid : (net1a.applyAdv apps (.land (.challenge r.V proof candidate))).sent =
             net.sent := by rw [NetworkState.applyAdv_sent]; exact hsent1a
-        exact hRest (net1a.applyAdv apps (.land (.challenge r.V proof candidate)))
-          candidate.turnNum ⟨candidate, s'.now + r.V.challengeDuration⟩ htc hcM hbnd hsentmid
-          hseq2 hmid
+        exact hRest _ candidate.turnNum _ htc hcM hbnd hsentmid hseq2 hmid
 
 /-- SATP-20 (Theorem 3.2, SATP:503-507). "Let d(V, Pi) be the amount debited to
     V from Pi's balances, across Li and Li−1 in Protocol 3.1. Let c(V, Pi) be

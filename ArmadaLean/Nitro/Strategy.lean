@@ -663,47 +663,4 @@ theorem holds_of_mem_received {p : Participant} {net : NetworkState E p} {ss : S
     (h : ss ∈ net.received) : net.Holds ss :=
   ⟨fun _ hq => .inr ⟨ss, h, rfl, hq⟩, fun _ hv _ _ => .inr ⟨ss, h, hv⟩⟩
 
-omit [DecidableEq E] in
-/-- A successful checkpoint leaves a status that a challenge with the SAME
-    proof and candidate, by any participant of the channel, always accepts:
-    `Adjudicator.challenge` takes an equal turn in Open mode
-    (`turnNumRecord ≤ candidate.turnNum`), and a checkpoint's own guard is
-    exactly that candidate's own support, carried forward. -/
-theorem challenge_after_checkpoint (apps : Apps E)
-    {s s' : Adjudicator E} {c : FixedPart} {proof : SupportProof E} {cand : State E}
-    {q : Participant} (hq : q ∈ c.participants) (h : s.checkpoint apps c proof cand = some s') :
-    s'.challenge apps q c proof cand =
-      some (s'.setStatus c (.challenged cand.turnNum ⟨cand, s'.now + c.challengeDuration⟩)) := by
-  unfold Adjudicator.checkpoint at h
-  split_ifs at h with hc
-  cases h
-  obtain ⟨-, hsup, hch, -⟩ := hc
-  unfold Adjudicator.challenge
-  rw [if_pos]
-  refine ⟨hq, hsup, hch, .inl ⟨?_, ?_⟩⟩
-  · simp [Adjudicator.mode, ChannelStatus.mode]
-  · simp [ChannelStatus.turnNumRecord]
-
-/-- **Right after any adversary checkpoint succeeds, every honest
-    participant can answer it with the checkpoint's own proof.** `p`
-    (a participant of `c`) holds the checkpoint's proof states, by D9's own
-    `received`-growth repair (`NetworkState.applyAdv`'s `.chain` case) and
-    D7 (`holds_of_mem_received`); its challenge with the same proof and
-    candidate succeeds (`challenge_after_checkpoint`). Used by
-    `satp_peers_can_finalize`'s counter-move after an adversary checkpoint
-    of the virtual channel: the challenger need not be the checkpoint's
-    own caller, and this covers a later response checkpoint too. -/
-theorem counter_after_adv_checkpoint (apps : Apps E) {p : Participant} (net : NetworkState E p)
-    (caller : Participant) (c : FixedPart) (proof : SupportProof E) (cand : State E)
-    (s' : Adjudicator E) (hp : p ∈ c.participants)
-    (h : net.chain.apply apps caller (.checkpoint c proof cand) = some s') :
-    (Op.challenge c proof cand).HonestFeasible
-        (net.applyAdv apps (.chain caller (.checkpoint c proof cand))) ∧
-      (net.applyAdv apps (.chain caller (.checkpoint c proof cand))).chain.apply apps p
-          (.challenge c proof cand) =
-        some (s'.setStatus c (.challenged cand.turnNum ⟨cand, s'.now + c.challengeDuration⟩)) := by
-  rw [NetworkState.applyAdv_chain_some apps h]
-  refine ⟨fun ss hss => holds_of_mem_received (List.mem_append_left _ hss), ?_⟩
-  exact challenge_after_checkpoint apps hp h
-
 end ArmadaLean.Nitro
