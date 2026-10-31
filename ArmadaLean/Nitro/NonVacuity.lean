@@ -2079,20 +2079,20 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
       (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
-    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
+    · simp only [@nTwoCh_views_p0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
       · exact .inr ⟨_, List.mem_cons_self .., rfl,
           List.mem_cons_self ..⟩
-    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
+    · simp only [@nTwoCh_views_p0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsp0 hrp0]
       intro t ht hcc
       simp at ht
       rcases ht with rfl | rfl
       · right; rfl
       · exact absurd hcc hne
-    · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
+    · simp only [@nTwoCh_views_p0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsp0 hrp0]
       intro t ht hcc hfin
       simp at ht
       rcases ht with rfl | rfl
@@ -2105,20 +2105,20 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
       (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
-    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
+    · simp only [@nTwoCh_views_q0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
       intro q hq; simp at hq
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_self .., rfl,
           List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
-    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
+    · simp only [@nTwoCh_views_q0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsq0 hrq0]
       intro t ht hcc
       simp at ht
       rcases ht with rfl | rfl
       · right; rfl
       · exact absurd hcc hne
-    · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
+    · simp only [@nTwoCh_views_q0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsq0 hrq0]
       intro t ht hcc hfin
       simp at ht
       rcases ht with rfl | rfl
