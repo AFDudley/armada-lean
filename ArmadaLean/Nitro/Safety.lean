@@ -11,6 +11,7 @@ import ArmadaLean.Nitro.Lemmas
 import ArmadaLean.Types.Reachable
 import ArmadaLean.SpecTools
 import ArmadaLean.Nitro.Reachable
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -24,7 +25,7 @@ omit [DecidableEq E] in
     with one address are one channel. -/
 theorem channel_address_inj (c c' : FixedPart) (h : (c.address : Address E) = c'.address) :
     c = c' := by
-  simpa using h
+  (simpa? using h says simpa only [FixedPart.address_eq, Address.channel.injEq] using h)
 
 omit [DecidableEq E] in
 /-- ForceMove-D02, Nitro-02. go-nitro `_isExternalDestination`
@@ -33,7 +34,7 @@ omit [DecidableEq E] in
     destination's. -/
 theorem channel_address_ne_external (c : FixedPart) (e : E) :
     c.address ≠ Address.external e := by
-  simp
+  (simp? says simp only [FixedPart.address_eq, ne_eq, reduceCtorEq, not_false_eq_true])
 
 /-- Nitro-01. Nitro:162-163: "If an address does not appear in the table we
     take the balance to be zero." go-nitro: an unset `holdings` entry reads
@@ -64,7 +65,7 @@ theorem balances_total_split (b : Balances E) :
     rw [Balances.total_eq_sumIf, Balances.channelTotal_eq_sumIf,
       Balances.paidOutTotal_eq_sumIf] at ih ⊢
     simp only [Balances.sumIf_cons]
-    cases k <;> simp <;> grind
+    cases k <;> simp <;> (grind? says grind only [#c43a, #5afd, #3a2f, #8010, #8238, #0389, #4a56, #f57e, #fb2d, #2129, #8d77, #b26e, #c2a6, #3acd, #3635])
 
 /-- Nitro-04, Nitro-05, ForceMove-C01, docs-0060-02, docs-0060-03,
     docs-0060-04, docs-0060-05. go-nitro MultiAssetHolder.sol:51, 57-60:
@@ -81,8 +82,8 @@ theorem deposit_effects (s : Adjudicator E) (c : FixedPart) (e x : Coins) (s' : 
     s'.status = s.status ∧ s'.now = s.now := by
   obtain ⟨-, he, hb, hh, hs, hn⟩ := Adjudicator.deposit_some h
   refine ⟨he, ?_, hh, fun b hb' => ?_, hs, hn⟩
-  · rw [hb]; simp at he ⊢; rw [he]
-  · rw [hb]; simp at hb' ⊢; simp [hb']
+  · rw [hb]; (simp? at he ⊢ says simp only [FixedPart.address_eq, Balances.get_add, ↓reduceIte, Nat.add_right_cancel_iff] at he ⊢); rw [he]
+  · rw [hb]; (simp? at hb' ⊢ says simp only [FixedPart.address_eq, ne_eq, Balances.get_add, ite_eq_right_iff] at hb' ⊢); (simp? [hb'] says simp only [hb', IsEmpty.forall_iff])
 
 /-- Nitro-04, docs-0060-01. Nitro:166-167: "There are no restrictions on who
     can deposit coins for an address". go-nitro MultiAssetHolder.sol:43: a
@@ -94,7 +95,7 @@ theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicat
     (hk : c.kind = .ledger) (x : Coins) :
     s.apply apps caller (.deposit c.address (s.balances.get c.address) x) =
       some { s with balances := s.balances.add c.address x, held := s.held + x } := by
-  simp [Adjudicator.deposit, hk]
+  (simp? [Adjudicator.deposit, hk] says simp only [FixedPart.address_eq, Adjudicator.apply_deposit, Adjudicator.deposit, hk, and_self, ↓reduceIte])
 
 /-- docs-0060-02. go-nitro MultiAssetHolder.sol:51 `require(held ==
     expectedHeld, 'held != expectedHeld')`: a deposit whose observation is
@@ -102,8 +103,8 @@ theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicat
     reordered is one such history. -/
 theorem deposit_requires_expectedHeld (s : Adjudicator E) (c : FixedPart) (e x : Coins)
     (h : s.balances.get c.address ≠ e) : s.deposit c.address e x = none := by
-  simp at h
-  simp [Adjudicator.deposit, h]
+  (simp? at h says simp only [FixedPart.address_eq, ne_eq] at h)
+  (simp? [Adjudicator.deposit, h] says simp only [Adjudicator.deposit, FixedPart.address_eq, h, and_false, ↓reduceIte])
 
 /-- The sum of the allocations ahead of entry `k`: the holding a funder in
     position `k` must see before it deposits (ForceMove:1197-1208,
@@ -137,19 +138,19 @@ theorem deposit_respects_funding_order (apps : Apps E) (s : ReachableState (Nitr
   simp only [Adjudicator.apply_deposit] at h
   obtain ⟨-, he0, hb, -, -, -⟩ := Adjudicator.deposit_some h
   have hs' : s'.balances.get c.address = o.aheadOf k + e.amount := by
-    rw [hb]; simp at he0 ⊢; rw [he0]
+    rw [hb]; (simp? at he0 ⊢ says simp only [FixedPart.address_eq, Balances.get_add, ↓reduceIte, Nat.add_right_cancel_iff] at he0 ⊢); rw [he0]
   have hk := Allocation.total_take_succ he
   unfold Allocation.aheadOf at he0 hs' ⊢
   refine ⟨he0, hs', fun j f hj hf => ?_, ?_, fun j f hj hf => ?_⟩
   · have h1 := Allocation.total_take_succ hf
     have h2 := Allocation.total_take_mono o (show j + 1 ≤ k by omega)
     rw [he0, hs', Allocation.paidTo_of_getElem? hdedup hf, Allocation.paidTo_of_getElem? hdedup hf]
-    grind
+    (grind? says grind only [= min_def, #1b03, #946b, #360f, #6f2e, #8a6f])
   · rw [hs', Allocation.paidTo_of_getElem? hdedup he]
-    grind
+    (grind? says grind only [= min_def, #e527])
   · have h2 := Allocation.total_take_mono o (show k + 1 ≤ j by omega)
     rw [hs', Allocation.paidTo_of_getElem? hdedup hf]
-    grind
+    (grind? says grind only [= min_def, #946b, #8a6f])
 
 /-- ForceMove-C01, docs-0060-02. Deposits made in the order of the
     pre-funding outcome, each with `expectedHeld` equal to the allocations
@@ -165,9 +166,9 @@ theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : Fixed
         some (Adjudicator.applyAll apps (ops.take (k + 1)) s)) ∧
     (Adjudicator.applyAll apps ops s).balances.get c.address = o.total := by
   intro op ops
-  have hlen : ops.length = o.length := by simp [ops]
+  have hlen : ops.length = o.length := by (simp? [ops] says simp only [List.length_map, List.length_range, ops])
   have hops : ∀ k, k < o.length → ops[k]? = some (op k) := by
-    intro k hk; simp [ops, hk]
+    intro k hk; (simp? [ops, hk] says simp only [List.length_map, List.length_range, hk, getElem?_pos, List.getElem_map, List.getElem_range, ops])
   have hone : ∀ k, k < o.length →
       (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k →
       (Adjudicator.applyAll apps (ops.take k) s).apply apps (op k).1 (op k).2 =
@@ -192,7 +193,7 @@ theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : Fixed
       (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k := by
     intro k
     induction k with
-    | zero => intro _; simpa [Allocation.aheadOf, Adjudicator.applyAll] using h0
+    | zero => intro _; (simpa? [Allocation.aheadOf, Adjudicator.applyAll] using h0 says simpa only [List.take_zero, Adjudicator.applyAll, FixedPart.address_eq, Allocation.aheadOf, Allocation.total_nil] using h0)
     | succ k ih => intro hk; exact (hone k (by omega) (ih (by omega))).2
   refine ⟨fun k hk => ⟨hall k hk.le, (hone k hk (hall k hk.le)).1⟩, ?_⟩
   have := hall o.length le_rfl
@@ -228,15 +229,15 @@ theorem held_falls_only_by_payout (apps : Apps E) (s : ReachableState (Nitro.cha
     obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
     have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-      (a := a.address) (by simp)
+      (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
     rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
     cases b with
-    | channel d => simp [hh] at hlt
+    | channel d => (simp? [hh] at hlt says simp only [hh, Address.isExternal_channel, Bool.false_eq_true, ↓reduceIte, lt_self_iff_false] at hlt)
     | external p =>
       refine ⟨rfl, p, ?_, fun q hq => ?_⟩
-      · rw [hb, hh]; simp; grind
-      · rw [hb]; simp [hq]
-  | deposit a e x => obtain ⟨-, -, -, hh, -, -⟩ := Adjudicator.deposit_some h; grind
+      · rw [hb, hh]; (simp? says simp only [FixedPart.address_eq, Balances.get_sub, reduceCtorEq, ↓reduceIte, Balances.get_add, Address.isExternal_external, Nat.add_left_cancel_iff]); (grind? says grind only [#299a])
+      · rw [hb]; (simp? [hq] says simp only [FixedPart.address_eq, Balances.get_sub, reduceCtorEq, ↓reduceIte, Balances.get_add, Address.external.injEq, hq])
+  | deposit a e x => obtain ⟨-, -, -, hh, -, -⟩ := Adjudicator.deposit_some h; (grind? says grind only)
   | _ => exact absurd (Adjudicator.apply_held_frame rfl h) (ne_of_lt hlt)
 
 /-- Nitro-07. Nitro:227-229: no operation takes a channel's coins except a
@@ -249,7 +250,7 @@ theorem channel_balance_falls_only_by_redistribution (apps : Apps E) (s s' : Adj
   cases op with
   | deposit a e x =>
     obtain ⟨-, -, hb, -, -, -⟩ := Adjudicator.deposit_some h
-    rw [hb] at hlt; simp at hlt; split at hlt <;> grind
+    rw [hb] at hlt; (simp? at hlt says simp only [FixedPart.address_eq, Balances.get_add] at hlt); split at hlt <;> (grind? says grind only)
   | transfer a b => rfl
   | reclaim l v => rfl
   | _ => exact absurd (congrArg (·.get c.address) (Adjudicator.apply_balances_frame rfl h)) (ne_of_lt hlt)
@@ -265,10 +266,10 @@ theorem paid_out_monotone (apps : Apps E) (s s' : Adjudicator E) (h : Step apps 
   cases op with
   | deposit a e x =>
     obtain ⟨⟨c, rfl, -⟩, -, hb, -, -, -⟩ := Adjudicator.deposit_some h
-    rw [hb]; simp
+    rw [hb]; (simp? says simp only [Balances.get_add, reduceCtorEq, ↓reduceIte, Std.le_refl])
   | transfer a b =>
     obtain ⟨_, _, x, -, -, -, hb, -, -, -⟩ := Adjudicator.transfer_some h
-    rw [hb]; simp; split <;> grind
+    rw [hb]; (simp? says simp only [FixedPart.address_eq, Balances.get_sub, reduceCtorEq, ↓reduceIte, Balances.get_add]); split <;> (grind? says grind only)
   | _ => exact (congrArg (·.get (.external d)) (Adjudicator.apply_balances_frame rfl h)).symm.le
 
 omit [DecidableEq E] in
@@ -298,7 +299,7 @@ theorem payout_earlier_paid_in_full (held : Coins) (o : Allocation E) (i j : Nat
   simp only [Option.some.injEq, Prod.mk.injEq, true_and] at hpi hpj
   have h1 := Allocation.total_take_succ hi
   have h2 := Allocation.total_take_mono o (show i + 1 ≤ j by omega)
-  grind
+  (grind? says grind only [= min_def, #b75d, #d8a2, #b748, #0a27])
 
 omit [DecidableEq E] in
 /-- Nitro-26, Nitro-28, docs-0080-03. The payout never exceeds the coins
@@ -310,7 +311,7 @@ theorem payout_bounded (held : Coins) (o : Allocation E) :
   refine ⟨Allocation.payout_sum_le held o, fun i e x hi hx => ?_⟩
   rw [Allocation.payout_getElem? hi] at hx
   simp only [Option.some.injEq, Prod.mk.injEq, true_and] at hx
-  grind
+  (grind? says grind only [= min_def, #b4a6])
 
 /-- Nitro-25. Nitro:744-746: "ignoring any additional entries for a given
     address after the first." A destination receives at most the amount of
@@ -353,24 +354,24 @@ theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps))
   obtain ⟨o, _, x, hf, -, hx, hb, hh, hs, hn, -, -⟩ := Adjudicator.transfer_some h
   have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
   have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-    (a := a.address) (by simp)
+    (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
   rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
   refine ⟨o, x, hf, hx, ?_, fun hba => ?_, fun d hda hdb => ?_, ?_, ?_, hn⟩
-  · rw [hb]; simp at hxa ⊢; split <;> grind
-  · rw [hb]; simp at hba ⊢; simp [hba]
-  · rw [hb]; simp at hda ⊢; simp [hda, hdb]
-  · simp [Adjudicator.statusOf_of_status hs, hn]
+  · rw [hb]; (simp? at hxa ⊢ says simp only [FixedPart.address_eq, Balances.get_sub, ↓reduceIte, Balances.get_add] at hxa ⊢); split <;> grind
+  · rw [hb]; (simp? at hba ⊢ says simp only [FixedPart.address_eq, ne_eq, Balances.get_sub, Balances.get_add, ↓reduceIte, ite_eq_right_iff] at hba ⊢); (simp? [hba] says simp only [hba, IsEmpty.forall_iff])
+  · rw [hb]; (simp? at hda ⊢ says simp only [FixedPart.address_eq, ne_eq, Balances.get_sub, Balances.get_add] at hda ⊢); (simp? [hda, hdb] says simp only [hda, ↓reduceIte, hdb])
+  · (simp? [Adjudicator.statusOf_of_status hs, hn] says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus, ↓reduceIte, hn, ChannelStatus.finalOutcome_withOutcome])
   · rw [hh]
     split
-    · simp_all; grind
-    · simp_all
+    · (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ↓reduceIte]); (grind? says grind only)
+    · (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Bool.false_eq_true, ↓reduceIte, Bool.not_eq_true, add_zero])
 
 /-- Nitro-28. The reduction of an owed amount is exact. -/
 theorem reduceOwed_owed (o : Allocation E) (d : Address E) (x : Coins) :
     (o.reduceOwed d x).owed d = o.owed d - x ∧
     ∀ d', d' ≠ d → (o.reduceOwed d x).owed d' = o.owed d' := by
-  refine ⟨by simp [Allocation.owed_reduceOwed], fun d' h => ?_⟩
-  simp [Allocation.owed_reduceOwed, h]
+  refine ⟨by (simp? [Allocation.owed_reduceOwed] says simp only [Allocation.owed_reduceOwed, ↓reduceIte]), fun d' h => ?_⟩
+  (simp? [Allocation.owed_reduceOwed, h] says simp only [Allocation.owed_reduceOwed, h, ↓reduceIte])
 
 /-- Nitro-28, Nitro-15, ForceMove-C03, docs-0080-06. go-nitro: a transfer on
     a finalized channel with an allocation entry for `b` succeeds, and pays
@@ -396,8 +397,8 @@ theorem transfer_can_happen (s : Adjudicator E) (a : FixedPart) (b : Address E) 
   simp only [Balances.get_sub, Adjudicator.payTo_balances, Adjudicator.setStatus_balances,
     Balances.get_add, FixedPart.address_eq]
   by_cases hba : b = .channel a
-  · subst hba; simp
-  · simp [hba]
+  · subst hba; (simp? says simp only [↓reduceIte, add_tsub_cancel_right, add_zero])
+  · (simp? [hba] says simp only [hba, ↓reduceIte, Nat.add_left_cancel_iff])
 
 /-- Nitro-29, ForceMove-A20, docs-0030-04. Nitro:771-772: "If A cannot afford
     x for B, then T(A, B, x) fails, leaving the on-chain state unchanged."
@@ -426,12 +427,12 @@ theorem transfer_zero_moves_nothing (s : Adjudicator E) (a : FixedPart) (b : Add
   obtain ⟨o, _, x, hf, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
   have hx0 : x = 0 := hx ▸ h0 o hf
   subst hx0
-  refine ⟨fun d => ?_, by rw [hh]; simp⟩
+  refine ⟨fun d => ?_, by rw [hh]; (simp? says simp only [tsub_zero, ite_self])⟩
   rw [hb]
   simp only [Balances.get_sub, Balances.get_add, Nat.sub_zero, Nat.add_zero]
   by_cases hd : d = a.address
-  · subst hd; simp only [if_true]; split <;> simp_all
-  · simp only [hd, if_false]; split <;> simp_all
+  · subst hd; simp only [if_true]; split <;> (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel])
+  · simp only [hd, if_false]; split <;> (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel])
 
 /-- Nitro-10, ForceMove-A15, SATP-16, docs-0080-01. go-nitro
     `_requireChannelFinalized` (MultiAssetHolder.sol:127); Nitro:261-266:
@@ -442,7 +443,7 @@ theorem transfer_requires_finalized (s : Adjudicator E) (a : FixedPart) (b : Add
   obtain ⟨o, -, -, hf, -⟩ := Adjudicator.transfer_some h
   rw [Adjudicator.mode_eq, ChannelStatus.mode_eq_finalized_iff]
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
-  simp [hf]
+  (simp? [hf] says simp only [hf, Option.isSome_some])
 
 /-- Nitro-15. Nitro:312-313: "There is no restriction on who can trigger the
     operations." go-nitro `transfer` and `reclaim` read no caller. A
@@ -450,7 +451,7 @@ theorem transfer_requires_finalized (s : Adjudicator E) (a : FixedPart) (b : Add
 theorem redistribution_ignores_caller (apps : Apps E) (s : Adjudicator E) (op : Op E)
     (c1 c2 : Participant) (h : op.isRedistribution = true) :
     s.apply apps c1 op = s.apply apps c2 op := by
-  cases op <;> first | rfl | simp [Op.isRedistribution] at h
+  cases op <;> first | rfl | (simp? [Op.isRedistribution] at h says simp only [Op.isRedistribution, Bool.false_eq_true] at h)
 
 /-- Nitro-08. A redistribution moves coins between balances. The sum of all
     balances (held plus paid out) is unchanged. The hypothesis `hr` is from
@@ -469,16 +470,16 @@ theorem redistribution_conserves_total (apps : Apps E) (s : ReachableState (Nitr
     obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
     have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-      (a := a.address) (by simp)
+      (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
     rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
     have h1 := Balances.sumIf_add_sub (fun _ => true) hnd a.address b hxa
     have h2 := Balances.sumIf_add_sub (fun a => decide (a.isExternal = true)) hnd a.address b hxa
     rw [Balances.total_eq_sumIf, Balances.total_eq_sumIf, Balances.paidOutTotal_eq_sumIf,
       Balances.paidOutTotal_eq_sumIf, hb, hh]
-    cases b <;> simp at h1 h2 ⊢ <;> grind
+    cases b <;> simp at h1 h2 ⊢ <;> (grind? says grind only)
   | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; simp
-  | _ => simp [Op.isRedistribution] at hop
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; (simp? says simp only [FixedPart.address_eq, Adjudicator.setStatus_balances, Adjudicator.setStatus_held, Nat.add_left_cancel_iff, and_self])
+  | _ => (simp? [Op.isRedistribution] at hop says simp only [Op.isRedistribution, Bool.false_eq_true] at hop)
 
 /-- One redistribution of a finalized outcome: Nitro:770 (transfer),
     SATP:358-361 and go-nitro `compute_reclaim_effects` (reclaim on the
@@ -508,7 +509,7 @@ theorem FinalizedTwoWays.mono {apps : Apps E} {s s' : Adjudicator E} {c : FixedP
     FinalizedTwoWays apps s' c Ω' := by
   obtain ⟨s0, s1, caller, hr0, ⟨ss, h1, h2, h3⟩ | ⟨proof, cand, h1, h2, h3⟩⟩ := h
   · exact ⟨s0, s1, caller, hr0, Or.inl ⟨ss, h1, h2, h3.trans hR⟩⟩
-  · exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, cand, h1, by grind, h3.trans hR⟩⟩
+  · exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, cand, h1, by (grind? says grind only), h3.trans hR⟩⟩
 
 /-- Nitro:288-290: the origin of a channel status. A running challenge came
     from a challenge step whose deadline it keeps; a finalized status
@@ -541,14 +542,14 @@ theorem statusOrigin_redistribute {apps : Apps E} {s s' : Adjudicator E} {c : Fi
   rw [hs]
   revert ho hf
   cases s.statusOf c with
-  | «open» t => intro _ hf; simp at hf
+  | «open» t => intro _ hf; (simp? at hf says simp only [ChannelStatus.finalOutcome_open, reduceCtorEq] at hf)
   | challenged t ch =>
     intro ho hf
     simp only [ChannelStatus.finalOutcome_challenged] at hf
     split at hf
     · cases hf
       obtain ⟨s0, s1, caller, proof, hr0, h1, h2⟩ := ho
-      exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by grind, hR⟩⟩
+      exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by (grind? says grind only), hR⟩⟩
     · cases hf
   | finalized t f o =>
     intro ho hf
@@ -608,14 +609,14 @@ theorem finalized_two_ways (apps : Apps E) (s : ReachableState (Nitro.chain apps
   unfold StatusOrigin at ho
   revert ho hf
   cases s.statusOf c with
-  | «open» t => simp
+  | «open» t => (simp? says simp only [ChannelStatus.finalOutcome_open, reduceCtorEq, Adjudicator.apply_conclude, Adjudicator.apply_challenge, exists_and_left, forall_const, IsEmpty.forall_iff])
   | challenged t ch =>
     intro hf ho
     simp only [ChannelStatus.finalOutcome_challenged] at hf
     split at hf
     · cases hf
       obtain ⟨s0, s1, caller, proof, hr0, h1, h2⟩ := ho
-      exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by grind, Relation.ReflTransGen.refl⟩⟩
+      exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by (grind? says grind only), Relation.ReflTransGen.refl⟩⟩
     · cases hf
   | finalized t Ω0 =>
     intro hf ho
@@ -748,10 +749,10 @@ theorem challenge_effects (apps : Apps E) (s : Adjudicator E) (challenger : Part
     s'.mode c = .challenge ∧ s'.balances = s.balances ∧ s'.held = s.held ∧ s'.now = s.now ∧
     ∀ c', c' ≠ c → s'.statusOf c' = s.statusOf c' := by
   obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
-  refine ⟨?_, rfl, rfl, rfl, fun c' hc' => by simp [hc']⟩
+  refine ⟨?_, rfl, rfl, rfl, fun c' hc' => by (simp? [hc'] says simp only [Adjudicator.statusOf_setStatus, hc', ↓reduceIte])⟩
   rw [Adjudicator.mode_eq]
-  simp
-  grind
+  (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.mode_challenged, add_le_iff_nonpos_right, nonpos_iff_eq_zero, ite_eq_right_iff, reduceCtorEq, imp_false])
+  (grind? says grind only)
 
 omit [DecidableEq E] in
 /-- ForceMove-A11, ForceMove-A12, ForceMove-A13, ForceMove-B02, ForceMove-A21,
@@ -779,7 +780,7 @@ theorem checkpoint_can_happen (apps : Apps E) (s : Adjudicator E) (c : FixedPart
     (ht : (s.statusOf c).turnNumRecord < candidate.turnNum) :
     s.checkpoint apps c proof candidate = some (s.setStatus c (.open candidate.turnNum)) ∧
     (s.setStatus c (.open candidate.turnNum)).mode c = .open := by
-  refine ⟨?_, by rw [Adjudicator.mode_eq]; simp⟩
+  refine ⟨?_, by rw [Adjudicator.mode_eq]; (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.mode_open])⟩
   simp only [Adjudicator.checkpoint]
   rw [if_pos ⟨hm, hs, hc, ht⟩]
 
@@ -856,7 +857,7 @@ theorem conclude_can_happen (s : Adjudicator E) (c : FixedPart) (ss : SignedStat
       c.address = some ss.state.outcome ∧
     (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)).mode c =
       .finalized := by
-  refine ⟨?_, by simp, by rw [Adjudicator.mode_eq]; simp⟩
+  refine ⟨?_, by (simp? says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalOutcome_finalized]), by rw [Adjudicator.mode_eq]; (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.mode_finalized])⟩
   simp only [Adjudicator.conclude]
   rw [if_pos ⟨hm, hproof⟩]
 
@@ -880,7 +881,7 @@ omit [DecidableEq E] in
 theorem timeout_finalizes (s : Adjudicator E) (c : FixedPart) (t : Nat) (ch : Challenge E)
     (hs : s.statusOf c = .challenged t ch) (hd : ch.deadline ≤ s.now) :
     s.mode c = .finalized ∧ s.finalOutcome c.address = some ch.state.outcome := by
-  simp [Adjudicator.mode_eq, hs, hd]
+  (simp? [Adjudicator.mode_eq, hs, hd] says simp only [Adjudicator.mode_eq, hs, ChannelStatus.mode_challenged, hd, ↓reduceIte, FixedPart.address_eq, Adjudicator.finalOutcome_channel, ChannelStatus.finalOutcome_challenged, and_self])
 
 omit [DecidableEq E] in
 /-- ForceMove-D12. go-nitro StatusManager.sol:12-13: a future finalization
@@ -888,7 +889,7 @@ omit [DecidableEq E] in
 theorem challenge_in_progress_before_deadline (s : Adjudicator E) (c : FixedPart) (t : Nat)
     (ch : Challenge E) (hs : s.statusOf c = .challenged t ch) (hd : s.now < ch.deadline) :
     s.mode c = .challenge ∧ s.finalOutcome c.address = none := by
-  simp [Adjudicator.mode_eq, hs, Nat.not_le.2 hd]
+  (simp? [Adjudicator.mode_eq, hs, Nat.not_le.2 hd] says simp only [Adjudicator.mode_eq, hs, ChannelStatus.mode_challenged, Nat.not_le.2 hd, ↓reduceIte, FixedPart.address_eq, Adjudicator.finalOutcome_channel, ChannelStatus.finalOutcome_challenged, and_self])
 
 omit [DecidableEq E] in
 /-- ForceMove-F03, docs-0040-05. docs: "a passive transition which happens
@@ -905,7 +906,7 @@ theorem tick_moves_only_time (s : Adjudicator E) (dt : Time) :
 theorem failed_op_no_effect (apps : Apps E) (caller : Participant) (op : Op E) (s : Adjudicator E)
     (h : s.apply apps caller op = none) :
     Adjudicator.applyAll apps [(caller, op)] s = s := by
-  simp [Adjudicator.applyAll, h]
+  (simp? [Adjudicator.applyAll, h] says simp only [Adjudicator.applyAll, h, Option.getD_none])
 
 /-- ForceMove-F05. go-nitro ForceMove.sol reads no `holdings`;
     ForceMove:1609-1628: "there is no way of telling from the properties of
@@ -1003,8 +1004,8 @@ theorem forceMove_supports_head_byMover {vt : State E → State E → Bool} {c :
   obtain ⟨⟨⟨⟨-, hhead⟩, -⟩, -⟩, -⟩ := h
   have hm0 : proof.head? = some m0 := by
     cases proof with
-    | nil => simp at h0
-    | cons a t => simpa using h0
+    | nil => (simp? at h0 says simp only [List.length_nil, lt_self_iff_false, not_false_eq_true, getElem?_neg, reduceCtorEq] at h0)
+    | cons a t => (simpa? using h0 says simpa only [List.head?_cons, Option.some.injEq, List.length_cons, lt_add_iff_pos_left, add_pos_iff, zero_lt_one, or_true, getElem?_pos, List.getElem_cons_zero] using h0)
   rw [hm0] at hhead
   exact (SignedState.byMover_iff m0).1 hhead
 
@@ -1019,7 +1020,7 @@ theorem forceMove_fwd_turnNum {vt : State E → State E → Bool} {c : FixedPart
       mk.state.turnNum = m0.state.turnNum + k := by
   intro k
   induction k with
-  | zero => intro _; exact ⟨m0, by simpa using h0, by simp⟩
+  | zero => intro _; exact ⟨m0, by (simpa? using h0 says simpa only [add_zero] using h0), by (simp? says simp only [add_zero])⟩
   | succ k ih =>
     intro hlt
     obtain ⟨mk, hmk, hturn⟩ := ih (by omega)
@@ -1087,7 +1088,7 @@ omit [DecidableEq E] in
     turn `k`. -/
 theorem mover_cyclic (s : State E) (k : Nat) :
     { s with turnNum := k + s.channel.n }.mover = { s with turnNum := k }.mover := by
-  simp [State.mover, Nat.add_mod_right]
+  (simp? [State.mover, Nat.add_mod_right] says simp only [State.mover, Nat.add_mod_right])
 
 /-- SATP-15, docs-0030-04. SATP:348-352 and go-nitro
     MultiAssetHolder.sol:262-300: a reclaim needs both channels finalized
@@ -1164,14 +1165,14 @@ theorem reclaim_effects (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator 
   rw [Allocation.owed_addTo_of_ne _ _ (Ne.symm hrv), Allocation.owed_addTo_of_ne _ _ (Ne.symm hlv),
     hown, Allocation.total_addTo _ hr1, Allocation.total_addTo _ hl] at htot
   refine ⟨((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address,
-    by simp, ?_, ?_, ?_, ?_, rfl, rfl, ?_⟩
+    by (simp? says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalOutcome_withOutcome]), ?_, ?_, ?_, ?_, rfl, rfl, ?_⟩
   · rw [Allocation.owed_remove_of_ne _ hlv, Allocation.owed_addTo_of_ne _ _ hlr,
       Allocation.owed_addTo_self _ hl]
   · rw [Allocation.owed_remove_of_ne _ hrv, Allocation.owed_addTo_self _ hr1,
       Allocation.owed_addTo_of_ne _ _ hrl]
   · rw [Allocation.find_remove, if_pos rfl]
-  · grind
-  · simp [Ne.symm hne]
+  · (grind? says grind only)
+  · (simp? [Ne.symm hne] says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_setStatus, Ne.symm hne, ↓reduceIte, Adjudicator.setStatus_now])
 
 /-- SATP-15, docs-0080-05. The reclaim succeeds whenever its preconditions
     hold. The exact result is stated. -/
@@ -1234,8 +1235,8 @@ theorem mode_of_absent (s : Adjudicator E) (c : FixedPart) (h : ∀ e ∈ s.stat
   have hl : s.status.lookup c = none := by
     simp only [List.lookup_eq_none_iff, bne_iff_ne, ne_eq]
     exact fun p hp hpc => h p hp hpc.symm
-  have hs : s.statusOf c = .open 0 := by simp [Adjudicator.statusOf, hl]
-  simp [Adjudicator.mode_eq, hs]
+  have hs : s.statusOf c = .open 0 := by (simp? [Adjudicator.statusOf, hl] says simp only [Adjudicator.statusOf, hl, Option.getD_none])
+  (simp? [Adjudicator.mode_eq, hs] says simp only [Adjudicator.mode_eq, hs, ChannelStatus.mode_open, ChannelStatus.turnNumRecord_open, and_self])
 
 /-- Nitro-08, Nitro-05. Only a deposit raises the coins held and only a
     payout to a participant lowers them. -/
