@@ -1,0 +1,238 @@
+{
+  "id": "derived-aln-6a9",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proof of ArmadaLean.Nitro.Route.IntermediaryInv.step has no `omega` call over 13 consumed hypotheses and no `decide` call on a goal over size 300. scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.Route.IntermediaryInv.step.\nWhat holds now? Describe the current, observed state. At integrated 63b25c32, scripts/gate-baseline.json decision_findings holds {declaration: ArmadaLean.Nitro.Route.IntermediaryInv.step, kind: omega, size: 15}: an `omega` call that consumes 15 hypotheses (bound 13).\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json` and read decision_ok, decision_new_findings and lint_summary; read scripts/gate-baseline.json field decision_findings. Every Lean command runs through /home/rix/bin/lean-run.\nWhat constraints apply? State them in plain prose. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; when a recorded finding is gone, scripts/update_gate_baseline.py rewrites the baseline in the same branch. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean.Nitro.Route.IntermediaryInv.step",
+  "restatement": "The Lean proof of ArmadaLean.Nitro.Route.IntermediaryInv.step must be rewritten so its omega call consumes at most 13 hypotheses (not the current 15) and any decide call stays under goal size 300. Because this changes the proof's gate characteristics, the recorded baseline entry for this declaration in scripts/gate-baseline.json must be updated (via scripts/update_gate_baseline.py on the same branch) if the old finding disappears. No spec files may change, scripts/check.sh --json must keep every _ok field true, and lake clean must never be run bare.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof of ArmadaLean.Nitro.Route.IntermediaryInv.step has no omega call over 13 consumed hypotheses and no decide call on a goal over size 300."
+    },
+    {
+      "id": "c2",
+      "text": "scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.Route.IntermediaryInv.step once the finding is resolved (or is rewritten via scripts/update_gate_baseline.py on the same branch if it remains)."
+    },
+    {
+      "id": "c3",
+      "text": "git diff integrated -- 'ArmadaLean/Spec*' is empty (no spec statement changes)."
+    },
+    {
+      "id": "c4",
+      "text": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json, including decision_ok and lint_summary fields."
+    },
+    {
+      "id": "c5",
+      "text": "A bare lake clean is never run during this work."
+    }
+  ],
+  "goal": "Make sure a particular mathematical proof in the Nitro routing code doesn't rely on an overly large, hard-to-maintain automated reasoning step, and make sure the project's tracking file correctly reflects this once the proof is fixed, without breaking any other build checks.",
+  "acceptance_criteria": [
+    "Checks that the proof of the 'step' lemma in the Intermediary invariant file does not contain an omega call that pulls in 13 or more hypotheses from context, and does not contain a decide call on a goal whose size exceeds 300, as reported by the project's check script.",
+    "After the ArmadaLean.Nitro.Route.IntermediaryInv.step finding is resolved, the baseline file scripts/gate-baseline.json should no longer list it as an open finding (unless it was deliberately rewritten back in via the official update script on the same branch).",
+    "Checks that the branch did not change any specification statement files under ArmadaLean/Spec when compared against the integrated branch.",
+    "After running the project's check script with --json, every field in its output that ends in _ok should read true, including decision_ok and lint_summary's _ok fields, matching or beating the recorded baseline in scripts/gate-baseline.json.",
+    "A check confirms that nowhere in the recorded command log for this work session was a bare 'lake clean' command executed (one without being scoped to a single worktree's build directory), since that would wipe out the shared Mathlib build used by every worktree."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Checks that the proof of the 'step' lemma in the Intermediary invariant file does not contain an omega call that pulls in 13 or more hypotheses from context, and does not contain a decide call on a goal whose size exceeds 300, as reported by the project's check script."
+    },
+    {
+      "id": "c2",
+      "text": "After the ArmadaLean.Nitro.Route.IntermediaryInv.step finding is resolved, the baseline file scripts/gate-baseline.json should no longer list it as an open finding (unless it was deliberately rewritten back in via the official update script on the same branch)."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that the branch did not change any specification statement files under ArmadaLean/Spec when compared against the integrated branch."
+    },
+    {
+      "id": "c4",
+      "text": "After running the project's check script with --json, every field in its output that ends in _ok should read true, including decision_ok and lint_summary's _ok fields, matching or beating the recorded baseline in scripts/gate-baseline.json."
+    },
+    {
+      "id": "c5",
+      "text": "A check confirms that nowhere in the recorded command log for this work session was a bare 'lake clean' command executed (one without being scoped to a single worktree's build directory), since that would wipe out the shared Mathlib build used by every worktree."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Checks that the proof of the 'step' lemma in the Intermediary invariant file does not contain an omega call that pulls in 13 or more hypotheses from context, and does not contain a decide call on a goal whose size exceeds 300, as reported by the project's check script.",
+      "proves": "The step lemma proof follows the project's rule against heavy omega/decide calls with excessive hypothesis counts or goal sizes.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_step_proof_complexity.py",
+        "args": [
+          "--lemma",
+          "ArmadaLean.Nitro.Route.IntermediaryInv.step",
+          "--omega-hyp-threshold",
+          "13",
+          "--decide-size-threshold",
+          "300"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "omega_violation_found",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decide_violation_found",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c1"
+    },
+    {
+      "description": "After the ArmadaLean.Nitro.Route.IntermediaryInv.step finding is resolved, the baseline file scripts/gate-baseline.json should no longer list it as an open finding (unless it was deliberately rewritten back in via the official update script on the same branch).",
+      "proves": "Confirms that scripts/gate-baseline.json's decision_findings has no lingering entry for ArmadaLean.Nitro.Route.IntermediaryInv.step once that finding is resolved, satisfying the gate-baseline bookkeeping clause.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_baseline_entry.py",
+        "args": [
+          "ArmadaLean.Nitro.Route.IntermediaryInv.step"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "has_entry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 30,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that the branch did not change any specification statement files under ArmadaLean/Spec when compared against the integrated branch.",
+      "proves": "Confirms the clause that git diff against 'integrated' for ArmadaLean/Spec* paths is empty, i.e. no spec statement changes were made.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_diff.py",
+        "args": [
+          "integrated"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_empty",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c3"
+    },
+    {
+      "description": "After running the project's check script with --json, every field in its output that ends in _ok should read true, including decision_ok and lint_summary's _ok fields, matching or beating the recorded baseline in scripts/gate-baseline.json.",
+      "proves": "Confirms that scripts/check.sh --json reports all _ok fields (including decision_ok and lint_summary) as true relative to scripts/gate-baseline.json, satisfying the acceptance gate.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_gate.py",
+        "args": [
+          "--json-script",
+          "scripts/check.sh",
+          "--baseline",
+          "scripts/gate-baseline.json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_summary_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c4"
+    },
+    {
+      "description": "A check confirms that nowhere in the recorded command log for this work session was a bare 'lake clean' command executed (one without being scoped to a single worktree's build directory), since that would wipe out the shared Mathlib build used by every worktree.",
+      "proves": "The work never ran an unscoped 'lake clean' that could destroy the shared Mathlib build.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "--log",
+          "work_commands.log"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 30,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_baseline_entry.py",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_spec_diff.py",
+    "scripts/check_step_proof_complexity.py",
+    "scripts/run_check_gate.py"
+  ]
+}
