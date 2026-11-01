@@ -790,22 +790,24 @@ inductive Run (apps : Apps E) {p : Participant} (T : Threat E p) (σ : Strategy 
     form of `Threat.RoundSeq.condInvariant`, over `UnbeatableIn`'s own `done`/`move`
     induction: `Cond` for each round's own `pending` (`m.calls`) comes from `hcondfeas`,
     applied to that round's own `allowed m`/`m.Feasible` witnesses (`UnbeatableIn.move`'s own
-    hypotheses). Matches `UnbeatableIn.and_reachable`'s shape (`Nitro/Liveness.lean`), with
-    `Cond n op := op.HonestFeasible n`. -/
+    hypotheses). `hhonest` needs `Inv` kept only by the allowed honest moves: a family that
+    reads `sent` allows no sends. Matches `UnbeatableIn.and_reachable`'s shape
+    (`Nitro/Liveness.lean`), with `Cond n op := op.HonestFeasible n`. -/
 theorem UnbeatableIn.and_condInvariant {apps : Apps E} {p : Participant} {T : Threat E p}
     {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {Inv : NetworkState E p → Prop}
     {Cond : NetworkState E p → Op E → Prop}
     (h : T.CondStepInvariant apps (fun _ => True) Inv Cond)
     (hcondfeas : ∀ {n : NetworkState E p} {m : HonestMove E}, allowed m → m.Feasible n →
       ∀ op ∈ m.calls, Cond n op)
-    (hhonest : ∀ {n : NetworkState E p} {m : HonestMove E}, Inv n → Inv (n.applyHonest m))
+    (hhonest : ∀ {n : NetworkState E p} {m : HonestMove E}, allowed m → Inv n →
+      Inv (n.applyHonest m))
     {net : NetworkState E p} (hU : UnbeatableIn apps T allowed G net) (hI : Inv net) :
     UnbeatableIn apps T allowed (fun n => G n ∧ Inv n) net := by
   induction hU with
   | done hG => exact UnbeatableIn.done ⟨hG, hI⟩
   | move m hal hfeas _ ih =>
     refine UnbeatableIn.move m hal hfeas fun net' hround => ih net' hround ?_
-    exact hhonest (hround.1.condInvariant ⟨h.toStepInvariant.anyGuard, h.condMono⟩
+    exact hhonest hal (hround.1.condInvariant ⟨h.toStepInvariant.anyGuard, h.condMono⟩
       (hcondfeas hal hfeas) hI)
 
 /-- Nitro:641-644: `p` "has a strategy to prevent" `G`: a strategy whose

@@ -18,6 +18,13 @@ namespace ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
 
+/-- An honest move that signs no state: a reaction with no sends, or a wait. A strategy of
+    such moves keeps `p`'s `sent` list, so it keeps every fact about what `p` signed
+    (`HoldsVirtualSetup`). -/
+def HonestMove.NoSend : HonestMove E → Prop
+  | .react r => r.sends = []
+  | .wait _ => True
+
 /-- An honest move that does not let time pass. -/
 def HonestMove.NoWait : HonestMove E → Prop
   | .wait _ => False
@@ -2028,8 +2035,10 @@ theorem latest_state_finalizable (apps : Apps E) {p : Participant} (T : Threat E
     `finish2` then waits out whichever of the two resulting deadlines is
     later (or not at all, if both already finalized by the round's end),
     via `wait_resolves_challenge` once per channel against the one shared
-    wait. -/
+    wait. The strategy plays only that reaction and one wait, so it is a
+    strategy in any `allowed` that admits both (`hreact`, `hwait`). -/
 theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Threat E p)
+    {allowed : HonestMove E → Prop}
     (A : Assumptions apps p T) (net : NetworkState E p)
     (_hr : (Nitro.participant apps T).Reachable net)
     (c1 c2 : FixedPart) (ss1 ss2 : SignedState E) (hne : c1 ≠ c2)
@@ -2052,8 +2061,11 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
         (t < ss1.state.turnNum ∨ ch.state = ss1.state) ∧ net.chain.now + T.ε ≤ ch.deadline))
     (hst2 : (∃ t, net.chain.statusOf c2 = .open t ∧ t ≤ ss2.state.turnNum) ∨
       (∃ t ch, net.chain.statusOf c2 = .challenged t ch ∧
-        (t < ss2.state.turnNum ∨ ch.state = ss2.state) ∧ net.chain.now + T.ε ≤ ch.deadline)) :
-    Unbeatable apps T
+        (t < ss2.state.turnNum ∨ ch.state = ss2.state) ∧ net.chain.now + T.ε ≤ ch.deadline))
+    (hreact : allowed
+      (.react ⟨[Op.challenge c1 [ss1] ss1.state, Op.challenge c2 [ss2] ss2.state], []⟩))
+    (hwait : ∀ dt, allowed (.wait dt)) :
+    UnbeatableIn apps T allowed
       (fun n => n.Finalized c1 ss1.state.outcome ∧ n.Finalized c2 ss2.state.outcome) net := by
   have finish2 : ∀ (net2 : NetworkState E p),
       (net2.chain.finalizedWith c1.address = some ss1.state.outcome ∨
@@ -2063,7 +2075,7 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
         ∃ T0 ch, net2.chain.statusOf c2 = .challenged T0 ch ∧ ss2.state.turnNum ≤ T0 ∧
           ch.state = ss2.state ∧ net2.chain.now ≤ ch.deadline) →
       net2.sent = net.sent →
-      UnbeatableIn apps T (fun _ => True)
+      UnbeatableIn apps T allowed
         (fun n => n.Finalized c1 ss1.state.outcome ∧ n.Finalized c2 ss2.state.outcome) net2 := by
     intro net2 hb1 hb2 hsent2
     obtain ⟨d1, hle1, hb1'⟩ :
@@ -2082,7 +2094,7 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
       rcases hb2 with hf2 | ⟨T0, ch, hst, hT0, hchs, hle⟩
       · exact ⟨net2.chain.now, le_refl _, Or.inl hf2⟩
       · exact ⟨ch.deadline, hle, Or.inr ⟨T0, ch, hst, hT0, hchs, rfl⟩⟩
-    refine UnbeatableIn.move (.wait (max d1 d2 - net2.chain.now)) trivial trivial ?_
+    refine UnbeatableIn.move (.wait (max d1 d2 - net2.chain.now)) (hwait _) trivial ?_
     intro net3 hround2
     obtain ⟨hseq2, -⟩ := hround2
     have hmax1 : net2.chain.now ≤ max d1 d2 := le_trans hle1 (le_max_left _ _)
@@ -2120,7 +2132,7 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
     · simpa [Op.HonestFeasible, Op.proofStates] using hh1
     · simpa [Op.HonestFeasible, Op.proofStates] using hh2
   refine UnbeatableIn.move
-    (.react ⟨[Op.challenge c1 [ss1] ss1.state, Op.challenge c2 [ss2] ss2.state], []⟩) trivial
+    (.react ⟨[Op.challenge c1 [ss1] ss1.state, Op.challenge c2 [ss2] ss2.state], []⟩) hreact
     ⟨hfeasR, fun _ h => absurd h List.not_mem_nil⟩ ?_
   intro net1 hround
   obtain ⟨hseq, hεbound⟩ := hround
@@ -11019,66 +11031,6 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
   · rw [Allocation.find_remove, if_pos rfl]
   · rw [Allocation.find_remove, if_pos rfl]
 
-/-- SATP-20 (Theorem 3.2, SATP:503-507). "Let d(V, Pi) be the amount debited to
-    V from Pi's balances, across Li and Li−1 in Protocol 3.1. Let c(V, Pi) be
-    the amount credited to Pi's balance from guarantees targeting V across Li
-    and Li−1 in both Protocol 3.2 and 3.3. For all V, for all i = 1, ..., n,
-    if Pi follows Protocols 3.1-3.3, then c(Pi) = d(Pi)." An intermediary
-    that completed Round 2 (SATP:411-418) and holds the latest ledger states
-    has an unbeatable strategy (Protocol 3.3, SATP:480-485) to finalize both
-    ledgers with no guarantee for `V` and its pre-protocol balances
-    restored. `Pi`'s own signatures on `V` are the setup states
-    (`HoldsVirtualSetup`); the game rule `Bounds.unforgeable` bounds the
-    rest. `P` signs a ledger state that funds `V` only when it holds the
-    all-signed pre-fund state of `V` (operator ruling 2026-10-31; SATP:409,
-    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399), and every
-    guarantee `P` signs names external peers (SATP:411-418). Both are rules
-    of the honest signer (`HonestSend.fundsCommitted`,
-    `HonestSend.guaranteesExternal`; operator ruling 2026-11-01), which
-    `Nitro.participant_sent_honest` and `Nitro.participant_holds_honest` give. -/
-theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
-    (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
-    (hV : apps r.V.appDef = satpVirtualRules)
-    (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
-    (i : Nat) (hi : 1 ≤ i) (hin : i + 1 < r.peers.length) (hP : r.peers[i]? = some P)
-    (Pprev Pnext : Participant) (hprev : r.peers[i - 1]? = some Pprev)
-    (hnext : r.peers[i + 1]? = some Pnext)
-    (Lm Lp : TimedChannel T.ε) (hLm : r.ledgers[i - 1]? = some (Lm : FixedPart))
-    (hLp : r.ledgers[i]? = some (Lp : FixedPart))
-    (hdurV : r.V.IsTimed T.ε)
-    (om : r.Round2Ledger Pprev P P r.b0) (op : r.Round2Ledger P Pnext P r.a0)
-    (net : Nitro.ReachableParticipant apps T)
-    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om.outcome)
-    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op.outcome)
-    (hVs : HoldsVirtualSetup net.state r alice bob true)
-    (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
-      net.state.DeadlineAfter r.V T.ε)
-    (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
-      net.state.chain.finalizedWith (Lp : FixedPart).address = none ∧
-      net.state.chain.finalizedWith r.V.address = none) :
-    Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) om.bal op.bal
-      (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
-  have _hfunds : ∀ t ∈ net.state.sent, ∀ o, t.state.outcome = .allocation o →
-      o.find r.V.address ≠ none → net.state.HoldsPrefund r.V := by
-    intro t ht o ho hf
-    exact (Nitro.participant_sent_honest net t ht).fundsCommitted r.V hr.2.2.2.2.2.2.1
-      (by rw [ho]; exact hf)
-  have _hextm : P ∈ (Lm : FixedPart).participants → om.outcome.GuaranteesExternal := by
-    obtain ⟨ss, hH, hall, hc, ho, -⟩ := hHm
-    intro hPL
-    have hext := (Nitro.participant_holds_honest A.toBounds net hH
-      (hall P (by rw [hc]; exact hPL))).guaranteesExternal
-    rw [ho] at hext
-    exact hext
-  have _hextp : P ∈ (Lp : FixedPart).participants → op.outcome.GuaranteesExternal := by
-    obtain ⟨ss, hH, hall, hc, ho, -⟩ := hHp
-    intro hPL
-    have hext := (Nitro.participant_holds_honest A.toBounds net hH
-      (hall P (by rw [hc]; exact hPL))).guaranteesExternal
-    rw [ho] at hext
-    exact hext
-  sorry
-
 omit [DecidableEq E] in
 /-- A status that is not `.finalized` with a payout already applied has the
     same stored outcome as its outcome of finalization. -/
@@ -11529,12 +11481,13 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
     · exact Or.inl ho
     · exact Or.inr ⟨t, ch, hstt, hlt, hpend.2 t ch hstt⟩
   -- One reaction challenges both ledgers; both finalize with the latest states.
-  have hU := latest_state_finalizable_two apps T A net hnr Lm Lp ssm ssp hne hcm hcp hPLm hPLp
+  have hU := latest_state_finalizable_two (allowed := fun _ => True) apps T A net hnr Lm Lp ssm
+    ssp hne hcm hcp hPLm hPLp
     hhm hhp hallm hallp hchm hchp (fun t ht hc => (hsentm t ht hc).1)
     (fun t ht hc => (hsentp t ht hc).1)
     (fun t ht hc hfin => by rw [(hsentm t ht hc).2] at hfin; cases hfin)
     (fun t ht hc hfin => by rw [(hsentp t ht hc).2] at hfin; cases hfin)
-    hdur.1 hdur.2 hst1 hst2
+    hdur.1 hdur.2 hst1 hst2 trivial (fun _ => trivial)
   rw [houtm, houtp] at hU
   -- Every chain step keeps the credit invariant, from the start to the goal.
   have hI0 : LedgerPairInv Lm Lp om op r.V.address (r.dest P)
@@ -11558,6 +11511,975 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
     unfold ledgerCredit; rw [if_pos (show n.chain.finalizedWith Lp.address = _ from hfp), hop']; rfl
   rw [hcm, hcp] at htot
   exact ⟨om', op', hom', hop', hom'V, hop'V, htot⟩
+
+/-- `addTo` keeps every entry that is present. -/
+theorem Allocation.find_addTo_ne_none {o : Allocation E} {d' : Address E} (d : Address E)
+    (x : Coins) (h : o.find d' ≠ none) : (o.addTo d x).find d' ≠ none := by
+  by_cases hd : d' = d
+  · subst hd
+    rw [Allocation.find_addTo_self]
+    simpa only [ne_eq, Option.map_eq_none_iff] using h
+  · rwa [Allocation.find_addTo_of_ne _ _ hd]
+
+/-- `reduceOwed` keeps every entry that is present. -/
+theorem Allocation.find_reduceOwed_ne_none {o : Allocation E} {d' : Address E} (d : Address E)
+    (x : Coins) (h : o.find d' ≠ none) : (o.reduceOwed d x).find d' ≠ none := by
+  rw [Allocation.find_reduceOwed]
+  split
+  · rename_i hd
+    subst hd
+    simpa only [ne_eq, Option.map_eq_none_iff] using h
+  · exact h
+
+/-- The ledger allocation `o` still carries the Round 2 guarantee of `r.V` for the ledger
+    between `P` and `Q` (SATP:411-418), every guarantee of `o` names external peers
+    (`HonestSend.guaranteesExternal`), and both peers still have entries, as `reclaim` needs
+    (go-nitro MultiAssetHolder.sol:363-364). -/
+structure Route.GuaranteeHeld (r : Route E) (P Q : Participant) (o : Allocation E) : Prop where
+  /-- The guarantee `G(a0 + b0, [P, Q])` for `r.V`. -/
+  find : o.find r.V.address = some (r.guarantee P Q)
+  /-- Every guarantee names external peers. -/
+  external : o.GuaranteesExternal
+  /-- `P` has an entry. -/
+  left : o.find (.external (r.dest P)) ≠ none
+  /-- `Q` has an entry. -/
+  right : o.find (.external (r.dest Q)) ≠ none
+
+/-- One on-chain step and a finalized ledger channel `L` whose stored allocation `o` holds
+    the Round 2 guarantee of `r.V` (`Route.GuaranteeHeld`). Either the new stored allocation
+    still holds it, with the accounting of `ledger_claim_step`, or the step reclaimed it:
+    then `r.V` finalized with amounts that sum to `a0 + b0`, and the peers' entries rose by
+    those amounts (`Adjudicator.reclaim_some`). A reclaim for another virtual channel cannot
+    touch the guarantee of `r.V`: its targets are external (`Allocation.GuaranteesExternal`),
+    and `r.V.address` is a channel address. A transfer cannot pay `r.V`: its entry is a
+    guarantee, and `transfer` pays only an `.alloc` entry. Used by `ledger_held_step`. -/
+theorem ledger_guarantee_step {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (h : s.apply apps caller op = some s') {r : Route E}
+    (L : FixedPart) {P Q : Participant} (d : E) (o : Allocation E)
+    (ho : s.finalOutcome L.address = some (.allocation o)) (hG : r.GuaranteeHeld P Q o) :
+    ∃ o', s'.finalOutcome L.address = some (.allocation o') ∧
+      ((r.GuaranteeHeld P Q o' ∧
+          (o.owed (.external d) ≤ o'.owed (.external d) ∨ ∃ b, op = .transfer L b) ∧
+          o.owed (.external d) + s.balances.get (.external d) ≤
+            o'.owed (.external d) + s'.balances.get (.external d)) ∨
+        (o'.find r.V.address = none ∧ ∃ oV, s.finalizedWith r.V.address = some (.allocation oV) ∧
+          oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 ∧
+          o'.owed (.external d) = ((o.addTo (.external (r.dest P)) (oV.amountAt 0)).addTo
+            (.external (r.dest Q)) (oV.amountAt 1)).owed (.external d))) := by
+  obtain ⟨hg, hGE, hPf, hQf⟩ := hG
+  -- `reduceOwed`, `addTo` and `remove` keep `Allocation.GuaranteesExternal`: they turn one
+  -- entry into an `.alloc` entry or drop entries.
+  have geRed : ∀ (b : Address E) (x : Coins) (o1 : Allocation E), o1.GuaranteesExternal →
+      (o1.reduceOwed b x).GuaranteesExternal := by
+    intro b x o1
+    induction o1 with
+    | nil => intro _ e he; simp [Allocation.reduceOwed] at he
+    | cons e0 rest ih =>
+      intro h1 e he y ps hit
+      unfold Allocation.reduceOwed at he
+      split at he
+      · rcases List.mem_cons.mp he with rfl | hmem
+        · simp at hit
+        · exact h1 e (List.mem_cons_of_mem _ hmem) y ps hit
+      · rcases List.mem_cons.mp he with rfl | hmem
+        · exact h1 e List.mem_cons_self y ps hit
+        · exact ih (fun e' he' => h1 e' (List.mem_cons_of_mem _ he')) e hmem y ps hit
+  have geAdd : ∀ (b : Address E) (x : Coins) (o1 : Allocation E), o1.GuaranteesExternal →
+      (o1.addTo b x).GuaranteesExternal := by
+    intro b x o1
+    induction o1 with
+    | nil => intro _ e he; simp [Allocation.addTo] at he
+    | cons e0 rest ih =>
+      intro h1 e he y ps hit
+      unfold Allocation.addTo at he
+      split at he
+      · rcases List.mem_cons.mp he with rfl | hmem
+        · simp at hit
+        · exact h1 e (List.mem_cons_of_mem _ hmem) y ps hit
+      · rcases List.mem_cons.mp he with rfl | hmem
+        · exact h1 e List.mem_cons_self y ps hit
+        · exact ih (fun e' he' => h1 e' (List.mem_cons_of_mem _ he')) e hmem y ps hit
+  have geRem : ∀ (b : Address E) (o1 : Allocation E), o1.GuaranteesExternal →
+      (o1.remove b).GuaranteesExternal :=
+    fun _ _ h1 e he => h1 e (List.mem_filter.mp he).1
+  have hbal : s.balances.get (.external d) ≤ s'.balances.get (.external d) :=
+    paid_out_monotone apps s s' (Step.mk caller op s s' h) d
+  have ho2 := ho
+  simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at ho2
+  have hmode : (s.statusOf L).mode s.now = .finalized := by
+    rw [ChannelStatus.mode_eq_finalized_iff, ho2]; rfl
+  have hVext : ∀ a : Address E, a.isExternal = true → a ≠ r.V.address := by
+    intro a ha heq; subst heq; simp [FixedPart.address_eq] at ha
+  have keep : s'.statusOf L = s.statusOf L → s.now ≤ s'.now →
+      ∃ o', s'.finalOutcome L.address = some (.allocation o') ∧
+      ((r.GuaranteeHeld P Q o' ∧
+          (o.owed (.external d) ≤ o'.owed (.external d) ∨ ∃ b, op = .transfer L b) ∧
+          o.owed (.external d) + s.balances.get (.external d) ≤
+            o'.owed (.external d) + s'.balances.get (.external d)) ∨
+        (o'.find r.V.address = none ∧ ∃ oV, s.finalizedWith r.V.address = some (.allocation oV) ∧
+          oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 ∧
+          o'.owed (.external d) = ((o.addTo (.external (r.dest P)) (oV.amountAt 0)).addTo
+            (.external (r.dest Q)) (oV.amountAt 1)).owed (.external d))) := by
+    intro hst hn
+    refine ⟨o, ?_, Or.inl ⟨⟨hg, hGE, hPf, hQf⟩, Or.inl le_rfl, Nat.add_le_add_left hbal _⟩⟩
+    simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel]
+    rw [hst]
+    exact ChannelStatus.finalOutcome_mono ho2 hn
+  have hn := Adjudicator.apply_now_le h
+  cases op with
+  | deposit a e x =>
+    obtain ⟨-, -, -, -, hstatus, -⟩ := Adjudicator.deposit_some h
+    exact keep (Adjudicator.statusOf_of_status hstatus L) hn
+  | tick dt =>
+    simp only [Adjudicator.apply_tick, Option.some.injEq] at h
+    subst h
+    exact keep (Adjudicator.tick_statusOf s dt L) hn
+  | transfer a b =>
+    obtain ⟨o1, amt, x, hfo, hfind, hx, hbal', -, hstatus, hnow, -, -⟩ :=
+      Adjudicator.transfer_some h
+    by_cases hac : L = a
+    · subst hac
+      rw [ho, Option.some.injEq, Outcome.allocation.injEq] at hfo
+      subst hfo
+      have hbV : r.V.address ≠ b := by
+        intro heq
+        rw [← heq, hg] at hfind
+        simp [Route.guarantee] at hfind
+      refine ⟨o.reduceOwed b x, ?_, Or.inl ⟨⟨?_, geRed b x o hGE,
+        Allocation.find_reduceOwed_ne_none b x hPf, Allocation.find_reduceOwed_ne_none b x hQf⟩,
+        Or.inr ⟨b, rfl⟩, ?_⟩⟩
+      · simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel]
+        rw [Adjudicator.statusOf_of_status hstatus, Adjudicator.statusOf_setStatus, if_pos rfl,
+          ChannelStatus.finalOutcome_withOutcome]
+      · rw [Allocation.find_reduceOwed, if_neg hbV]; exact hg
+      · have hxle : x ≤ o.owed b := hx ▸ paidTo_first_entry_only _ o b
+        have haddr : (Address.external d : Address E) ≠ L.address := by simp [FixedPart.address_eq]
+        rw [hbal', Allocation.owed_reduceOwed, Balances.get_sub, if_neg haddr, Balances.get_add]
+        by_cases hbd : (Address.external d : Address E) = b
+        · rw [if_pos hbd, if_pos hbd, hbd]; unfold Coins at *; omega
+        · rw [if_neg hbd, if_neg hbd]
+    · exact keep (by rw [Adjudicator.statusOf_of_status hstatus, Adjudicator.statusOf_setStatus,
+        if_neg hac]) hn
+  | reclaim l v =>
+    obtain ⟨oL, oV, y, lft, rgt, hfo, hfoV, hgfind, -, -, hxeq, hs', -, -⟩ :=
+      Adjudicator.reclaim_some h
+    subst hs'
+    by_cases hlc : L = l
+    · subst hlc
+      rw [ho, Option.some.injEq, Outcome.allocation.injEq] at hfo
+      subst hfo
+      have hfo' : (s.setStatus L ((s.statusOf L).withOutcome (.allocation
+          (((o.addTo lft (oV.amountAt 0)).addTo rgt (oV.amountAt 1)).remove v.address)))).finalOutcome
+          L.address = some (.allocation
+            (((o.addTo lft (oV.amountAt 0)).addTo rgt (oV.amountAt 1)).remove v.address)) := by
+        simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel,
+          Adjudicator.statusOf_setStatus, ↓reduceIte, ChannelStatus.finalOutcome_withOutcome]
+      have hdv : (Address.external d : Address E) ≠ v.address := by simp [FixedPart.address_eq]
+      by_cases hvV : (v.address : Address E) = r.V.address
+      · rw [hvV, hg] at hgfind
+        simp only [Route.guarantee, Option.some.injEq, Entry.mk.injEq, Item.guarantee.injEq,
+          List.cons.injEq, and_true, true_and] at hgfind
+        obtain ⟨hy, hl, hr⟩ := hgfind
+        subst hy hl hr
+        refine ⟨_, hfo', Or.inr ⟨?_, oV, hvV ▸ hfoV, hxeq, ?_⟩⟩
+        · rw [Allocation.find_remove, if_pos hvV.symm]
+        · rw [Allocation.owed_remove_of_ne _ hdv]
+      · have hmem := List.mem_of_find?_eq_some hgfind
+        have hlx : lft.isExternal = true := hGE _ hmem y [lft, rgt] rfl lft (by simp)
+        have hrx : rgt.isExternal = true := hGE _ hmem y [lft, rgt] rfl rgt (by simp)
+        have hPv : (Address.external (r.dest P) : Address E) ≠ v.address := by
+          simp [FixedPart.address_eq]
+        have hQv : (Address.external (r.dest Q) : Address E) ≠ v.address := by
+          simp [FixedPart.address_eq]
+        refine ⟨_, hfo', Or.inl ⟨⟨?_, geRem _ _ (geAdd _ _ _ (geAdd _ _ _ hGE)), ?_, ?_⟩,
+          Or.inl ?_, ?_⟩⟩
+        · rw [Allocation.find_remove, if_neg (Ne.symm hvV),
+            Allocation.find_addTo_of_ne _ _ (Ne.symm (hVext rgt hrx)),
+            Allocation.find_addTo_of_ne _ _ (Ne.symm (hVext lft hlx))]
+          exact hg
+        · rw [Allocation.find_remove, if_neg hPv]
+          exact Allocation.find_addTo_ne_none _ _ (Allocation.find_addTo_ne_none _ _ hPf)
+        · rw [Allocation.find_remove, if_neg hQv]
+          exact Allocation.find_addTo_ne_none _ _ (Allocation.find_addTo_ne_none _ _ hQf)
+        · rw [Allocation.owed_remove_of_ne _ hdv]
+          exact le_trans (Allocation.owed_addTo_ge o lft _ _) (Allocation.owed_addTo_ge _ rgt _ _)
+        · rw [Allocation.owed_remove_of_ne _ hdv]
+          exact Nat.add_le_add (le_trans (Allocation.owed_addTo_ge o lft _ _)
+            (Allocation.owed_addTo_ge _ rgt _ _)) hbal
+    · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hlc]) hn
+  | challenge c proof cand =>
+    obtain ⟨⟨-, -, -, hmd⟩, hs'⟩ := Adjudicator.challenge_some h
+    subst hs'
+    by_cases hcc : L = c
+    · exfalso
+      subst hcc
+      rw [Adjudicator.mode_eq] at hmd
+      rcases hmd with ⟨hmo, -⟩ | ⟨hmo, -⟩ <;> rw [hmode] at hmo <;> cases hmo
+    · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcc]) hn
+  | checkpoint c proof cand =>
+    obtain ⟨⟨hopen, -, -, -⟩, hs'⟩ := Adjudicator.checkpoint_some h
+    subst hs'
+    by_cases hcc : L = c
+    · exfalso
+      subst hcc
+      exact hopen hmode
+    · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcc]) hn
+  | conclude c ss =>
+    obtain ⟨⟨hopen, -⟩, hs'⟩ := Adjudicator.conclude_some h
+    subst hs'
+    by_cases hcc : L = c
+    · exfalso
+      subst hcc
+      exact hopen hmode
+    · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcc]) hn
+
+/-- The allocation of `L` that counts toward `IntermediaryRecovered`: once `L` finalized with
+    its latest allocation `oL`, the stored outcome (a payout or a reclaim changes it); before
+    that, `oL` itself. `ledgerCredit` reads the owed amount of this allocation. -/
+def ledgerCur (s : Adjudicator E) (L : FixedPart) (oL : Allocation E) : Allocation E :=
+  if s.finalizedWith L.address = some (.allocation oL) then
+    ((s.finalOutcome L.address).map Outcome.entries).getD []
+  else oL
+
+/-- `ledgerCur` once `L` finalized with `oL`: the stored allocation. -/
+theorem ledgerCur_of_fin {s : Adjudicator E} {L : FixedPart} {oL o : Allocation E}
+    (hf : s.finalizedWith L.address = some (.allocation oL))
+    (ho : s.finalOutcome L.address = some (.allocation o)) : ledgerCur s L oL = o := by
+  unfold ledgerCur; rw [if_pos hf, ho]; rfl
+
+/-- `ledgerCur` before `L` finalized with `oL`: `oL`. -/
+theorem ledgerCur_of_not_fin {s : Adjudicator E} {L : FixedPart} {oL : Allocation E}
+    (hf : s.finalizedWith L.address ≠ some (.allocation oL)) : ledgerCur s L oL = oL := by
+  unfold ledgerCur; rw [if_neg hf]
+
+/-- Once `L` finalized with its latest allocation `oL`, its stored allocation still holds the
+    Round 2 guarantee of `r.V` (`Route.GuaranteeHeld`), or has no entry for `r.V`. -/
+structure Route.LedgerHeldInv (r : Route E) (P Q : Participant) (L : FixedPart)
+    (oL : Allocation E) (s : Adjudicator E) : Prop where
+  /-- The stored allocation of a finalized `L`. -/
+  held : s.finalizedWith L.address = some (.allocation oL) →
+    ∃ o, s.finalOutcome L.address = some (.allocation o) ∧
+      (r.GuaranteeHeld P Q o ∨ o.find r.V.address = none)
+
+/-- The share `sh` that a reclaim of the guarantee of `r.V` in `L` still owes to one peer: `sh`
+    while the current allocation of `L` (`ledgerCur`) holds the guarantee, zero after. -/
+def ledgerPend (r : Route E) (P Q : Participant) (s : Adjudicator E) (L : FixedPart)
+    (oL : Allocation E) (sh : Coins) : Coins :=
+  if (ledgerCur s L oL).find r.V.address = some (r.guarantee P Q) then sh else 0
+
+/-- One on-chain step and one ledger `L` of `Route.IntermediaryInv`: the step keeps
+    `Route.LedgerHeldInv`; it keeps the entry of `r.V` in `ledgerCur`, unless `r.V` was already
+    finalized (a reclaim); and the owed amount of `.external d` plus the pending share `sh`
+    (`ledgerPend`) falls only under a transfer out of `L`, which the balance of `.external d`
+    covers. `hpos` places `d` as the left (`k = 0`) or right (`k = 1`) peer of the guarantee,
+    and `hsh` makes `sh` the share that a reclaim pays at that index. -/
+theorem ledger_held_step {apps : Apps E} {caller : Participant} {op : Op E}
+    {s s' : Adjudicator E} (h : s.apply apps caller op = some s') {r : Route E}
+    (L : FixedPart) {P Q : Participant} (d : E) {oL : Allocation E}
+    (hoL : r.GuaranteeHeld P Q oL) (hinv : r.LedgerHeldInv P Q L oL s) (k : Nat) (sh : Coins)
+    (hpos : (d = r.dest P ∧ d ≠ r.dest Q ∧ k = 0) ∨ (d = r.dest Q ∧ d ≠ r.dest P ∧ k = 1))
+    (hsh : ∀ oV, s.finalizedWith r.V.address = some (.allocation oV) →
+      oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 → oV.amountAt k = sh) :
+    r.LedgerHeldInv P Q L oL s' ∧
+    ((ledgerCur s' L oL).find r.V.address = (ledgerCur s L oL).find r.V.address ∨
+      ∃ oV, s.finalizedWith r.V.address = some (.allocation oV)) ∧
+    ((ledgerCur s L oL).owed (.external d) + ledgerPend r P Q s L oL sh ≤
+        (ledgerCur s' L oL).owed (.external d) + ledgerPend r P Q s' L oL sh ∨
+      ∃ b, op = .transfer L b) ∧
+    (ledgerCur s L oL).owed (.external d) + ledgerPend r P Q s L oL sh +
+        s.balances.get (.external d) ≤
+      (ledgerCur s' L oL).owed (.external d) + ledgerPend r P Q s' L oL sh +
+        s'.balances.get (.external d) := by
+  have hbal : s.balances.get (.external d) ≤ s'.balances.get (.external d) :=
+    paid_out_monotone apps s s' (Step.mk caller op s s' h) d
+  have hpend : ∀ {s1 : Adjudicator E} {o : Allocation E}, ledgerCur s1 L oL = o →
+      ledgerPend r P Q s1 L oL sh = if o.find r.V.address = some (r.guarantee P Q) then sh else 0 := by
+    intro s1 o h1; unfold ledgerPend; rw [h1]
+  by_cases hf : s.finalizedWith L.address = some (.allocation oL)
+  · obtain ⟨o, ho, hdisj⟩ := hinv.held hf
+    have hf' := Adjudicator.finalizedWith_apply h hf
+    have hc := ledgerCur_of_fin hf ho
+    rcases hdisj with hG | hnone
+    · obtain ⟨o', ho', hcase⟩ := ledger_guarantee_step h L d o ho hG
+      have hc' := ledgerCur_of_fin hf' ho'
+      rw [hpend hc, hpend hc', hc, hc', if_pos hG.find]
+      rcases hcase with ⟨hG', hle, hsum⟩ | ⟨hnone', oV, hfV, hx, howed⟩
+      · rw [if_pos hG'.find]
+        refine ⟨⟨fun _ => ⟨o', ho', Or.inl hG'⟩⟩, Or.inl (by rw [hG.find, hG'.find]), ?_, ?_⟩
+        · rcases hle with hle | hb
+          · exact Or.inl (Nat.add_le_add_right hle _)
+          · exact Or.inr hb
+        · unfold Coins at *; omega
+      · have hn' : ¬ (o'.find r.V.address = some (r.guarantee P Q)) := by rw [hnone']; simp
+        rw [if_neg hn']
+        have hk := hsh oV hfV hx
+        have hcred : o'.owed (.external d) = o.owed (.external d) + sh := by
+          rw [howed]
+          rcases hpos with ⟨rfl, hdQ, rfl⟩ | ⟨rfl, hdP, rfl⟩
+          · rw [Allocation.owed_addTo_of_ne _ _ (by simpa using hdQ),
+              Allocation.owed_addTo_self _ hG.left, hk]
+          · rw [Allocation.owed_addTo_self _ (Allocation.find_addTo_ne_none _ _ hG.right),
+              Allocation.owed_addTo_of_ne _ _ (by simpa using hdP), hk]
+        refine ⟨⟨fun _ => ⟨o', ho', Or.inr hnone'⟩⟩, Or.inr ⟨oV, hfV⟩, ?_, ?_⟩
+        · exact Or.inl (by rw [hcred, Nat.add_zero])
+        · rw [hcred, Nat.add_zero]; exact Nat.add_le_add_left hbal _
+    · obtain ⟨o', ho', hoV', hle, hsum⟩ := ledger_claim_step h L r.V.address d o ho hnone
+      have hc' := ledgerCur_of_fin hf' ho'
+      have hn1 : ¬ (o.find r.V.address = some (r.guarantee P Q)) := by rw [hnone]; simp
+      have hn2 : ¬ (o'.find r.V.address = some (r.guarantee P Q)) := by rw [hoV']; simp
+      rw [hpend hc, hpend hc', hc, hc', if_neg hn1, if_neg hn2]
+      refine ⟨⟨fun _ => ⟨o', ho', Or.inr hoV'⟩⟩, Or.inl (by rw [hnone, hoV']), ?_, ?_⟩
+      · rcases hle with hle | hb
+        · exact Or.inl (Nat.add_le_add_right hle _)
+        · exact Or.inr hb
+      · simpa only [Nat.add_zero] using hsum
+  · have hc := ledgerCur_of_not_fin hf
+    by_cases hf' : s'.finalizedWith L.address = some (.allocation oL)
+    · have hnone : s.finalizedWith L.address = none := by
+        cases hfs : s.finalizedWith L.address with
+        | none => rfl
+        | some Ω =>
+          have := Adjudicator.finalizedWith_apply h hfs
+          rw [hf'] at this
+          exact absurd (hfs.trans (congrArg some (Option.some.inj this).symm)) hf
+      have ho' := finalOutcome_of_fresh_finalizedWith h L hnone hf'
+      have hc' := ledgerCur_of_fin hf' ho'
+      rw [hpend hc, hpend hc', hc, hc']
+      exact ⟨⟨fun _ => ⟨oL, ho', Or.inl hoL⟩⟩, Or.inl rfl, Or.inl le_rfl,
+        Nat.add_le_add_left hbal _⟩
+    · have hc' := ledgerCur_of_not_fin hf'
+      rw [hpend hc, hpend hc', hc, hc']
+      exact ⟨⟨fun h' => absurd h' hf'⟩, Or.inl rfl, Or.inl le_rfl, Nat.add_le_add_left hbal _⟩
+
+/-- The share of `r.V`'s final outcome at index `k` (`Allocation.amountAt`, the index `reclaim`
+    reads): the finalized amount when `r.V` finalized with amounts that sum to `a0 + b0`
+    (`reclaim`'s amount check, go-nitro MultiAssetHolder.sol:365), `dflt` otherwise. -/
+def satpShare (r : Route E) (s : Adjudicator E) (k : Nat) (dflt : Coins) : Coins :=
+  match s.finalizedWith r.V.address with
+  | some Ω =>
+    if Ω.entries.amountAt 0 + Ω.entries.amountAt 1 = r.a0 + r.b0 then Ω.entries.amountAt k
+    else dflt
+  | none => dflt
+
+/-- The route facts of the intermediary `P` that `satp_theorem_3_2`'s chain invariant reads:
+    the left ledger `Lm` (latest allocation `om`, guarantee `G(a0 + b0, [Pprev, P])`) and the
+    right ledger `Lp` (latest allocation `op`, guarantee `G(a0 + b0, [P, Pnext])`) are two
+    distinct ledger channels, the three peers have distinct destinations, and `r.V` is
+    virtual (`Route.WellFormed`, `Route.Round2Ledger`, `HonestSend.guaranteesExternal`). -/
+structure Route.Intermediary (r : Route E) (Pprev P Pnext : Participant) (Lm Lp : FixedPart)
+    (om op : Allocation E) : Prop where
+  /-- The two ledgers differ. -/
+  ne : Lm ≠ Lp
+  /-- `P` and `Pprev` have distinct destinations. -/
+  destPrev : r.dest P ≠ r.dest Pprev
+  /-- `P` and `Pnext` have distinct destinations. -/
+  destNext : r.dest P ≠ r.dest Pnext
+  /-- `om` holds the guarantee of the left ledger. -/
+  heldm : r.GuaranteeHeld Pprev P om
+  /-- `op` holds the guarantee of the right ledger. -/
+  heldp : r.GuaranteeHeld P Pnext op
+  /-- `Lm` is a ledger channel. -/
+  kindm : Lm.kind = .ledger
+  /-- `Lp` is a ledger channel. -/
+  kindp : Lp.kind = .ledger
+  /-- `r.V` is a virtual channel. -/
+  kindV : r.V.kind = .virtual
+
+/-- The chain invariant of `satp_theorem_3_2`'s strategy (`Route.Intermediary`): each ledger
+    finalized with its latest allocation keeps the guarantee or drops it
+    (`Route.LedgerHeldInv`); while `r.V` is not finalized, both guarantees are still there; and
+    `total` is at most `P`'s owed amounts, the shares the remaining guarantees still owe `P`
+    (`ledgerPend`, `satpShare`: `b` in `Lm`, `a` in `Lp`, SATP:550-553), and the balance of
+    `P`'s destination. -/
+structure Route.IntermediaryInv (r : Route E) (Pprev P Pnext : Participant) (Lm Lp : FixedPart)
+    (om op : Allocation E) (total : Coins) (s : Adjudicator E) : Prop where
+  /-- The left ledger keeps or drops its guarantee. -/
+  heldm : r.LedgerHeldInv Pprev P Lm om s
+  /-- The right ledger keeps or drops its guarantee. -/
+  heldp : r.LedgerHeldInv P Pnext Lp op s
+  /-- Both guarantees stay while `r.V` is not finalized. -/
+  present : s.finalizedWith r.V.address = none →
+    (ledgerCur s Lm om).find r.V.address = some (r.guarantee Pprev P) ∧
+    (ledgerCur s Lp op).find r.V.address = some (r.guarantee P Pnext)
+  /-- `P`'s credit. -/
+  credit : total ≤ (ledgerCur s Lm om).owed (.external (r.dest P)) +
+      ledgerPend r Pprev P s Lm om (satpShare r s 1 r.b0) +
+    ((ledgerCur s Lp op).owed (.external (r.dest P)) +
+      ledgerPend r P Pnext s Lp op (satpShare r s 0 r.a0)) +
+    s.balances.get (.external (r.dest P))
+
+/-- Every on-chain step keeps `Route.IntermediaryInv` (`ledger_held_step` once per ledger). At
+    most one of the two distinct ledgers pays out in one step, and the balance of `P`'s
+    destination covers that payout. The step that finalizes `r.V` exchanges the default shares
+    `b0`, `a0` for the finalized shares, which have the same sum when `reclaim` can use
+    them; both guarantees are still there at that step, as no reclaim of `r.V` can run before
+    `r.V` is finalized. -/
+theorem Route.IntermediaryInv.step {apps : Apps E} {r : Route E} {Pprev P Pnext : Participant}
+    {Lm Lp : FixedPart} {om op : Allocation E} {total : Coins}
+    (w : r.Intermediary Pprev P Pnext Lm Lp om op) {caller : Participant} {o : Op E}
+    {s s' : Adjudicator E} (hI : r.IntermediaryInv Pprev P Pnext Lm Lp om op total s)
+    (h : s.apply apps caller o = some s') :
+    r.IntermediaryInv Pprev P Pnext Lm Lp om op total s' := by
+  obtain ⟨hIm, hIp, hpres, htot⟩ := hI
+  have hspec : ∀ {k : Nat} {dflt : Coins} (oV : Allocation E),
+      s.finalizedWith r.V.address = some (.allocation oV) →
+      oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 → oV.amountAt k = satpShare r s k dflt := by
+    intro k dflt oV hf hx
+    unfold satpShare
+    simp only [hf, Outcome.entries, hx, ↓reduceIte]
+  obtain ⟨hAm, hFm, hBm, hCm⟩ := ledger_held_step h Lm (r.dest P) w.heldm hIm 1
+    (satpShare r s 1 r.b0) (Or.inr ⟨rfl, w.destPrev, rfl⟩) hspec
+  obtain ⟨hAp, hFp, hBp, hCp⟩ := ledger_held_step h Lp (r.dest P) w.heldp hIp 0
+    (satpShare r s 0 r.a0) (Or.inl ⟨rfl, w.destNext, rfl⟩) hspec
+  have hbal : s.balances.get (.external (r.dest P)) ≤ s'.balances.get (.external (r.dest P)) :=
+    paid_out_monotone apps s s' (Step.mk caller o s s' h) (r.dest P)
+  have hmid : total ≤ (ledgerCur s' Lm om).owed (.external (r.dest P)) +
+      ledgerPend r Pprev P s' Lm om (satpShare r s 1 r.b0) +
+      ((ledgerCur s' Lp op).owed (.external (r.dest P)) +
+        ledgerPend r P Pnext s' Lp op (satpShare r s 0 r.a0)) +
+      s'.balances.get (.external (r.dest P)) := by
+    rcases hBm with hm | ⟨b, hb⟩
+    · rcases hBp with hp | ⟨b', hb'⟩
+      · unfold Coins at *; omega
+      · unfold Coins at *; omega
+    · rcases hBp with hp | ⟨b', hb'⟩
+      · unfold Coins at *; omega
+      · rw [hb] at hb'
+        exact absurd (Op.transfer.inj hb').1 w.ne
+  have hVnone : s'.finalizedWith r.V.address = none → s.finalizedWith r.V.address = none := by
+    intro h'
+    cases hfs : s.finalizedWith r.V.address with
+    | none => rfl
+    | some Ω => rw [Adjudicator.finalizedWith_apply h hfs] at h'; cases h'
+  have hkeep : s.finalizedWith r.V.address = none →
+      (ledgerCur s' Lm om).find r.V.address = some (r.guarantee Pprev P) ∧
+      (ledgerCur s' Lp op).find r.V.address = some (r.guarantee P Pnext) := by
+    intro hs
+    obtain ⟨hpm, hpp⟩ := hpres hs
+    refine ⟨?_, ?_⟩
+    · rcases hFm with heq | ⟨oV, hoV⟩
+      · rw [heq]; exact hpm
+      · rw [hs] at hoV; cases hoV
+    · rcases hFp with heq | ⟨oV, hoV⟩
+      · rw [heq]; exact hpp
+      · rw [hs] at hoV; cases hoV
+  have hshare : ledgerPend r Pprev P s' Lm om (satpShare r s 1 r.b0) +
+      ledgerPend r P Pnext s' Lp op (satpShare r s 0 r.a0) ≤
+      ledgerPend r Pprev P s' Lm om (satpShare r s' 1 r.b0) +
+      ledgerPend r P Pnext s' Lp op (satpShare r s' 0 r.a0) := by
+    cases hfs : s.finalizedWith r.V.address with
+    | some Ω =>
+      have hfs' := Adjudicator.finalizedWith_apply h hfs
+      have e1 : satpShare r s' 1 r.b0 = satpShare r s 1 r.b0 := by unfold satpShare; rw [hfs, hfs']
+      have e0 : satpShare r s' 0 r.a0 = satpShare r s 0 r.a0 := by unfold satpShare; rw [hfs, hfs']
+      rw [e1, e0]
+    | none =>
+      have e1 : satpShare r s 1 r.b0 = r.b0 := by unfold satpShare; rw [hfs]
+      have e0 : satpShare r s 0 r.a0 = r.a0 := by unfold satpShare; rw [hfs]
+      obtain ⟨hpm', hpp'⟩ := hkeep hfs
+      unfold ledgerPend
+      rw [hpm', hpp', if_pos rfl, if_pos rfl, if_pos rfl, if_pos rfl, e1, e0]
+      unfold satpShare
+      cases hfs' : s'.finalizedWith r.V.address with
+      | none => exact le_rfl
+      | some Ω =>
+        dsimp only
+        split
+        · rename_i hx; unfold Coins at *; omega
+        · exact le_rfl
+  refine ⟨hAm, hAp, fun h' => hkeep (hVnone h'), ?_⟩
+  unfold Coins at *; omega
+
+/-- An unbeatable strategy also reaches its goal with `Route.IntermediaryInv`, when that holds
+    at the start (`UnbeatableIn.and_chainInv`, `Route.IntermediaryInv.step`). -/
+theorem UnbeatableIn.and_intermediaryInv {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {r : Route E}
+    {Pprev P Pnext : Participant} {Lm Lp : FixedPart} {om op : Allocation E} {total : Coins}
+    (w : r.Intermediary Pprev P Pnext Lm Lp om op) {net : NetworkState E p}
+    (hU : UnbeatableIn apps T allowed G net)
+    (hI : r.IntermediaryInv Pprev P Pnext Lm Lp om op total net.chain) :
+    UnbeatableIn apps T allowed
+      (fun n => G n ∧ r.IntermediaryInv Pprev P Pnext Lm Lp om op total n.chain) net :=
+  UnbeatableIn.and_chainInv (fun _ _ _ _ hI h => hI.step w h) hU hI
+
+/-- An unbeatable strategy also reaches its goal with `c` still finalized with `Ω`, when `c`
+    is finalized with `Ω` at the start: the outcome of finalization never changes
+    (`Adjudicator.finalizedWith_apply`). -/
+theorem UnbeatableIn.and_finalized {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {net : NetworkState E p}
+    {c : FixedPart} {Ω : Outcome E} (hU : UnbeatableIn apps T allowed G net)
+    (hf : net.chain.finalizedWith c.address = some Ω) :
+    UnbeatableIn apps T allowed (fun n => G n ∧ n.chain.finalizedWith c.address = some Ω) net :=
+  UnbeatableIn.and_chainInv (fun _ _ _ _ hI h => Adjudicator.finalizedWith_apply h hI) hU hf
+
+/-- The stored allocation of `L` has no entry for `r.V`. -/
+structure Route.LedgerCleared (r : Route E) (L : FixedPart) (s : Adjudicator E) : Prop where
+  /-- The stored allocation. -/
+  cleared : ∃ o, s.finalOutcome L.address = some (.allocation o) ∧ o.find r.V.address = none
+
+/-- Once cleared, `L` stays cleared (`ledger_claim_step`). -/
+theorem Route.LedgerCleared.step {apps : Apps E} {r : Route E} {L : FixedPart} (d : E)
+    {caller : Participant} {op : Op E} {s s' : Adjudicator E} (hI : r.LedgerCleared L s)
+    (h : s.apply apps caller op = some s') : r.LedgerCleared L s' := by
+  obtain ⟨o, ho, hoV⟩ := hI.cleared
+  obtain ⟨o', ho', hoV', -, -⟩ := ledger_claim_step h L r.V.address d o ho hoV
+  exact ⟨o', ho', hoV'⟩
+
+/-- The chain at the start of `satp_theorem_3_2`'s reclaim round: `Route.IntermediaryInv`,
+    both ledgers finalized with their latest allocations, and `r.V` finalized with a pair
+    outcome that keeps the pre-fund total. -/
+structure Route.IntermediaryReady (r : Route E) (alice bob Pprev P Pnext : Participant)
+    (Lm Lp : FixedPart) (om op : Allocation E) (total : Coins) (s : Adjudicator E) : Prop where
+  /-- The chain invariant. -/
+  inv : r.IntermediaryInv Pprev P Pnext Lm Lp om op total s
+  /-- `Lm` finalized with `om`. -/
+  finm : s.finalizedWith Lm.address = some (.allocation om)
+  /-- `Lp` finalized with `op`. -/
+  finp : s.finalizedWith Lp.address = some (.allocation op)
+  /-- `r.V` finalized with a pair outcome. -/
+  finV : ∃ a b, s.finalizedWith r.V.address = some (.allocation
+    [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧ a + b = r.a0 + r.b0
+
+/-- The round of `P`'s reaction `[reclaim Lm r.V, reclaim Lp r.V]` (Protocol 3.3 step 3) ends
+    in `IntermediaryRecovered`. Each landing clears its ledger: the reclaim succeeds when the
+    guarantee is there (`reclaim_can_happen`), and fails, changing nothing, when it is gone.
+    A cleared ledger stays cleared (`Route.LedgerCleared.step`), and every step keeps
+    `Route.IntermediaryReady`; the adversary lands the two calls in either order
+    (`Threat.RoundSeq.peel_two`). With both guarantees gone, `Route.IntermediaryInv`'s credit
+    is the goal's bound. -/
+theorem satp_reclaim_round {apps : Apps E} {r : Route E} {alice bob Pprev P Pnext : Participant}
+    {T : Threat E P} {t : Time} {Lm Lp : FixedPart}
+    {om op : Allocation E} {balm balp base : Coins}
+    (w : r.Intermediary Pprev P Pnext Lm Lp om op) {n0 n3 : NetworkState E P}
+    (hseq : T.RoundSeq apps t [Op.reclaim Lm r.V, Op.reclaim Lp r.V] n0 n3)
+    (hR : r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) n0.chain) :
+    IntermediaryRecovered r Lm Lp balm balp base n3 := by
+  have hstep : ∀ (caller : Participant) (o : Op E) (s s' : Adjudicator E),
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) s →
+      s.apply apps caller o = some s' →
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) s' := by
+    intro caller o s s' hs h
+    obtain ⟨a, b, hV, hab⟩ := hs.finV
+    exact ⟨hs.inv.step w h, Adjudicator.finalizedWith_apply h hs.finm,
+      Adjudicator.finalizedWith_apply h hs.finp, a, b, Adjudicator.finalizedWith_apply h hV, hab⟩
+  -- A landing of `reclaim L r.V` clears `L`.
+  have clears : ∀ {Q1 Q2 : Participant} {L : FixedPart} {oL : Allocation E}
+      (n : NetworkState E P), L.kind = .ledger →
+      n.chain.finalizedWith L.address = some (.allocation oL) →
+      r.LedgerHeldInv Q1 Q2 L oL n.chain →
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) n.chain →
+      r.LedgerCleared L (n.applyAdv apps (.land (Op.reclaim L r.V))).chain := by
+    intro Q1 Q2 L oL n hkL hfL hinv hn
+    obtain ⟨a, b, hfV, hab⟩ := hn.finV
+    have hx : Allocation.amountAt [alloc (.external (r.dest alice)) a,
+        alloc (.external (r.dest bob)) b] 0 + Allocation.amountAt
+          [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b] 1 =
+        r.a0 + r.b0 := hab
+    obtain ⟨o, ho, hG | hnone⟩ := hinv.held hfL
+    · have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by simp
+      have hrc : n.chain.apply apps P (.reclaim L r.V) = some
+          (n.chain.setStatus L ((n.chain.statusOf L).withOutcome (.allocation
+            (((o.addTo (.external (r.dest Q1)) (Allocation.amountAt
+              [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b] 0)).addTo
+              (.external (r.dest Q2)) (Allocation.amountAt
+              [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b] 1)).remove
+              r.V.address)))) :=
+        reclaim_can_happen n.chain L r.V o _ (r.a0 + r.b0) _ _ hkL w.kindV ho hfV
+        hG.find (by rw [Allocation.find_remove, if_neg (hext _)]; exact hG.left)
+        (by rw [Allocation.find_remove, if_neg (hext _)]; exact hG.right) hx
+      rw [NetworkState.applyAdv_land_some apps (p := P) hrc]
+      refine ⟨⟨((o.addTo (.external (r.dest Q1)) (Allocation.amountAt
+          [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b] 0)).addTo
+          (.external (r.dest Q2)) (Allocation.amountAt
+          [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b] 1)).remove
+          r.V.address, ?_, by rw [Allocation.find_remove, if_pos rfl]⟩⟩
+      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel,
+        Adjudicator.statusOf_setStatus, ↓reduceIte, ChannelStatus.finalOutcome_withOutcome]
+    · have hrc : n.chain.apply apps P (.reclaim L r.V) = none := by
+        show n.chain.reclaim L r.V = none
+        unfold Adjudicator.reclaim
+        simp only [if_pos (⟨hkL, w.kindV⟩ : L.kind = .ledger ∧ r.V.kind = .virtual), ho, hfV,
+          hnone]
+      rw [NetworkState.applyAdv_land_none apps hrc]
+      exact ⟨o, ho, hnone⟩
+  have clearm : ∀ n : NetworkState E P,
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) n.chain →
+      r.LedgerCleared Lm (n.applyAdv apps (.land (Op.reclaim Lm r.V))).chain :=
+    fun n hn => clears n w.kindm hn.finm hn.inv.heldm hn
+  have clearp : ∀ n : NetworkState E P,
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) n.chain →
+      r.LedgerCleared Lp (n.applyAdv apps (.land (Op.reclaim Lp r.V))).chain :=
+    fun n hn => clears n w.kindp hn.finp hn.inv.heldp hn
+  -- One pending reclaim, landed after any adversary play, with a cleared ledger kept.
+  have one : ∀ {L L' : FixedPart} {m0 m2 : NetworkState E P},
+      (∀ n : NetworkState E P,
+        r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) n.chain →
+        r.LedgerCleared L (n.applyAdv apps (.land (Op.reclaim L r.V))).chain) →
+      T.RoundSeq apps t [Op.reclaim L r.V] m0 m2 →
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) m0.chain →
+      r.LedgerCleared L' m0.chain →
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) m2.chain ∧
+        r.LedgerCleared L' m2.chain ∧ r.LedgerCleared L m2.chain := by
+    intro L L' m0 m2 hland hs hI hC
+    obtain ⟨m1, hA, hB⟩ := Threat.RoundSeq.peel_one _ _ _ hs
+    have hI1 := hA.chainInv (I := fun s =>
+      r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) s ∧
+        r.LedgerCleared L' s)
+      (fun caller o s s' hs h => ⟨hstep caller o s s' hs.1 h, hs.2.step (r.dest P) h⟩) ⟨hI, hC⟩
+    have hland1 := hland m1 hI1.1
+    obtain ⟨⟨hI2, hC2⟩, hL2⟩ := hB.chainInv (I := fun s =>
+      (r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) s ∧
+        r.LedgerCleared L' s) ∧ r.LedgerCleared L s)
+      (fun caller o s s' hs h => ⟨⟨hstep caller o s s' hs.1.1 h, hs.1.2.step (r.dest P) h⟩,
+        hs.2.step (r.dest P) h⟩)
+      ⟨NetworkState.applyAdv_chainInv apps (I := fun s =>
+        r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base) s ∧
+          r.LedgerCleared L' s)
+        (fun caller o s s' hs h => ⟨hstep caller o s s' hs.1 h, hs.2.step (r.dest P) h⟩)
+        m1 _ hI1, hland1⟩
+    exact ⟨hI2, hC2, hL2⟩
+  have hfin : r.IntermediaryReady alice bob Pprev P Pnext Lm Lp om op (balm + balp + base)
+      n3.chain ∧ r.LedgerCleared Lm n3.chain ∧ r.LedgerCleared Lp n3.chain := by
+    rcases Threat.RoundSeq.peel_two _ _ _ _ hseq with ⟨n1, hA, hB⟩ | ⟨n1, hA, hB⟩
+    · have hI1 := hA.chainInv hstep hR
+      obtain ⟨hI3, hCm, hCp⟩ := one clearp hB
+        (NetworkState.applyAdv_chainInv apps hstep n1 _ hI1) (clearm n1 hI1)
+      exact ⟨hI3, hCm, hCp⟩
+    · have hI1 := hA.chainInv hstep hR
+      obtain ⟨hI3, hCp, hCm⟩ := one clearm hB
+        (NetworkState.applyAdv_chainInv apps hstep n1 _ hI1) (clearp n1 hI1)
+      exact ⟨hI3, hCm, hCp⟩
+  obtain ⟨hI3, ⟨om', hom', hom'V⟩, ⟨op', hop', hop'V⟩⟩ := hfin
+  have htot := hI3.inv.credit
+  unfold ledgerPend at htot
+  rw [ledgerCur_of_fin hI3.finm hom', ledgerCur_of_fin hI3.finp hop', hom'V, hop'V,
+    if_neg (by simp), if_neg (by simp)] at htot
+  exact ⟨om', op', hom', hop', hom'V, hop'V, by simpa only [Nat.add_zero] using htot⟩
+
+/-- `r.V`'s status is not the `.finalized` constructor. A virtual channel takes no `transfer`
+    and no `reclaim` of its own, so only a `conclude` writes that constructor. -/
+def SatpNotFinalized {P : Participant} (r : Route E) (net : NetworkState E P) : Prop :=
+  ∀ u f o, net.chain.statusOf r.V ≠ .finalized u f o
+
+/-- `P`'s facts on `r.V` that `satp_theorem_3_2`'s ledger phase keeps: `P`'s setup states
+    (`HoldsVirtualSetup`), `r.V` not `.finalized` (`SatpNotFinalized`), and the held
+    all-signed pre-fund state of `r.V` (`NetworkState.HoldsPrefund`). -/
+structure SatpSetup {P : Participant} (r : Route E) (alice bob : Participant)
+    (net : NetworkState E P) : Prop where
+  /-- `P`'s setup states on `r.V`. -/
+  virtualSetup : HoldsVirtualSetup net r alice bob true
+  /-- `r.V` is not `.finalized`. -/
+  notFinalized : SatpNotFinalized r net
+  /-- `P` holds the pre-fund state of `r.V`. -/
+  prefund : net.HoldsPrefund r.V
+
+/-- A strategy whose moves send nothing and whose calls do not target `r.V` keeps `SatpSetup`:
+    the instance of `UnbeatableIn.and_condInvariant` that carries `satp_theorem_3_2`'s ledger
+    phase. `HoldsVirtualSetup` and `HoldsPrefund` read only `sent` and `received`, which no
+    adversary move shrinks. One successful call keeps `r.V` off `.finalized`: a `conclude` of
+    `r.V` needs a final state that `P` signed, and every `P`-signed proof state of an adversary
+    call is one `P` sent (`Bounds.unforgeable`), while `P` sent no final state of `r.V`
+    (`satpVirtual_conclude_fails`); a `challenge` or `checkpoint` of `r.V` writes
+    `.challenged` or `.open`; `transfer` and `reclaim` need a ledger channel; every other call,
+    and `P`'s own calls, leave the status of `r.V` alone (`statusOf_apply_of_not_targets`). -/
+theorem UnbeatableIn.and_satpSetup {apps : Apps E} {P : Participant} {T : Threat E P}
+    (hbounds : Bounds apps P T) {r : Route E} (hr : r.WellFormed apps)
+    {alice bob : Participant} (hE : SatpEnds r alice bob P) {G : NetworkState E P → Prop}
+    {net : NetworkState E P}
+    (hU : UnbeatableIn apps T (fun m => (∀ op ∈ m.calls, ¬ Op.targets op r.V) ∧ m.NoSend) G net)
+    (hI : SatpSetup r alice bob net) :
+    UnbeatableIn apps T (fun m => (∀ op ∈ m.calls, ¬ Op.targets op r.V) ∧ m.NoSend)
+      (fun n => G n ∧ SatpSetup r alice bob n) net := by
+  have hkV : r.V.kind = .virtual := hr.2.2.2.2.2.2.1
+  have notFin : ∀ {n : NetworkState E P} {caller : Participant} {op : Op E}
+      {s' : Adjudicator E}, HoldsVirtualSetup n r alice bob true →
+      (∀ ss ∈ op.proofStates, P ∈ ss.signers → ∃ x ∈ n.sent, x.state = ss.state) →
+      n.chain.apply apps caller op = some s' → SatpNotFinalized r n →
+      ∀ u f o, s'.statusOf r.V ≠ .finalized u f o := by
+    intro n caller op s' hVs hU h hnf
+    by_cases ht : Op.targets op r.V
+    · cases op with
+      | deposit a e x => exact ht.elim
+      | tick dt => exact ht.elim
+      | transfer a b =>
+        simp only [Op.targets] at ht
+        subst ht
+        obtain ⟨-, -, -, -, -, -, -, -, -, -, hk, -⟩ := Adjudicator.transfer_some h
+        rw [hkV] at hk; cases hk
+      | reclaim l v =>
+        simp only [Op.targets] at ht
+        subst ht
+        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hk, -⟩ := Adjudicator.reclaim_some h
+        rw [hkV] at hk; cases hk
+      | challenge c proof cand =>
+        simp only [Op.targets] at ht
+        subst ht
+        obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+        intro u f o hst
+        rw [Adjudicator.statusOf_setStatus, if_pos rfl] at hst
+        cases hst
+      | checkpoint c proof cand =>
+        simp only [Op.targets] at ht
+        subst ht
+        obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+        intro u f o hst
+        rw [Adjudicator.statusOf_setStatus, if_pos rfl] at hst
+        cases hst
+      | conclude c ss =>
+        simp only [Op.targets] at ht
+        subst ht
+        obtain ⟨⟨-, hcp⟩, -⟩ := Adjudicator.conclude_some h
+        exact (satpVirtual_conclude_fails hVs hE hcp hU).elim
+    · rw [statusOf_apply_of_not_targets h ht]
+      exact hnf
+  have frame : ∀ {n : NetworkState E P} (m : AdvMove E),
+      HoldsVirtualSetup n r alice bob true → n.HoldsPrefund r.V →
+      HoldsVirtualSetup (n.applyAdv apps m) r alice bob true ∧
+        (n.applyAdv apps m).HoldsPrefund r.V := by
+    intro n m hVs hpre
+    refine ⟨by unfold HoldsVirtualSetup; rw [NetworkState.applyAdv_sent]; exact hVs, ?_⟩
+    refine hpre.mono fun ss hH => hH.of_subset (fun s hs => ?_)
+      (NetworkState.applyAdv_received_subset apps n m)
+    rw [NetworkState.applyAdv_sent]; exact hs
+  have hstep : T.CondStepInvariant apps (fun _ => True) (fun n => SatpSetup r alice bob n)
+      (fun _ op => ¬ Op.targets op r.V) := by
+    refine ⟨⟨?_, ?_, ?_, ?_⟩, fun _ hc => hc⟩
+    · intro n op _ hc ⟨hVs, hnf, hpre⟩
+      obtain ⟨hVs', hpre'⟩ := frame (.land op) hVs hpre
+      refine ⟨hVs', ?_, hpre'⟩
+      intro u f o
+      rw [NetworkState.applyAdv_land_chain]
+      cases h : n.chain.apply apps P op with
+      | none => exact hnf u f o
+      | some s' =>
+        simp only [Option.getD_some]
+        rw [statusOf_apply_of_not_targets h hc]
+        exact hnf u f o
+    · intro n ss _ _ ⟨hVs, hnf, hpre⟩
+      obtain ⟨hVs', hpre'⟩ := frame (.deliver ss) hVs hpre
+      exact ⟨hVs', hnf, hpre'⟩
+    · intro n dt _ _ ⟨hVs, hnf, hpre⟩
+      obtain ⟨hVs', hpre'⟩ := frame (.tick dt) hVs hpre
+      refine ⟨hVs', ?_, hpre'⟩
+      simp only [SatpNotFinalized, NetworkState.applyAdv, Adjudicator.tick_statusOf]
+      exact hnf
+    · intro n caller op _ hfeas ⟨hVs, hnf, hpre⟩
+      obtain ⟨hVs', hpre'⟩ := frame (.chain caller op) hVs hpre
+      refine ⟨hVs', ?_, hpre'⟩
+      intro u f o
+      rw [NetworkState.applyAdv_chain_chain]
+      cases h : n.chain.apply apps caller op with
+      | none => exact hnf u f o
+      | some s' =>
+        simp only [Option.getD_some]
+        exact notFin hVs
+          (fun ss hss hsig => (hbounds.unforgeable n caller op hfeas ss hss).1 hsig) h hnf u f o
+  refine UnbeatableIn.and_condInvariant hstep (fun hal _ op hop => hal.1 op hop) ?_ hU hI
+  intro n m hal hI'
+  cases m with
+  | react rr =>
+    obtain ⟨calls, sends⟩ := rr
+    have hm : sends = [] := hal.2
+    subst hm
+    have hn : n.applyHonest (.react ⟨calls, []⟩) = n := by simp [NetworkState.applyHonest]
+    rw [hn]; exact hI'
+  | wait dt => exact ⟨hI'.virtualSetup, hI'.notFinalized, hI'.prefund⟩
+
+/-- SATP-20 (Theorem 3.2, SATP:503-507). "Let d(V, Pi) be the amount debited to
+    V from Pi's balances, across Li and Li−1 in Protocol 3.1. Let c(V, Pi) be
+    the amount credited to Pi's balance from guarantees targeting V across Li
+    and Li−1 in both Protocol 3.2 and 3.3. For all V, for all i = 1, ..., n,
+    if Pi follows Protocols 3.1-3.3, then c(Pi) = d(Pi)." An intermediary
+    that completed Round 2 (SATP:411-418) and holds the latest ledger states
+    has an unbeatable strategy (Protocol 3.3, SATP:480-485) to finalize both
+    ledgers with no guarantee for `V` and its pre-protocol balances
+    restored. `Pi`'s own signatures on `V` are the setup states
+    (`HoldsVirtualSetup`); the game rule `Bounds.unforgeable` bounds the
+    rest. `P` signs a ledger state that funds `V` only when it holds the
+    all-signed pre-fund state of `V` (operator ruling 2026-10-31; SATP:409,
+    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399), and every
+    guarantee `P` signs names external peers (SATP:411-418). Both are rules
+    of the honest signer (`HonestSend.fundsCommitted`,
+    `HonestSend.guaranteesExternal`; operator ruling 2026-11-01), which
+    `Nitro.participant_sent_honest` and `Nitro.participant_holds_honest` give. -/
+theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
+    (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
+    (hV : apps r.V.appDef = satpVirtualRules)
+    (halice : r.peers.head? = some alice) (hbob : r.peers.getLast? = some bob)
+    (i : Nat) (hi : 1 ≤ i) (hin : i + 1 < r.peers.length) (hP : r.peers[i]? = some P)
+    (Pprev Pnext : Participant) (hprev : r.peers[i - 1]? = some Pprev)
+    (hnext : r.peers[i + 1]? = some Pnext)
+    (Lm Lp : TimedChannel T.ε) (hLm : r.ledgers[i - 1]? = some (Lm : FixedPart))
+    (hLp : r.ledgers[i]? = some (Lp : FixedPart))
+    (hdurV : r.V.IsTimed T.ε)
+    (om : r.Round2Ledger Pprev P P r.b0) (op : r.Round2Ledger P Pnext P r.a0)
+    (net : Nitro.ReachableParticipant apps T)
+    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om.outcome)
+    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op.outcome)
+    (hVs : HoldsVirtualSetup net.state r alice bob true)
+    (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
+      net.state.DeadlineAfter r.V T.ε)
+    (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
+      net.state.chain.finalizedWith (Lp : FixedPart).address = none ∧
+      net.state.chain.finalizedWith r.V.address = none) :
+    Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) om.bal op.bal
+      (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
+  have hbounds := A.toBounds
+  have hr0 := hr
+  obtain ⟨Lm, hdurLm⟩ := Lm
+  obtain ⟨Lp, hdurLp⟩ := Lp
+  have hchm0 : net.state.chain.finalizedWith Lm.address = none := hchain.1
+  have hchp0 : net.state.chain.finalizedWith Lp.address = none := hchain.2.1
+  -- The route facts.
+  obtain ⟨-, -, hnodup, hdnodup, hled, hVp, hkV, hLV⟩ := hr
+  obtain ⟨Pm, Qm, hPm, hQm, hLmp, hkLm, hcm⟩ := hled (i - 1) Lm hLm
+  obtain ⟨Pp, Qp, hPp, hQp, hLpp, hkLp, hcp⟩ := hled i Lp hLp
+  rw [Nat.sub_add_cancel hi, hP, Option.some.injEq] at hQm
+  rw [hP, Option.some.injEq] at hPp
+  rw [hprev, Option.some.injEq] at hPm
+  rw [hnext, Option.some.injEq] at hQp
+  subst hQm hPp hPm hQp
+  have hPLm : P ∈ Lm.participants := by rw [hLmp]; simp
+  have hPLp : P ∈ Lp.participants := by rw [hLpp]; simp
+  have hlt : i - 1 < r.peers.length := by omega
+  have hne : Lm ≠ Lp := by
+    intro heq
+    rw [heq, hLpp, List.cons.injEq] at hLmp
+    rw [hLmp.1] at hP
+    have := (List.getElem?_inj hlt hnodup).1 (hprev.trans hP.symm)
+    omega
+  have hidx : ∀ {j k : Nat} {X Y : Participant}, j < r.peers.length → r.peers[j]? = some X →
+      r.peers[k]? = some Y → r.dest X = r.dest Y → j = k := by
+    intro j k X Y hj hX hY hXY
+    have hj' : j < (r.peers.map r.dest).length := by rw [List.length_map]; exact hj
+    apply (List.getElem?_inj hj' hdnodup).1
+    rw [List.getElem?_map, List.getElem?_map, hX, hY, Option.map_some, Option.map_some, hXY]
+  have hdm : r.dest P ≠ r.dest Pprev := fun h => by
+    have := hidx (by omega) hP hprev h; omega
+  have hdp : r.dest P ≠ r.dest Pnext := fun h => by
+    have := hidx (by omega) hP hnext h; omega
+  have hE : SatpEnds r alice bob P :=
+    ⟨by rw [hVp]; exact halice, by rw [hVp]; exact hbob, by rw [hVp]; exact List.mem_of_getElem? hP⟩
+  -- The latest ledger states, and what `P`'s honest signing gives about them.
+  obtain ⟨ssm, hhm, hallm, hchm, houtm, -, hsentm, hstm⟩ := hHm
+  obtain ⟨ssp, hhp, hallp, hchp, houtp, -, hsentp, hstp⟩ := hHp
+  have hhonm := Nitro.participant_holds_honest hbounds net hhm (hallm P (by rw [hchm]; exact hPLm))
+  have hhonp := Nitro.participant_holds_honest hbounds net hhp (hallp P (by rw [hchp]; exact hPLp))
+  have hgm : r.GuaranteeHeld Pprev P om.outcome := by
+    have hext := hhonm.guaranteesExternal
+    rw [houtm] at hext
+    exact ⟨om.afterRound2.2.2.2, hext, om.afterRound2.2.1, om.afterRound2.2.2.1⟩
+  have hgp : r.GuaranteeHeld P Pnext op.outcome := by
+    have hext := hhonp.guaranteesExternal
+    rw [houtp] at hext
+    exact ⟨op.afterRound2.2.2.2, hext, op.afterRound2.2.1, op.afterRound2.2.2.1⟩
+  have w : r.Intermediary Pprev P Pnext Lm Lp om.outcome op.outcome :=
+    ⟨hne, hdm, hdp, hgm, hgp, hkLm, hkLp, hkV⟩
+  have hpre : net.state.HoldsPrefund r.V := by
+    refine hhonm.fundsCommitted r.V hkV ?_
+    rw [houtm]
+    show om.outcome.find r.V.address ≠ none
+    rw [hgm.find]
+    simp
+  have hst1 : (∃ t, net.state.chain.statusOf Lm = .open t ∧ t ≤ ssm.state.turnNum) ∨
+      (∃ t ch, net.state.chain.statusOf Lm = .challenged t ch ∧
+        (t < ssm.state.turnNum ∨ ch.state = ssm.state) ∧
+        net.state.chain.now + T.ε ≤ ch.deadline) := by
+    rcases hstm with ho | ⟨t, ch, hstt, hlt⟩
+    · exact Or.inl ho
+    · exact Or.inr ⟨t, ch, hstt, hlt, hpend.1 t ch hstt⟩
+  have hst2 : (∃ t, net.state.chain.statusOf Lp = .open t ∧ t ≤ ssp.state.turnNum) ∨
+      (∃ t ch, net.state.chain.statusOf Lp = .challenged t ch ∧
+        (t < ssp.state.turnNum ∨ ch.state = ssp.state) ∧
+        net.state.chain.now + T.ε ≤ ch.deadline) := by
+    rcases hstp with ho | ⟨t, ch, hstt, hlt⟩
+    · exact Or.inl ho
+    · exact Or.inr ⟨t, ch, hstt, hlt, hpend.2.1 t ch hstt⟩
+  -- Phase 1 (Protocol 3.3 step 1): one reaction challenges both ledgers, and both finalize
+  -- with the latest states. The strategy sends nothing and does not target `r.V`.
+  have hLmV : Lm ≠ r.V := hLV (i - 1) Lm hLm
+  have hLpV : Lp ≠ r.V := hLV i Lp hLp
+  have hU1 := latest_state_finalizable_two
+    (allowed := fun m => (∀ op ∈ m.calls, ¬ Op.targets op r.V) ∧ m.NoSend) apps T A net.state
+    net.reachable Lm Lp ssm ssp hne hcm hcp hPLm hPLp hhm hhp hallm hallp hchm hchp
+    (fun t ht hc => (hsentm t ht hc).1) (fun t ht hc => (hsentp t ht hc).1)
+    (fun t ht hc hfin => by rw [(hsentm t ht hc).2] at hfin; cases hfin)
+    (fun t ht hc hfin => by rw [(hsentp t ht hc).2] at hfin; cases hfin)
+    hdurLm hdurLp hst1 hst2
+    ⟨fun op hop => by
+      simp only [HonestMove.calls, List.mem_cons, List.not_mem_nil, or_false] at hop
+      rcases hop with rfl | rfl
+      · exact hLmV
+      · exact hLpV, rfl⟩
+    (fun _ => ⟨fun _ h => absurd h List.not_mem_nil, trivial⟩)
+  rw [houtm, houtp] at hU1
+  have hNF0 : SatpNotFinalized r net.state := by
+    intro u f o hst
+    have h0 := hchain.2.2
+    rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hst,
+      ChannelStatus.finalizedWith_finalized] at h0
+    cases h0
+  have hU2 := UnbeatableIn.and_satpSetup hbounds hr0 hE
+    (UnbeatableIn.and_reachable hU1 net.reachable) ⟨hVs, hNF0, hpre⟩
+  -- The chain invariant, from the start to the goal.
+  have hJ0 : r.IntermediaryInv Pprev P Pnext Lm Lp om.outcome op.outcome
+      (om.bal + op.bal + net.state.chain.balances.get (.external (r.dest P))) net.state.chain := by
+    have hcm0 := ledgerCur_of_not_fin (s := net.state.chain) (L := Lm) (oL := om.outcome)
+      (by rw [hchm0]; simp)
+    have hcp0 := ledgerCur_of_not_fin (s := net.state.chain) (L := Lp) (oL := op.outcome)
+      (by rw [hchp0]; simp)
+    have hsm : satpShare r net.state.chain 1 r.b0 = r.b0 := by unfold satpShare; rw [hchain.2.2]
+    have hsp : satpShare r net.state.chain 0 r.a0 = r.a0 := by unfold satpShare; rw [hchain.2.2]
+    refine ⟨⟨fun h => ?_⟩, ⟨fun h => ?_⟩, fun _ => ?_, ?_⟩
+    · rw [hchm0] at h; cases h
+    · rw [hchp0] at h; cases h
+    · rw [hcm0, hcp0]; exact ⟨hgm.find, hgp.find⟩
+    unfold ledgerPend
+    rw [hcm0, hcp0, if_pos hgm.find, if_pos hgp.find, hsm, hsp, ← om.afterRound2.1,
+      ← op.afterRound2.1]
+  have hU3 := UnbeatableIn.and_intermediaryInv w hU2 hJ0
+  refine UnbeatableIn.bind (UnbeatableIn.mono (fun _ _ => trivial) hU3) (fun {net1} hn1 => ?_)
+  obtain ⟨⟨⟨⟨hfm, hfp⟩, hnr1⟩, hVs1, hNF1, hpre1⟩, hJ1⟩ := hn1
+  -- Phase 2 (Protocol 3.3 step 2): `r.V` finalizes with a pair outcome.
+  have hV2 : Unbeatable apps T (SatpVGoal r alice bob) net1 := by
+    obtain ⟨ss0, hH0, hall0, hch0, ht0⟩ := hpre1
+    have hsupp0 : satpVirtualRules.supports r.V [ss0] ss0.state = true := by
+      simp only [satpVirtualRules, hE.head, hE.last, ht0, Nat.zero_le, ↓reduceIte,
+        consensusRules, hch0, decide_true, Bool.true_and, decide_eq_true_eq]
+      exact hall0
+    have hzero : net1.chain.statusOf r.V = .open 0 →
+        ∃ proof0 cand0, satpVirtualRules.supports r.V proof0 cand0 = true ∧
+          cand0.turnNum = 0 ∧ ∀ ss ∈ proof0, net1.Holds ss := fun _ =>
+      ⟨[ss0], ss0.state, hsupp0, ht0, fun ss hss => by
+        rw [List.mem_singleton] at hss; subst hss; exact hH0⟩
+    rcases hcs : net1.chain.statusOf r.V with u | ⟨u, ch⟩ | ⟨u, f, o⟩
+    · exact satp_virtual_finalize_aux A hV hdurV hE hnr1 hVs1 hzero (Or.inl ⟨u, hcs⟩)
+    · by_cases hlt : net1.chain.now < ch.deadline
+      · exact satp_virtual_finalize_aux A hV hdurV hE hnr1 hVs1 hzero (Or.inr ⟨u, ch, hcs, hlt⟩)
+      · obtain ⟨a, b, hpo, hab⟩ :=
+          satpVirtual_challenged_outcome_pair hE hV hbounds hnr1 hVs1 ⟨hcs⟩
+        refine UnbeatableIn.done ⟨ch.state.outcome, a, b, ?_, hpo, hab⟩
+        show net1.chain.finalizedWith r.V.address = some ch.state.outcome
+        rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel, hcs,
+          ChannelStatus.finalizedWith_challenged, if_pos (Nat.le_of_not_lt hlt)]
+    · exact absurd hcs (hNF1 u f o)
+  have hV3 := UnbeatableIn.and_intermediaryInv w
+    ((hV2.and_finalized hfm).and_finalized hfp) hJ1
+  refine UnbeatableIn.bind hV3 (fun {net2} hn2 => ?_)
+  obtain ⟨⟨⟨⟨Ω, a, b, hΩ, hpo, hab⟩, hfm2⟩, hfp2⟩, hJ2⟩ := hn2
+  subst hpo
+  -- Phase 3 (Protocol 3.3 step 3): one reaction reclaims both guarantees.
+  have hfeas : (HonestMove.react ⟨[Op.reclaim Lm r.V, Op.reclaim Lp r.V], []⟩ :
+      HonestMove E).Feasible net2 :=
+    ⟨fun op hop => by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+      rcases hop with rfl | rfl <;> exact fun ss hss => by simp [Op.proofStates] at hss,
+     fun _ h => absurd h List.not_mem_nil⟩
+  refine UnbeatableIn.move _ trivial hfeas (fun net3 hround => ?_)
+  have happ : net3.applyHonest (.react ⟨[Op.reclaim Lm r.V, Op.reclaim Lp r.V], []⟩) = net3 := by
+    simp [NetworkState.applyHonest]
+  rw [happ]
+  exact UnbeatableIn.done (satp_reclaim_round w hround.1 ⟨hJ2, hfm2, hfp2, a, b, hΩ, hab⟩)
 
 /-- SATP-20 (SATP:500-501): "We omit the analogous statement that can be stated
     for the end-users Alice and Bob." The analogue for Alice (`P0`, ledger
