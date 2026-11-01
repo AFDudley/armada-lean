@@ -5248,16 +5248,19 @@ theorem CanObtainIn.deposit {apps : Apps E} {p : Participant} {T : Threat E p}
     {d : E} {x : Coins} (h : CanObtainIn apps T allowed (.external d) x net) :
     CanObtainIn apps T allowed (.external d) x { net with chain := s' } := by
   let q : Participant := ⟨p.key + 1⟩
-  have hq : q ≠ p := fun h => by have := congrArg Participant.key h; simp [q] at this
+  have hq : q ≠ p := fun h => Nat.succ_ne_self p.key (congrArg Participant.key h)
+  have hap : net.chain.apply apps q (.deposit a e y) = some s' := by
+    rw [Adjudicator.apply_deposit]; exact hd
   have happ : net.applyAdv apps (.chain q (.deposit a e y)) = { net with chain := s' } := by
-    simp [NetworkState.applyAdv, Adjudicator.apply, hd, Op.proofStates]
+    rw [NetworkState.applyAdv_chain_some apps hap]
+    rfl
   obtain ⟨⟨c, rfl, -⟩, -, hb, -, -, hnow⟩ := Adjudicator.deposit_some hd
   rw [← happ]
-  refine UnbeatableIn.of_adv (A.capable net q _ hq (by simp [Op.proofStates]))
+  refine UnbeatableIn.of_adv (A.capable net q _ hq (fun _ h => by cases h))
     (fun _ h => by cases h) (fun _ h => by cases h) (by rw [happ]; exact hnow) (fun hx => ?_) h
   rw [happ]
   show x ≤ s'.balances.get _
-  rw [hb, Balances.get_add, if_neg (by simp)]
+  rw [hb, Balances.get_add, if_neg (fun h => by cases h)]
   exact hx
 
 /-- Nitro-31. Nitro:785-787: "a deposit into the system cannot reduce the value of
