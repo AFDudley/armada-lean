@@ -81,7 +81,7 @@ theorem appsΩ_outcome {a : AppId} {c : FixedPart} {proof : SupportProof Unit} {
 
 /-- A virtual channel: no transfer and no reclaim writes its status. -/
 def c0 : FixedPart :=
-  { participants := [p0, q0], nonce := 0, appDef := ⟨0⟩, challengeDuration := 2, kind := .virtual }
+  { participants := [p0, q0], nonce := 0, appDef := ⟨0⟩, challengeDuration := 6, kind := .virtual }
 
 /-- The state of `c0` at turn `k`. -/
 def stAt (k : Nat) : State Unit :=
@@ -120,8 +120,8 @@ def T0 : Threat Unit p0 where
     | .deliver ss => net.Unforged ss
     | .tick _ => True
     | .land _ => True
-  ε := 1
-  ε_pos := Nat.one_pos
+  ε := 2
+  ε_pos := Nat.two_pos
 
 theorem A0 : Assumptions appsΩ p0 T0 where
   unforgeable := fun _ _ _ h => h.2
@@ -130,6 +130,7 @@ theorem A0 : Assumptions appsΩ p0 T0 where
   capable := fun _ _ _ h1 h2 => ⟨h1, h2⟩
   capableDeliver := fun _ _ h => h
   capableTick := fun _ _ => trivial
+  clockRuns := le_refl 2
 
 theorem p0_ne_q0 : p0 ≠ q0 := by decide
 

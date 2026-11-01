@@ -47,7 +47,7 @@ def q0 : Participant := ⟨1⟩
 def appsAll : Apps Unit := fun _ => ⟨fun _ _ _ => true⟩
 
 def c0 : FixedPart :=
-  { participants := [p0, q0], nonce := 0, appDef := ⟨0⟩, challengeDuration := 2, kind := .ledger }
+  { participants := [p0, q0], nonce := 0, appDef := ⟨0⟩, challengeDuration := 6, kind := .ledger }
 
 def Ω0 : Outcome Unit := .allocation []
 
@@ -63,8 +63,8 @@ def T0 : Threat Unit p0 where
     | .deliver ss => net.Unforged ss
     | .tick _ => True
     | .land _ => True
-  ε := 1
-  ε_pos := Nat.one_pos
+  ε := 2
+  ε_pos := Nat.two_pos
 
 theorem A0 : Assumptions appsAll p0 T0 where
   unforgeable := fun _ _ _ h => h.2
@@ -73,6 +73,7 @@ theorem A0 : Assumptions appsAll p0 T0 where
   capable := fun _ _ _ h1 h2 => ⟨h1, h2⟩
   capableDeliver := fun _ _ h => h
   capableTick := fun _ _ => trivial
+  clockRuns := le_refl 2
 
 def net0 : NetworkState Unit p0 := ⟨Adjudicator.genesis, [], []⟩
 
@@ -313,25 +314,25 @@ theorem roundSeq_now_le {t : Time} {pending : List (Op Unit)} {n n' : NetworkSta
   | other _ _ _ _ ih => exact le_trans (applyAdv_now_le _ _) ih
 
 /-- After `p0`'s call landed: `c0` is open, or its challenge started this
-    round (deadline at least `t + 2`). -/
+    round (deadline at least `t + 6`). -/
 def Post (t : Time) (n : NetworkState Unit p0) : Prop :=
   n.sent = [] ∧ t ≤ n.chain.now ∧
     ((∃ k, n.chain.statusOf c0 = .open k) ∨
-     (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ t + 2 ≤ ch.deadline))
+     (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ t + 6 ≤ ch.deadline))
 
 /-- Before `p0`'s call landed: also the challenge from the round's start,
-    at a turn at most `r0`, with deadline at least `t + 1`. -/
+    at a turn at most `r0`, with deadline at least `t + 2`. -/
 def Pre (t r0 : Time) (n : NetworkState Unit p0) : Prop :=
   n.sent = [] ∧ t ≤ n.chain.now ∧
     ((∃ k, n.chain.statusOf c0 = .open k) ∨
-     (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ t + 2 ≤ ch.deadline) ∨
-     (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ k ≤ r0 ∧ t + 1 ≤ ch.deadline))
+     (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ t + 6 ≤ ch.deadline) ∨
+     (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ k ≤ r0 ∧ t + 2 ≤ ch.deadline))
 
 theorem pre_of_post {t r0 : Time} {n : NetworkState Unit p0} (h : Post t n) : Pre t r0 n :=
   ⟨h.1, h.2.1, h.2.2.elim Or.inl (fun h => Or.inr (Or.inl h))⟩
 
-/-- A status of the three `Pre` shapes has no final outcome before `t + 1`. -/
-theorem nf_pre {t r0 : Time} {n : NetworkState Unit p0} (h : Pre t r0 n) (hlt : n.chain.now < t + 1) :
+/-- A status of the three `Pre` shapes has no final outcome before `t + 2`. -/
+theorem nf_pre {t r0 : Time} {n : NetworkState Unit p0} (h : Pre t r0 n) (hlt : n.chain.now < t + 2) :
     NF n.chain := by
   obtain ⟨-, -, h | ⟨k, ch, hs, hd⟩ | ⟨k, ch, hs, -, hd⟩⟩ := h
   · obtain ⟨k, hs⟩ := h; unfold NF; rw [hs]; rfl
@@ -347,7 +348,7 @@ theorem adv_chain_keeps {t : Time} {n : NetworkState Unit p0} {caller : Particip
     (hsent : n.sent = []) (htn : t ≤ n.chain.now) (hnf : NF n.chain)
     (happ : n.chain.apply appsAll caller op = some s') :
     s'.statusOf c0 = n.chain.statusOf c0 ∨ (∃ k, s'.statusOf c0 = .open k) ∨
-      (∃ k ch, s'.statusOf c0 = .challenged k ch ∧ t + 2 ≤ ch.deadline) := by
+      (∃ k ch, s'.statusOf c0 = .challenged k ch ∧ t + 6 ≤ ch.deadline) := by
   have hnc : ∀ ss, op = .conclude c0 ss → ¬ ConclusionProof c0 ss := by
     rintro ss rfl ⟨hc, -, hall⟩
     have hp : p0 ∈ ss.signers := hall p0 (by rw [hc]; simp [c0])
@@ -363,7 +364,7 @@ theorem round_inv (t r0 : Time) :
     ∀ {pending : List (Op Unit)} {n n' : NetworkState Unit p0},
       Threat.RoundSeq appsAll T0 t pending n n' →
       ((pending = [.checkpoint c0 [] (stAt (r0 + 1))] ∧ Pre t r0 n) ∨ (pending = [] ∧ Post t n)) →
-      n'.chain.now < t + 1 → Post t n' := by
+      n'.chain.now < t + 2 → Post t n' := by
   intro pending n n' h
   induction h with
   | nil =>
@@ -464,12 +465,12 @@ theorem round_inv (t r0 : Time) :
 /-- The invariant at the start of every round of `σ0`. -/
 def Inv2 (n : NetworkState Unit p0) : Prop :=
   n.sent = [] ∧ ((∃ k, n.chain.statusOf c0 = .open k) ∨
-    (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ n.chain.now + 1 ≤ ch.deadline))
+    (∃ k ch, n.chain.statusOf c0 = .challenged k ch ∧ n.chain.now + 2 ≤ ch.deadline))
 
 theorem round2 {n1 n2 : NetworkState Unit p0} (hI : Inv2 n1) (hR : T0.Round appsAll (σ0 n1) n1 n2) :
-    Post n1.chain.now n2 ∧ n2.chain.now < n1.chain.now + 1 := by
+    Post n1.chain.now n2 ∧ n2.chain.now < n1.chain.now + 2 := by
   obtain ⟨hseq, hlt⟩ := hR
-  have hlt' : n2.chain.now < n1.chain.now + 1 := hlt
+  have hlt' : n2.chain.now < n1.chain.now + 2 := hlt
   refine ⟨round_inv n1.chain.now (n1.chain.statusOf c0).turnNumRecord hseq ?_ hlt', hlt'⟩
   left
   refine ⟨rfl, hI.1, le_rfl, ?_⟩

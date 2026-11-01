@@ -21,12 +21,12 @@ open ArmadaLean.Nitro
 
 def p0 : Participant := ⟨0⟩
 def q0 : Participant := ⟨1⟩
-/-- A one-participant channel; challenge duration 2. -/
-def c1 : FixedPart := ⟨[p0], 0, ⟨0⟩, 2, .ledger⟩
+/-- A one-participant channel; challenge duration 4. -/
+def c1 : FixedPart := ⟨[p0], 0, ⟨0⟩, 4, .ledger⟩
 /-- A second one-participant channel. -/
-def c3 : FixedPart := ⟨[p0], 3, ⟨0⟩, 2, .ledger⟩
+def c3 : FixedPart := ⟨[p0], 3, ⟨0⟩, 4, .ledger⟩
 /-- A two-participant channel. -/
-def c2 : FixedPart := ⟨[p0, q0], 1, ⟨0⟩, 2, .ledger⟩
+def c2 : FixedPart := ⟨[p0, q0], 1, ⟨0⟩, 4, .ledger⟩
 def apps0 : Apps Nat := fun _ => consensusRules
 def d0 : Address Nat := .external 0
 def d1 : Address Nat := .external 1
@@ -53,8 +53,8 @@ theorem sCon_reach : Reachable apps0 sCon := .tail sDep_reach (.mk _ _ _ _ sDep_
 
 /-! ## Reclaim values: ledger `cL` guarantees `cV` for `[d0, d1]`. -/
 
-def cL : FixedPart := ⟨[p0], 5, ⟨0⟩, 2, .ledger⟩
-def cV : FixedPart := ⟨[p0], 6, ⟨0⟩, 2, .virtual⟩
+def cL : FixedPart := ⟨[p0], 5, ⟨0⟩, 4, .ledger⟩
+def cV : FixedPart := ⟨[p0], 6, ⟨0⟩, 4, .virtual⟩
 def oL : Allocation Nat := [alloc d0 0, alloc d1 0, ⟨cV.address, .guarantee 1 [d0, d1]⟩]
 def oV : Allocation Nat := [alloc d0 1, alloc d1 0]
 def sR : Adjudicator Nat :=
@@ -212,7 +212,7 @@ theorem challenge_requires.nonvacuity : ∃ (s : Adjudicator Nat) (challenger : 
 theorem challenge_fails_when_finalized.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart), s.mode c = .finalized := ⟨sCon, c1, by decide⟩
 
 /-- The status of `c1` after the challenge with `stO`. -/
-def sCh : Adjudicator Nat := g0.setStatus c1 (.challenged 1 ⟨stO, 2⟩)
+def sCh : Adjudicator Nat := g0.setStatus c1 (.challenged 1 ⟨stO, 4⟩)
 
 /-- `rechallenge_equal_turn_fails`. -/
 theorem rechallenge_equal_turn_fails.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (candidate : State Nat),
@@ -268,12 +268,12 @@ theorem conclude_moves_no_value.nonvacuity : ∃ (s : Adjudicator Nat) (c : Fixe
 /-- `timeout_finalizes`. -/
 theorem timeout_finalizes.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (t : Nat) (ch : Challenge Nat),
     s.statusOf c = .challenged t ch ∧ ch.deadline ≤ s.now :=
-  ⟨sCh.tick 2, c1, 1, ⟨stO, 2⟩, by decide, by decide⟩
+  ⟨sCh.tick 4, c1, 1, ⟨stO, 4⟩, by decide, by decide⟩
 
 /-- `challenge_in_progress_before_deadline`. -/
 theorem challenge_in_progress_before_deadline.nonvacuity : ∃ (s : Adjudicator Nat) (c : FixedPart) (t : Nat) (ch : Challenge Nat),
     s.statusOf c = .challenged t ch ∧ s.now < ch.deadline :=
-  ⟨sCh, c1, 1, ⟨stO, 2⟩, by decide, by decide⟩
+  ⟨sCh, c1, 1, ⟨stO, 4⟩, by decide, by decide⟩
 
 /-- `failed_op_no_effect`. -/
 theorem failed_op_no_effect.nonvacuity : ∃ (caller : Participant) (op : Op Nat) (s : Adjudicator Nat),
@@ -932,15 +932,16 @@ end Reachability
 
 /-- The adversary of `p` that every rule of `Assumptions` allows: any move of
     another participant with no forged signature of `p`, any delivery with
-    no forged signature, and any tick. Transactions land within `ε = 1`. -/
+    no forged signature, and any tick. Transactions land within `ε = 2`, the
+    least bound that `Capable.clockRuns` allows. -/
 def canon (p : Participant) : Threat Nat p where
   feasible net m := match m with
     | .chain caller op => caller ≠ p ∧ ∀ ss ∈ op.proofStates, net.Unforged ss
     | .deliver ss => net.Unforged ss
     | .tick _ => True
     | .land _ => True
-  ε := 1
-  ε_pos := Nat.one_pos
+  ε := 2
+  ε_pos := Nat.two_pos
 
 theorem canon_ok (apps : Apps Nat) (p : Participant) : Assumptions apps p (canon p) where
   unforgeable _ _ _ h := h.2
@@ -949,6 +950,7 @@ theorem canon_ok (apps : Apps Nat) (p : Participant) : Assumptions apps p (canon
   capable _ _ _ h1 h2 := ⟨h1, h2⟩
   capableDeliver _ _ h := h
   capableTick _ _ := trivial
+  clockRuns := le_refl 2
 
 /-- One canonical threat per participant. -/
 def Ts (apps : Apps Nat) : Threats Nat apps := ⟨canon, canon_ok apps⟩
@@ -1111,7 +1113,7 @@ theorem latest_state_finalizable.nonvacuity : ∃ (net : NetworkState Nat p0) (c
     checkpoints with. -/
 def stO0 : State Nat := ⟨c1, 0, .allocation o1, false, .opaque 0⟩
 def ssO0 : SignedState Nat := ⟨stO0, [p0]⟩
-def sCh0 : Adjudicator Nat := g0.setStatus c1 (.challenged 0 ⟨stO0, 2⟩)
+def sCh0 : Adjudicator Nat := g0.setStatus c1 (.challenged 0 ⟨stO0, 4⟩)
 def netO : NetworkState Nat p0 := ⟨sCh0, [ssO0], [ssO, ssO0]⟩
 
 theorem g0_challengeO0 : g0.apply apps0 p0 (.challenge c1 [ssO0] stO0) = some sCh0 := rfl
@@ -1137,7 +1139,7 @@ theorem late_observer_can_checkpoint.nonvacuity : ∃ (net : NetworkState Nat p0
       (u.state.turnNum < ss.state.turnNum ∨ u.state = ss.state) ∧ u.state.isFinal = false) ∧
     net.chain.statusOf (c : FixedPart) = .challenged t ch ∧ t < ss.state.turnNum ∧
     net.chain.now + (canon p0).ε ≤ ch.deadline :=
-  ⟨netO, ⟨c1, by decide⟩, ssO, 0, ⟨stO0, 2⟩, canon_ok _ _, netO_reach, rfl, by decide,
+  ⟨netO, ⟨c1, by decide⟩, ssO, 0, ⟨stO0, 4⟩, canon_ok _ _, netO_reach, rfl, by decide,
     holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, by decide, rfl,
     by decide, by decide⟩
 
@@ -1320,7 +1322,7 @@ theorem concluded_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (n : 
     (∀ p, (v p).DeadlineAfter c ((Ts apps0).T p).ε) := by
   refine ⟨nCF.views, nCF, c1, .allocation o1, nCF_reach, rfl, rfl, ?_, ?_,
     fun r => .inl (by rw [nCF_views_chain]; decide),
-    fun _ => (by decide : 2 * 1 ≤ 2),
+    fun _ => (by decide : 2 * 2 ≤ 4),
     fun r => deadlineAfter_open (t := 0) (by rw [nCF_views_chain]; rfl) _⟩
   · intro r hr
     have hr' : r = p0 := by (simpa? [c1] using hr says simpa only [c1, List.mem_cons, List.not_mem_nil, or_false] using hr)
@@ -1573,8 +1575,8 @@ example : DAGOutcomeNetwork Nat := ⟨g0, g0_dag⟩
 
 /-! ### Ledger constructions: `A = p0` at `0`, `B = q0` at `1`. -/
 
-def cLW : FixedPart := ⟨[p0, q0], 7, ⟨0⟩, 2, .ledger⟩
-def cχ : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 2, .ledger⟩
+def cLW : FixedPart := ⟨[p0, q0], 7, ⟨0⟩, 4, .ledger⟩
+def cχ : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 4, .ledger⟩
 def wLS : LedgerWithSub Nat := ⟨p0, q0, 0, 1, cLW, cχ, 0, 0, 0⟩
 
 /-- `ledger_offload_funds_subchannel`: `p0` and `q0` each send `stLW`
@@ -1655,8 +1657,8 @@ zero balance `nClose'`'s chain — unfunded — actually holds), so
 `ledger_offload_funds_subchannel`'s own witness needs its own channel and
 its own funded chain, not `wLS`/`nLW`. -/
 
-def cLWF : FixedPart := ⟨[p0, q0], 107, ⟨0⟩, 2, .ledger⟩
-def cχF : FixedPart := ⟨[p0, q0], 108, ⟨0⟩, 2, .ledger⟩
+def cLWF : FixedPart := ⟨[p0, q0], 107, ⟨0⟩, 4, .ledger⟩
+def cχF : FixedPart := ⟨[p0, q0], 108, ⟨0⟩, 4, .ledger⟩
 /-- `wLSF.c = 5`, a real subchannel value (D10 ruling): `cLWF` holds a
     genuine deposit, not the zero balance the pre-ruling model forced on
     every reachable chain. -/
@@ -1875,7 +1877,7 @@ theorem nOneCh_views_chain (n0 : Network Nat) (st : State Nat) (r : Participant)
     and for a deposit-only funded base, `Network.deposit_sent`/
     `Network.deposit_received`). -/
 theorem nOneCh_finalizable {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat}
-    (hcp : c.participants = [p0, q0]) (hdur : c.challengeDuration = 2)
+    (hcp : c.participants = [p0, q0]) (hdur : c.challengeDuration = 4)
     (hopen : n0.chain.statusOf c = .open 0) (hnone : n0.chain.finalizedWith c.address = none)
     (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
     (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
@@ -1995,7 +1997,7 @@ theorem nTwoCh_views_chain (n0 : Network Nat) (st1 st2 : State Nat) (r : Partici
     `c` open and unfinalized (see `nOneCh_finalizable`). -/
 theorem nTwoCh_finalizable_fst {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat} {st2 : State Nat}
     (hcp : c.participants = [p0, q0]) (hst2p : st2.channel.participants = [p0, q0])
-    (hne : st2.channel ≠ c) (hdur : c.challengeDuration = 2)
+    (hne : st2.channel ≠ c) (hdur : c.challengeDuration = 4)
     (hopen : n0.chain.statusOf c = .open 0) (hnone : n0.chain.finalizedWith c.address = none)
     (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
     (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
@@ -2047,7 +2049,7 @@ theorem nTwoCh_finalizable_fst {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
     `c` open and unfinalized. -/
 theorem nTwoCh_finalizable_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat} {st1 : State Nat}
     (hcp : c.participants = [p0, q0]) (hst1p : st1.channel.participants = [p0, q0])
-    (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 2)
+    (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 4)
     (hopen : n0.chain.statusOf c = .open 0) (hnone : n0.chain.finalizedWith c.address = none)
     (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
     (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
@@ -2098,7 +2100,7 @@ theorem nTwoCh_finalizable_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
     `isFinal = true` state of `c`. On any base `n0` with `c` open. -/
 theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat} {st1 : State Nat}
     (hcp : c.participants = [p0, q0]) (hst1p : st1.channel.participants = [p0, q0])
-    (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 2)
+    (hne : st1.channel ≠ c) (hdur : c.challengeDuration = 4)
     (hopen : n0.chain.statusOf c = .open 0)
     (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = [])
     (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = [])
@@ -2273,7 +2275,7 @@ theorem ledger_topup_deposit_funds.nonvacuity : ∃ (s s' : Adjudicator Nat) (L 
     `hL'sent` holds and `hL'out` goes through
     `nTwoCh_finalizable_latest_snd`, not `conclude_strategy`. `a = b = c
     = 1`, `a' = 2`: `a + b + c + a' = 5`, `cLWF`'s on-chain balance. -/
-def cL2F : FixedPart := ⟨[p0, q0], 109, ⟨0⟩, 2, .ledger⟩
+def cL2F : FixedPart := ⟨[p0, q0], 109, ⟨0⟩, 4, .ledger⟩
 def ΩPWLF : Outcome Nat := .allocation [alloc cL2F.address 3, alloc d0 2]
 def ΩPWLF' : Outcome Nat := .allocation [alloc d0 1, alloc d1 1, alloc c3.address 1]
 def stPWLF : State Nat := ⟨cLWF, 0, ΩPWLF, true, .opaque 0⟩
@@ -2314,7 +2316,7 @@ theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network 
   refine ⟨nPWF.views, nPWF, p0, q0, 0, 1, ⟨cLWF, rfl⟩, ⟨cL2F, rfl⟩, rfl, c3, 1, 1, 1, 2,
     nPWF_reach, rfl, rfl, rfl, cLWF_ne_cL2F, ?_, ?_, ?_,
     fun r => by simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_finalizedWith _,
-    fun _ => ⟨(by decide : 2 * 1 ≤ 2), (by decide : 2 * 1 ≤ 2)⟩, ?_,
+    fun _ => ⟨(by decide : 2 * 2 ≤ 4), (by decide : 2 * 2 ≤ 4)⟩, ?_,
     fun r => by simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_finalOutcome _, ?_,
     nTwoCh_finalizable_latest_snd rfl rfl cLWF_ne_cL2F rfl rfl rfl rfl rfl rfl nPWF_reach⟩
   · intro r; simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_balance_cLWF
@@ -2377,8 +2379,8 @@ theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network 
 /-! ### SATP: a route of two peers (`p0` Alice, `q0` Bob) and of three. -/
 
 def apps2 : Apps Nat := fun id => if id = ⟨1⟩ then satpVirtualRules else consensusRules
-def Lr : FixedPart := ⟨[p0, q0], 10, ⟨0⟩, 2, .ledger⟩
-def Vr : FixedPart := ⟨[p0, q0], 11, ⟨1⟩, 2, .virtual⟩
+def Lr : FixedPart := ⟨[p0, q0], 10, ⟨0⟩, 4, .ledger⟩
+def Vr : FixedPart := ⟨[p0, q0], 11, ⟨1⟩, 4, .virtual⟩
 def r2 : Route Nat := ⟨[p0, q0], [Lr], Vr, 1, 0, fun p => p.key⟩
 def vch : Voucher := ⟨Vr, 0, 0, 0, []⟩
 def stV : State Nat :=
@@ -2400,12 +2402,12 @@ theorem satp_outcome_change_keeps_total.nonvacuity : ∃ (c : FixedPart) (alice 
   ⟨Vr, p0, q0, [⟨stV, [p0, q0]⟩], stV, _, by decide, rfl⟩
 
 def signed2 : List (Participant × State Nat) := [(p0, stV), (q0, stV)]
-def sV1 : Adjudicator Nat := g0.setStatus Vr (.challenged 1 ⟨stV, 0 + 2⟩)
-def sV2 : Adjudicator Nat := sV1.tick 2
+def sV1 : Adjudicator Nat := g0.setStatus Vr (.challenged 1 ⟨stV, 0 + 4⟩)
+def sV2 : Adjudicator Nat := sV1.tick 4
 
 theorem sV_reach : ReachableSigned apps2 signed2 sV2 := by
   refine .tail (.single (.mk p0 (.challenge Vr [⟨stV, [p0, q0]⟩] stV) g0 sV1 ?_ rfl))
-    (.mk p0 (.tick 2) sV1 sV2 (fun _ h => by cases h) rfl)
+    (.mk p0 (.tick 4) sV1 sV2 (fun _ h => by cases h) rfl)
   intro ss hss
   simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
   exact ⟨by decide, fun v hv => by cases hv; intro q hq; cases hq⟩
@@ -2458,9 +2460,9 @@ theorem satp_peers_can_finalize.nonvacuity : ∃ (r : Route Nat) (alice bob : Pa
 
 /-- Three peers `p0`, `q0`, `w0`; `q0` is the intermediary. -/
 def w0 : Participant := ⟨2⟩
-def Lm3 : FixedPart := ⟨[p0, q0], 20, ⟨0⟩, 2, .ledger⟩
-def Lp3 : FixedPart := ⟨[q0, w0], 21, ⟨0⟩, 2, .ledger⟩
-def V3 : FixedPart := ⟨[p0, q0, w0], 22, ⟨1⟩, 2, .virtual⟩
+def Lm3 : FixedPart := ⟨[p0, q0], 20, ⟨0⟩, 4, .ledger⟩
+def Lp3 : FixedPart := ⟨[q0, w0], 21, ⟨0⟩, 4, .ledger⟩
+def V3 : FixedPart := ⟨[p0, q0, w0], 22, ⟨1⟩, 4, .virtual⟩
 def r3 : Route Nat := ⟨[p0, q0, w0], [Lm3, Lp3], V3, 1, 1, fun p => p.key⟩
 
 theorem r3_wf : r3.WellFormed apps2 := by
@@ -2617,7 +2619,7 @@ def o0 : Allocation Nat := [alloc (.external 0) 0, alloc (.external 1) 0, r2.gua
 def S0 : State Nat := ⟨Lr, 1, .allocation o0, false, .opaque 0⟩
 def V0r : State Nat := ⟨Vr, 0, originalOutcome 0 1 1 0, false, .satpVirtual ⟨.none, vch⟩⟩
 def ΩV : Outcome Nat := .allocation [alloc (.external 0) 1, alloc (.external 1) 0]
-def sE : Adjudicator Nat := (g0.setStatus Vr (.challenged 0 ⟨V0r, 0 + Vr.challengeDuration⟩)).tick 2
+def sE : Adjudicator Nat := (g0.setStatus Vr (.challenged 0 ⟨V0r, 0 + Vr.challengeDuration⟩)).tick 4
 def netE : NetworkState Nat p0 :=
   ⟨sE, [⟨V0r, [p0, q0]⟩, ⟨S0, [q0]⟩, ⟨V0r, [q0]⟩], [⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]⟩
 
@@ -2650,7 +2652,7 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
               List.mem_cons_self⟩
         · cases hv
           exact fun q hq => absurd hq List.not_mem_nil))
-    (.wait 2) trivial
+    (.wait 4) trivial
 
 theorem satp_end_user_recovers.nonvacuity : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel (canon P).ε)
     (o : r.Round2Ledger P P1 P r.a0) (a b : Coins) (net : NetworkState Nat P),

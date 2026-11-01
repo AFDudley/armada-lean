@@ -749,6 +749,10 @@ structure Capable (apps : Apps E) (p : Participant) (T : Threat E p) : Prop wher
   capableDeliver : ∀ net ss, net.Unforged ss → T.feasible net (.deliver ss)
   /-- The adversary can move the clock; `Threat.Round` bounds each round. -/
   capableTick : ∀ net dt, T.feasible net (.tick dt)
+  /-- The clock runs (operator ruling 2026-11-01; Nitro:535-537 "before time
+      t + ε", SATP:165-166): a round has room for a tick of at least 1 before
+      `t + ε`. -/
+  clockRuns : 2 ≤ T.ε
 
 /-- The chain and cryptography assumptions of the full game. Each theorem
     that speaks about a strategy takes an `Assumptions` value. -/
@@ -769,6 +773,18 @@ inductive UnbeatableIn (apps : Apps E) {p : Participant} (T : Threat E p)
       (∀ net', T.Round apps m net net' →
         UnbeatableIn apps T allowed G (net'.applyHonest m)) →
       UnbeatableIn apps T allowed G net
+
+/-- `p` moves the clock itself: after one `.wait 1`, the clock is later than
+    now, whatever the adversary does in the round. With `Capable.clockRuns`,
+    no party stops the clock: the adversary can tick in every round, and `p`
+    can always wait. -/
+theorem UnbeatableIn.clock_advances (apps : Apps E) {p : Participant} (T : Threat E p)
+    (net : NetworkState E p) :
+    UnbeatableIn apps T (fun _ => True) (fun n => net.chain.now < n.chain.now) net := by
+  refine UnbeatableIn.move (.wait 1) trivial trivial fun n' hround => UnbeatableIn.done ?_
+  have hle : net.chain.now ≤ n'.chain.now := hround.1.now_le
+  show net.chain.now < n'.chain.now + 1
+  exact Nat.lt_succ_of_le hle
 
 /-- `UnbeatableIn` with every honest move allowed. -/
 def Unbeatable (apps : Apps E) {p : Participant} (T : Threat E p)
