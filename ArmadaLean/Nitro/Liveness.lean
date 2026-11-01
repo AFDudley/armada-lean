@@ -6472,7 +6472,7 @@ theorem turbo_value_is_value (apps : Apps E) {p : Participant} (T : Threat E p)
     (net : Nitro.ReachableParticipant apps T)
     (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d : E) (v : Coins)
     (hv : net.state.chain.TurboValue (.external d) v) :
-    ValueIn apps T HonestMove.IsTransfer d net.state v :=
+ValueIn apps T HonestMove.IsTransfer d net.state v :=
   ⟨turbo_value_achievable apps T B hT hcap net hturbo d v hv,
     fun y hy => turbo_value_upper_bound apps T B hT hcap net hturbo.1 (.external d) v y hv hy⟩
 
