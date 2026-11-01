@@ -1529,3 +1529,8 @@
 {"type":"comment","timestamp":"2026-11-01T21:28:59.529008Z","issue_id":"aln-904","payload":{"body":"spec: contracts/specs/derived-aln-904.spec.json"}}
 {"type":"comment","timestamp":"2026-11-01T21:28:59.549157Z","issue_id":"aln-904","payload":{"body":"intake-status: complete"}}
 {"type":"comment","timestamp":"2026-11-01T21:28:59.559333Z","issue_id":"aln-904","payload":{"body":"exophial-authoring-complete: "}}
+{"type":"comment","timestamp":"2026-11-01T21:29:03.519822Z","issue_id":"aln-904","payload":{"base_sha":"350cef00579643ace6004c9a6ba99ddd538ff47f","body":"base-sha: 350cef00579643ace6004c9a6ba99ddd538ff47f","verdict_kind":"base_sha"}}
+{"type":"comment","timestamp":"2026-11-01T21:37:42.057762Z","issue_id":"aln-da0","payload":{"body":"exophial-integration-attempt-started: at 350cef00579643ace6004c9a6ba99ddd538ff47f"}}
+{"type":"comment","timestamp":"2026-11-01T21:50:27.314969Z","issue_id":"aln-da0","payload":{"body":"gate-verdict: ab24d93378986c328793b2a79f4b1fe31d331c7a passed 0.2.1+8f72c3ec","build":"0.2.1+8f72c3ec","outcome":"passed","sha":"ab24d93378986c328793b2a79f4b1fe31d331c7a","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-01T21:50:27.331143Z","issue_id":"aln-da0","payload":{"body":"exophiald: merged (merged_after_rebase).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-01T21:50:27.338152Z","issue_id":"aln-da0","payload":{"outcome":"merged_after_rebase","reason":"main had advanced since the branch was cut; the branch was rebased then fast-forwarded"}}
