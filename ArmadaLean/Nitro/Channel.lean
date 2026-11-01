@@ -11,6 +11,7 @@
   (`Bounds.unforgeable`), not a property of the data.
 -/
 import ArmadaLean.Nitro.Outcome
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -121,8 +122,8 @@ theorem SignedState.byMover_eq_true_iff {ss : SignedState E} :
     ss.byMover = true ↔ ss.ByMover := by
   unfold SignedState.byMover SignedState.ByMover
   cases ss.state.mover with
-  | none => simp
-  | some m => simp
+  | none => (simp? says simp only [Bool.false_eq_true, reduceCtorEq, false_and, exists_false])
+  | some m => (simp? says simp only [decide_eq_true_eq, Option.some.injEq, exists_eq_left'])
 
 /-- A support proof. SATP:247-250 `SupportProof { consts, vars :
     ChannelVars[] }`; go-nitro ForceMove.sol `proof :
