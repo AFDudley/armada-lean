@@ -418,13 +418,20 @@ def Spec.turbo_redistribution_unbeatable : Prop :=
 
 /-- Nitro-31. Nitro:785-787: "a deposit into the system cannot reduce the value of
     any address and cannot increase the value of any address by more than the
-    value of the deposit." -/
+    value of the deposit." Operator ruling 2026-11-01: the claim is read in
+    the scope the paper gives it, the transfer-only game (Nitro:779-781,
+    "strategies and counter-strategies involving transfer operations only")
+    on a Turbo outcome network (Nitro:790-795, a DAG), as for
+    `turbo_value_achievable`. The deposit itself is applied outside the
+    game. -/
 def Spec.deposit_bounds_value : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (hT : T.TransfersOnly) (net : Nitro.ReachableParticipant apps T)
+    (hturbo : net.state.chain.IsTurboOutcomeNetwork)
     (c : FixedPart) (d : E) (y x x' : Coins)
     (s' : Adjudicator E) (e : Coins) (hd : net.state.chain.deposit c.address e y = some s')
-    (hv : Value apps T d net.state x) (hv' : Value apps T d { net.state with chain := s' } x'),
+    (hv : ValueIn apps T HonestMove.IsTransfer d net.state x)
+    (hv' : ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' } x'),
     Claim <|
     x ≤ x' ∧ x' ≤ x + y
 

@@ -763,65 +763,6 @@ theorem wait_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
       Adjudicator.tick_now] at hf ⊢
     exact ChannelStatus.finalizedWith_mono hf (Nat.le_add_right _ _)
 
-/-- With no coins anywhere and no deposit, no operation creates coins. -/
-theorem zeroBal_apply {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
-    (h : s.apply apps caller op = some s') (hop : ∀ a e x, op ≠ .deposit a e x)
-    (hz : ∀ a, s.balances.get a = 0) : ∀ a, s'.balances.get a = 0 := by
-  intro a'
-  cases op with
-  | deposit a e x => exact absurd rfl (hop a e x)
-  | tick dt => simp at h; subst h; exact hz a'
-  | transfer a b =>
-    obtain ⟨o, _, x, -, -, hx, hb, -⟩ := Adjudicator.transfer_some h
-    have hx0 : x = 0 := by
-      have := Allocation.paidTo_le_held (s.balances.get a.address) o b
-      rw [hz] at this; rw [hx, hz]; exact Nat.le_zero.1 this
-    rw [hb]; simp [hx0, hz]
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; simp [hz]
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h; simp [hz]
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h; simp [hz]
-  | conclude c ss => obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h; simp [hz]
-
-/-- Landing every call of a reaction, one at a time, with no adversary noise:
-    keeps every balance zero and the clock unmoved, since every call a
-    feasible reaction issues excludes both `deposit` and `tick`
-    (`Op.HonestFeasible`). -/
-theorem zeroBalRound {apps : Apps E} {p : Participant} (T : Threat E p) (t : Time) :
-    ∀ (pending : List (Op E)), (∀ op ∈ pending, ∀ a e x, op ≠ Op.deposit a e x) →
-      (∀ op ∈ pending, ∀ dt, op ≠ Op.tick dt) →
-      ∀ (net : NetworkState E p), (∀ a, net.chain.balances.get a = 0) →
-      ∃ net', Threat.RoundSeq apps T t pending net net' ∧
-        (∀ a, net'.chain.balances.get a = 0) ∧ net'.chain.now = net.chain.now := by
-  intro pending
-  induction pending with
-  | nil => intro _ _ net hz; exact ⟨net, Threat.RoundSeq.nil, hz, rfl⟩
-  | cons op rest ih =>
-    intro hnodep hnotick net hz
-    have hop : ∀ a e x, op ≠ .deposit a e x := hnodep op List.mem_cons_self
-    have hopt : ∀ dt, op ≠ Op.tick dt := hnotick op List.mem_cons_self
-    have hz1 : ∀ a, (net.applyAdv apps (AdvMove.land op)).chain.balances.get a = 0 := by
-      intro a
-      cases h : net.chain.apply apps p op with
-      | none =>
-        simp only [NetworkState.applyAdv_land_none apps h]
-        exact hz a
-      | some s' =>
-        simp only [NetworkState.applyAdv_land_some apps h]
-        exact zeroBal_apply h hop hz a
-    have hnow1 : (net.applyAdv apps (AdvMove.land op)).chain.now = net.chain.now := by
-      cases h : net.chain.apply apps p op with
-      | none =>
-        simp only [NetworkState.applyAdv_land_none apps h]
-      | some s' =>
-        simp only [NetworkState.applyAdv_land_some apps h]
-        exact Adjudicator.apply_now_eq_of_not_tick hopt h
-    obtain ⟨net', hrest, hz', hnow'⟩ :=
-      ih (fun op' hop' => hnodep op' (List.mem_cons_of_mem op hop'))
-        (fun op' hop' => hnotick op' (List.mem_cons_of_mem op hop'))
-        (net.applyAdv apps (AdvMove.land op)) hz1
-    exact ⟨net', Threat.RoundSeq.land (l1 := []) (l2 := rest) rfl hrest, hz', by rw [hnow', hnow1]⟩
-
 /-- Appending one more `RoundSeq` derivation (from whatever state the first
     one ends at) onto the first: the round's own `pending` is unaffected by
     what plays out after it closes. -/
@@ -835,47 +776,6 @@ theorem Threat.RoundSeq.append {apps : Apps E} {p : Participant} {T : Threat E p
   | land hsplit _ ih => exact Threat.RoundSeq.land hsplit (ih h2)
   | tick hfeas hgate _ ih => exact Threat.RoundSeq.tick hfeas hgate (ih h2)
   | other hfeas hnotick hnoland _ ih => exact Threat.RoundSeq.other hfeas hnotick hnoland (ih h2)
-
-/-- The empty round: the adversary does nothing. -/
-theorem round_nil (apps : Apps E) {p : Participant} (T : Threat E p) (n : NetworkState E p) :
-    T.Round apps (HonestMove.wait 0) n n :=
-  ⟨by simpa using Threat.RoundSeq.nil, Nat.lt_add_of_pos_right T.ε_pos⟩
-
-/-- With no coins anywhere, `p` obtains nothing at `d`: the value is 0. -/
-theorem value_zero (apps : Apps E) {p : Participant} (T : Threat E p) (net : NetworkState E p)
-    (hz : ∀ a, net.chain.balances.get a = 0) (d : E) : Value apps T d net 0 := by
-  refine ⟨.done (Nat.zero_le _), fun y hy => ?_⟩
-  suffices H : ∀ n, UnbeatableIn apps T (fun _ => True)
-      (fun net' => y ≤ net'.chain.balances.get (.external d)) n →
-      (∀ a, n.chain.balances.get a = 0) → y ≤ 0 from H net hy hz
-  intro n hn
-  induction hn with
-  | done hg => intro hz'; rw [hz'] at hg; exact hg
-  | @move n m _ hfeas ih1 ih =>
-    intro hz'
-    cases m with
-    | react r =>
-      have hnodep : ∀ op ∈ r.calls, ∀ a e x, op ≠ .deposit a e x := by
-        intro op hop a e x heq
-        have := hfeas.1 op hop
-        rw [heq] at this
-        exact this
-      have hnotick : ∀ op ∈ r.calls, ∀ dt, op ≠ Op.tick dt := by
-        intro op hop dt heq
-        have := hfeas.1 op hop
-        rw [heq] at this
-        exact this
-      obtain ⟨net', hrseq, hz1, heqnow⟩ := zeroBalRound T n.chain.now r.calls hnodep hnotick n hz'
-      refine ih net' ⟨hrseq, by rw [heqnow]; exact Nat.lt_add_of_pos_right T.ε_pos⟩ ?_
-      show ∀ a, (net'.applyHonest (.react r)).chain.balances.get a = 0
-      simpa [NetworkState.applyHonest] using hz1
-    | wait dt =>
-      refine ih n (round_nil apps T n) ?_
-      show ∀ a, (n.applyHonest (.wait dt)).chain.balances.get a = 0
-      intro a
-      have happ : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
-      simpa [NetworkState.applyHonest] using
-        zeroBal_apply happ (fun a e x h => by cases h) hz' a
 
 /-- The outcome of finalization survives every adversary move. -/
 theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
@@ -1520,18 +1420,25 @@ theorem turbo_redistribution_unbeatable.nonvacuity : ∃ (net : NetworkState Nat
 
 theorem zero_g0 : ∀ a : Address Nat, g0.balances.get a = 0 := fun _ => rfl
 
-/-- `deposit_bounds_value`: a deposit of 0 into an empty chain. `net` is the genesis state
-    itself. -/
+/-- `deposit_bounds_value`: a deposit of 0 into the ledger channel `c1` of the empty
+    chain, in the transfer-only game. `net` is the genesis state itself. Both values are
+    the Turbo Value Algorithm's (`turboValueAlong_valueIn`). -/
 theorem deposit_bounds_value.nonvacuity : ∃ (net : NetworkState Nat p0) (c : FixedPart) (d : Nat) (y x x' : Coins)
     (s' : Adjudicator Nat) (e : Coins),
-    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
+    (turboT p0).TransfersOnly ∧ (Nitro.participant apps0 (turboT p0)).Reachable net ∧
+    net.chain.IsTurboOutcomeNetwork ∧
     net.chain.deposit c.address e y = some s' ∧
-    Value apps0 (canon p0) d net x ∧ Value apps0 (canon p0) d { net with chain := s' } x' := by
-  refine ⟨⟨g0, [], []⟩, c1, 0, 0, 0, 0, _, 0, canon_ok _ _,
-    participant_reachable_init apps0 (canon p0), rfl, value_zero _ _ _ zero_g0 0,
-    value_zero _ _ _ (fun a => ?_) 0⟩
-  show Balances.get (((c1.address : Address Nat), 0 + 0) :: []) a = 0
-  rw [Balances.get_cons]; split <;> rfl
+    ValueIn apps0 (turboT p0) HonestMove.IsTransfer d net x ∧
+    ValueIn apps0 (turboT p0) HonestMove.IsTransfer d { net with chain := s' } x' := by
+  obtain ⟨s', hd⟩ : ∃ s', g0.deposit c1.address 0 0 = some s' := ⟨_, rfl⟩
+  obtain ⟨-, -, -, -, hs, hn⟩ := Adjudicator.deposit_some hd
+  have ht' : s'.IsTurboOutcomeNetwork :=
+    g0_turboOutcomeNetwork.of_allocationOf (Adjudicator.allocationOf_of_status_now hs hn)
+  obtain ⟨o', ho'⟩ := exists_valid_topo_order s' ht'.1
+  exact ⟨⟨g0, [], []⟩, c1, 0, 0, _, _, s', 0, turboT_only _,
+    participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, hd,
+    turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨g0, [], []⟩ g0_turboOutcomeNetwork 0 g0_topo,
+    turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨s', [], []⟩ ht' 0 ho'⟩
 
 /-- `payout_to_other_affects_only_owner`. `sP` is `c1` concluded with outcome `[alloc d1 0]`:
     reached by `p0` sending the final state `stP`, then honestly concluding with it (`Holds`

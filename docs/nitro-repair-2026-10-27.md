@@ -80,8 +80,8 @@ changed after 2026-10-27 names the change in its row.
 | 12 | `concluded_universally_finalizable` | proved | `conclude_strategy` for each participant. |
 | 13 | `consensus_enabled_outcomes` | proved | `p`'s strategy answers every challenge below `ss` with `ss` within `2 * ε`; only `Ω1`, `Ω2` can finalize. |
 | 14 | `turbo_redistribution_unbeatable` | unknown | Believed true (priority payouts are monotone). |
-| 15 | `deposit_bounds_value` | unknown | Needs a coupling of plays with and without the deposit. |
-| 16 | `payout_to_other_affects_only_owner` | unknown | As 15. |
+| 15 | `deposit_bounds_value` | proved | Operator ruling 2026-11-01: the transfer-only game on a Turbo outcome network (Nitro:779-781, 790-795). Both values are the Turbo value along one order; a deposit of `y` raises it by 0 to `y` (`Adjudicator.turboValueAlong_deposit`). |
+| 16 | `payout_to_other_affects_only_owner` | unknown | Needs a coupling of plays with and without the payout. |
 | 17 | `participant_can_prevent_cycles` | proved | `p` never signs; under consensus no channel of `p` can leave Open. |
 | 18 | `turbo_value_upper_bound` | unknown | Believed true. |
 | 19 | `turbo_value_achievable` | unknown | Believed true. |
@@ -478,6 +478,8 @@ New:
 ```lean
 theorem deposit_bounds_value(apps : Apps E) {p : Participant} (T : Threat E p) (A : Assumptions apps p T) (net : NetworkState E p) (c : FixedPart) (d : E) (y x x' : Coins) (s' : Adjudicator E) (e : Coins) (hd : net.chain.deposit c.address e y = some s') (hv : Value apps T d net x) (hv' : Value apps T d { net with chain := s' } x') : x ≤ x' ∧ x' ≤ x + y
 ```
+
+Restated (operator ruling 2026-11-01) in the paper's scope, the transfer-only game on a Turbo outcome network. `A : Assumptions` is replaced by `hT : T.TransfersOnly` and `hturbo : net.state.chain.IsTurboOutcomeNetwork`; `Value` becomes `ValueIn apps T HonestMove.IsTransfer`. The full game is out of scope: a search of small networks found plays, with the same calls in both chains, where the chain with the deposit leads by more than `y` part-way.
 
 #### `payout_to_other_affects_only_owner`
 
