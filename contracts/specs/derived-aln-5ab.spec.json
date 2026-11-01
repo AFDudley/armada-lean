@@ -1,0 +1,95 @@
+{
+  "id": "derived-aln-5ab",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `payout_to_other_affects_only_owner` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `payout_to_other_affects_only_owner`'s proof body is `sorry`. `scripts/check.sh --json payout_to_other_affects_only_owner` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json payout_to_other_affects_only_owner` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem payout_to_other_affects_only_owner",
+  "restatement": "The theorem `payout_to_other_affects_only_owner` in `ArmadaLean/Nitro/Liveness.lean` currently has `sorry` as its entire proof body, so the repo's own gate script lists it in the set of theorems it considers unproven. The request asks for a genuine Lean proof that discharges this theorem, with no `sorry` anywhere in its own proof body, while the theorem's stated claim (its signature) stays exactly as written today \u2014 the fix must prove the existing claim, not a weakened restatement of it. Completion is observed by running `scripts/check.sh --json payout_to_other_affects_only_owner` from the repo root and reading the single JSON object it prints: the project must still build, this theorem must no longer appear in the reported `sorry` list, and the frozen statement-signature check must still report a pass, which shows the claim itself was not changed to make the proof easier.",
+  "restatement_clauses": [
+    {
+      "id": "no-sorry-and-builds",
+      "text": "`payout_to_other_affects_only_owner` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body, and the project still builds successfully with that proof in place."
+    },
+    {
+      "id": "statement-unchanged",
+      "text": "The theorem statement does not change."
+    }
+  ],
+  "goal": "Replace the `sorry` proof body of `payout_to_other_affects_only_owner` in ArmadaLean/Nitro/Liveness.lean with a genuine proof, without changing the theorem's stated claim.",
+  "acceptance_criteria": [
+    "After the fix, the project still compiles, and this theorem no longer shows up as unproven when the repo's own check script is asked about it by name.",
+    "The theorem's stated claim reads exactly the same as it did before the fix, with nothing in its wording weakened or altered to make it easier to prove."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, the project still compiles, and this theorem no longer shows up as unproven when the repo's own check script is asked about it by name."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem's stated claim reads exactly the same as it did before the fix, with nothing in its wording weakened or altered to make it easier to prove."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "type": "behavior",
+      "description": "After the fix, the project still compiles, and this theorem no longer shows up as unproven when the repo's own check script is asked about it by name.",
+      "proves": "The proof body of payout_to_other_affects_only_owner no longer carries sorry, and the change does not break the build.",
+      "restatement_clause_id": "no-sorry-and-builds",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "payout_to_other_affects_only_owner"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "type": "behavior",
+      "description": "The theorem's stated claim reads exactly the same as it did before the fix, with nothing in its wording weakened or altered to make it easier to prove.",
+      "proves": "The theorem statement for payout_to_other_affects_only_owner is unchanged from its currently approved text.",
+      "restatement_clause_id": "statement-unchanged",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "payout_to_other_affects_only_owner"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
