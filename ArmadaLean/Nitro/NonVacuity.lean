@@ -11,6 +11,7 @@
   `tick_moves_only_time`, `mover_cyclic`, `isOpen_iff`.
 -/
 import ArmadaLean.Nitro.Liveness
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro.NonVacuity
 
@@ -135,7 +136,7 @@ theorem transfer_can_happen.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPar
 /-- `transfer_fails_otherwise`. -/
 theorem transfer_fails_otherwise.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat),
     ∀ o, s.finalOutcome a.address = some (.allocation o) → ∀ amt, o.find b ≠ some ⟨b, .alloc amt⟩ :=
-  ⟨g0, c1, d0, fun o h => by simp [g0, Adjudicator.genesis, Adjudicator.statusOf] at h⟩
+  ⟨g0, c1, d0, fun o h => by (simp? [g0, Adjudicator.genesis, Adjudicator.statusOf] at h says simp only [g0, Adjudicator.genesis, FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf, List.lookup_nil, Option.getD_none, ChannelStatus.finalOutcome_open, reduceCtorEq] at h)⟩
 
 /-- `transfer_zero_moves_nothing`. -/
 theorem transfer_zero_moves_nothing.nonvacuity : ∃ (s : Adjudicator Nat) (a : FixedPart) (b : Address Nat) (s' : Adjudicator Nat),
@@ -383,7 +384,7 @@ theorem statusOf_apply_of_not_on {apps : Apps E} {caller : Participant} {op : Op
   | deposit a e x =>
     obtain ⟨-, -, -, -, hs, -⟩ := Adjudicator.deposit_some h
     exact Adjudicator.statusOf_of_status hs c
-  | tick dt => simp at h; subst h; rfl
+  | tick dt => (simp? at h says simp only [Adjudicator.apply_tick, Option.some.injEq] at h); subst h; rfl
   | transfer a b =>
     obtain ⟨_, _, _, -, -, -, -, -, hs, -⟩ := Adjudicator.transfer_some h
     rw [Adjudicator.statusOf_of_status hs]
@@ -437,28 +438,28 @@ theorem concludeInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
       | transfer a b =>
         simp only [opOn] at hon; subst a
         obtain ⟨o, _, _, hfo, -⟩ := Adjudicator.transfer_some h
-        simp [ht] at hfo
+        (simp? [ht] at hfo says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ht, ChannelStatus.finalOutcome_open, reduceCtorEq] at hfo)
       | reclaim l v =>
         simp only [opOn] at hon; subst l
         obtain ⟨_, _, _, _, _, hL, -⟩ := Adjudicator.reclaim_some h
-        simp [ht] at hL
+        (simp? [ht] at hL says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ht, ChannelStatus.finalOutcome_open, reduceCtorEq] at hL)
       | challenge c' proof cand =>
         simp only [opOn] at hon; subst c'
         obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
-        refine .inr (.inr ⟨cand.turnNum, ⟨cand, s.now + c.challengeDuration⟩, by simp, ?_⟩)
+        refine .inr (.inr ⟨cand.turnNum, ⟨cand, s.now + c.challengeDuration⟩, by (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte]), ?_⟩)
         show t0 + ε ≤ s.now + c.challengeDuration
         exact Nat.add_le_add ht0 hdur
       | checkpoint c' proof cand =>
         simp only [opOn] at hon; subst c'
         obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
-        exact .inr (.inl ⟨cand.turnNum, by simp⟩)
+        exact .inr (.inl ⟨cand.turnNum, by (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte])⟩)
       | conclude c' ss' =>
         simp only [opOn] at hon; subst c'
         obtain ⟨⟨-, hch, hfin, hall⟩, rfl⟩ := Adjudicator.conclude_some h
         obtain ⟨x, hx, hst⟩ := hU ss' (List.mem_singleton_self _) (hall p (hch ▸ hp))
         have := hsent x hx (by rw [hst]; exact hch) (by rw [hst]; exact hfin)
         rw [hst] at this
-        exact .inl (by simp [this])
+        exact .inl (by (simp? [this] says simp only [this, FixedPart.address_eq, Adjudicator.finalizedWith_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalizedWith_finalized]))
     · exact .inr (.inl (by rw [statusOf_apply_of_not_on h hon]; exact ho))
   · by_cases hon : opOn op c
     · obtain ⟨t, ch, ht, hd⟩ := hc
@@ -470,28 +471,28 @@ theorem concludeInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
       | transfer a b =>
         simp only [opOn] at hon; subst a
         obtain ⟨o, _, _, hfo, -⟩ := Adjudicator.transfer_some h
-        simp [ht, hnexp] at hfo
+        (simp? [ht, hnexp] at hfo says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ht, ChannelStatus.finalOutcome_challenged, hnexp, ↓reduceIte, reduceCtorEq] at hfo)
       | reclaim l v =>
         simp only [opOn] at hon; subst l
         obtain ⟨_, _, _, _, _, hL, -⟩ := Adjudicator.reclaim_some h
-        simp [ht, hnexp] at hL
+        (simp? [ht, hnexp] at hL says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ht, ChannelStatus.finalOutcome_challenged, hnexp, ↓reduceIte, reduceCtorEq] at hL)
       | challenge c' proof cand =>
         simp only [opOn] at hon; subst c'
         obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
-        refine .inr (.inr ⟨cand.turnNum, ⟨cand, s.now + c.challengeDuration⟩, by simp, ?_⟩)
+        refine .inr (.inr ⟨cand.turnNum, ⟨cand, s.now + c.challengeDuration⟩, by (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte]), ?_⟩)
         show t0 + ε ≤ s.now + c.challengeDuration
         exact Nat.add_le_add ht0 hdur
       | checkpoint c' proof cand =>
         simp only [opOn] at hon; subst c'
         obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
-        exact .inr (.inl ⟨cand.turnNum, by simp⟩)
+        exact .inr (.inl ⟨cand.turnNum, by (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte])⟩)
       | conclude c' ss' =>
         simp only [opOn] at hon; subst c'
         obtain ⟨⟨-, hch, hfin, hall⟩, rfl⟩ := Adjudicator.conclude_some h
         obtain ⟨x, hx, hst⟩ := hU ss' (List.mem_singleton_self _) (hall p (hch ▸ hp))
         have := hsent x hx (by rw [hst]; exact hch) (by rw [hst]; exact hfin)
         rw [hst] at this
-        exact .inl (by simp [this])
+        exact .inl (by (simp? [this] says simp only [this, FixedPart.address_eq, Adjudicator.finalizedWith_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalizedWith_finalized]))
     · exact .inr (.inr (by rw [statusOf_apply_of_not_on h hon]; exact hc))
 
 /-- One round's worth of adversary/land play, for a reaction whose only pending
@@ -530,33 +531,33 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
             c.address = some Ω := by
           rcases hk with hf | ⟨t1, ho⟩ | ⟨t1, ch, ht1, hd⟩
           · cases hop : net1.chain.apply apps p (Op.conclude c ss) with
-            | none => simpa [NetworkState.applyAdv_land_none apps hop] using hf
-            | some s' => simpa [NetworkState.applyAdv_land_some apps hop] using finalizedWith_apply hop hf
-          · have hm : net1.chain.mode c ≠ .finalized := by rw [Adjudicator.mode_eq, ho]; simp
+            | none => (simpa? [NetworkState.applyAdv_land_none apps hop] using hf says simpa only [NetworkState.applyAdv_land_none apps hop, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hf)
+            | some s' => (simpa? [NetworkState.applyAdv_land_some apps hop] using finalizedWith_apply hop hf says simpa only [NetworkState.applyAdv_land_some apps hop, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using finalizedWith_apply hop hf)
+          · have hm : net1.chain.mode c ≠ .finalized := by rw [Adjudicator.mode_eq, ho]; (simp? says simp only [ChannelStatus.mode_open, ne_eq, reduceCtorEq, not_false_eq_true])
             have hop : net1.chain.apply apps p (Op.conclude c ss) =
                 some (net1.chain.setStatus c
                   (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
               rw [Adjudicator.apply_conclude]; exact (conclude_can_happen _ _ _ hm hproof).1
             simp only [NetworkState.applyAdv_land_some apps hop]
-            simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
-              Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ]
+            (simp? [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+              Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ] says simp only [hΩ, FixedPart.address_eq, Adjudicator.finalizedWith_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalizedWith_finalized])
           · have hm : net1.chain.mode c ≠ .finalized := by
               rw [Adjudicator.mode_eq, ht1]
               simp only [ChannelStatus.mode_challenged, ne_eq]
               split
               · rename_i h'
                 exact absurd (lt_of_le_of_lt (le_trans hd h') hn1) (lt_irrefl _)
-              · simp
+              · (simp? says simp only [reduceCtorEq, not_false_eq_true])
             have hop : net1.chain.apply apps p (Op.conclude c ss) =
                 some (net1.chain.setStatus c
                   (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)) := by
               rw [Adjudicator.apply_conclude]; exact (conclude_can_happen _ _ _ hm hproof).1
             simp only [NetworkState.applyAdv_land_some apps hop]
-            simp [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
-              Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ]
+            (simp? [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
+              Adjudicator.statusOf_setStatus, ChannelStatus.finalizedWith_finalized, hΩ] says simp only [hΩ, FixedPart.address_eq, Adjudicator.finalizedWith_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalizedWith_finalized])
         exact hrest.finalizedWith_mono hland
-      · simp at hsplit
-    · simp at hsplit
+      · (simp? at hsplit says simp only [List.nil_append, List.cons.injEq, List.nil_eq, reduceCtorEq, and_false] at hsplit)
+    · (simp? at hsplit says simp only [List.cons_append, List.cons.injEq, List.nil_eq, List.append_eq_nil_iff, reduceCtorEq, and_false] at hsplit)
   | @tick pending net1 net2 dt hfeas hgate hrest ih =>
     intro hεbound hsent hk
     have ht0' : t ≤ (net1.applyAdv apps (AdvMove.tick dt)).chain.now :=
@@ -568,7 +569,7 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
       lt_of_le_of_lt hrest.now_le hεbound
     have hk' : ConcludeInv c Ω (t + T.ε) (net1.applyAdv apps (AdvMove.tick dt)).chain := by
       show ConcludeInv c Ω (t + T.ε) (net1.chain.tick dt)
-      exact concludeInv_apply happ sent0 hp (by simp [Op.proofStates]) hsent hdur ht0 hlt1 hk
+      exact concludeInv_apply happ sent0 hp (by (simp? [Op.proofStates] says simp only [Op.proofStates, List.not_mem_nil, IsEmpty.forall_iff, implies_true])) hsent hdur ht0 hlt1 hk
     exact ih ht0' hsent0' heq hεbound hsent hk'
   | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     intro hεbound hsent hk
@@ -589,7 +590,7 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
         | some s' =>
           have hlt1 : s'.now < t + T.ε := by
             have := hrest.now_le
-            simpa [NetworkState.applyAdv_chain_some apps happ] using lt_of_le_of_lt this hεbound
+            (simpa? [NetworkState.applyAdv_chain_some apps happ] using lt_of_le_of_lt this hεbound says simpa only [gt_iff_lt, NetworkState.applyAdv_chain_some apps happ] using lt_of_le_of_lt this hεbound)
           simp only [NetworkState.applyAdv_chain_some apps happ]
           exact concludeInv_apply happ sent0 hp
             (fun ss' hss' hp' => hsent0 ▸ (B.unforgeable net1 caller op hfeas ss' hss').1 hp')
@@ -614,10 +615,10 @@ theorem conclude_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
       cases hs : net.chain.statusOf c with
       | «open» t => exact .inr (.inl ⟨t, hs⟩)
       | challenged t ch => exact .inr (.inr ⟨t, ch, hs, hpend t ch hs⟩)
-      | finalized t f o => rw [hs] at hn; simp at hn
+      | finalized t f o => rw [hs] at hn; (simp? at hn says simp only [ChannelStatus.finalizedWith_finalized, reduceCtorEq] at hn)
     · exact .inl hn
   refine .move (.chain (.conclude c ss)) hal
-    (by simpa [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates] using hh) ?_
+    (by (simpa? [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates] using hh says simpa only [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates, List.mem_cons, List.not_mem_nil, or_false, forall_eq] using hh)) ?_
   intro n' hround
   apply UnbeatableIn.done
   show (n'.applyHonest (.chain (.conclude c ss))).Finalized c Ω
@@ -662,11 +663,11 @@ theorem waitInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
         refine .inr ?_
         rw [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
           Adjudicator.statusOf_of_status hs]
-        simp [hst]
+        (simp? [hst] says simp only [hst, ChannelStatus.withOutcome_challenged, Adjudicator.statusOf_setStatus, ↓reduceIte, ChannelStatus.finalizedWith_finalized])
       | reclaim l v =>
         simp only [opOn] at hon; subst l
         obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
-        exact .inr (by simp [hst])
+        exact .inr (by (simp? [hst] says simp only [hst, FixedPart.address_eq, ChannelStatus.withOutcome_challenged, Adjudicator.finalizedWith_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalizedWith_finalized]))
       | challenge c' proof cand =>
         simp only [opOn] at hon; subst c'
         obtain ⟨⟨-, hs, -, hm⟩, rfl⟩ := Adjudicator.challenge_some h
@@ -680,7 +681,7 @@ theorem waitInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
         simp only [opOn] at hon; subst c'
         obtain ⟨⟨-, hs, -, hlt⟩, rfl⟩ := Adjudicator.checkpoint_some h
         have := hsupp proof cand hU hs
-        rw [hst] at hlt; simp at hlt; omega
+        rw [hst] at hlt; (simp? at hlt says simp only [ChannelStatus.turnNumRecord_challenged] at hlt); omega
       | conclude c' ss' =>
         simp only [opOn] at hon; subst c'
         obtain ⟨⟨-, hch, hfin, hall⟩, rfl⟩ := Adjudicator.conclude_some h
@@ -703,7 +704,7 @@ theorem waitRound {apps : Apps E} {p : Participant} {T : Threat E p} (B : Bounds
   generalize hpnil : ([] : List (Op E)) = pending at hseq
   induction hseq with
   | nil => intro _ hk; exact hk
-  | land hsplit _ _ => rw [← hpnil] at hsplit; simp at hsplit
+  | land hsplit _ _ => rw [← hpnil] at hsplit; (simp? at hsplit says simp only [List.nil_eq, List.append_eq_nil_iff, reduceCtorEq, and_false] at hsplit)
   | @tick pending net1 net2 dt hfeas hgate hrest ih =>
     intro hsent hk
     have hsent0' : (net1.applyAdv apps (AdvMove.tick dt)).sent = sent0 := by
@@ -711,7 +712,7 @@ theorem waitRound {apps : Apps E} {p : Participant} {T : Threat E p} (B : Bounds
     have happ : net1.chain.apply apps p (.tick dt) = some (net1.chain.tick dt) := rfl
     have hk' : WaitInv c T0 ch (net1.applyAdv apps (AdvMove.tick dt)).chain := by
       show WaitInv c T0 ch (net1.chain.tick dt)
-      exact waitInv_apply happ sent0 hc hp (by simp [Op.proofStates]) hsent hk
+      exact waitInv_apply happ sent0 hc hp (by (simp? [Op.proofStates] says simp only [Op.proofStates, List.not_mem_nil, IsEmpty.forall_iff, implies_true])) hsent hk
     exact ih hsent0' hpnil hsent hk'
   | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     intro hsent hk
@@ -810,7 +811,7 @@ theorem finalizedWith_applyHonest (apps : Apps E) {p : Participant} (m : HonestM
     (hf : n.chain.finalizedWith c.address = some f) :
     (n.applyHonest m).chain.finalizedWith c.address = some f := by
   cases m with
-  | react r => simpa [NetworkState.applyHonest] using hf
+  | react r => (simpa? [NetworkState.applyHonest] using hf says simpa only [NetworkState.applyHonest, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hf)
   | wait dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
 
 /-- A channel finalized with `Ω` is never finalized with another outcome:
@@ -961,7 +962,7 @@ def turboT (p : Participant) : Threat Nat p where
 theorem turboT_bounds (apps : Apps Nat) (p : Participant) : Bounds apps p (turboT p) where
   unforgeable _ caller op h ss hss := by
     obtain ⟨_, a, b, -, hm⟩ := h
-    cases hm; simp [Op.proofStates] at hss
+    cases hm; (simp? [Op.proofStates] at hss says simp only [Op.proofStates, List.not_mem_nil] at hss)
   unforgeableDeliver _ _ h := by obtain ⟨_, _, _, -, hm⟩ := h; cases hm
   notHonest _ caller op h := by obtain ⟨_, _, _, hne, hm⟩ := h; cases hm; exact hne
 
@@ -1172,7 +1173,7 @@ theorem nFU_reach : (Nitro.network apps0 (Ts apps0)).Reachable nFU :=
       exact holds_intro _ _ (by decide) (fun _ h => by cases h))
     (fun ss hss => by
       simp only [Op.proofStates, List.mem_singleton] at hss; subst hss
-      refine ⟨fun q hq => ?_, fun v hv q hq => by simp [ssF, stF, State.voucher?] at hv⟩
+      refine ⟨fun q hq => ?_, fun v hv q hq => by (simp? [ssF, stF, State.voucher?] at hv says simp only [State.voucher?, ssF, stF, reduceCtorEq] at hv)⟩
       simp only [ssF, List.mem_singleton] at hq; subst hq
       exact ⟨⟨stF, [p0]⟩, by decide, rfl⟩)
 
@@ -1275,20 +1276,20 @@ theorem funding_point_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (
     AtFundingPoint v c Ω ∧ (∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) := by
   refine ⟨nFP.views, nFP, c1, .allocation o1, vtAll, nFP_reach, rfl, rfl, ?_, ?_, by decide,
     ⟨?_, ?_⟩, fun r => ?_⟩
-  · intro s1 s2 h _ _; simpa [vtAll] using h
-  · intro s1 s2 _ _ _ _ ho _; simp [vtAll, ho]
+  · intro s1 s2 h _ _; (simpa? [vtAll] using h says simpa only [vtAll, decide_eq_true_eq] using h)
+  · intro s1 s2 _ _ _ _ ho _; (simp? [vtAll, ho] says simp only [vtAll, ho, decide_true])
   · intro r hr k hk
-    have hr' : r = p0 := by simpa [c1] using hr
-    have hk' : k = 0 := by simpa [FixedPart.n, c1] using hk
+    have hr' : r = p0 := by (simpa? [c1] using hr says simpa only [c1, List.mem_cons, List.not_mem_nil, or_false] using hr)
+    have hk' : k = 0 := by (simpa? [FixedPart.n, c1] using hk says simpa only [FixedPart.n, c1, List.length_cons, List.length_nil, zero_add, Nat.lt_one_iff] using hk)
     subst hr' hk'
     refine ⟨⟨st0, [p0]⟩, ?_, rfl, rfl, rfl, rfl, ⟨p0, by decide, by decide⟩⟩
     rw [nFP_views_p0]
     exact holds_intro _ _ (by decide) (fun _ h => by cases h)
   · intro r hr ss hss _
-    have hr' : r = p0 := by simpa [c1] using hr
+    have hr' : r = p0 := by (simpa? [c1] using hr says simpa only [c1, List.mem_cons, List.not_mem_nil, or_false] using hr)
     subst hr'
     rw [nFP_views_p0] at hss
-    simp at hss; subst hss; decide
+    (simp? at hss says simp only [List.mem_cons, List.not_mem_nil, or_false] at hss); subst hss; decide
   · rw [nFP_views_chain]; exact ⟨rfl, rfl⟩
 
 /-- `concluded_universally_finalizable`: `p0` signs `ssF` off-chain
@@ -1322,7 +1323,7 @@ theorem concluded_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (n : 
     fun _ => (by decide : 2 * 1 ≤ 2),
     fun r => deadlineAfter_open (t := 0) (by rw [nCF_views_chain]; rfl) _⟩
   · intro r hr
-    have hr' : r = p0 := by simpa [c1] using hr
+    have hr' : r = p0 := by (simpa? [c1] using hr says simpa only [c1, List.mem_cons, List.not_mem_nil, or_false] using hr)
     subst hr'
     refine ⟨ssF, ?_, by decide, rfl⟩
     rw [nCF_views_p0]; exact netF_holds
@@ -1330,7 +1331,7 @@ theorem concluded_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (n : 
     by_cases hrp0 : r = p0
     · subst hrp0
       rw [nCF_views_p0] at ht
-      simp at ht; subst ht; rfl
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
     · exfalso
       have : (nCF.views r).sent = [] := by
         rw [Network.views, Network.view]
@@ -1392,7 +1393,7 @@ theorem consensus_enabled_outcomes.nonvacuity : ∃ (net : NetworkState Nat p0) 
         (netC2.applyAdv apps0 mC2)
     have hseq : Threat.RoundSeq apps0 (canon p0) netC2.chain.now (σ netC2).calls netC2 net2 := by
       rw [hm, HonestMove.calls]
-      exact Threat.RoundSeq.other hmC2feas (by simp [mC2]) (by simp [mC2]) hland
+      exact Threat.RoundSeq.other hmC2feas (by (simp? [mC2] says simp only [mC2, ne_eq, reduceCtorEq, not_false_eq_true, implies_true])) (by (simp? [mC2] says simp only [mC2, ne_eq, reduceCtorEq, not_false_eq_true, implies_true])) hland
     have hfin2 : net2.chain.finalizedWith c2.address = some (.allocation o1) :=
       hland.finalizedWith_mono hfin1
     have htime : net2.chain.now < netC2.chain.now + (canon p0).ε := by
@@ -1402,7 +1403,7 @@ theorem consensus_enabled_outcomes.nonvacuity : ∃ (net : NetworkState Nat p0) 
     have hseq : Threat.RoundSeq apps0 (canon p0) netC2.chain.now (σ netC2).calls netC2
         (netC2.applyAdv apps0 mC2) := by
       rw [hm, HonestMove.calls_wait]
-      exact Threat.RoundSeq.other hmC2feas (by simp [mC2]) (by simp [mC2]) Threat.RoundSeq.nil
+      exact Threat.RoundSeq.other hmC2feas (by (simp? [mC2] says simp only [mC2, ne_eq, reduceCtorEq, not_false_eq_true, implies_true])) (by (simp? [mC2] says simp only [mC2, ne_eq, reduceCtorEq, not_false_eq_true, implies_true])) Threat.RoundSeq.nil
     have htime : (netC2.applyAdv apps0 mC2).chain.now < netC2.chain.now + (canon p0).ε := by
       rw [hnow1]; exact Nat.lt_add_of_pos_right (canon p0).ε_pos
     exact hσ netC2 _ .refl ⟨hseq, htime⟩ hfin1
@@ -1555,8 +1556,8 @@ theorem turbo_value_is_value.nonvacuity : ∃ (net : NetworkState Nat p0) (d : N
 
 theorem g0_exhausted : g0.TransferExhausted := by
   intro a b s' h
-  simp [Adjudicator.transfer, Adjudicator.finalOutcome, Adjudicator.statusOf, g0,
-    Adjudicator.genesis] at h
+  (simp? [Adjudicator.transfer, Adjudicator.finalOutcome, Adjudicator.statusOf, g0,
+    Adjudicator.genesis] at h says simp only [Adjudicator.transfer, Adjudicator.finalOutcome, FixedPart.address_eq, Adjudicator.statusOf, g0, Adjudicator.genesis, List.lookup_nil, Option.getD_none, ChannelStatus.finalOutcome_open, ite_self, reduceCtorEq] at h)
 
 /-- `turbo_order_independent`. -/
 theorem turbo_order_independent.nonvacuity : ∃ (s : DAGOutcomeNetwork Nat) (ops1 ops2 : List (Participant × Op Nat)),
@@ -1616,34 +1617,34 @@ theorem g0_cLW_open : g0.statusOf cLW = .open 0 := rfl
 
 theorem nLW_finalizable : nLW.views.FinalizableBy apps0 (Ts apps0) cLW wLS.outcome [p0, q0] := by
   intro r hr
-  have hr' : r = p0 ∨ r = q0 := by simpa using hr
+  have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   have hnone : g0.finalizedWith cLW.address = none := by
-    simp [Adjudicator.finalizedWith, g0_cLW_open]
+    (simp? [Adjudicator.finalizedWith, g0_cLW_open] says simp only [Adjudicator.finalizedWith, FixedPart.address_eq, g0_cLW_open, ChannelStatus.finalizedWith_open])
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ cLW
       ⟨stLW, [p0, q0]⟩ wLS.outcome trivial (by decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, stLW, cLW]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, stLW, cLW] says simp only [ConclusionProof, stLW, cLW, SignedState.ByAll, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nLW_views_chain]; exact hnone)) (by decide)
       (deadlineAfter_open (net := nLW.views p0) (by rw [nLW_views_chain]; exact g0_cLW_open) _)
     · rw [nLW_views_p0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
-    · rw [nLW_views_p0]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nLW_views_p0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ cLW
       ⟨stLW, [p0, q0]⟩ wLS.outcome trivial (by decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, stLW, cLW]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, stLW, cLW] says simp only [ConclusionProof, stLW, cLW, SignedState.ByAll, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nLW_views_chain]; exact hnone)) (by decide)
       (deadlineAfter_open (net := nLW.views q0) (by rw [nLW_views_chain]; exact g0_cLW_open) _)
     · rw [nLW_views_q0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
-    · rw [nLW_views_q0]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nLW_views_q0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
 
 /-! #### `ledger_offload_funds_subchannel`'s own funded witness (D10 ruling)
 
@@ -1682,7 +1683,7 @@ theorem nLWF1_sent_q0 : nLWF1.sent q0 = [] := rfl
 
 theorem nLWF1_reach : (Nitro.network apps0 (Ts apps0)).Reachable nLWF1 :=
   network_reachable_deposit (network_reachable_init apps0 (Ts apps0) wLWalletF) p0 cLWF 0 5
-    (by simp [wLWalletF])
+    (by (simp? [wLWalletF] says simp only [wLWalletF, ↓reduceIte, Std.le_refl]))
 
 def nLWF : Network Nat :=
   Network.applyHonest (Network.applyHonest nLWF1 p0 (.send stLWF)) q0 (.send stLWF)
@@ -1691,7 +1692,7 @@ theorem nLWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nLWF :=
   network_reachable_honest
     (network_reachable_honest
       (network_reachable_deposit (network_reachable_init apps0 (Ts apps0) wLWalletF) p0 cLWF 0 5
-        (by simp [wLWalletF]))
+        (by (simp? [wLWalletF] says simp only [wLWalletF, ↓reduceIte, Std.le_refl])))
       p0 (.send stLWF) (by honest_send)
       (fun r hr st hst => by
         injection hr with hr; subst hr
@@ -1711,34 +1712,34 @@ theorem gLWF_balance_cLWF : gLWF.balances.get cLWF.address = 5 := rfl
 
 theorem nLWF_finalizable : nLWF.views.FinalizableBy apps0 (Ts apps0) cLWF wLSF.outcome [p0, q0] := by
   intro r hr
-  have hr' : r = p0 ∨ r = q0 := by simpa using hr
+  have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   have hnone : gLWF.finalizedWith cLWF.address = none := by
-    simp [Adjudicator.finalizedWith, gLWF_cLWF_open]
+    (simp? [Adjudicator.finalizedWith, gLWF_cLWF_open] says simp only [Adjudicator.finalizedWith, FixedPart.address_eq, gLWF_cLWF_open, ChannelStatus.finalizedWith_open])
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ cLWF
       ⟨stLWF, [p0, q0]⟩ wLSF.outcome trivial (by decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, stLWF, cLWF]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, stLWF, cLWF] says simp only [ConclusionProof, stLWF, cLWF, SignedState.ByAll, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nLWF_views_chain]; exact hnone)) (by decide)
       (deadlineAfter_open (net := nLWF.views p0) (by rw [nLWF_views_chain]; exact gLWF_cLWF_open) _)
     · rw [nLWF_views_p0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
-    · rw [nLWF_views_p0]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nLWF_views_p0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ cLWF
       ⟨stLWF, [p0, q0]⟩ wLSF.outcome trivial (by decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, stLWF, cLWF]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, stLWF, cLWF] says simp only [ConclusionProof, stLWF, cLWF, SignedState.ByAll, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nLWF_views_chain]; exact hnone)) (by decide)
       (deadlineAfter_open (net := nLWF.views q0) (by rw [nLWF_views_chain]; exact gLWF_cLWF_open) _)
     · rw [nLWF_views_q0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
-    · rw [nLWF_views_q0]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nLWF_views_q0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
 
 /-- `ledger_offload_funds_subchannel`, funded: `wLSF.c = 5 > 0`. -/
 theorem ledger_offload_funds_subchannel.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (w : LedgerWithSub Nat),
@@ -1751,11 +1752,11 @@ theorem ledger_offload_funds_subchannel.nonvacuity : ∃ (v : Views Nat) (n : Ne
     fun r => by rw [nLWF_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLWF_views_chain]; exact gLWF_balance_cLWF
   · by_cases hrp0 : r = p0
-    · subst hrp0; rw [nLWF_views_p0] at ht; simp at ht; subst ht
-      simp [stLWF, cLWF, wLSF, cχF] at hc
+    · subst hrp0; rw [nLWF_views_p0] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht
+      (simp? [stLWF, cLWF, wLSF, cχF] at hc says simp only [stLWF, cLWF, wLSF, cχF, FixedPart.mk.injEq, Nat.reduceEqDiff, and_self, and_true, and_false] at hc)
     · by_cases hrq0 : r = q0
-      · subst hrq0; rw [nLWF_views_q0] at ht; simp at ht; subst ht
-        simp [stLWF, cLWF, wLSF, cχF] at hc
+      · subst hrq0; rw [nLWF_views_q0] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht
+        (simp? [stLWF, cLWF, wLSF, cχF] at hc says simp only [stLWF, cLWF, wLSF, cχF, FixedPart.mk.injEq, Nat.reduceEqDiff, and_self, and_true, and_false] at hc)
       · exfalso
         have : (nLWF.views r).sent = [] := by
           rw [Network.views, Network.view]
@@ -1773,11 +1774,11 @@ theorem ledger_offload_funds_subchannel.nonvacuity_2 : ∃ (v : Views Nat) (n : 
     rfl, fun r => by rw [nLW_views_chain]; rfl, fun r t ht hc => ?_⟩
   · rw [nLW_views_chain]; exact zero_g0 _
   · by_cases hrp0 : r = p0
-    · subst hrp0; rw [nLW_views_p0] at ht; simp at ht; subst ht
-      simp [stLW, cLW, wLS, cχ] at hc
+    · subst hrp0; rw [nLW_views_p0] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht
+      (simp? [stLW, cLW, wLS, cχ] at hc says simp only [stLW, cLW, wLS, cχ, FixedPart.mk.injEq, Nat.reduceEqDiff, and_self, and_true, and_false] at hc)
     · by_cases hrq0 : r = q0
-      · subst hrq0; rw [nLW_views_q0] at ht; simp at ht; subst ht
-        simp [stLW, cLW, wLS, cχ] at hc
+      · subst hrq0; rw [nLW_views_q0] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht
+        (simp? [stLW, cLW, wLS, cχ] at hc says simp only [stLW, cLW, wLS, cχ, FixedPart.mk.injEq, Nat.reduceEqDiff, and_self, and_true, and_false] at hc)
       · exfalso
         have : (nLW.views r).sent = [] := by
           rw [Network.views, Network.view]
@@ -1853,14 +1854,14 @@ theorem nOneCh_chain (n0 : Network Nat) (st : State Nat) : (nOneCh n0 st).chain 
 theorem nOneCh_views_p0 {n0 : Network Nat} {st : State Nat}
     (hst : st.channel.participants = [p0, q0]) (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = []) :
     (nOneCh n0 st).views p0 = ⟨n0.chain, [⟨st, [q0]⟩], [⟨st, [p0]⟩]⟩ := by
-  simp [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
-    show p0 ≠ q0 from by decide, hsp0, hrp0]
+  (simp? [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
+    show p0 ≠ q0 from by decide, hsp0, hrp0] says simp only [Network.views, Network.view, nOneCh, Network.applyHonest, HonestMove.send, List.map_cons, List.map_nil, List.cons_append, List.nil_append, State.recipients, ne_eq, decide_not, List.mem_filter, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not, Bool.decide_and, show p0 ≠ q0 from by decide, decide_false, Bool.not_false, Bool.and_true, hst, List.mem_cons, List.not_mem_nil, or_self, or_false, decide_true, List.filter_cons_of_pos, List.filter_nil, Bool.and_false, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, hrp0, List.append_nil, ↓reduceIte, hsp0])
 
 theorem nOneCh_views_q0 {n0 : Network Nat} {st : State Nat}
     (hst : st.channel.participants = [p0, q0]) (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
     (nOneCh n0 st).views q0 = ⟨n0.chain, [⟨st, [p0]⟩], [⟨st, [q0]⟩]⟩ := by
-  simp [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
-    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide, hsq0, hrq0]
+  (simp? [nOneCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst,
+    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide, hsq0, hrq0] says simp only [Network.views, Network.view, nOneCh, Network.applyHonest, HonestMove.send, List.map_cons, List.map_nil, List.cons_append, List.nil_append, State.recipients, ne_eq, decide_not, List.mem_filter, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not, Bool.decide_and, decide_true, Bool.and_false, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, List.filter_nil, show q0 ≠ p0 from by decide, decide_false, Bool.not_false, Bool.and_true, hst, List.mem_cons, List.not_mem_nil, or_false, or_true, List.filter_cons_of_pos, hrq0, List.append_nil, ↓reduceIte, hsq0])
 
 theorem g0_open (c : FixedPart) : g0.statusOf c = .open 0 := rfl
 theorem g0_finalizedWith (c : FixedPart) : g0.finalizedWith c.address = none := rfl
@@ -1881,32 +1882,32 @@ theorem nOneCh_finalizable {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat}
     (nOneCh n0 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0 (Ts apps0) c Ω
       [p0, q0] := by
   intro r hr
-  have hr' : r = p0 ∨ r = q0 := by simpa using hr
+  have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nOneCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nOneCh_views_chain]; exact hopen) _)
     · rw [nOneCh_views_p0 hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
-    · rw [nOneCh_views_p0 hcp hsp0 hrp0]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nOneCh_views_p0 hcp hsp0 hrp0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nOneCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nOneCh_views_chain]; exact hopen) _)
     · rw [nOneCh_views_q0 hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
       · exact .inl ⟨rfl, _, List.mem_singleton_self _, rfl⟩
-    · rw [nOneCh_views_q0 hcp hsq0 hrq0]; intro t ht _ _; simp at ht; subst ht; rfl
+    · rw [nOneCh_views_q0 hcp hsq0 hrq0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
 
 /-- Two rounds of `nOneCh`: `p0` and `q0` each send `st1`, then each
     send `st2`, both synchronously delivered to the other. Built on an
@@ -1973,16 +1974,16 @@ theorem nTwoCh_views_p0 {n0 : Network Nat} {st1 st2 : State Nat}
     (hsp0 : n0.sent p0 = []) (hrp0 : n0.received p0 = []) :
     (nTwoCh n0 st1 st2).views p0 =
       ⟨n0.chain, [⟨st2, [q0]⟩, ⟨st1, [q0]⟩], [⟨st2, [p0]⟩, ⟨st1, [p0]⟩]⟩ := by
-  simp [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
-    show p0 ≠ q0 from by decide, hsp0, hrp0]
+  (simp? [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
+    show p0 ≠ q0 from by decide, hsp0, hrp0] says simp only [Network.views, Network.view, nTwoCh, Network.applyHonest, HonestMove.send, List.map_cons, List.map_nil, List.cons_append, List.nil_append, State.recipients, ne_eq, decide_not, List.mem_filter, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not, Bool.decide_and, show p0 ≠ q0 from by decide, decide_false, Bool.not_false, Bool.and_true, hst2, List.mem_cons, List.not_mem_nil, or_self, or_false, decide_true, List.filter_cons_of_pos, List.filter_nil, Bool.and_false, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, hst1, hrp0, List.append_nil, ↓reduceIte, hsp0])
 
 theorem nTwoCh_views_q0 {n0 : Network Nat} {st1 st2 : State Nat}
     (hst1 : st1.channel.participants = [p0, q0]) (hst2 : st2.channel.participants = [p0, q0])
     (hsq0 : n0.sent q0 = []) (hrq0 : n0.received q0 = []) :
     (nTwoCh n0 st1 st2).views q0 =
       ⟨n0.chain, [⟨st2, [p0]⟩, ⟨st1, [p0]⟩], [⟨st2, [q0]⟩, ⟨st1, [q0]⟩]⟩ := by
-  simp [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
-    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide, hsq0, hrq0]
+  (simp? [nTwoCh, Network.views, Network.view, Network.applyHonest, HonestMove.send, State.recipients, hst1, hst2,
+    show p0 ≠ q0 from by decide, show q0 ≠ p0 from by decide, hsq0, hrq0] says simp only [Network.views, Network.view, nTwoCh, Network.applyHonest, HonestMove.send, List.map_cons, List.map_nil, List.cons_append, List.nil_append, State.recipients, ne_eq, decide_not, List.mem_filter, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not, Bool.decide_and, decide_true, Bool.and_false, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, List.filter_nil, show q0 ≠ p0 from by decide, decide_false, Bool.not_false, Bool.and_true, hst2, List.mem_cons, List.not_mem_nil, or_false, or_true, List.filter_cons_of_pos, hst1, hrq0, List.append_nil, ↓reduceIte, hsq0])
 
 
 theorem nTwoCh_views_chain (n0 : Network Nat) (st1 st2 : State Nat) (r : Participant) :
@@ -2001,41 +2002,41 @@ theorem nTwoCh_finalizable_fst {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
     (nTwoCh n0 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat) st2).views.FinalizableBy apps0
       (Ts apps0) c Ω [p0, q0] := by
   intro r hr
-  have hr' : r = p0 ∨ r = q0 := by simpa using hr
+  have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_p0 hcp hst2p hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
           List.mem_cons_self ..⟩
     · rw [nTwoCh_views_p0 hcp hst2p hsp0 hrp0]
       intro t ht hcc _
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · exact absurd hcc hne
       · rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_q0 hcp hst2p hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
           List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
     · rw [nTwoCh_views_q0 hcp hst2p hsq0 hrq0]
       intro t ht hcc _
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · exact absurd hcc hne
       · rfl
@@ -2053,39 +2054,39 @@ theorem nTwoCh_finalizable_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
     (nTwoCh n0 st1 (⟨c, 0, Ω, true, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0
       (Ts apps0) c Ω [p0, q0] := by
   intro r hr
-  have hr' : r = p0 ∨ r = q0 := by simpa using hr
+  have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
       · exact .inr ⟨_, List.mem_cons_self .., rfl, List.mem_cons_self ..⟩
     · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
       intro t ht hcc _
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · rfl
       · exact absurd hcc hne
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
       ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by simp [ConclusionProof, SignedState.ByAll, hcp]) rfl ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_self .., rfl, List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
     · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]
       intro t ht hcc _
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · rfl
       · exact absurd hcc hne
@@ -2106,31 +2107,31 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
     (nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views.FinalizableBy apps0
       (Ts apps0) c Ω [p0, q0] := by
   intro r hr
-  have hr' : r = p0 ∨ r = q0 := by simpa using hr
+  have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine latest_state_finalizable apps0 ((Ts apps0).T p0) (canon_ok apps0 p0)
 
       ⟨(nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views p0, (Nitro.network_views_participant_reachable ⟨_, hreach⟩ p0)⟩
       ⟨c, by unfold FixedPart.IsTimed; rw [hdur]; decide⟩
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
-      (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
+      (by (simp? [SignedState.ByAll, hcp] says simp only [SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true])) rfl ?_ ?_
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
     · simp only [@nTwoCh_views_p0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsp0 hrp0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
       · exact .inr ⟨_, List.mem_cons_self .., rfl,
           List.mem_cons_self ..⟩
     · simp only [@nTwoCh_views_p0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsp0 hrp0]
       intro t ht hcc
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · right; rfl
       · exact absurd hcc hne
     · simp only [@nTwoCh_views_p0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsp0 hrp0]
       intro t ht hcc hfin
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · cases hfin
       · exact absurd hcc hne
@@ -2139,24 +2140,24 @@ theorem nTwoCh_finalizable_latest_snd {n0 : Network Nat} {c : FixedPart} {Ω : O
       ⟨(nTwoCh n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat)).views q0, (Nitro.network_views_participant_reachable ⟨_, hreach⟩ q0)⟩
       ⟨c, by unfold FixedPart.IsTimed; rw [hdur]; decide⟩
       ⟨(⟨c, 0, Ω, false, .opaque 0⟩ : State Nat), [p0, q0]⟩ rfl (by rw [hcp]; decide) ?_
-      (by simp [SignedState.ByAll, hcp]) rfl ?_ ?_
+      (by (simp? [SignedState.ByAll, hcp] says simp only [SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true])) rfl ?_ ?_
       (.inr (.inl ⟨0, by rw [nTwoCh_views_chain]; exact hopen, le_rfl⟩))
     · simp only [@nTwoCh_views_q0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsq0 hrq0]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_self .., rfl,
           List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_self .., rfl⟩
     · simp only [@nTwoCh_views_q0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsq0 hrq0]
       intro t ht hcc
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · right; rfl
       · exact absurd hcc hne
     · simp only [@nTwoCh_views_q0 n0 st1 (⟨c, 0, Ω, false, .opaque 0⟩ : State Nat) hst1p hcp hsq0 hrq0]
       intro t ht hcc hfin
-      simp at ht
+      (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · cases hfin
       · exact absurd hcc hne
@@ -2318,12 +2319,12 @@ theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network 
     nTwoCh_finalizable_latest_snd rfl rfl cLWF_ne_cL2F rfl rfl rfl rfl rfl rfl nPWF_reach⟩
   · intro r; simp only [nPWF, nTwoCh_views_chain, nLWF1_chain]; exact gLWF_balance_cLWF
   · intro r hr
-    have hr' : r = p0 ∨ r = q0 := by simp only [cLWF] at hr; simpa using hr
+    have hr' : r = p0 ∨ r = q0 := by simp only [cLWF] at hr; (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
     rcases hr' with rfl | rfl
     · refine ⟨⟨stPWLF, [p0, q0]⟩, ?_, by decide, rfl⟩
       simp only [nPWF]; rw [nTwoCh_views_p0 rfl rfl rfl rfl]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
@@ -2331,19 +2332,19 @@ theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network 
     · refine ⟨⟨stPWLF, [p0, q0]⟩, ?_, by decide, rfl⟩
       simp only [nPWF]; rw [nTwoCh_views_q0 rfl rfl rfl rfl]
       refine holds_intro _ _ ?_ (fun _ h => by cases h)
-      intro q hq; simp at hq
+      intro q hq; (simp? at hq says simp only [List.mem_cons, List.not_mem_nil, or_false] at hq)
       rcases hq with rfl | rfl
       · exact .inr ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl,
           List.mem_cons_self ..⟩
       · exact .inl ⟨rfl, _, List.mem_cons_of_mem _ (List.mem_cons_self ..), rfl⟩
   · intro r t ht hcc _
     by_cases hrp0 : r = p0
-    · subst hrp0; simp only [nPWF] at ht; rw [nTwoCh_views_p0 rfl rfl rfl rfl] at ht; simp at ht
+    · subst hrp0; simp only [nPWF] at ht; rw [nTwoCh_views_p0 rfl rfl rfl rfl] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · exact absurd hcc cLWF_ne_cL2F.symm
       · rfl
     · by_cases hrq0 : r = q0
-      · subst hrq0; simp only [nPWF] at ht; rw [nTwoCh_views_q0 rfl rfl rfl rfl] at ht; simp at ht
+      · subst hrq0; simp only [nPWF] at ht; rw [nTwoCh_views_q0 rfl rfl rfl rfl] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
         rcases ht with rfl | rfl
         · exact absurd hcc cLWF_ne_cL2F.symm
         · rfl
@@ -2358,12 +2359,12 @@ theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network 
       deadlineAfter_open (by rw [nTwoCh_views_chain, nLWF1_chain]; exact gLWF_open cL2F) _⟩
   · intro r t ht hcc
     by_cases hrp0 : r = p0
-    · subst hrp0; simp only [nPWF] at ht; rw [nTwoCh_views_p0 rfl rfl rfl rfl] at ht; simp at ht
+    · subst hrp0; simp only [nPWF] at ht; rw [nTwoCh_views_p0 rfl rfl rfl rfl] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl
       · rfl
       · exact absurd hcc cLWF_ne_cL2F
     · by_cases hrq0 : r = q0
-      · subst hrq0; simp only [nPWF] at ht; rw [nTwoCh_views_q0 rfl rfl rfl rfl] at ht; simp at ht
+      · subst hrq0; simp only [nPWF] at ht; rw [nTwoCh_views_q0 rfl rfl rfl rfl] at ht; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht)
         rcases ht with rfl | rfl
         · rfl
         · exact absurd hcc cLWF_ne_cL2F
@@ -2386,11 +2387,11 @@ def stV : State Nat :=
 theorem r2_wf : r2.WellFormed apps2 := by
   refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | i
-    · simp [r2] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
-    · simp [r2] at h
+    · (simp? [r2] at h says simp only [r2, List.length_cons, List.length_nil, zero_add, zero_lt_one, getElem?_pos, List.getElem_cons_zero, Option.some.injEq] at h); subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
+    · (simp? [r2] at h says simp only [r2, List.length_cons, List.length_nil, zero_add, add_lt_iff_neg_right, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h)
   · rcases i with _ | i
-    · simp [r2] at h; subst h; decide
-    · simp [r2] at h
+    · (simp? [r2] at h says simp only [r2, List.length_cons, List.length_nil, zero_add, zero_lt_one, getElem?_pos, List.getElem_cons_zero, Option.some.injEq] at h); subst h; decide
+    · (simp? [r2] at h says simp only [r2, List.length_cons, List.length_nil, zero_add, add_lt_iff_neg_right, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h)
 
 /-- `satp_outcome_change_keeps_total`. -/
 theorem satp_outcome_change_keeps_total.nonvacuity : ∃ (c : FixedPart) (alice bob : Participant) (proof : SupportProof Nat)
@@ -2421,7 +2422,7 @@ theorem satp_lemma_3_1.nonvacuity : ∃ (r : Route Nat) (alice bob : Participant
     ReachableSigned apps2 signed s ∧ s.finalOutcome r.V.address = some Ω := by
   refine ⟨r2, p0, q0, signed2, sV2, _, r2_wf, rfl, rfl, rfl, fun st hall _ => ?_, sV_reach, rfl⟩
   have := hall p0 (by decide)
-  simp [signed2, p0, q0] at this
+  (simp? [signed2, p0, q0] at this says simp only [signed2, p0, q0, List.mem_cons, Prod.mk.injEq, true_and, Participant.mk.injEq, zero_ne_one, false_and, List.not_mem_nil, or_self, or_false] at this)
   subst this
   exact .inl ⟨by decide, rfl⟩
 
@@ -2452,7 +2453,7 @@ theorem satp_peers_can_finalize.nonvacuity : ∃ (r : Route Nat) (alice bob : Pa
     (∃ t, net.chain.statusOf r.V = .open t ∧ t ≤ 1) :=
   ⟨r2, p0, q0, netV, ⟨stV, [p0, q0]⟩, canon_ok _ _, r2_wf, rfl, by decide, rfl, rfl, by decide,
     netV_reach, holds_intro _ _ (by decide) (fun v hv => by cases hv; rfl), by decide, rfl, rfl,
-    rfl, fun t ht _ => by simp [netV] at ht; subst ht; exact .inl ⟨by decide, rfl⟩,
+    rfl, fun t ht _ => by (simp? [netV] at ht says simp only [netV, List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; exact .inl ⟨by decide, rfl⟩,
     ⟨0, rfl, by decide⟩⟩
 
 /-- Three peers `p0`, `q0`, `w0`; `q0` is the intermediary. -/
@@ -2465,13 +2466,13 @@ def r3 : Route Nat := ⟨[p0, q0, w0], [Lm3, Lp3], V3, 1, 1, fun p => p.key⟩
 theorem r3_wf : r3.WellFormed apps2 := by
   refine ⟨rfl, by decide, by decide, by decide, fun i L h => ?_, rfl, rfl, fun i L h => ?_⟩
   · rcases i with _ | _ | i
-    · simp [r3] at h; subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
-    · simp [r3] at h; subst h; exact ⟨q0, w0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
-    · simp [r3] at h
+    · (simp? [r3] at h says simp only [r3, List.length_cons, List.length_nil, zero_add, Nat.reduceAdd, Nat.zero_lt_succ, getElem?_pos, List.getElem_cons_zero, Option.some.injEq] at h); subst h; exact ⟨p0, q0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
+    · (simp? [r3] at h says simp only [r3, zero_add, List.length_cons, List.length_nil, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos, List.getElem_cons_succ, List.getElem_cons_zero, Option.some.injEq] at h); subst h; exact ⟨q0, w0, rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
+    · (simp? [r3] at h says simp only [r3, List.length_cons, List.length_nil, zero_add, Nat.reduceAdd, not_lt, le_add_iff_nonneg_left, zero_le, getElem?_neg, reduceCtorEq] at h)
   · rcases i with _ | _ | i
-    · simp [r3] at h; subst h; decide
-    · simp [r3] at h; subst h; decide
-    · simp [r3] at h
+    · (simp? [r3] at h says simp only [r3, List.length_cons, List.length_nil, zero_add, Nat.reduceAdd, Nat.zero_lt_succ, getElem?_pos, List.getElem_cons_zero, Option.some.injEq] at h); subst h; decide
+    · (simp? [r3] at h says simp only [r3, zero_add, List.length_cons, List.length_nil, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos, List.getElem_cons_succ, List.getElem_cons_zero, Option.some.injEq] at h); subst h; decide
+    · (simp? [r3] at h says simp only [r3, List.length_cons, List.length_nil, zero_add, Nat.reduceAdd, not_lt, le_add_iff_nonneg_left, zero_le, getElem?_neg, reduceCtorEq] at h)
 
 def om3 : Allocation Nat := [alloc (.external 0) 0, alloc (.external 1) 0, r3.guarantee p0 q0]
 def op3 : Allocation Nat := [alloc (.external 1) 0, alloc (.external 2) 0, r3.guarantee q0 w0]
@@ -2509,9 +2510,9 @@ theorem net3R_reach : (Nitro.participant apps2 (canon q0)).Reachable net3R :=
             (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send V0)
               (by honest_send))
             (.deliver ⟨V0, [p0, q0, w0]⟩)
-            (⟨fun _ => ⟨⟨V0, [q0]⟩, by simp, rfl⟩,
+            (⟨fun _ => ⟨⟨V0, [q0]⟩, by (simp? says simp only [NetworkState.applyHonest_send, List.mem_cons, List.not_mem_nil, or_false]), rfl⟩,
               fun v h hp => by
-                simp [V0, State.voucher?] at h; subst h; exact absurd hp List.not_mem_nil⟩ :
+                (simp? [V0, State.voucher?] at h says simp only [State.voucher?, V0, Option.some.injEq] at h); subst h; exact absurd hp List.not_mem_nil⟩ :
               NetworkState.Unforged _ ⟨V0, [p0, q0, w0]⟩)
             (fun op h => by cases h))
           (.send Sp) ((HonestMove.Feasible_send _ _).mpr ⟨by decide, by decide,
@@ -2535,10 +2536,10 @@ theorem net3R_latest_p : HoldsLatestLedger net3R Lp3 op3 :=
 
 theorem net3R_virtualSetup : HoldsVirtualSetup net3R r3 p0 w0 true :=
   ⟨fun t ht hc => by
-      simp [net3R] at ht
+      (simp? [net3R] at ht says simp only [net3R, List.mem_cons, List.not_mem_nil, or_false] at ht)
       rcases ht with rfl | rfl | rfl <;>
         first | exact ⟨rfl, rfl, .inl rfl⟩ | exact absurd hc (by decide),
-    ⟨V0, [q0]⟩, by simp [net3R], rfl, rfl⟩
+    ⟨V0, [q0]⟩, by (simp? [net3R] says simp only [net3R, List.mem_cons, SignedState.mk.injEq, and_true, List.not_mem_nil, or_false, or_true]), rfl, rfl⟩
 
 /-- `satp_theorem_3_2`. -/
 theorem satp_theorem_3_2.nonvacuity : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat)
@@ -2672,7 +2673,7 @@ theorem satp_end_user_recovers.nonvacuity : ∃ (r : Route Nat) (alice bob P P1 
       rcases hq with rfl | rfl
       · exact .inl ⟨rfl, ⟨S0, [p0]⟩, List.mem_cons_self, rfl⟩
       · exact .inr ⟨⟨S0, [q0]⟩, List.mem_cons_of_mem _ List.mem_cons_self, rfl, List.mem_cons_self⟩
-    · simp [S0, State.voucher?] at hv
+    · (simp? [S0, State.voucher?] at hv says simp only [State.voucher?, S0, reduceCtorEq] at hv)
   · intro t ht hc
     simp only [netE, List.mem_cons, List.not_mem_nil, or_false] at ht
     rcases ht with rfl | rfl
