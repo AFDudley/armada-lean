@@ -93,6 +93,7 @@ import ArmadaLean.PoolOwned
 import ArmadaLean.Transact
 import ArmadaLean.BoundParams
 import ArmadaLean.Fee
+import Mathlib.Tactic.Says
 
 /-! ### Removing a sub-multiset of live notes, by key
 
@@ -124,7 +125,7 @@ theorem removeAll_sum {α : Type} [DecidableEq α] (g : α → Nat)
   | nil =>
     unfold removeAll at h
     cases h
-    simp [listSum]
+    (simp? [listSum] says simp only [List.map_nil, listSum, Nat.zero_add])
   | cons n ns ih =>
     unfold removeAll at h
     by_cases hmem : pool.elem n
@@ -137,7 +138,7 @@ theorem removeAll_sum {α : Type} [DecidableEq α] (g : α → Nat)
       simp only [List.map_cons, listSum] at heq ⊢
       omega
     · rw [if_neg hmem] at h
-      exact absurd h (by simp)
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- A successful `removeAll` is a reordering: `pool` is exactly the removed elements plus
     the remainder, as a multiset. This is "a spend removes exactly the notes it spends
@@ -159,7 +160,7 @@ theorem removeAll_perm {α : Type} [DecidableEq α] {pool wanted pool' : List α
         List.Perm.cons n (ih h)
       exact step1.trans step2
     · rw [if_neg hmem] at h
-      exact absurd h (by simp)
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- A successful `removeAll`'s remainder only ever loses elements: every entry of
     `pool'` was already an entry of `pool`. The membership half of `removeAll_perm`. -/
@@ -182,7 +183,7 @@ theorem removeAll_nodup {α : Type} [DecidableEq α] {pool wanted pool' : List �
     · rw [if_pos hmem] at h
       exact ih (List.Nodup.erase w hpool) h
     · rw [if_neg hmem] at h
-      exact absurd h (by simp)
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- **A successful `removeAll` removes exactly what it names: no requested element can
     still be found in the remainder.** Given `pool` has no duplicate entries,
@@ -206,7 +207,7 @@ theorem removeAll_disjoint {α : Type} [DecidableEq α] {pool wanted pool' : Lis
         exact (List.Nodup.not_mem_erase hpool) (removeAll_subset h x hxrest)
       · exact ih (List.Nodup.erase w hpool) h x hx hxrest
     · rw [if_neg hmem] at h
-      exact absurd h (by simp)
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- `removeAll` cannot find an element that is absent from `pool`: wherever `wanted`
     names it, that occurrence's lookup fails, so the whole call returns `none`. The
@@ -216,7 +217,7 @@ theorem removeAll_disjoint {α : Type} [DecidableEq α] {pool wanted pool' : Lis
 theorem removeAll_none_of_not_mem {α : Type} [DecidableEq α] {pool wanted : List α}
     {w : α} (hpool : w ∉ pool) (hwanted : w ∈ wanted) : removeAll pool wanted = none := by
   induction wanted generalizing pool with
-  | nil => exact absurd hwanted (by simp)
+  | nil => exact absurd hwanted (by (simp? says simp only [List.not_mem_nil, not_false_eq_true]))
   | cons w0 ws ih =>
     unfold removeAll
     rcases List.eq_or_mem_of_mem_cons hwanted with heq | hw
@@ -243,10 +244,10 @@ theorem removeAll_wanted_nodup {α : Type} [DecidableEq α] {pool wanted pool' :
       have hnotin : w ∉ ws := by
         intro hw
         rw [removeAll_none_of_not_mem (List.Nodup.not_mem_erase hpool) hw] at h
-        exact absurd h (by simp)
+        exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
       exact List.nodup_cons.mpr ⟨hnotin, ih (List.Nodup.erase w hpool) h⟩
     · rw [if_neg hmem] at h
-      exact absurd h (by simp)
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- **`removeAll` completeness: every `wanted` sublist of a `Nodup` pool can be
     removed.** The converse of `removeAll_perm`'s membership half
@@ -297,7 +298,7 @@ theorem withPositionsFrom_map {α β : Type} (f : α → β) (start : Nat) (l : 
     (withPositionsFrom start l).map (fun p => f p.2) = l.map f := by
   induction l generalizing start with
   | nil => rfl
-  | cons a rest ih => simp [withPositionsFrom, ih]
+  | cons a rest ih => (simp? [withPositionsFrom, ih] says simp only [withPositionsFrom, List.map_cons, ih])
 
 /-- Tag `l`'s elements with ascending `(treeNumber, position)` keys, positions starting
     at `start` within tree `treeNumber`. -/
@@ -329,11 +330,11 @@ theorem withTreePositionsFrom_treeNumber {α : Type} (treeNumber start : Nat) (l
 theorem withPositionsFrom_pos_ge {α : Type} (start : Nat) (l : List α) (p : Nat × α)
     (hp : p ∈ withPositionsFrom start l) : start ≤ p.1 := by
   induction l generalizing start with
-  | nil => simp [withPositionsFrom] at hp
+  | nil => (simp? [withPositionsFrom] at hp says simp only [withPositionsFrom, List.not_mem_nil] at hp)
   | cons a rest ih =>
     simp only [withPositionsFrom, List.mem_cons] at hp
     rcases hp with heq | hp
-    · simp [heq]
+    · (simp? [heq] says simp only [heq, Std.le_refl])
     · have := ih (start + 1) hp
       omega
 
@@ -345,7 +346,7 @@ theorem withPositionsFrom_unique {α : Type} (start : Nat) (l : List α) (p1 p2 
     (hp1 : p1 ∈ withPositionsFrom start l) (hp2 : p2 ∈ withPositionsFrom start l)
     (heq : p1.1 = p2.1) : p1.2 = p2.2 := by
   induction l generalizing start with
-  | nil => simp [withPositionsFrom] at hp1
+  | nil => (simp? [withPositionsFrom] at hp1 says simp only [withPositionsFrom, List.not_mem_nil] at hp1)
   | cons a rest ih =>
     simp only [withPositionsFrom, List.mem_cons] at hp1 hp2
     rcases hp1 with h1 | h1 <;> rcases hp2 with h2 | h2
@@ -353,12 +354,12 @@ theorem withPositionsFrom_unique {α : Type} (start : Nat) (l : List α) (p1 p2 
     · exfalso
       have hge := withPositionsFrom_pos_ge (start + 1) rest p2 h2
       rw [h1] at heq
-      simp at heq
+      (simp? at heq says simp only at heq)
       omega
     · exfalso
       have hge := withPositionsFrom_pos_ge (start + 1) rest p1 h1
       rw [h2] at heq
-      simp at heq
+      (simp? at heq says simp only at heq)
       omega
     · exact ih (start + 1) h1 h2
 
@@ -391,11 +392,11 @@ theorem withTreePositionsFrom_unique {α : Type} (treeNumber start : Nat) (l : L
 theorem withPositionsFrom_pos_lt {α : Type} (start : Nat) (l : List α) (p : Nat × α)
     (hp : p ∈ withPositionsFrom start l) : p.1 < start + l.length := by
   induction l generalizing start with
-  | nil => simp [withPositionsFrom] at hp
+  | nil => (simp? [withPositionsFrom] at hp says simp only [withPositionsFrom, List.not_mem_nil] at hp)
   | cons a rest ih =>
     simp only [withPositionsFrom, List.mem_cons] at hp
     rcases hp with heq | hp
-    · simp [heq]
+    · (simp? [heq] says simp only [heq, List.length_cons, Nat.lt_add_right_iff_pos, Nat.zero_lt_succ])
     · have := ih (start + 1) hp
       simp only [List.length_cons]
       omega
@@ -414,7 +415,7 @@ theorem withTreePositionsFrom_pos_lt {α : Type} (treeNumber start : Nat) (l : L
 theorem withPositionsFrom_nodup {α : Type} (start : Nat) (l : List α) :
     (withPositionsFrom start l).Nodup := by
   induction l generalizing start with
-  | nil => simp [withPositionsFrom]
+  | nil => (simp? [withPositionsFrom] says simp only [withPositionsFrom, List.nodup_nil])
   | cons a rest ih =>
     simp only [withPositionsFrom, List.nodup_cons]
     refine ⟨?_, ih (start + 1)⟩
@@ -429,11 +430,11 @@ theorem withPositionsFrom_nodup {α : Type} (start : Nat) (l : List α) :
 theorem withTreePositionsFrom_nodup {α : Type} (treeNumber start : Nat) (l : List α) :
     (withTreePositionsFrom treeNumber start l).Nodup := by
   induction l generalizing start with
-  | nil => simp [withTreePositionsFrom, withPositionsFrom]
+  | nil => (simp? [withTreePositionsFrom, withPositionsFrom] says simp only [withTreePositionsFrom, withPositionsFrom, List.map_nil, List.nodup_nil])
   | cons a rest ih =>
     have hunfold : withTreePositionsFrom treeNumber start (a :: rest) =
         ((treeNumber, start), a) :: withTreePositionsFrom treeNumber (start + 1) rest := by
-      simp [withTreePositionsFrom, withPositionsFrom]
+      (simp? [withTreePositionsFrom, withPositionsFrom] says simp only [withTreePositionsFrom, withPositionsFrom, List.map_cons])
     rw [hunfold, List.nodup_cons]
     refine ⟨?_, ih (start + 1)⟩
     intro hmem
@@ -448,7 +449,7 @@ theorem withTreePositionsFrom_nodup {α : Type} (treeNumber start : Nat) (l : Li
 theorem withPositionsFrom_snd_mem {α : Type} (start : Nat) (l : List α) (p : Nat × α)
     (hp : p ∈ withPositionsFrom start l) : p.2 ∈ l := by
   induction l generalizing start with
-  | nil => simp [withPositionsFrom] at hp
+  | nil => (simp? [withPositionsFrom] at hp says simp only [withPositionsFrom, List.not_mem_nil] at hp)
   | cons a rest ih =>
     simp only [withPositionsFrom, List.mem_cons] at hp
     rcases hp with heq | hp
@@ -469,13 +470,13 @@ theorem withTreePositionsFrom_snd_mem {α : Type} (treeNumber start : Nat) (l : 
 theorem List.getD_append_of_lt {α : Type} (l l' : List α) (i : Nat) (d : α)
     (h : i < l.length) : (l ++ l').getD i d = l.getD i d := by
   induction l generalizing i with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [length_nil, Nat.not_lt_zero] at h)
   | cons a rest ih =>
     cases i with
     | zero => rfl
     | succ i' =>
       simp only [List.cons_append, List.getD_cons_succ]
-      exact ih i' (by simp at h; omega)
+      exact ih i' (by (simp? at h says simp only [length_cons, Nat.add_lt_add_iff_right] at h); omega)
 
 /-! ### The on-chain preimage registry
 
@@ -537,7 +538,7 @@ theorem hashCommitment_inj {p1 p2 : CommitmentPreimage} (h : hashCommitment p1 =
   obtain ⟨h1, h2, h3⟩ := Term.hash3_inj h
   have ht := tokenId_inj h2
   cases p1; cases p2
-  simp_all [Term.val.injEq]
+  (simp_all? [Term.val.injEq] says simp_all only [Term.val.injEq])
 
 /-- Once `reg` already answers key `c` with `p`, folding a batch through it cannot
     change that answer, provided every later record touching key `c` agrees with `p` —
@@ -576,7 +577,7 @@ theorem applyRecords_returns {reg : PreimageRegistry} {records : List (Term × C
   unfold applyRecords
   apply applyRecords_preserves_key
   · unfold recordStep
-    simp
+    (simp? says simp only [↓reduceIte])
   · intro cp hcp hcpeq
     have hcpmem : cp ∈ records := by
       rw [hsplit]
@@ -694,13 +695,13 @@ theorem insertLeaves_nil (newLeaves : List Term) :
 theorem insertTree_concat (init : List TreeState) (cur : TreeState) (count : Nat) :
     insertTree (init ++ [cur]) count =
       if cur.leaves.length + count ≤ 2 ^ TreeDepth then init.length else init.length + 1 := by
-  simp [insertTree]
+  (simp? [insertTree] says simp only [insertTree, List.getLast?_append, List.getLast?_singleton, Option.some_or, List.length_append, List.length_cons, List.length_nil, Nat.zero_add, Nat.add_one_sub_one])
 
 theorem insertLeaves_concat (init : List TreeState) (cur : TreeState) (newLeaves : List Term) :
     insertLeaves (init ++ [cur]) newLeaves =
       if cur.leaves.length + newLeaves.length ≤ 2 ^ TreeDepth then init ++ [cur.extend newLeaves]
       else init ++ [cur, TreeState.empty.extend newLeaves] := by
-  simp [insertLeaves]
+  (simp? [insertLeaves] says simp only [insertLeaves, List.getLast?_append, List.getLast?_singleton, Option.some_or, ne_eq, List.cons_ne_self, not_false_eq_true, List.dropLast_append_of_ne_nil, List.dropLast_singleton, List.append_nil, List.append_assoc, List.cons_append, List.nil_append])
 
 theorem List.getElem?_concat_eq {α : Type} (l : List α) (x : α) (i : Nat) :
     (l ++ [x])[i]? = if i < l.length then l[i]? else if i = l.length then some x else none := by
@@ -708,8 +709,8 @@ theorem List.getElem?_concat_eq {α : Type} (l : List α) (x : α) (i : Nat) :
   · rw [if_pos h1, List.getElem?_append_left h1]
   · rw [if_neg h1, List.getElem?_append_right (by omega)]
     by_cases h2 : i = l.length
-    · subst h2; simp
-    · rw [if_neg h2]; simp; omega
+    · subst h2; (simp? says simp only [Nat.sub_self, length_cons, length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, getElem_cons_zero, ↓reduceIte])
+    · rw [if_neg h2]; (simp? says simp only [_root_.getElem?_eq_none_iff, length_cons, length_nil, Nat.zero_add, Nat.lt_one_iff]); omega
 
 theorem List.getElem?_concat2_eq {α : Type} (l : List α) (x y : α) (i : Nat) :
     (l ++ [x, y])[i]? = if i < l.length then l[i]? else if i = l.length then some x
@@ -718,11 +719,11 @@ theorem List.getElem?_concat2_eq {α : Type} (l : List α) (x y : α) (i : Nat) 
   · rw [if_pos h1, List.getElem?_append_left h1]
   · rw [if_neg h1, List.getElem?_append_right (by omega)]
     by_cases h2 : i = l.length
-    · subst h2; simp
+    · subst h2; (simp? says simp only [Nat.sub_self, length_cons, length_nil, Nat.zero_add, Nat.reduceAdd, Nat.zero_lt_succ, getElem?_pos, getElem_cons_zero, ↓reduceIte])
     · rw [if_neg h2]
       by_cases h3 : i = l.length + 1
-      · subst h3; simp
-      · rw [if_neg h3]; simp; omega
+      · subst h3; (simp? says simp only [Nat.add_sub_cancel_left, length_cons, length_nil, Nat.zero_add, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos, getElem_cons_succ, getElem_cons_zero, Nat.add_left_cancel_iff, ↓reduceIte])
+      · rw [if_neg h3]; (simp? says simp only [_root_.getElem?_eq_none_iff, length_cons, length_nil, Nat.zero_add, Nat.reduceAdd, Nat.not_lt]); omega
 
 /-- **An insertion changes only the target tree, and it extends that tree.** The one
     equation every other forest lemma below follows from. A target tree that does not
@@ -746,7 +747,7 @@ theorem insertLeaves_getElem? (trees : List TreeState) (newLeaves : List Term) (
       · rw [if_pos h1, if_neg (by omega), if_pos h1]
       · rw [if_neg h1]
         by_cases h2 : tn = init.length
-        · subst h2; simp
+        · subst h2; (simp? says simp only [↓reduceIte, Nat.lt_irrefl])
         · rw [if_neg h2, if_neg h2, if_neg h1, if_neg h2]
     · rw [if_neg hfit, if_neg hfit, List.getElem?_concat2_eq, List.getElem?_concat_eq]
       by_cases h1 : tn < init.length
@@ -791,15 +792,15 @@ theorem insertLeaves_target_fits (trees : List TreeState) (newLeaves : List Term
     (leavesAt trees (insertTree trees newLeaves.length)).length + newLeaves.length ≤
       2 ^ TreeDepth := by
   rcases List.eq_nil_or_concat trees with h | ⟨init, cur, h⟩
-  · subst h; simp [leavesAt, insertTree_nil, hNew]
+  · subst h; (simp? [leavesAt, insertTree_nil, hNew] says simp only [leavesAt, insertTree_nil, List.length_nil, Nat.lt_irrefl, not_false_eq_true, getElem?_neg, Nat.zero_add, hNew])
   · rw [List.concat_eq_append] at h
     subst h
     rw [insertTree_concat]
     by_cases hfit : cur.leaves.length + newLeaves.length ≤ 2 ^ TreeDepth
     · rw [if_pos hfit]
-      simp [leavesAt, hfit]
+      (simp? [leavesAt, hfit] says simp only [leavesAt, List.length_append, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero, hfit])
     · rw [if_neg hfit]
-      simp [leavesAt, hNew]
+      (simp? [leavesAt, hNew] says simp only [leavesAt, List.length_append, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_irrefl, not_false_eq_true, getElem?_neg, hNew])
 
 /-- `insertStart` is the target tree's leaf count, by definition. -/
 theorem insertStart_eq (trees : List TreeState) (count : Nat) :
@@ -882,7 +883,7 @@ theorem List.getD_concat_length {α : Type} (l : List α) (x : α) (d : α) :
     (l ++ [x]).getD l.length d = x := by
   induction l with
   | nil => rfl
-  | cons a rest ih => simp
+  | cons a rest ih => (simp? says simp only [cons_append, length_cons, getD_eq_getElem?_getD, length_append, length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, getElem_cons_succ, Std.le_refl, getElem_append_right, Nat.sub_self, getElem_cons_zero, Option.getD_some])
 
 /-- A batch tagged by `withPositionsFrom` always lands, in the appended leaf list, at
     exactly the leaf `f` of its own preimage — no other value could appear there.
@@ -894,20 +895,20 @@ theorem withPositionsFrom_leaf_matches {α β : Type} (f : α → β) (base : Li
     (p : Nat × α) (hp : p ∈ withPositionsFrom start l) :
     (base ++ l.map f).getD p.1 d = f p.2 := by
   induction l generalizing start base with
-  | nil => simp [withPositionsFrom] at hp
+  | nil => (simp? [withPositionsFrom] at hp says simp only [withPositionsFrom, List.not_mem_nil] at hp)
   | cons a rest ih =>
     simp only [withPositionsFrom, List.mem_cons] at hp
     rcases hp with heq | hp
     · rw [heq]
       simp only [List.map_cons]
-      have hassoc : base ++ (f a :: rest.map f) = (base ++ [f a]) ++ rest.map f := by simp
+      have hassoc : base ++ (f a :: rest.map f) = (base ++ [f a]) ++ rest.map f := by (simp? says simp only [List.append_assoc, List.cons_append, List.nil_append])
       rw [hassoc]
-      rw [List.getD_append_of_lt (base ++ [f a]) (rest.map f) start d (by simp [hstart])]
+      rw [List.getD_append_of_lt (base ++ [f a]) (rest.map f) start d (by (simp? [hstart] says simp only [List.length_append, hstart, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one]))]
       rw [← hstart]
       exact List.getD_concat_length base (f a) d
-    · have hassoc : base ++ (a :: rest).map f = (base ++ [f a]) ++ rest.map f := by simp
+    · have hassoc : base ++ (a :: rest).map f = (base ++ [f a]) ++ rest.map f := by (simp? says simp only [List.map_cons, List.append_assoc, List.cons_append, List.nil_append])
       rw [hassoc]
-      exact ih (base ++ [f a]) (start + 1) (by simp [hstart]) hp
+      exact ih (base ++ [f a]) (start + 1) (by (simp? [hstart] says simp only [List.length_append, hstart, List.length_cons, List.length_nil, Nat.zero_add, Nat.add_left_cancel_iff])) hp
 
 /-- The tree-tagged counterpart of `withPositionsFrom_leaf_matches`. -/
 theorem withTreePositionsFrom_leaf_matches {α : Type} (f : α → Term) (base : List Term)
