@@ -1167,6 +1167,51 @@ theorem mover_cyclic (s : State E) (k : Nat) :
     { s with turnNum := k + s.channel.n }.mover = { s with turnNum := k }.mover := by
   (simp? [State.mover, Nat.add_mod_right] says simp only [State.mover, Nat.add_mod_right])
 
+/-- The exact effect of a successful reclaim, from `Adjudicator.apply_reclaim_equation`
+    (not from unfolding `Adjudicator.reclaim`). `reclaimSource?` is the precondition's own
+    reader (R.2, `Adjudicator.lean` "One precondition and one effect per operation"); the
+    operation itself stays unfolded. -/
+theorem reclaim_decompose (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator E)
+    (h : s.reclaim l v = some s') :
+    ∃ oL oV x left right, s.finalOutcome l.address = some (.allocation oL) ∧
+      s.finalizedWith v.address = some (.allocation oV) ∧
+      oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
+      (oL.remove v.address).find left ≠ none ∧ (oL.remove v.address).find right ≠ none ∧
+      oV.amountAt 0 + oV.amountAt 1 = x ∧
+      s' = s.setStatus l ((s.statusOf l).withOutcome (.allocation
+        (((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address))) ∧
+      l.kind = .ledger ∧ v.kind = .virtual := by
+  classical
+  have heq : s.reclaim l v =
+      (if hp : s.ReclaimPre l v then some (s.reclaimEffect v ⟨l, hp⟩) else none) :=
+    Adjudicator.apply_reclaim_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ l v s
+  rw [heq] at h
+  by_cases hpre : s.ReclaimPre l v
+  swap
+  · rw [dif_neg hpre] at h; cases h
+  rw [dif_pos hpre] at h
+  have hs' : s' = s.reclaimEffect v ⟨l, hpre⟩ := (Option.some.inj h).symm
+  have hkl := hpre.1
+  have hkv := hpre.2.1
+  have hsome := hpre.2.2
+  obtain ⟨r, hr⟩ := Option.isSome_iff_exists.1 hsome
+  have hget : (s.reclaimSource? l v).get hsome = r := by (simp? [hr] says simp only [hr, Option.get_some])
+  unfold Adjudicator.reclaimSource? at hr
+  split at hr
+  · rename_i oL oV hL hV
+    split at hr
+    · rename_i d x left right hfind
+      have hd : d = v.address := Allocation.find_dest hfind
+      subst hd
+      split at hr
+      · rename_i hc
+        cases hr
+        exact ⟨oL, oV, x, left, right, hL, hV, hfind, hc.1, hc.2.1, hc.2.2,
+          by rw [hs']; unfold Adjudicator.reclaimEffect; rw [hget], hkl, hkv⟩
+      · cases hr
+    · cases hr
+  · cases hr
+
 /-- SATP-15, docs-0030-04. SATP:348-352 and go-nitro
     MultiAssetHolder.sol:262-300: a reclaim needs both channels finalized
     and a guarantee entry for the target in the ledger's outcome. go-nitro
@@ -1183,7 +1228,7 @@ theorem reclaim_requires (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator
       oL.find v.address = some ⟨v.address, .guarantee x [left, right]⟩ ∧
       (oL.remove v.address).find left ≠ none ∧ (oL.remove v.address).find right ≠ none ∧
       oV.amountAt 0 + oV.amountAt 1 = x := by
-  obtain ⟨oL, oV, x, left, right, hL, hV, hg, hl, hr, hx, -, hkl, hkv⟩ := Adjudicator.reclaim_some h
+  obtain ⟨oL, oV, x, left, right, hL, hV, hg, hl, hr, hx, -, hkl, hkv⟩ := reclaim_decompose s l v s' h
   refine ⟨?_, ?_, hkl, hkv, oL, oV, x, left, right, hL, hV, hg, hl, hr, hx⟩
   · simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hL
     rw [Adjudicator.mode_eq, ChannelStatus.mode_eq_finalized_iff, hL]; rfl
@@ -1220,7 +1265,7 @@ theorem reclaim_effects (s : Adjudicator E) (l v : FixedPart) (s' : Adjudicator 
       s'.balances = s.balances ∧ s'.held = s.held ∧
       s'.finalOutcome v.address = s.finalOutcome v.address := by
   obtain ⟨oL0, oV0, x0, left0, right0, hL0, hV0, hg0, hl, hr, hx, rfl, -, -⟩ :=
-    Adjudicator.reclaim_some h
+    reclaim_decompose s l v s' h
   rw [hL] at hL0; rw [hV] at hV0
   simp only [Option.some.injEq, Outcome.allocation.injEq] at hL0 hV0
   subst hL0 hV0
@@ -1263,8 +1308,20 @@ theorem reclaim_can_happen (s : Adjudicator E) (l v : FixedPart) (oL oV : Alloca
     s.reclaim l v = some (s.setStatus l ((s.statusOf l).withOutcome
       (.allocation ((((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1))).remove
         v.address)))) := by
-  simp only [Adjudicator.reclaim, hL, hV, hg]
-  rw [if_pos (⟨hkl, hkv⟩ : l.kind = .ledger ∧ v.kind = .virtual), if_pos ⟨hl, hr, hx⟩]
+  classical
+  have hsrc : s.reclaimSource? l v = some ⟨oL, oV, left, right⟩ := by
+    simp only [Adjudicator.reclaimSource?, hL, hV, hg, hl, hr, hx, ne_eq, not_false_eq_true,
+      and_self, ↓reduceIte]
+  have hpre : s.ReclaimPre l v := ⟨hkl, hkv, by (simp? [hsrc] says simp only [hsrc, Option.isSome_some])⟩
+  have hget : (s.reclaimSource? l v).get hpre.2.2 = ⟨oL, oV, left, right⟩ := by
+    (simp? [hsrc] says simp only [hsrc, Option.get_some])
+  have heq : s.reclaim l v =
+      (if hp : s.ReclaimPre l v then some (s.reclaimEffect v ⟨l, hp⟩) else none) :=
+    Adjudicator.apply_reclaim_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ l v s
+  rw [heq, dif_pos hpre]
+  congr 1
+  unfold Adjudicator.reclaimEffect
+  rw [hget]
 
 /-- SATP-15. go-nitro MultiAssetHolder.sol:363-365: a reclaim whose `left`
     or `right` has no ledger entry, or whose target amounts do not sum to
