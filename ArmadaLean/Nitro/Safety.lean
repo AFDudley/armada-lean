@@ -710,7 +710,16 @@ theorem challenge_requires (apps : Apps E) (s : Adjudicator E) (challenger : Par
     (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
     ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
      (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) := by
-  exact (Adjudicator.challenge_some h).1
+  classical
+  have heq : s.challenge apps challenger c proof candidate =
+      (if h : s.ChallengePre apps challenger c proof candidate then
+        some (s.challengeEffect apps challenger c proof ⟨candidate, h⟩) else none) :=
+    Adjudicator.apply_challenge_equation apps challenger c proof candidate s
+  have hpre : s.ChallengePre apps challenger c proof candidate := by
+    by_contra hn
+    rw [heq, dif_neg hn] at h
+    cases h
+  exact hpre
 
 omit [DecidableEq E] in
 /-- SATP-14. go-nitro ForceMove.sol:52-54 and SATP:303: a challenge on a
@@ -718,11 +727,15 @@ omit [DecidableEq E] in
 theorem challenge_fails_when_finalized (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
     (c : FixedPart) (proof : SupportProof E) (candidate : State E) (hf : s.mode c = .finalized) :
     s.challenge apps challenger c proof candidate = none := by
-  cases hc : s.challenge apps challenger c proof candidate with
-  | none => rfl
-  | some s' =>
-    obtain ⟨⟨-, -, -, hm⟩, -⟩ := Adjudicator.challenge_some hc
-    rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
+  classical
+  have heq : s.challenge apps challenger c proof candidate =
+      (if h : s.ChallengePre apps challenger c proof candidate then
+        some (s.challengeEffect apps challenger c proof ⟨candidate, h⟩) else none) :=
+    Adjudicator.apply_challenge_equation apps challenger c proof candidate s
+  rw [heq]
+  apply dif_neg
+  rintro ⟨-, -, -, hm⟩
+  rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
 
 omit [DecidableEq E] in
 /-- SATP-14. go-nitro ForceMove.sol:48-50 `_requireIncreasedTurnNumber`: a
@@ -753,7 +766,14 @@ theorem challenge_can_happen (apps : Apps E) (s : Adjudicator E) (challenger : P
       (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) :
     s.challenge apps challenger c proof candidate = some
       (s.setStatus c (.challenged candidate.turnNum ⟨candidate, s.now + c.challengeDuration⟩)) := by
-  simp only [Adjudicator.challenge, if_pos (And.intro hp (And.intro hs (And.intro hc ht)))]
+  have hpre : s.ChallengePre apps challenger c proof candidate := ⟨hp, hs, hc, ht⟩
+  classical
+  have heq : s.challenge apps challenger c proof candidate =
+      (if h : s.ChallengePre apps challenger c proof candidate then
+        some (s.challengeEffect apps challenger c proof ⟨candidate, h⟩) else none) :=
+    Adjudicator.apply_challenge_equation apps challenger c proof candidate s
+  rw [heq, dif_pos hpre]
+  rfl
 
 omit [DecidableEq E] in
 /-- ForceMove-D12, ForceMove-B04, SATP-14. A fresh challenge with a positive
