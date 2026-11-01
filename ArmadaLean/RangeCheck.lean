@@ -1,3 +1,5 @@
+import Mathlib.Tactic.Says
+
 /-
   ArmadaLean.RangeCheck — Num2Bits-style range checks.
 
@@ -20,7 +22,7 @@ def bitsVal : List Bool → Nat
 /-- An `n`-bit decomposition always denotes a value below `2^n`. -/
 theorem bitsVal_lt_two_pow (bs : List Bool) : bitsVal bs < 2 ^ bs.length := by
   induction bs with
-  | nil => simp [bitsVal]
+  | nil => (simp? [bitsVal] says simp only [bitsVal, List.length_nil, Nat.pow_zero, Nat.lt_add_one])
   | cons b bs ih =>
     simp only [bitsVal, List.length_cons, Nat.pow_succ]
     have hb : b.toNat ≤ 1 := Bool.toNat_le b
