@@ -6121,15 +6121,16 @@ theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
     unfold Coins at *
     omega
 
-/-- In the transfer-only game, on a DAG of outcomes, no strategy obtains more
-    at `n` than the Turbo Value Algorithm gives `n` along a topological
-    order. Every network state, with no reachability premise: the state
-    after a deposit is not reachable in the transfer-only game, and
-    `deposit_bounds_value` reads its value. -/
+/-- In the transfer-only game, on a DAG of outcomes, no strategy tree
+    reaches more at `n` than the Turbo Value Algorithm gives `n` along a
+    topological order. Every network state, with no reachability premise:
+    the state after a deposit is not reachable in the transfer-only game,
+    and `deposit_bounds_value` reads its value. -/
 theorem turboValueAlong_upper_bound (apps : Apps E) {p : Participant} (T : Threat E p)
     (hT : T.TransfersOnly) (net : NetworkState E p) (hdag : net.chain.IsDAG) (n : Address E)
     {order : List (Address E)} (hord : net.chain.IsTopologicalOrder order) {x : Coins}
-    (h : CanObtainIn apps T HonestMove.IsTransfer n x net) :
+    (h : UnbeatableIn apps T HonestMove.IsTransfer (fun net' => x ≤ net'.chain.balances.get n)
+      net) :
     x ≤ net.chain.turboValueAlong order n := by
   -- `sg` is ahead of every state `p`'s strategy reaches: the adversary's
   -- and `p`'s transfers move nothing on `sg`
@@ -6426,30 +6427,21 @@ theorem TurboOutcomeNetwork.transfers_reach_turboValues (s : TurboOutcomeNetwork
   obtain ⟨ops, hops, hres⟩ := hmain order hord.1 s s.balances (fun _ _ => rfl) (fun _ _ => rfl)
   exact ⟨ops, hops, hres⟩
 
-/-- In the transfer-only game, on a Turbo outcome network, `p` can obtain
-    at an external destination what the Turbo Value Algorithm gives it
-    along a topological order: `p` plays the algorithm's own transfers
-    (`TurboOutcomeNetwork.transfers_reach_turboValues`,
-    `turbo_replay_unbeatable`). Every network state, with no reachability
-    premise, as `turboValueAlong_upper_bound`. -/
-theorem turboValueAlong_canObtain (apps : Apps E) {p : Participant} (T : Threat E p)
-    (hT : T.TransfersOnly) (net : NetworkState E p) (hturbo : net.chain.IsTurboOutcomeNetwork)
-    (d : E) {order : List (Address E)} (hord : net.chain.IsTopologicalOrder order) :
-    CanObtainIn apps T HonestMove.IsTransfer (.external d)
-      (net.chain.turboValueAlong order (.external d)) net := by
-  obtain ⟨ops, hops, hres⟩ :=
-    TurboOutcomeNetwork.transfers_reach_turboValues ⟨⟨_, hturbo.1⟩, hturbo.2⟩ apps p order hord
-  exact turbo_replay_unbeatable apps T hT d _ ops hops net.chain net (Adjudicator.Ahead.refl _)
-    (hres d).ge
-
 /-- In the transfer-only game, on a Turbo outcome network, the value at an
-    external destination is the Turbo Value Algorithm's value along any
-    topological order. Every network state, with no reachability premise. -/
+    external destination is the Turbo Value Algorithm's value: `p` plays the
+    algorithm's own transfers (`TurboOutcomeNetwork.transfers_reach_turboValues`,
+    `turbo_replay_unbeatable`), and no strategy gets more
+    (`turboValueAlong_upper_bound`). Every network state, with no
+    reachability premise, as `turboValueAlong_upper_bound`. -/
 theorem turboValueAlong_valueIn (apps : Apps E) {p : Participant} (T : Threat E p)
     (hT : T.TransfersOnly) (net : NetworkState E p) (hturbo : net.chain.IsTurboOutcomeNetwork)
-    (d : E) {order : List (Address E)} (hord : net.chain.IsTopologicalOrder order) :
-    ValueIn apps T HonestMove.IsTransfer d net (net.chain.turboValueAlong order (.external d)) :=
-  ⟨turboValueAlong_canObtain apps T hT net hturbo d hord,
+    (d : E) {v : Coins} (hv : net.chain.TurboValue (.external d) v) :
+    ValueIn apps T HonestMove.IsTransfer d net v := by
+  obtain ⟨order, hord, rfl⟩ := hv
+  obtain ⟨ops, hops, hres⟩ :=
+    TurboOutcomeNetwork.transfers_reach_turboValues ⟨⟨_, hturbo.1⟩, hturbo.2⟩ apps p order hord
+  exact ⟨turbo_replay_unbeatable apps T hT d _ ops hops net.chain net (Adjudicator.Ahead.refl _)
+      (hres d).ge,
     fun _ hz => turboValueAlong_upper_bound apps T hT net hturbo.1 _ hord hz⟩
 
 /-- Nitro-33, Nitro-35, Nitro-18. Nitro:837-839: "It is also not hard to construct a
@@ -6479,52 +6471,25 @@ ValueIn apps T HonestMove.IsTransfer d net.state v :=
   ⟨turbo_value_achievable apps T B hT hcap net hturbo d v hv,
     fun y hy => turbo_value_upper_bound apps T B hT hcap net hturbo.1 (.external d) v y hv hy⟩
 
-/-- Two chains with the same status and the same clock have the same
-    allocation at every address. -/
-theorem Adjudicator.allocationOf_of_status_now {s s' : Adjudicator E}
-    (hs : s'.status = s.status) (hn : s'.now = s.now) (n : Address E) :
-    s'.allocationOf n = s.allocationOf n := by
-  cases n with
-  | external a => rfl
-  | channel c =>
-    unfold Adjudicator.allocationOf
-    rw [Adjudicator.finalOutcome_channel, Adjudicator.finalOutcome_channel,
-      Adjudicator.statusOf_of_status hs, hn]
+/-- A deposit changes no allocation, so it changes no edge of the outcome
+    network. -/
+theorem Adjudicator.edge_deposit {s s' : Adjudicator E} {a : Address E} {e y : Coins}
+    (hd : s.deposit a e y = some s') : s'.Edge = s.Edge := by
+  funext n m
+  simp only [Adjudicator.Edge, Adjudicator.allocationOf_deposit hd]
 
-/-- The outcome network reads only the allocations, so a chain with the
-    same allocations is a Turbo outcome network too. -/
-theorem Adjudicator.IsTurboOutcomeNetwork.of_allocationOf {s s' : Adjudicator E}
-    (halloc : ∀ n, s'.allocationOf n = s.allocationOf n) (h : s.IsTurboOutcomeNetwork) :
+/-- A deposit keeps a Turbo outcome network: the network reads only the
+    allocations, and a deposit changes none. -/
+theorem Adjudicator.IsTurboOutcomeNetwork.deposit {s s' : Adjudicator E} {a : Address E}
+    {e y : Coins} (h : s.IsTurboOutcomeNetwork) (hd : s.deposit a e y = some s') :
     s'.IsTurboOutcomeNetwork := by
-  have hE : s'.Edge = s.Edge := by
-    funext n m
-    simp only [Adjudicator.Edge, halloc]
   refine ⟨?_, ?_⟩
   · unfold Adjudicator.IsDAG
-    rw [hE]
+    rw [Adjudicator.edge_deposit hd]
     exact h.1
   · unfold Adjudicator.TurboScope
-    simp only [halloc]
+    simp only [Adjudicator.allocationOf_deposit hd]
     exact h.2
-
-/-- A topological order of `s'` is one of `s` when `s` has the same
-    allocations and no balance above that of `s'`. -/
-theorem Adjudicator.IsTopologicalOrder.of_allocationOf {s s' : Adjudicator E}
-    (halloc : ∀ n, s'.allocationOf n = s.allocationOf n)
-    (hle : ∀ n, s.balances.get n ≤ s'.balances.get n) {order : List (Address E)}
-    (h : s'.IsTopologicalOrder order) : s.IsTopologicalOrder order := by
-  have hE : s'.Edge = s.Edge := by
-    funext n m
-    simp only [Adjudicator.Edge, halloc]
-  refine ⟨h.1, fun n m he => h.2.1 n m (by rw [hE]; exact he), fun n hn => h.2.2 n ?_⟩
-  rcases hn with hb | ha
-  · left
-    have := hle n
-    unfold Coins at *
-    omega
-  · right
-    rw [halloc]
-    exact ha
 
 /-- Nitro-31. Nitro:785-787: "a deposit into the system cannot reduce the value of
     any address and cannot increase the value of any address by more than the
@@ -6533,10 +6498,10 @@ theorem Adjudicator.IsTopologicalOrder.of_allocationOf {s s' : Adjudicator E}
     "strategies and counter-strategies involving transfer operations only")
     on a Turbo outcome network (Nitro:790-795, a DAG), as for
     `turbo_value_achievable`. Both values are the Turbo Value Algorithm's
-    value along one order (`turboValueAlong_upper_bound`,
-    `turboValueAlong_canObtain`). A deposit changes no status, so no
-    allocation and no edge, and it raises one starting balance by `y`
-    (`Adjudicator.turboValueAlong_deposit`). -/
+    value along one order (`turboValueAlong_valueIn`). A deposit changes no
+    allocation and no edge, so a topological order of the chain after the
+    deposit is one of the chain before it, and along that order the deposit
+    raises the value by 0 to `y` (`Adjudicator.turboValueAlong_deposit`). -/
 theorem deposit_bounds_value (apps : Apps E) {p : Participant} (T : Threat E p)
     (hT : T.TransfersOnly) (net : Nitro.ReachableParticipant apps T)
     (hturbo : net.state.chain.IsTurboOutcomeNetwork)
@@ -6545,28 +6510,33 @@ theorem deposit_bounds_value (apps : Apps E) {p : Participant} (T : Threat E p)
     (hv : ValueIn apps T HonestMove.IsTransfer d net.state x)
     (hv' : ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' } x') :
     x ≤ x' ∧ x' ≤ x + y := by
-  obtain ⟨-, -, hb, -, hs, hn⟩ := Adjudicator.deposit_some hd
-  have halloc : ∀ n, s'.allocationOf n = net.state.chain.allocationOf n :=
-    Adjudicator.allocationOf_of_status_now hs hn
-  have hturbo' : s'.IsTurboOutcomeNetwork := hturbo.of_allocationOf halloc
+  obtain ⟨-, -, hb, -, -, -⟩ := Adjudicator.deposit_some hd
+  have hturbo' : s'.IsTurboOutcomeNetwork := hturbo.deposit hd
   obtain ⟨order, hord'⟩ := exists_valid_topo_order s' hturbo'.1
-  have hord : net.state.chain.IsTopologicalOrder order := hord'.of_allocationOf halloc fun m => by
-    rw [hb, Balances.get_add]
-    split
-    · next h =>
-      rw [h]
-      unfold Coins at *
-      omega
-    · exact le_rfl
-  have hext : net.state.chain.allocationOf (.external d) = [] :=
-    allocationOf_eq_nil_of_isExternal _ rfl
-  obtain ⟨hlo, hhi⟩ := Adjudicator.turboValueAlong_deposit halloc hb hord.1 hext
-  have h1 := turboValueAlong_upper_bound apps T hT net.state hturbo.1 _ hord hv.1
-  have h2 := hv.2 _ (turboValueAlong_canObtain apps T hT net.state hturbo d hord)
-  have h3 : x' ≤ s'.turboValueAlong order (.external d) :=
-    turboValueAlong_upper_bound apps T hT { net.state with chain := s' } hturbo'.1 _ hord' hv'.1
-  have h4 : s'.turboValueAlong order (.external d) ≤ x' :=
-    hv'.2 _ (turboValueAlong_canObtain apps T hT { net.state with chain := s' } hturbo' d hord')
+  have hord : net.state.chain.IsTopologicalOrder order := by
+    refine ⟨hord'.1, fun n m he => hord'.2.1 n m (by rw [Adjudicator.edge_deposit hd]; exact he),
+      fun n hn => hord'.2.2 n ?_⟩
+    rcases hn with hbal | hal
+    · left
+      rw [hb, Balances.get_add]
+      split
+      · next h =>
+        rw [h] at hbal
+        unfold Coins at *
+        omega
+      · exact hbal
+    · right
+      rw [Adjudicator.allocationOf_deposit hd]
+      exact hal
+  obtain ⟨hlo, hhi⟩ := Adjudicator.turboValueAlong_deposit hd hord d
+  have h1 := turboValueAlong_valueIn apps T hT net.state hturbo d ⟨order, hord, rfl⟩
+  have h2 : ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' }
+      (s'.turboValueAlong order (.external d)) :=
+    turboValueAlong_valueIn apps T hT _ hturbo' d ⟨order, hord', rfl⟩
+  have hx1 := h1.2 x hv.1
+  have hx2 := hv.2 _ h1.1
+  have hx3 := h2.2 x' hv'.1
+  have hx4 := hv'.2 _ h2.1
   unfold Coins at *
   omega
 

@@ -1102,157 +1102,165 @@ theorem turboValueAlong_eq_add_credits (s : Adjudicator E) (hdag : s.IsDAG)
 /-! ### A deposit and the Turbo Value Algorithm
 
     A deposit of `y` coins raises one starting balance by `y` and changes
-    no allocation. Along one order, the algorithm's value at an address
-    with an empty allocation then rises by at least `0` and at most `y`
-    (`Adjudicator.turboValueAlong_deposit`). The invariant: every value is
-    at least its old value, and over the nodes still to be processed and
-    the target address the rise sums to at most `y`. -/
+    no allocation. Along one order, the algorithm's value at an external
+    destination then rises by at least `0` and at most `y`
+    (`Adjudicator.turboValueAlong_deposit`). -/
 
-/-- Over addresses that never name `a`, a raise of `a` changes no reading. -/
-theorem Balances.sum_get_add_of_not_mem (v : Balances E) {a : Address E} (x : Coins)
-    {S : List (Address E)} (ha : a ∉ S) :
-    (S.map (v.add a x).get).sum = (S.map v.get).sum := by
-  refine congrArg List.sum (List.map_congr_left fun m hm => ?_)
-  rw [Balances.get_add, if_neg (fun h : m = a => ha (h ▸ hm))]
+/-- A deposit changes no status and not the clock, so it changes no
+    allocation. -/
+theorem Adjudicator.allocationOf_deposit {s s' : Adjudicator E} {a : Address E} {e y : Coins}
+    (hd : s.deposit a e y = some s') (n : Address E) : s'.allocationOf n = s.allocationOf n := by
+  obtain ⟨-, -, -, -, hs, hn⟩ := Adjudicator.deposit_some hd
+  cases n with
+  | external b => rfl
+  | channel c =>
+    unfold Adjudicator.allocationOf
+    rw [Adjudicator.finalOutcome_channel, Adjudicator.finalOutcome_channel,
+      Adjudicator.statusOf_of_status hs, hn]
 
-/-- Over a list with no repeated address, a raise of `a` by `x` raises the
-    sum by `x` when the list names `a`, and by nothing otherwise. -/
-theorem Balances.sum_get_add (v : Balances E) (a : Address E) (x : Coins)
-    {S : List (Address E)} (hS : S.Nodup) :
-    (S.map (v.add a x).get).sum = (S.map v.get).sum + if a ∈ S then x else 0 := by
-  induction S with
-  | nil => rfl
-  | cons m S ih =>
-    obtain ⟨hm, hS'⟩ := List.nodup_cons.1 hS
-    simp only [List.map_cons, List.sum_cons]
-    by_cases hma : m = a
-    · subst hma
-      rw [Balances.get_add, if_pos rfl, Balances.sum_get_add_of_not_mem v x hm,
-        if_pos List.mem_cons_self]
-      unfold Coins at *
-      omega
-    · have hmem : (a ∈ m :: S) ↔ a ∈ S := by
-        rw [List.mem_cons]
-        exact ⟨fun h => h.resolve_left (Ne.symm hma), Or.inr⟩
-      rw [Balances.get_add, if_neg hma, ih hS', if_congr hmem rfl rfl]
-      unfold Coins at *
-      omega
-
-/-- `payoutValues` is monotone in its starting values and its amount to pay. -/
-theorem payoutValues_mono (o : Allocation E) :
-    ∀ (v1 v2 : Balances E) (r1 r2 : Coins), (∀ m, v1.get m ≤ v2.get m) → r1 ≤ r2 →
-      ∀ m, (payoutValues v1 r1 o).get m ≤ (payoutValues v2 r2 o).get m := by
-  induction o with
-  | nil => intro v1 v2 r1 r2 hv _; exact hv
-  | cons e rest ih =>
-    intro v1 v2 r1 r2 hv hr
-    simp only [payoutValues]
-    refine ih _ _ _ _ ?_ (by unfold Coins at *; omega)
-    intro m
-    by_cases hg : e.item.isGuarantee = true
-    · simp only [if_pos hg]
-      exact hv m
-    · simp only [if_neg hg, Balances.get_add]
-      split
-      · next h =>
-        have := hv e.dest
+/-- A deposit of `y` coins: along one topological order of `s`, the
+    algorithm's value at an external destination rises by at least `0` and
+    at most `y`. The invariant of the run: every value is at least its old
+    value, and over the nodes still to be processed and the destination the
+    rise sums to at most `y`. Processing a node passes on at most its own
+    rise (`hsumle`), and the destination has an empty allocation. -/
+theorem Adjudicator.turboValueAlong_deposit {s s' : Adjudicator E} {a : Address E} {e y : Coins}
+    (hd : s.deposit a e y = some s') {order : List (Address E)} (hord : s.IsTopologicalOrder order)
+    (d : E) :
+    s.turboValueAlong order (.external d) ≤ s'.turboValueAlong order (.external d) ∧
+      s'.turboValueAlong order (.external d) ≤ s.turboValueAlong order (.external d) + y := by
+  obtain ⟨-, -, hb, -, -, -⟩ := Adjudicator.deposit_some hd
+  -- A raise of `b` by `x`, summed over a list with no repeated address.
+  have hsum_add : ∀ (v : Balances E) (b : Address E) (x : Coins) (S : List (Address E)),
+      S.Nodup → (S.map (v.add b x).get).sum = (S.map v.get).sum + if b ∈ S then x else 0 := by
+    intro v b x S hS
+    induction S with
+    | nil => rfl
+    | cons m S ih =>
+      obtain ⟨hm, hS'⟩ := List.nodup_cons.1 hS
+      simp only [List.map_cons, List.sum_cons]
+      by_cases hmb : m = b
+      · subst hmb
+        have hrest : (S.map (v.add m x).get).sum = (S.map v.get).sum :=
+          congrArg List.sum (List.map_congr_left fun k hk => by
+            rw [Balances.get_add, if_neg (fun h : k = m => hm (h ▸ hk))])
+        rw [Balances.get_add, if_pos rfl, hrest, if_pos List.mem_cons_self]
         unfold Coins at *
         omega
-      · exact hv m
-
-/-- Over a list with no repeated address, `payoutValues` with the larger
-    amount `r2` adds to the sum at most `r2 - r1` more than with `r1`,
-    beyond the difference of the starting values. Stated without
-    subtraction. -/
-theorem payoutValues_sum_le (o : Allocation E) {S : List (Address E)} (hS : S.Nodup) :
-    ∀ (v1 v2 : Balances E) (r1 r2 : Coins), r1 ≤ r2 →
+      · have hmem : (b ∈ m :: S) ↔ b ∈ S := by
+          rw [List.mem_cons]
+          exact ⟨fun h => h.resolve_left (Ne.symm hmb), Or.inr⟩
+        rw [Balances.get_add, if_neg hmb, ih hS', if_congr hmem rfl rfl]
+        unfold Coins at *
+        omega
+  -- `payoutValues` is monotone in its starting values and its amount.
+  have hmono : ∀ (o : Allocation E) (v1 v2 : Balances E) (r1 r2 : Coins),
+      (∀ m, v1.get m ≤ v2.get m) → r1 ≤ r2 →
+      ∀ m, (payoutValues v1 r1 o).get m ≤ (payoutValues v2 r2 o).get m := by
+    intro o
+    induction o with
+    | nil => intro v1 v2 r1 r2 hv _; exact hv
+    | cons f rest ih =>
+      intro v1 v2 r1 r2 hv hr
+      simp only [payoutValues]
+      refine ih _ _ _ _ ?_ (by unfold Coins at *; omega)
+      intro m
+      by_cases hg : f.item.isGuarantee = true
+      · simp only [if_pos hg]
+        exact hv m
+      · simp only [if_neg hg, Balances.get_add]
+        split
+        · next h =>
+          have := hv f.dest
+          unfold Coins at *
+          omega
+        · exact hv m
+  -- Over a list with no repeated address, paying `r2` instead of `r1 ≤ r2`
+  -- adds at most `r2 - r1` to the sum beyond the starting difference.
+  have hsumle : ∀ (o : Allocation E) (S : List (Address E)), S.Nodup →
+      ∀ (v1 v2 : Balances E) (r1 r2 : Coins), r1 ≤ r2 →
       (S.map (payoutValues v2 r2 o).get).sum + (S.map v1.get).sum + r1 ≤
         (S.map (payoutValues v1 r1 o).get).sum + (S.map v2.get).sum + r2 := by
-  induction o with
-  | nil =>
-    intro v1 v2 r1 r2 hr
-    simp only [payoutValues]
-    unfold Coins at *
-    omega
-  | cons e rest ih =>
-    intro v1 v2 r1 r2 hr
-    simp only [payoutValues]
-    have hrest := ih (if e.item.isGuarantee then v1 else v1.add e.dest (min e.amount r1))
-      (if e.item.isGuarantee then v2 else v2.add e.dest (min e.amount r2))
-      (r1 - min e.amount r1) (r2 - min e.amount r2) (by unfold Coins at *; omega)
-    by_cases hg : e.item.isGuarantee = true
-    · simp only [if_pos hg] at hrest ⊢
+    intro o S hS
+    induction o with
+    | nil =>
+      intro v1 v2 r1 r2 hr
+      simp only [payoutValues]
       unfold Coins at *
       omega
-    · simp only [if_neg hg] at hrest ⊢
-      rw [Balances.sum_get_add v1 _ _ hS, Balances.sum_get_add v2 _ _ hS] at hrest
-      unfold Coins at *
-      split at hrest <;> omega
-
-/-- Along one order, two starting values where the second is pointwise at
-    least the first and, over the nodes still to be processed and `a`, at
-    most `y` more in total, give values at `a` at most `y` apart. `a` has an
-    empty allocation, so processing `a` moves nothing. -/
-theorem Adjudicator.turboValues_get_le_add (s : Adjudicator E) {a : Address E}
-    (ha : s.allocationOf a = []) (y : Coins) :
-    ∀ (order : List (Address E)) (v1 v2 : Balances E), order.Nodup →
+    | cons f rest ih =>
+      intro v1 v2 r1 r2 hr
+      simp only [payoutValues]
+      have hrest := ih (if f.item.isGuarantee then v1 else v1.add f.dest (min f.amount r1))
+        (if f.item.isGuarantee then v2 else v2.add f.dest (min f.amount r2))
+        (r1 - min f.amount r1) (r2 - min f.amount r2) (by unfold Coins at *; omega)
+      by_cases hg : f.item.isGuarantee = true
+      · simp only [if_pos hg] at hrest ⊢
+        unfold Coins at *
+        omega
+      · simp only [if_neg hg] at hrest ⊢
+        rw [hsum_add v1 _ _ S hS, hsum_add v2 _ _ S hS] at hrest
+        unfold Coins at *
+        split at hrest <;> omega
+  -- The run of the algorithm keeps the invariant.
+  have ha : s.allocationOf (.external d) = [] := allocationOf_eq_nil_of_isExternal s rfl
+  have hrun : ∀ (order : List (Address E)) (v1 v2 : Balances E), order.Nodup →
       (∀ m, v1.get m ≤ v2.get m) →
-      (∀ S : List (Address E), S.Nodup → (∀ m ∈ S, m ∈ order ∨ m = a) →
+      (∀ S : List (Address E), S.Nodup → (∀ m ∈ S, m ∈ order ∨ m = .external d) →
         (S.map v2.get).sum ≤ (S.map v1.get).sum + y) →
-      (s.turboValues order v1).get a ≤ (s.turboValues order v2).get a ∧
-        (s.turboValues order v2).get a ≤ (s.turboValues order v1).get a + y := by
-  intro order
-  induction order with
-  | nil =>
-    intro v1 v2 _ hle hsum
-    have h := hsum [a] (List.nodup_singleton a) (fun m hm => Or.inr (List.mem_singleton.1 hm))
-    simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at h
-    simp only [Adjudicator.turboValues]
-    unfold Coins at *
-    exact ⟨hle a, by omega⟩
-  | cons n rest ih =>
-    intro v1 v2 hnd hle hsum
-    obtain ⟨hn, hnd'⟩ := List.nodup_cons.1 hnd
-    simp only [Adjudicator.turboValues]
-    refine ih _ _ hnd' (payoutValues_mono _ v1 v2 _ _ hle (hle n)) fun S hS hSsub => ?_
-    by_cases hnS : n ∈ S
-    · have hna : n = a := (hSsub n hnS).resolve_left hn
-      subst hna
-      simp only [ha, payoutValues]
-      exact hsum S hS fun m hm => (hSsub m hm).imp_left (List.mem_cons_of_mem n)
-    · have hstep := payoutValues_sum_le (s.allocationOf n) hS v1 v2 _ _ (hle n)
-      have hcons := hsum (n :: S) (List.nodup_cons.2 ⟨hnS, hS⟩) fun m hm => by
-        rcases List.mem_cons.1 hm with rfl | hm
-        · exact Or.inl List.mem_cons_self
-        · exact (hSsub m hm).imp_left (List.mem_cons_of_mem n)
-      simp only [List.map_cons, List.sum_cons] at hcons
+      (s.turboValues order v1).get (.external d) ≤ (s.turboValues order v2).get (.external d) ∧
+        (s.turboValues order v2).get (.external d) ≤
+          (s.turboValues order v1).get (.external d) + y := by
+    intro order
+    induction order with
+    | nil =>
+      intro v1 v2 _ hle hsum
+      have h := hsum [.external d] (List.nodup_singleton _)
+        (fun m hm => Or.inr (List.mem_singleton.1 hm))
+      simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at h
+      simp only [Adjudicator.turboValues]
       unfold Coins at *
-      omega
-
-/-- A deposit of `y` coins into a channel `c`, at a state with the same
-    allocations: along one order of `s`, the value at an address with an
-    empty allocation rises by at least `0` and at most `y`. -/
-theorem Adjudicator.turboValueAlong_deposit {s s' : Adjudicator E}
-    (halloc : ∀ n, s'.allocationOf n = s.allocationOf n) {c : Address E} {y : Coins}
-    (hb : s'.balances = s.balances.add c y) {order : List (Address E)} (hnd : order.Nodup)
-    {a : Address E} (ha : s.allocationOf a = []) :
-    s.turboValueAlong order a ≤ s'.turboValueAlong order a ∧
-      s'.turboValueAlong order a ≤ s.turboValueAlong order a + y := by
+      exact ⟨hle _, by omega⟩
+    | cons n rest ih =>
+      intro v1 v2 hnd hle hsum
+      obtain ⟨hn, hnd'⟩ := List.nodup_cons.1 hnd
+      simp only [Adjudicator.turboValues]
+      refine ih _ _ hnd' (hmono _ v1 v2 _ _ hle (hle n)) fun S hS hSsub => ?_
+      by_cases hnS : n ∈ S
+      · have hna : n = .external d := (hSsub n hnS).resolve_left hn
+        subst hna
+        simp only [ha, payoutValues]
+        exact hsum S hS fun m hm => (hSsub m hm).imp_left (List.mem_cons_of_mem _)
+      · have hstep := hsumle (s.allocationOf n) S hS v1 v2 _ _ (hle n)
+        have hcons := hsum (n :: S) (List.nodup_cons.2 ⟨hnS, hS⟩) fun m hm => by
+          rcases List.mem_cons.1 hm with rfl | hm
+          · exact Or.inl List.mem_cons_self
+          · exact (hSsub m hm).imp_left (List.mem_cons_of_mem _)
+        simp only [List.map_cons, List.sum_cons] at hcons
+        unfold Coins at *
+        omega
+  -- `s'` runs the algorithm with the same allocations.
   have hcongr : ∀ (order : List (Address E)) (v : Balances E),
       s'.turboValues order v = s.turboValues order v := by
     intro order
     induction order with
     | nil => intro v; rfl
-    | cons n rest ih => intro v; simp only [Adjudicator.turboValues, halloc n, ih]
+    | cons n rest ih =>
+      intro v
+      simp only [Adjudicator.turboValues, Adjudicator.allocationOf_deposit hd n, ih]
   unfold Adjudicator.turboValueAlong
   rw [hcongr, hb]
-  refine s.turboValues_get_le_add ha y order _ _ hnd (fun m => ?_) fun S hS _ => ?_
+  refine hrun order _ _ hord.1 (fun m => ?_) fun S hS _ => ?_
   · rw [Balances.get_add]
     split
-    · next h => subst h; unfold Coins at *; omega
+    · next h =>
+      subst h
+      unfold Coins at *
+      omega
     · exact le_rfl
-  · rw [Balances.sum_get_add _ _ _ hS]
+  · rw [hsum_add _ _ _ S hS]
     unfold Coins at *
     split <;> omega
+
 
 end ArmadaLean.Nitro

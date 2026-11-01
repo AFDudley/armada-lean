@@ -1431,14 +1431,13 @@ theorem deposit_bounds_value.nonvacuity : ∃ (net : NetworkState Nat p0) (c : F
     ValueIn apps0 (turboT p0) HonestMove.IsTransfer d net x ∧
     ValueIn apps0 (turboT p0) HonestMove.IsTransfer d { net with chain := s' } x' := by
   obtain ⟨s', hd⟩ : ∃ s', g0.deposit c1.address 0 0 = some s' := ⟨_, rfl⟩
-  obtain ⟨-, -, -, -, hs, hn⟩ := Adjudicator.deposit_some hd
-  have ht' : s'.IsTurboOutcomeNetwork :=
-    g0_turboOutcomeNetwork.of_allocationOf (Adjudicator.allocationOf_of_status_now hs hn)
+  have ht' : s'.IsTurboOutcomeNetwork := g0_turboOutcomeNetwork.deposit hd
   obtain ⟨o', ho'⟩ := exists_valid_topo_order s' ht'.1
   exact ⟨⟨g0, [], []⟩, c1, 0, 0, _, _, s', 0, turboT_only _,
     participant_reachable_init apps0 (turboT p0), g0_turboOutcomeNetwork, hd,
-    turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨g0, [], []⟩ g0_turboOutcomeNetwork 0 g0_topo,
-    turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨s', [], []⟩ ht' 0 ho'⟩
+    turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨g0, [], []⟩ g0_turboOutcomeNetwork 0
+      (g0_turbo _),
+    turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨s', [], []⟩ ht' 0 ⟨o', ho', rfl⟩⟩
 
 /-- `payout_to_other_affects_only_owner`. `sP` is `c1` concluded with outcome `[alloc d1 0]`:
     reached by `p0` sending the final state `stP`, then honestly concluding with it (`Holds`
