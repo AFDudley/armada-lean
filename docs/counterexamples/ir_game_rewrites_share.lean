@@ -38,6 +38,12 @@
     of the state before it, and that state is the adversary's.
   So `p0` has no finalizable outcome and exactly one enabled outcome.
 
+  The last section drafts IR as a predicate (`AppIR`, no statement takes it)
+  and a sufficient condition on a game library (`NoTakeFromNonMover`).
+  `appsB_not_IR`: `p0` holds a support that pays it 5 and cannot finalize
+  any outcome that pays it 5. `vtAll_not_noTake`: `q0`'s valid move cuts
+  `p0`'s payment.
+
   The construction does not use the round clock: every round it builds
   advances the clock by 1, and `ε = 2`.
 
@@ -486,33 +492,36 @@ theorem enabled_O1 : Enabled appsB T0 c0 O1 net1 := by
 
 /-! ## No outcome is finalizable
 
-Against the target `Ω`, the adversary lands `p0`'s calls, then answers a
-challenge with the outcome `Ω` by a move of `q0` at the next turn, with the
-outcome `cutFor Ω`, which cuts `p0`'s share. Then one tick. -/
+The adversary has a set `G` of outcomes to avoid and an answer outcome
+`A ∉ G`. It lands `p0`'s calls, then answers a challenge whose outcome is in
+`G` by a move of `q0` at the next turn, with the outcome `A`. Then one tick.
+For one target `Ω`, `G = {Ω}` and `A = A`. For IR, `G` is the set of
+outcomes that pay `p0` at least 5, and `A = cut1`. -/
 
-/-- A state that `q0` signed in the play against `Ω`: `r0`'s state, or a
-    non-final state with the outcome `cutFor Ω`. -/
-def QOK (Ω : Outcome Bool) (s : State Bool) : Prop :=
-  s = st 0 O1 ∨ (s.outcome = cutFor Ω ∧ s.isFinal = false)
+/-- A state that `q0` signed in the play: `r0`'s state, or a non-final
+    state with the answer outcome `A`. -/
+def QOK (A : Outcome Bool) (s : State Bool) : Prop :=
+  s = st 0 O1 ∨ (s.outcome = A ∧ s.isFinal = false)
 
-structure InvA (Ω : Outcome Bool) (n : NetworkState Bool p0) : Prop where
-  recvQ : ∀ r ∈ n.received, q0 ∈ r.signers → QOK Ω r.state
+structure InvA (A : Outcome Bool) (n : NetworkState Bool p0) : Prop where
+  recvQ : ∀ r ∈ n.received, q0 ∈ r.signers → QOK A r.state
   recvU : ∀ r ∈ n.received, n.Unforged r
   sent1 : ∃ s ∈ n.sent, s.state = st 1 O1
 
-/-- The statuses from which `Ω` is not finalized. -/
-def SafeA (Ω : Outcome Bool) (x : ChannelStatus Bool) : Prop :=
-  (∃ t, x = .open t) ∨ (∃ t ch, x = .challenged t ch ∧ ch.state.outcome ≠ Ω)
+/-- The statuses from which no outcome in `G` is finalized. -/
+def SafeA (G : Outcome Bool → Prop) (x : ChannelStatus Bool) : Prop :=
+  (∃ t, x = .open t) ∨ (∃ t ch, x = .challenged t ch ∧ ¬ G ch.state.outcome)
 
-/-- A running challenge with the outcome `Ω` at an odd turn `t`, where `p0`
+/-- A running challenge with an outcome in `G` at an odd turn `t`, where `p0`
     signed a non-final state of `c0` at turn `t`: the adversary can answer it. -/
-def Answerable (Ω : Outcome Bool) (n : NetworkState Bool p0) : Prop :=
+def Answerable (G : Outcome Bool → Prop) (n : NetworkState Bool p0) : Prop :=
   ∃ t ch y, n.chain.statusOf c0 = .challenged t ch ∧ n.chain.now < ch.deadline ∧
-    ch.state.outcome = Ω ∧ t % 2 = 1 ∧ y ∈ n.sent ∧ y.state.channel = c0 ∧
+    G ch.state.outcome ∧ t % 2 = 1 ∧ y ∈ n.sent ∧ y.state.channel = c0 ∧
     y.state.turnNum = t ∧ y.state.isFinal = false
 
-theorem safeA_not_finalized {Ω : Outcome Bool} {n : NetworkState Bool p0}
-    (h : SafeA Ω (n.chain.statusOf c0)) : ¬ n.Finalized c0 Ω := by
+theorem safeA_not_finalized {G : Outcome Bool → Prop} {Ω : Outcome Bool}
+    {n : NetworkState Bool p0} (h : SafeA G (n.chain.statusOf c0)) (hG : G Ω) :
+    ¬ n.Finalized c0 Ω := by
   intro hf
   simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel] at hf
   rcases h with ⟨t, ht⟩ | ⟨t, ch, ht, hne⟩
@@ -520,19 +529,20 @@ theorem safeA_not_finalized {Ω : Outcome Bool} {n : NetworkState Bool p0}
   · rw [ht] at hf
     simp only [ChannelStatus.finalizedWith_challenged] at hf
     split at hf
-    · exact hne (Option.some.inj hf)
+    · exact hne (Option.some.inj hf ▸ hG)
     · cases hf
 
-theorem held_QOK {Ω : Outcome Bool} {n : NetworkState Bool p0} (hI : InvA Ω n)
-    {ss : SignedState Bool} (h : n.Holds ss) (hq : q0 ∈ ss.signers) : QOK Ω ss.state := by
+theorem held_QOK {A : Outcome Bool} {n : NetworkState Bool p0} (hI : InvA A n)
+    {ss : SignedState Bool} (h : n.Holds ss) (hq : q0 ∈ ss.signers) : QOK A ss.state := by
   obtain ⟨r, hr, hrs, hrq⟩ := held_q h hq
   rw [← hrs]; exact hI.recvQ r hr hrq
 
-/-- A support of `c0` that `p0` holds, with the outcome `Ω`: its candidate is
+/-- A support of `c0` that `p0` holds, with an outcome in `G`: its candidate is
     at an odd turn, and `p0` signed a non-final state of `c0` at that turn. -/
-theorem answerable_of_support {Ω : Outcome Bool} {n : NetworkState Bool p0} (hI : InvA Ω n)
+theorem answerable_of_support {G : Outcome Bool → Prop} {A : Outcome Bool} (hA : ¬ G A)
+    {n : NetworkState Bool p0} (hI : InvA A n)
     {P : SupportProof Bool} {cand : State Bool} (h : (appsB c0.appDef).supports c0 P cand = true)
-    (hH : ∀ ss ∈ P, n.Holds ss) (hΩ : cand.outcome = Ω) :
+    (hH : ∀ ss ∈ P, n.Holds ss) (hΩ : G cand.outcome) :
     cand.turnNum % 2 = 1 ∧ ∃ y ∈ n.sent, y.state.channel = c0 ∧ y.state.turnNum = cand.turnNum ∧
       y.state.isFinal = false := by
   obtain ⟨m0, m1, ⟨rfl, hlast, hc0, hc1, ht, hmv0, hmv1, hfin⟩⟩ := fm2 h
@@ -543,7 +553,7 @@ theorem answerable_of_support {Ω : Outcome Bool} {n : NetworkState Bool p0} (hI
   · rcases held_QOK hI hH1 (byMover_even hc1 hmv1 he) with h0 | ⟨hcut, -⟩
     · have : m1.state.turnNum = 0 := by rw [h0]; rfl
       omega
-    · exact absurd (hcut.symm.trans hΩ) (cutFor_ne Ω)
+    · exact absurd (hcut ▸ hΩ) hA
   · refine ⟨ho, ?_⟩
     obtain ⟨y, hy, hys⟩ := (hH1.unforged hI.recvU).1 (byMover_odd hc1 hmv1 ho)
     cases hf : m1.state.isFinal with
@@ -555,11 +565,11 @@ theorem answerable_of_support {Ω : Outcome Bool} {n : NetworkState Bool p0} (hI
       · obtain ⟨y, hy, hys⟩ := hI.sent1
         have : m0.state.turnNum = 0 := by rw [h0]; rfl
         exact ⟨y, hy, by rw [hys]; rfl, by rw [hys, ht, this]; rfl, by rw [hys]; rfl⟩
-      · exact absurd ((hcut.symm.trans hout.symm).trans hΩ) (cutFor_ne Ω)
+      · exact absurd ((hout.trans hcut) ▸ hΩ) hA
 
 /-- The answer of `q0` to `p0`'s state `y`. -/
-def opAns (Ω : Outcome Bool) (y : State Bool) : Op Bool :=
-  .challenge c0 [⟨y, [p0]⟩, ⟨st (y.turnNum + 1) (cutFor Ω), [q0]⟩] (st (y.turnNum + 1) (cutFor Ω))
+def opAns (A : Outcome Bool) (y : State Bool) : Op Bool :=
+  .challenge c0 [⟨y, [p0]⟩, ⟨st (y.turnNum + 1) A, [q0]⟩] (st (y.turnNum + 1) A)
 
 theorem supports_answer {y : State Bool} (A : Outcome Bool) (hc : y.channel = c0)
     (ht : y.turnNum % 2 = 1) (hf : y.isFinal = false) :
@@ -576,10 +586,10 @@ theorem supports_answer {y : State Bool} (A : Outcome Bool) (hc : y.channel = c0
   simp [hc, hf, st, vtAll, c0, FixedPart.n, hb1]
 
 theorem answer_apply {s : Adjudicator Bool} {ch : Challenge Bool} {y : State Bool}
-    (Ω : Outcome Bool) (hs : s.statusOf c0 = .challenged y.turnNum ch) (hd : s.now < ch.deadline)
+    (A : Outcome Bool) (hs : s.statusOf c0 = .challenged y.turnNum ch) (hd : s.now < ch.deadline)
     (hc : y.channel = c0) (ht : y.turnNum % 2 = 1) (hf : y.isFinal = false) :
-    s.apply appsB q0 (opAns Ω y) = some (s.setStatus c0
-      (.challenged (y.turnNum + 1) ⟨st (y.turnNum + 1) (cutFor Ω), s.now + 6⟩)) := by
+    s.apply appsB q0 (opAns A y) = some (s.setStatus c0
+      (.challenged (y.turnNum + 1) ⟨st (y.turnNum + 1) A, s.now + 6⟩)) := by
   show s.challenge appsB q0 c0 _ _ = _
   unfold Adjudicator.challenge
   have hmode : s.mode c0 = .challenge := by
@@ -590,12 +600,13 @@ theorem answer_apply {s : Adjudicator Bool} {ch : Challenge Bool} {y : State Boo
 
 /-- One land of a call of `p0` whose proof states `p0` holds keeps `InvA`, and
     leaves a safe or an answerable status. -/
-theorem landA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m) {op : Op Bool}
+theorem landA {G : Outcome Bool → Prop} {A : Outcome Bool} (hA : ¬ G A)
+    {m : NetworkState Bool p0} (hI : InvA A m) {op : Op Bool}
     (hop : ∀ dt, op ≠ .tick dt) (hH : ∀ ss ∈ op.proofStates, m.Holds ss)
-    (hS : SafeA Ω (m.chain.statusOf c0) ∨ Answerable Ω m) :
-    InvA Ω (m.applyAdv appsB (.land op)) ∧
-      (SafeA Ω ((m.applyAdv appsB (.land op)).chain.statusOf c0) ∨
-        Answerable Ω (m.applyAdv appsB (.land op))) := by
+    (hS : SafeA G (m.chain.statusOf c0) ∨ Answerable G m) :
+    InvA A (m.applyAdv appsB (.land op)) ∧
+      (SafeA G ((m.applyAdv appsB (.land op)).chain.statusOf c0) ∨
+        Answerable G (m.applyAdv appsB (.land op))) := by
   cases happ : m.chain.apply appsB p0 op with
   | none => rw [NetworkState.applyAdv_land_none appsB happ]; exact ⟨hI, hS⟩
   | some s' =>
@@ -613,8 +624,8 @@ theorem landA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m) {o
     · rcases hS with hS | ⟨t, ch, y, hs, hd, hΩ, ho, hy, hyc, hyt, hyf⟩
       · exact Or.inl (by rw [heq]; exact hS)
       · exact Or.inr ⟨t, ch, y, by rw [heq]; exact hs, by rw [hnow]; exact hd, hΩ, ho, hy, hyc, hyt, hyf⟩
-    · by_cases hΩ : cand.outcome = Ω
-      · obtain ⟨ho, y, hy, hyc, hyt, hyf⟩ := answerable_of_support hI hsup hH hΩ
+    · by_cases hΩ : G cand.outcome
+      · obtain ⟨ho, y, hy, hyc, hyt, hyf⟩ := answerable_of_support hA hI hsup hH hΩ
         refine Or.inr ⟨cand.turnNum, _, y, hst, ?_, hΩ, ho, hy, hyc, hyt, hyf⟩
         show s'.now < m.chain.now + 6
         rw [hnow]; exact Nat.lt_add_of_pos_right (by decide)
@@ -627,12 +638,13 @@ theorem landA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m) {o
 
 /-- The end of the round: the adversary answers an answerable challenge, then
     one tick of 1. -/
-theorem closeA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m)
-    (hS : SafeA Ω (m.chain.statusOf c0) ∨ Answerable Ω m) (t : Time) :
-    ∃ m', T0.RoundSeq appsB t [] m m' ∧ InvA Ω m' ∧ SafeA Ω (m'.chain.statusOf c0) ∧
+theorem closeA {G : Outcome Bool → Prop} {A : Outcome Bool} (hA : ¬ G A)
+    {m : NetworkState Bool p0} (hI : InvA A m)
+    (hS : SafeA G (m.chain.statusOf c0) ∨ Answerable G m) (t : Time) :
+    ∃ m', T0.RoundSeq appsB t [] m m' ∧ InvA A m' ∧ SafeA G (m'.chain.statusOf c0) ∧
       m'.chain.now = m.chain.now + 1 ∧ m'.sent = m.sent := by
-  have htick : ∀ x : NetworkState Bool p0, InvA Ω x → SafeA Ω (x.chain.statusOf c0) →
-      ∃ m', T0.RoundSeq appsB t [] x m' ∧ InvA Ω m' ∧ SafeA Ω (m'.chain.statusOf c0) ∧
+  have htick : ∀ x : NetworkState Bool p0, InvA A x → SafeA G (x.chain.statusOf c0) →
+      ∃ m', T0.RoundSeq appsB t [] x m' ∧ InvA A m' ∧ SafeA G (m'.chain.statusOf c0) ∧
         m'.chain.now = x.chain.now + 1 ∧ m'.sent = x.sent := fun x hx hs =>
     ⟨x.applyAdv appsB (.tick 1), .tick trivial (Or.inl rfl) .nil,
       ⟨hx.recvQ, fun r hr => (hx.recvU r hr).of_sent rfl, hx.sent1⟩,
@@ -640,18 +652,18 @@ theorem closeA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m)
   rcases hS with hS | ⟨t', ch, y, hs, hd, -, ho, hy, hyc, hyt, hyf⟩
   · exact htick m hI hS
   · subst hyt
-    have happ := answer_apply Ω hs hd hyc ho hyf
-    let ma := m.applyAdv appsB (.chain q0 (opAns Ω y.state))
+    have happ := answer_apply A hs hd hyc ho hyf
+    let ma := m.applyAdv appsB (.chain q0 (opAns A y.state))
     have hma : ma = ⟨m.chain.setStatus c0
-        (.challenged (y.state.turnNum + 1) ⟨st (y.state.turnNum + 1) (cutFor Ω), m.chain.now + 6⟩),
-        (opAns Ω y.state).proofStates ++ m.received, m.sent⟩ :=
+        (.challenged (y.state.turnNum + 1) ⟨st (y.state.turnNum + 1) (A), m.chain.now + 6⟩),
+        (opAns A y.state).proofStates ++ m.received, m.sent⟩ :=
       NetworkState.applyAdv_chain_some appsB happ
     have hUy : ∀ x : NetworkState Bool p0, y ∈ x.sent → x.Unforged ⟨y.state, [p0]⟩ := fun x hx =>
       ⟨fun _ => ⟨y, hx, rfl⟩, fun v hv _ => ⟨y, hx, hv⟩⟩
-    have hUa : ∀ x : NetworkState Bool p0, x.Unforged ⟨st (y.state.turnNum + 1) (cutFor Ω), [q0]⟩ :=
+    have hUa : ∀ x : NetworkState Bool p0, x.Unforged ⟨st (y.state.turnNum + 1) (A), [q0]⟩ :=
       fun x => ⟨fun h => absurd (List.mem_singleton.1 h) p0_ne_q0,
         fun v hv => by simp [st, State.voucher?] at hv⟩
-    have hIa : InvA Ω ma := by
+    have hIa : InvA A ma := by
       rw [hma]
       refine ⟨fun x hx hxq => ?_, fun x hx => ?_, hI.sent1⟩
       · simp only [opAns, Op.proofStates, List.cons_append, List.nil_append, List.mem_cons] at hx
@@ -664,12 +676,12 @@ theorem closeA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m)
         · exact hUy _ hy
         · exact hUa _
         · exact hI.recvU x hx
-    have hSa : SafeA Ω (ma.chain.statusOf c0) := by
+    have hSa : SafeA G (ma.chain.statusOf c0) := by
       rw [hma]
-      exact Or.inr ⟨y.state.turnNum + 1, ⟨st (y.state.turnNum + 1) (cutFor Ω), m.chain.now + 6⟩,
-        by simp, cutFor_ne Ω⟩
+      exact Or.inr ⟨y.state.turnNum + 1, ⟨st (y.state.turnNum + 1) (A), m.chain.now + 6⟩,
+        by simp, hA⟩
     obtain ⟨m', hseq, hI', hS', hnow, hsent⟩ := htick ma hIa hSa
-    have hfe : T0.feasible m (.chain q0 (opAns Ω y.state)) := by
+    have hfe : T0.feasible m (.chain q0 (opAns A y.state)) := by
       refine ⟨by decide, fun ss hss => ?_⟩
       simp only [opAns, Op.proofStates, List.mem_cons, List.not_mem_nil, or_false] at hss
       rcases hss with rfl | rfl
@@ -679,21 +691,22 @@ theorem closeA {Ω : Outcome Bool} {m : NetworkState Bool p0} (hI : InvA Ω m)
     · rw [hnow, hma]; rfl
     · rw [hsent, hma]
 
-theorem roundA {Ω : Outcome Bool} {n0 : NetworkState Bool p0} (t : Time) :
+theorem roundA {G : Outcome Bool → Prop} {A : Outcome Bool} (hA : ¬ G A)
+    {n0 : NetworkState Bool p0} (t : Time) :
     ∀ (pending : List (Op Bool)), (∀ op ∈ pending, op.HonestFeasible n0) →
-    ∀ m : NetworkState Bool p0, InvA Ω m → (SafeA Ω (m.chain.statusOf c0) ∨ Answerable Ω m) →
+    ∀ m : NetworkState Bool p0, InvA A m → (SafeA G (m.chain.statusOf c0) ∨ Answerable G m) →
       m.sent = n0.sent → (∀ r ∈ n0.received, r ∈ m.received) →
-      ∃ m', T0.RoundSeq appsB t pending m m' ∧ InvA Ω m' ∧ SafeA Ω (m'.chain.statusOf c0) ∧
+      ∃ m', T0.RoundSeq appsB t pending m m' ∧ InvA A m' ∧ SafeA G (m'.chain.statusOf c0) ∧
         m'.chain.now = m.chain.now + 1 ∧ m'.sent = m.sent := by
   intro pending
   induction pending with
-  | nil => intro _ m hI hS _ _; exact closeA hI hS t
+  | nil => intro _ m hI hS _ _; exact closeA hA hI hS t
   | cons op rest ih =>
     intro hfeas m hI hS hsent hrecv
     have hop := hfeas op List.mem_cons_self
     have hH : ∀ ss ∈ op.proofStates, m.Holds ss := fun ss hss =>
       holds_mono hsent.symm hrecv (hop.mem ss hss)
-    obtain ⟨hI1, hS1⟩ := landA hI hop.not_tick hH hS
+    obtain ⟨hI1, hS1⟩ := landA hA hI hop.not_tick hH hS
     obtain ⟨m', hseq, hI', hS', hnow, hs'⟩ := ih (fun o ho => hfeas o (List.mem_cons_of_mem _ ho))
       _ hI1 hS1 (by rw [NetworkState.applyAdv_sent]; exact hsent)
       (fun r hr => (NetworkState.applyAdv_sent_received appsB m (.land op)).2 r (hrecv r hr))
@@ -701,9 +714,9 @@ theorem roundA {Ω : Outcome Bool} {n0 : NetworkState Bool p0} (t : Time) :
     · rw [hnow, landed_now hop.not_tick]
     · rw [hs', NetworkState.applyAdv_sent]
 
-theorem InvA.applyHonest {Ω : Outcome Bool} {n : NetworkState Bool p0} (hI : InvA Ω n)
-    (hS : SafeA Ω (n.chain.statusOf c0)) (m : HonestMove Bool) :
-    InvA Ω (n.applyHonest m) ∧ SafeA Ω ((n.applyHonest m).chain.statusOf c0) := by
+theorem InvA.applyHonest {G : Outcome Bool → Prop} {A : Outcome Bool} {n : NetworkState Bool p0} (hI : InvA A n)
+    (hS : SafeA G (n.chain.statusOf c0)) (m : HonestMove Bool) :
+    InvA A (n.applyHonest m) ∧ SafeA G ((n.applyHonest m).chain.statusOf c0) := by
   cases m with
   | react r =>
     obtain ⟨y, hy, hys⟩ := hI.sent1
@@ -713,27 +726,34 @@ theorem InvA.applyHonest {Ω : Outcome Bool} {n : NetworkState Bool p0} (hI : In
     exact ⟨⟨hI.recvQ, fun x hx => (hI.recvU x hx).of_sent rfl, hI.sent1⟩,
       by simp only [NetworkState.applyHonest, Adjudicator.tick_statusOf]; exact hS⟩
 
-theorem not_finalizable_from (Ω : Outcome Bool) (n : NetworkState Bool p0) (hI : InvA Ω n)
-    (hS : SafeA Ω (n.chain.statusOf c0)) :
-    ¬ UnbeatableIn appsB T0 (fun _ => True) (fun n => n.Finalized c0 Ω) n := by
+/-- From a state with `InvA` and a safe status, `p0` has no strategy that
+    finalizes `c0` with an outcome in `G`. -/
+theorem not_finalizable_from (G : Outcome Bool → Prop) (A : Outcome Bool) (hA : ¬ G A)
+    (n : NetworkState Bool p0) (hI : InvA A n) (hS : SafeA G (n.chain.statusOf c0)) :
+    ¬ UnbeatableIn appsB T0 (fun _ => True) (fun n => ∃ Ω, n.Finalized c0 Ω ∧ G Ω) n := by
   intro hU
   induction hU with
-  | done hG => exact safeA_not_finalized hS hG
+  | done hG =>
+    obtain ⟨Ω, hf, hg⟩ := hG
+    exact safeA_not_finalized hS hg hf
   | @move n m _ hfeas _ ih =>
     have hcalls : ∀ op ∈ m.calls, op.HonestFeasible n := by
       cases m with
       | react r => exact hfeas.1
       | wait dt => intro op hop; simp [HonestMove.calls] at hop
     obtain ⟨n', hseq, hI', hS', hnow, -⟩ :=
-      roundA n.chain.now m.calls hcalls n hI (Or.inl hS) rfl (fun _ hr => hr)
+      roundA hA n.chain.now m.calls hcalls n hI (Or.inl hS) rfl (fun _ hr => hr)
     obtain ⟨hI'', hS''⟩ := hI'.applyHonest hS' m
     exact ih n' (mkRound hseq hnow) hI'' hS''
 
-theorem not_finalizable (Ω : Outcome Bool) : ¬ Finalizable appsB T0 c0 Ω net1 := by
-  refine not_finalizable_from Ω net1 ⟨fun x hx _ => ?_, fun x hx => ?_, ⟨s1, List.mem_singleton_self _, rfl⟩⟩
-    (Or.inl ⟨0, rfl⟩)
+theorem invA_net1 (A : Outcome Bool) : InvA A net1 := by
+  refine ⟨fun x hx _ => ?_, fun x hx => ?_, ⟨s1, List.mem_singleton_self _, rfl⟩⟩
   · rw [List.mem_singleton.1 hx]; exact Or.inl rfl
   · rw [List.mem_singleton.1 hx]; exact unforged_r0 _
+
+theorem not_finalizable (Ω : Outcome Bool) : ¬ Finalizable appsB T0 c0 Ω net1 := fun h =>
+  not_finalizable_from (· = Ω) (cutFor Ω) (cutFor_ne Ω) net1 (invA_net1 _) (Or.inl ⟨0, rfl⟩)
+    (UnbeatableIn.imp (fun hf => ⟨Ω, hf, rfl⟩) h)
 
 /-! ## Every outcome but `O1` is prevented
 
@@ -1220,5 +1240,73 @@ theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finaliza
 
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
+
+/-! ## IR at every state (draft; no statement takes it)
+
+armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2 (operator,
+2026-10-30): "IR at every state: from any state, an online honest participant
+can enforce at least what its holdings give it" (ForceMove:410-416,
+125-130); "holdings: the signed states and vouchers a participant holds".
+Assets leave a channel only through a finalized outcome of that channel
+(`transfer_requires_finalized`), so "`p` takes its assets out" is "`p` can
+finalize an outcome of `c` that pays `p` at least its share". The game itself
+need not end. -/
+
+/-- The amount that an outcome pays the external destination `d`. -/
+def share (Ω : Outcome Bool) (d : Bool) : Coins := Ω.entries.owed (.external d)
+
+/-- What `p`'s holdings give it at the destination `d`: `x`, the payment of a
+    supported candidate of `c` that `p` holds. Every state of `c` that `p`
+    signed is at most at the candidate's turn, and pays `d` at least `x` when
+    it is in the candidate's window or final: the later or alternative moves
+    of `p` are part of what its holdings give it. -/
+def HoldsShare {p : Participant} (apps : Apps Bool) (net : NetworkState Bool p) (c : FixedPart)
+    (d : Bool) (x : Coins) : Prop :=
+  ∃ proof cand, (∀ ss ∈ proof, net.Holds ss) ∧ (apps c.appDef).supports c proof cand = true ∧
+    cand.channel = c ∧ share cand.outcome d = x ∧
+    ∀ s ∈ net.sent, s.state.channel = c → s.state.turnNum ≤ cand.turnNum ∧
+      ((cand.turnNum < s.state.turnNum + c.n ∨ s.state.isFinal = true) → x ≤ share s.state.outcome d)
+
+/-- `p` can take out `x` at `d`: it has an unbeatable strategy that finalizes
+    `c` with an outcome that pays `d` at least `x`. -/
+def CanTakeOut {p : Participant} (apps : Apps Bool) (T : Threat Bool p) (c : FixedPart) (d : Bool)
+    (x : Coins) (net : NetworkState Bool p) : Prop :=
+  Unbeatable apps T (fun n => ∃ Ω, n.Finalized c Ω ∧ x ≤ share Ω d) net
+
+/-- IR at every state of the app `a`, for the destination map `dest`: from
+    every reachable state, `p` can take out what its holdings give it. -/
+def AppIR (apps : Apps Bool) (a : AppId) (dest : Participant → Bool) : Prop :=
+  ∀ {p : Participant} (T : Threat Bool p), Assumptions apps p T →
+    ∀ (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε) (x : Coins),
+      (c : FixedPart).appDef = a → p ∈ (c : FixedPart).participants →
+      HoldsShare apps net.state c (dest p) x → CanTakeOut apps T c (dest p) x net.state
+
+/-- A sufficient condition on a ForceMove game library (draft): no valid
+    transition reduces the payment to a participant that does not move. -/
+def NoTakeFromNonMover (vt : State Bool → State Bool → Bool) (dest : Participant → Bool) : Prop :=
+  ∀ s s', vt s s' = true → ∀ q, s'.mover ≠ some q → share s.outcome (dest q) ≤ share s'.outcome (dest q)
+
+/-- `p0` is paid at `true`, `q0` at `false`. -/
+def destB (q : Participant) : Bool := decide (q = p0)
+
+/-- The trivial game fails IR: at `net1`, `p0` holds `s1`, which pays it 5,
+    and `p0` cannot finalize any outcome that pays it 5. -/
+theorem appsB_not_IR : ¬ AppIR appsB ⟨0⟩ destB := by
+  intro h
+  have hS : HoldsShare appsB net1 c0 (destB p0) 5 := by
+    refine ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl, by decide, fun s hs _ => ?_⟩
+    rw [List.mem_singleton.1 hs]
+    exact ⟨le_refl _, fun _ => by decide⟩
+  exact not_finalizable_from (fun Ω => 5 ≤ share Ω true) cut1 (by decide) net1 (invA_net1 _)
+    (Or.inl ⟨0, rfl⟩) (h T0 A0 ⟨net1, net1_reachable⟩ tc0 5 rfl (by decide) hS)
+
+/-- The trivial game fails `NoTakeFromNonMover`: `q0`'s move at turn 2 cuts
+    `p0`'s payment from 5 to 0. -/
+theorem vtAll_not_noTake : ¬ NoTakeFromNonMover vtAll destB := by
+  intro h
+  have := h (st 1 O1) (st 2 cut1) rfl p0 (by rw [mover_c0 rfl]; decide)
+  exact absurd this (by decide)
+
+#print axioms appsB_not_IR
 
 end ArmadaLean.Nitro.CounterexampleIRGame

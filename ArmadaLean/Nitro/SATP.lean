@@ -106,6 +106,152 @@ def satpVirtualRules : Rules E where
       else validateOutcomeChange c alice bob proof candidate
     | _, _ => false
 
+omit [DecidableEq E] in
+/-- A member of a list of at most two elements is its head or its last. -/
+theorem mem_head_last_of_length_le_two {l : List Participant} {a b q : Participant}
+    (hh : l.head? = some a) (hl : l.getLast? = some b) (hq : q ∈ l) (hlen : l.length ≤ 2) :
+    q = a ∨ q = b := by
+  match l, hh, hl, hq, hlen with
+  | [x], hh, hl, hq, _ =>
+    simp only [List.head?_cons, Option.some.injEq, List.mem_singleton] at hh hq
+    exact Or.inl (hq.trans hh)
+  | [x, y], hh, hl, hq, _ =>
+    simp only [List.head?_cons, Option.some.injEq, List.getLast?_cons_cons,
+      List.getLast?_singleton, List.mem_cons, List.not_mem_nil, or_false] at hh hl hq
+    rcases hq with rfl | rfl
+    · exact Or.inl hh
+    · exact Or.inr hl
+
+/-- The virtual channel rules meet `Rules.SupportWindow`. Turns 0, 1 and 4,
+    and a start-state candidate, are unanimous. A challenge (turn 2) or a
+    response (turn 3) carries the unanimous start state at turn 1; with fewer
+    participants than the window needs, the participants are Alice and Bob,
+    and the challenge and the response carry their signatures. -/
+theorem satpVirtualRules_supportWindow : (satpVirtualRules : Rules E).SupportWindow := by
+  intro c proof cand h q hq
+  have hn : 0 < c.n := List.length_pos_of_mem hq
+  have hcons : consensusRules.supports c proof cand = true →
+      ∃ ss ∈ proof, q ∈ ss.signers ∧ ss.state.channel = c ∧ ss.state.turnNum ≤ cand.turnNum ∧
+        cand.turnNum < ss.state.turnNum + c.n :=
+    fun hc => consensusRules_supportWindow c proof cand hc q hq
+  have h' : (match c.participants.head?, c.participants.getLast? with
+      | some alice, some bob =>
+        if cand.turnNum ≤ 1 then consensusRules.supports c proof cand
+        else if cand.turnNum = 4 then consensusRules.supports c proof cand && cand.isFinal
+        else validateOutcomeChange c alice bob proof cand
+      | _, _ => false) = true := h
+  cases hh : c.participants.head? with
+  | none => rw [hh] at h'; cases h'
+  | some alice =>
+  cases hl : c.participants.getLast? with
+  | none => rw [hh, hl] at h'; cases h'
+  | some bob =>
+    rw [hh, hl] at h'
+    simp only at h'
+    clear h
+    have h := h'
+    split_ifs at h with h1 h4
+    · exact hcons h
+    · exact hcons (Bool.and_eq_true _ _ |>.mp h).1
+    · -- the start state is signed by everyone
+      have hstart : ∀ s : SignedState E, validStart c s = true →
+          q ∈ s.signers ∧ s.state.channel = c := fun s hs => by
+        unfold validStart at hs
+        split at hs
+        · simp only [Bool.and_eq_true, decide_eq_true_eq] at hs
+          obtain ⟨⟨-, hall⟩, hch⟩ := hs
+          exact ⟨hall q (by rw [hch]; exact hq), hch⟩
+        · cases hs
+      match proof, h with
+      | [s], h =>
+        simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at h
+        obtain ⟨hs, rfl⟩ := h
+        obtain ⟨hqs, hch⟩ := hstart s hs
+        exact ⟨s, List.mem_singleton_self s, hqs, hch, le_refl _, by omega⟩
+      | [s, ch], h =>
+        simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at h
+        obtain ⟨hv, rfl⟩ := h
+        unfold validChallenge at hv
+        split at hv
+        · rename_i d da db hd hp
+          simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, and_assoc] at hv
+          obtain ⟨hs, h1', h2', hchc, hab, -⟩ := hv
+          by_cases hn2 : 2 ≤ c.n
+          · obtain ⟨hqs, hsc⟩ := hstart s hs
+            exact ⟨s, by simp, hqs, hsc, by omega, by omega⟩
+          · have hq' := mem_head_last_of_length_le_two hh hl hq (by unfold FixedPart.n at hn2; omega)
+            refine ⟨ch, by simp, ?_, hchc, le_refl _, by omega⟩
+            rcases hab with ⟨-, ha⟩ | ⟨-, hb⟩
+            · -- one participant: `alice = bob = q`
+              have hab' : alice = bob := by
+                have h1 : c.participants.length = 1 := by
+                  have h0 := hn; unfold FixedPart.n at h0 hn2; omega
+                match c.participants, hh, hl, h1 with
+                | [x], hh, hl, _ => simp at hh hl; exact hh.symm.trans hl
+              rcases hq' with rfl | rfl
+              · exact ha
+              · exact hab' ▸ ha
+            · have hab' : alice = bob := by
+                have h1 : c.participants.length = 1 := by
+                  have h0 := hn; unfold FixedPart.n at h0 hn2; omega
+                match c.participants, hh, hl, h1 with
+                | [x], hh, hl, _ => simp at hh hl; exact hh.symm.trans hl
+              rcases hq' with rfl | rfl
+              · exact hab' ▸ hb
+              · exact hb
+        · cases hv
+      | [s, ch, re], h =>
+        simp only [validateOutcomeChange, Bool.and_eq_true, decide_eq_true_eq] at h
+        obtain ⟨hv, rfl⟩ := h
+        unfold validResponse at hv
+        split at hv
+        · rename_i dc dr da db hdc hdr hp
+          simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, Bool.not_eq_true',
+            decide_eq_false_iff_not, and_assoc] at hv
+          obtain ⟨hvc, hre3, hrec, -, hA, hB, -⟩ := hv
+          have hvc' := hvc
+          unfold validChallenge at hvc'
+          rw [hdc, hp] at hvc'
+          simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, and_assoc] at hvc'
+          obtain ⟨hs, hs1, hch2, hchc, hab, -⟩ := hvc'
+          by_cases hn3 : 3 ≤ c.n
+          · obtain ⟨hqs, hsc⟩ := hstart s hs
+            exact ⟨s, by simp, hqs, hsc, by omega, by omega⟩
+          · have hq' := mem_head_last_of_length_le_two hh hl hq (by unfold FixedPart.n at hn3; omega)
+            have hab1 : c.n = 1 → alice = bob := fun h1 => by
+              unfold FixedPart.n at h1
+              match c.participants, hh, hl, h1 with
+              | [x], hh, hl, _ => simp at hh hl; exact hh.symm.trans hl
+            have hA' : dc.type = .A → bob ∈ re.signers := fun h => by
+              rcases hA with h' | h'
+              · exact absurd h h'
+              · exact h'
+            have hB' : dc.type = .B → alice ∈ re.signers := fun h => by
+              rcases hB with h' | h'
+              · exact absurd h h'
+              · exact h'
+            have hre : q ∈ re.signers → ∃ ss ∈ [s, ch, re], q ∈ ss.signers ∧ ss.state.channel = c ∧
+                ss.state.turnNum ≤ re.state.turnNum ∧ re.state.turnNum < ss.state.turnNum + c.n :=
+              fun hqre => ⟨re, by simp, hqre, hrec, le_refl _, by omega⟩
+            have hchw : q ∈ ch.signers → 2 ≤ c.n → ∃ ss ∈ [s, ch, re], q ∈ ss.signers ∧
+                ss.state.channel = c ∧ ss.state.turnNum ≤ re.state.turnNum ∧
+                re.state.turnNum < ss.state.turnNum + c.n :=
+              fun hqc h2 => ⟨ch, by simp, hqc, hchc, by omega, by omega⟩
+            rcases hab with ⟨hta, ha⟩ | ⟨htb, hb⟩
+            · rcases hq' with hqa | hqb
+              · subst hqa
+                by_cases h2 : 2 ≤ c.n
+                · exact hchw ha h2
+                · exact hre (by rw [hab1 (by omega)]; exact hA' hta)
+              · subst hqb; exact hre (hA' hta)
+            · rcases hq' with hqa | hqb
+              · subst hqa; exact hre (hB' htb)
+              · subst hqb
+                by_cases h2 : 2 ≤ c.n
+                · exact hchw hb h2
+                · exact hre (by rw [← hab1 (by omega)]; exact hB' htb)
+        · cases hv
+
 /-- SATP:408-409: the pre-fund outcome `{A : A(a0), B : A(b0)}`, paid to the
     destinations `da` of Alice and `db` of Bob. -/
 def originalOutcome (da db : E) (a0 b0 : Coins) : Outcome E :=
