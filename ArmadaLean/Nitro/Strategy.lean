@@ -860,6 +860,29 @@ def Enabled (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart) (
     (net : NetworkState E p) : Prop :=
   ¬ Prevents apps T (fun net' => net'.Finalized c Ω) net
 
+/-- The amount that an outcome pays the external destination `d`: the first
+    entry for `d` (`Allocation.owed`). -/
+def share (Ω : Outcome E) (d : E) : Coins := Ω.entries.owed (.external d)
+
+/-- The payout form of `Finalizable` (operator ruling 2026-11-01: Nitro-24's
+    "finalizable" and "enabled", Nitro:590-593, 641-658, are about what `p`
+    can secure, not one exact outcome). `p` has an unbeatable strategy that
+    finalizes `c` with some outcome that pays `p`, at `dest p`, at least what
+    `Ω` pays it. `Finalizable` implies it. -/
+def FinalizableFor (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart)
+    (dest : Participant → E) (Ω : Outcome E) (net : NetworkState E p) : Prop :=
+  Unbeatable apps T (fun net' => ∃ Ω', net'.Finalized c Ω' ∧ share Ω (dest p) ≤ share Ω' (dest p))
+    net
+
+/-- The payout form of `Enabled` (operator ruling 2026-11-01, as for
+    `FinalizableFor`; Nitro:641-652). `p` has no strategy to prevent the
+    finalization of `c` with an outcome that pays `p`, at `dest p`, no more
+    than `Ω` pays it. `Enabled` implies it. -/
+def EnabledFor (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart)
+    (dest : Participant → E) (Ω : Outcome E) (net : NetworkState E p) : Prop :=
+  ¬ Prevents apps T (fun net' => ∃ Ω', net'.Finalized c Ω' ∧ share Ω' (dest p) ≤ share Ω (dest p))
+    net
+
 /-- Nitro:480-481: "A channel χ is funded for participant A with x coins, if A
     has an unbeatable strategy for obtaining a state where χ is directly
     funded with x coins." -/

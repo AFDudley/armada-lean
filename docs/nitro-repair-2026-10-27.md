@@ -938,3 +938,68 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E) (ali
 - No `axiom` in `ArmadaLean/Nitro/`.
 - A search of `ArmadaLean/Nitro/` and `docs/` for the renamed constructor's earlier spelling, concatenated,
   hyphenated or spaced, finds nothing.
+
+## 7. Nitro-24 in the payout reading, 2026-11-01
+
+Operator ruling 2026-11-01: Nitro-24's "finalizable" and "enabled" (Nitro:590-593, 641-658) are about what `p` can
+secure, not one exact outcome. The library has the payout forms next to `Finalizable` and `Enabled`
+(`ArmadaLean/Nitro/Strategy.lean`, with `share`):
+
+- `FinalizableFor apps T c dest Ω`: `p` has an unbeatable strategy that finalizes `c` with an outcome that pays `p`,
+  at `dest p`, at least `share Ω (dest p)`.
+- `EnabledFor apps T c dest Ω`: `p` has no strategy that prevents the finalization of `c` with an outcome that pays
+  `p` at most `share Ω (dest p)`.
+
+The two Nitro-24 statements are not restated yet. They keep the exact forms with `SupportWindow` and `AppIR`, and
+stay `sorry` (rows 8 and 9).
+
+### 7.1 What the tests show
+
+| Test | File | Result |
+|---|---|---|
+| Exact forms, an IR app, full funding | `docs/counterexamples/single_asset_payments_ir.lean` | false: `finalizable_or_two_enabled_false`, `single_enabled_is_finalizable_false`. `c0` holds 10 = all of `O1` (`net1_funded`). Funding changes only balances, so no step of the gift play depends on it. |
+| Payout forms, the same state | same file | `O1` is enabled (`enabledFor_O1`) and `p0` secures what `O1` pays it (`finalizableFor_O1`, from `appsS_IR`). |
+| Payout form of the single-enabled claim, without `AppIR` | `docs/counterexamples/ir_game_rewrites_share.lean` | false: `least_enabled_is_finalizable_noIR_false`. Level 5 is the least enabled level, every lower level is prevented (`prevents_bad`), and `p0` cannot secure 5. |
+
+### 7.2 Reading of the two claims in the payout forms
+
+- `EnabledFor` is upward closed in `share`: if `Ω` is enabled, every outcome that pays `p` more is enabled. So "two
+  enabled outcomes" follows from one, and the literal premise "only one outcome is enabled" never holds. The
+  single-enabled claim then reads: if `Ω` is the least enabled level (`∀ Ω', EnabledFor Ω' → share Ω (dest p) ≤
+  share Ω' (dest p)`), then `FinalizableFor Ω`.
+- The dichotomy (first claim) has a first disjunct that holds with `share Ω (dest p) = 0` as soon as `p` can force
+  some finalization. The paper says "exactly one of" (Nitro:653-656). The operator decides its form.
+
+### 7.3 The single-enabled claim with `AppIR`: open
+
+There is no proof and no counterexample. The obstacle:
+
+1. `AppIR` gives a take-out strategy only at a state where `HoldsShare` holds. That needs an open status at a turn no
+   higher than the held candidate, and every state of `p` in the window of that candidate must pay at least the
+   level (`SentBelow`).
+2. At the state of the claim, the status can be challenged. An old state of `p` in the window can pay less than the
+   level and still be of no use to the adversary, because the turn record is already above it. Then `HoldsShare`
+   fails, and `AppIR` says nothing at that state.
+3. A proof must therefore derive "every support that the adversary can still use pays at least the level" from the
+   least-enabled premise. For each such support that pays less, it must build an adversary play that finalizes it in
+   one round, which contradicts the premise. Then it applies a take-out strategy (`TakeOut.canTakeOut_of`) with
+   premises weaker than `HoldsShare`. For a support that `p` can only answer by signing a new state, this
+   contradiction does not exist, and `AppIR` must exclude the case. No route from the black-box `AppIR` to that step
+   is known.
+4. For the consensus app and for ForceMove apps with `NoTakeFromNonMover`, the step holds from the structure of the
+   app: the adversary's moves never lower `p`'s payment, so the support that the adversary can use pays at least
+   what `p`'s latest state pays.
+
+### 7.4 What changes under a premise on the adversary (no gifts)
+
+The operator considers a premise that excludes gifts: the counterparty does not make a move against its own payment
+to block a finalization.
+
+- The exact forms then hold for the SingleAssetPayments test: the only moves of `q0` after `O1` are gifts or a move
+  that keeps `O1`, so the challenge with `O1` expires with `O1`. The payout forms are not needed for that test.
+- Step 3 of 7.3 changes: a support that the adversary can use must not be a gift, so its payment to `p` is bounded
+  from above by `p`'s held level, and `AppIR` bounds it from below. The two bounds fix the payment, but not the
+  outcome, when other destinations exist. The exact claim still needs that every outcome the adversary can
+  finalize at that payment is the same outcome.
+- Steps 1 and 2 do not change: `AppIR` still applies only at open `HoldsShare` states.
+- Game B is unchanged: its cuts are not gifts, and it fails `AppIR`.

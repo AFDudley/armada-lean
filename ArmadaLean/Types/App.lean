@@ -37,10 +37,6 @@ namespace ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
 
-/-- The amount that an outcome pays the external destination `d`: the first
-    entry for `d` (`Allocation.owed`). -/
-def share (Ω : Outcome E) (d : E) : Coins := Ω.entries.owed (.external d)
-
 /-- The facts about the states `p` signed that `HoldsShare` gives: every
     state of `c` is at most at turn `Th`, and pays `d` at least `x` when it is
     in the window of `Th` or final. -/

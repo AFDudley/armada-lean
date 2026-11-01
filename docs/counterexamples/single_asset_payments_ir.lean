@@ -1517,4 +1517,25 @@ theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finaliza
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 
+/-! ## The payout forms hold at `net1`
+
+Operator ruling 2026-11-01: Nitro-24 reads in payouts. At `net1`, `O1` is
+enabled in the payout form, and `p0` can secure what `O1` pays it
+(`FinalizableFor`, from `appsS_IR`): the gift play does not break the payout
+reading. -/
+
+theorem enabledFor_O1 : EnabledFor appsS T0 c0 destS O1 net1 := fun ⟨σ, hσ, hprev⟩ =>
+  enabled_O1 ⟨σ, hσ, fun n1 n2 hr hround hf => hprev n1 n2 hr hround ⟨O1, hf, le_refl _⟩⟩
+
+theorem finalizableFor_O1 : FinalizableFor appsS T0 c0 destS O1 net1 := by
+  have hS : HoldsShare appsS net1 c0 (destS p0) 5 := by
+    refine ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl, by decide, fun s hs _ => ?_,
+      0, rfl, Nat.zero_le _⟩
+    rw [List.mem_singleton.1 hs]
+    exact ⟨le_refl _, fun _ => by decide⟩
+  exact appsS_IR.takeOut T0 A0 ⟨net1, net1_reachable⟩ tc0 5 rfl (by decide) hS
+
+#print axioms enabledFor_O1
+#print axioms finalizableFor_O1
+
 end ArmadaLean.Nitro.CounterexampleSAP
