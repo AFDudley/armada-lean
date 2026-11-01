@@ -37,6 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import spec_lib  # noqa: E402
+import gate_extra  # noqa: E402
 
 ROOT = Path.cwd()
 
@@ -137,6 +138,28 @@ def main() -> int:
         for k in fails:
             fails[k].append("not run: the build failed")
 
+    if build_ok:
+        try:
+            lint_result = gate_extra.check_lint(ROOT)
+        except RuntimeError as e:
+            lint_result = {"lint_ok": False, "lint_error": str(e)}
+        try:
+            decision_result = gate_extra.check_decision_scope(ROOT)
+        except RuntimeError as e:
+            decision_result = {"decision_ok": False, "decision_error": str(e)}
+        try:
+            counterexamples_result = gate_extra.check_counterexamples(ROOT)
+        except RuntimeError as e:
+            counterexamples_result = {"counterexamples_ok": False, "counterexamples_error": str(e)}
+        (out_dir / "lint.json").write_text(json.dumps(lint_result), encoding="utf-8")
+        (out_dir / "decision_scope.json").write_text(json.dumps(decision_result), encoding="utf-8")
+        (out_dir / "counterexamples.json").write_text(json.dumps(counterexamples_result), encoding="utf-8")
+    else:
+        lint_result = {"lint_ok": False, "lint_error": "not run: the build failed"}
+        decision_result = {"decision_ok": False, "decision_error": "not run: the build failed"}
+        counterexamples_result = {"counterexamples_ok": False,
+                                  "counterexamples_error": "not run: the build failed"}
+
     ok = {k: build_ok and not v for k, v in fails.items()}
     for k, v in fails.items():
         say(json_mode, ("PASS " if ok[k] else "FAIL ") + k)
@@ -145,6 +168,25 @@ def main() -> int:
     say(json_mode, ("PASS" if not vacuous else "FAIL") + " no vacuous body")
     for v in vacuous:
         say(json_mode, f"  {v}")
+    say(json_mode, ("PASS" if lint_result["lint_ok"] else "FAIL") + " lint")
+    for f in lint_result.get("lint_regressions", []):
+        say(json_mode, f"  {f} higher than the merge base")
+    if "lint_error" in lint_result:
+        say(json_mode, f"  {lint_result['lint_error']}")
+    say(json_mode, ("PASS" if decision_result["decision_ok"] else "FAIL") + " decisionScope")
+    for f in decision_result.get("decision_new_findings", []):
+        say(json_mode, f"  new: {f['file']}:{f['line']} {f['decl']} ({f['kind']})")
+    for f in decision_result.get("decision_larger_findings", []):
+        say(json_mode, f"  larger: {f['file']}:{f['line']} {f['decl']} ({f['kind']}) size {f['size']}")
+    if "decision_error" in decision_result:
+        say(json_mode, f"  {decision_result['decision_error']}")
+    say(json_mode, ("PASS" if counterexamples_result["counterexamples_ok"] else "FAIL")
+        + " counterexamples")
+    for c in counterexamples_result.get("counterexamples", []):
+        if not c["ok"]:
+            say(json_mode, f"  {c['file']} (exit {c['exit_code']}, sorryAx={c['sorryAx']})")
+    if "counterexamples_error" in counterexamples_result:
+        say(json_mode, f"  {counterexamples_result['counterexamples_error']}")
     say(json_mode, f"SPEC {len(members)} spec theorems, {len(helpers)} helpers")
     for n in sorted(sorry):
         say(json_mode, f"SORRY {n}")
@@ -156,7 +198,9 @@ def main() -> int:
     runtime = round(time.monotonic() - t0, 1)
     say(json_mode, f"RUNTIME {runtime}s")
 
-    passed = build_ok and all(ok.values()) and not vacuous
+    passed = (build_ok and all(ok.values()) and not vacuous
+              and lint_result["lint_ok"] and decision_result["decision_ok"]
+              and counterexamples_result["counterexamples_ok"])
     if json_mode:
         print(json.dumps({
             "build_ok": build_ok,
@@ -177,6 +221,21 @@ def main() -> int:
             "every_state": sorted(every_state),
             "vacuous_defs": vacuous,
             "failures": {k: v for k, v in fails.items() if v},
+            "lint_ok": lint_result["lint_ok"],
+            "lint_summary": lint_result.get("lint_summary"),
+            "lint_base_summary": lint_result.get("lint_base_summary"),
+            "lint_merge_base": lint_result.get("lint_merge_base"),
+            "lint_regressions": lint_result.get("lint_regressions", []),
+            "lint_seconds": lint_result.get("lint_seconds"),
+            "decision_ok": decision_result["decision_ok"],
+            "decision_findings_count": len(decision_result.get("decision_findings", [])),
+            "decision_new_findings": decision_result.get("decision_new_findings", []),
+            "decision_larger_findings": decision_result.get("decision_larger_findings", []),
+            "decision_merge_base": decision_result.get("decision_merge_base"),
+            "decision_seconds": decision_result.get("decision_seconds"),
+            "counterexamples_ok": counterexamples_result["counterexamples_ok"],
+            "counterexamples": counterexamples_result.get("counterexamples", []),
+            "counterexamples_seconds": counterexamples_result.get("counterexamples_seconds"),
             "runtime_seconds": runtime,
         }))
     return 0 if passed else 1
