@@ -12482,6 +12482,190 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
   rw [happ]
   exact UnbeatableIn.done (satp_reclaim_round w hround.1 ⟨hJ2, hfm2, hfp2, a, b, hΩ, hab⟩)
 
+/-- On a reachable chain, the virtual channel `r.V` has one outcome: its outcome of
+    finalization is its stored outcome (`ChannelStatus.finalOutcome_eq_finalizedWith`).
+    Genesis has every channel open. Only `transfer` and `reclaim` rewrite a stored outcome
+    (`ChannelStatus.withOutcome`), and both need a ledger channel (`Adjudicator.transfer_some`,
+    `Adjudicator.reclaim_some`), while `r.V` is virtual (`Route.WellFormed`). `conclude` stores
+    one outcome twice (`Adjudicator.conclude_some`). -/
+theorem Route.V_finalOutcome_eq {apps : Apps E} {r : Route E} (hr : r.WellFormed apps)
+    {s : Adjudicator E} (hs : Reachable apps s) :
+    s.finalOutcome r.V.address = s.finalizedWith r.V.address := by
+  have hk : r.V.kind = .virtual := hr.2.2.2.2.2.2.1
+  have hsame : ∀ t f o, s.statusOf r.V = .finalized t f o → f = o := by
+    induction hs with
+    | refl =>
+      intro t f o hst
+      simp only [Adjudicator.statusOf, Adjudicator.genesis, List.lookup_nil, Option.getD_none,
+        reduceCtorEq] at hst
+    | @tail s s' _ hstep ih =>
+      obtain ⟨caller, op, _, _, h⟩ := hstep
+      have keep : s'.statusOf r.V = s.statusOf r.V →
+          ∀ t f o, s'.statusOf r.V = .finalized t f o → f = o :=
+        fun hst => by rw [hst]; exact ih
+      cases op with
+      | deposit a e x =>
+        obtain ⟨-, -, -, -, hst, -⟩ := Adjudicator.deposit_some h
+        exact keep (Adjudicator.statusOf_of_status hst r.V)
+      | tick dt =>
+        simp only [Adjudicator.apply_tick, Option.some.injEq] at h
+        subst h
+        exact keep (Adjudicator.tick_statusOf s dt r.V)
+      | transfer a b =>
+        obtain ⟨_, _, _, _, _, _, _, _, hst, _, hak, _⟩ := Adjudicator.transfer_some h
+        have hca : r.V ≠ a := by rintro rfl; rw [hk] at hak; cases hak
+        exact keep (by
+          rw [Adjudicator.statusOf_of_status hst, Adjudicator.statusOf_setStatus, if_neg hca])
+      | reclaim l v =>
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hst, hlk, _⟩ := Adjudicator.reclaim_some h
+        subst hst
+        have hcl : r.V ≠ l := by rintro rfl; rw [hk] at hlk; cases hlk
+        exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcl])
+      | challenge c proof cand =>
+        obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h
+        by_cases hcc : r.V = c
+        · subst hcc
+          intro t f o hst
+          rw [Adjudicator.statusOf_setStatus, if_pos rfl] at hst
+          cases hst
+        · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcc])
+      | checkpoint c proof cand =>
+        obtain ⟨-, rfl⟩ := Adjudicator.checkpoint_some h
+        by_cases hcc : r.V = c
+        · subst hcc
+          intro t f o hst
+          rw [Adjudicator.statusOf_setStatus, if_pos rfl] at hst
+          cases hst
+        · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcc])
+      | conclude c ss =>
+        obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
+        by_cases hcc : r.V = c
+        · subst hcc
+          intro t f o hst
+          rw [Adjudicator.statusOf_setStatus, if_pos rfl] at hst
+          cases hst
+          rfl
+        · exact keep (by rw [Adjudicator.statusOf_setStatus, if_neg hcc])
+  simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel,
+    Adjudicator.finalizedWith_channel]
+  exact ChannelStatus.finalOutcome_eq_finalizedWith _ _ hsame
+
+/-- The route facts of the end user `P` that `satp_end_user_recovers`'s chain invariant reads:
+    the ledger `L` (latest allocation `oL`) holds the guarantee `G(a0 + b0, [P, Q])` of `r.V`
+    (`Route.GuaranteeHeld`), `P` and its peer `Q` have distinct destinations, `L` is a ledger
+    channel, and `r.V` is virtual (`Route.WellFormed`, `Route.Round2Ledger`,
+    `HonestSend.guaranteesExternal`). -/
+structure Route.EndUser (r : Route E) (P Q : Participant) (L : FixedPart) (oL : Allocation E) :
+    Prop where
+  /-- `oL` holds the guarantee of `r.V`. -/
+  held : r.GuaranteeHeld P Q oL
+  /-- `P` and `Q` have distinct destinations. -/
+  dest : r.dest P ≠ r.dest Q
+  /-- `L` is a ledger channel. -/
+  kindL : L.kind = .ledger
+  /-- `r.V` is a virtual channel. -/
+  kindV : r.V.kind = .virtual
+
+/-- The chain invariant of `satp_end_user_recovers`'s strategy (`Route.EndUser`): `L` keeps or
+    drops its guarantee (`Route.LedgerHeldInv`), `r.V` stays finalized with `oV`, and `total`
+    is at most `P`'s owed amount, the share `oV.amountAt 0` that the guarantee still owes `P`
+    (`ledgerPend`), and the balance of `P`'s destination. -/
+structure Route.EndUserInv (r : Route E) (P Q : Participant) (L : FixedPart)
+    (oL oV : Allocation E) (total : Coins) (s : Adjudicator E) : Prop where
+  /-- `L` keeps or drops its guarantee. -/
+  held : r.LedgerHeldInv P Q L oL s
+  /-- `r.V` is finalized with `oV`. -/
+  finV : s.finalizedWith r.V.address = some (.allocation oV)
+  /-- `P`'s credit. -/
+  credit : total ≤ (ledgerCur s L oL).owed (.external (r.dest P)) +
+      ledgerPend r P Q s L oL (oV.amountAt 0) + s.balances.get (.external (r.dest P))
+
+/-- Every on-chain step keeps `Route.EndUserInv` (`ledger_held_step` with `P` as the left
+    peer, index 0). The outcome of finalization of `r.V` never changes
+    (`Adjudicator.finalizedWith_apply`), so a reclaim pays `P` the share `oV.amountAt 0`. -/
+theorem Route.EndUserInv.step {apps : Apps E} {r : Route E} {P Q : Participant}
+    {L : FixedPart} {oL oV : Allocation E} {total : Coins} (w : r.EndUser P Q L oL)
+    {caller : Participant} {o : Op E} {s s' : Adjudicator E}
+    (hI : r.EndUserInv P Q L oL oV total s) (h : s.apply apps caller o = some s') :
+    r.EndUserInv P Q L oL oV total s' := by
+  obtain ⟨hA, -, -, hC⟩ := ledger_held_step h L (r.dest P) w.held hI.held 0 (oV.amountAt 0)
+    (Or.inl ⟨rfl, w.dest, rfl⟩) (fun oV' hf _ => by
+      rw [hI.finV, Option.some.injEq, Outcome.allocation.injEq] at hf
+      rw [hf])
+  exact ⟨hA, Adjudicator.finalizedWith_apply h hI.finV, le_trans hI.credit hC⟩
+
+/-- An unbeatable strategy also reaches its goal with `Route.EndUserInv`, when that holds at
+    the start (`UnbeatableIn.and_chainInv`, `Route.EndUserInv.step`). -/
+theorem UnbeatableIn.and_endUserInv {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {r : Route E}
+    {P Q : Participant} {L : FixedPart} {oL oV : Allocation E} {total : Coins}
+    (w : r.EndUser P Q L oL) {net : NetworkState E p} (hU : UnbeatableIn apps T allowed G net)
+    (hI : r.EndUserInv P Q L oL oV total net.chain) :
+    UnbeatableIn apps T allowed (fun n => G n ∧ r.EndUserInv P Q L oL oV total n.chain) net :=
+  UnbeatableIn.and_chainInv (fun _ _ _ _ hI h => hI.step w h) hU hI
+
+/-- The chain at the start of `satp_end_user_recovers`'s reclaim round: `Route.EndUserInv`, and
+    `L` finalized with its latest allocation. -/
+structure Route.EndUserReady (r : Route E) (P Q : Participant) (L : FixedPart)
+    (oL oV : Allocation E) (total : Coins) (s : Adjudicator E) : Prop where
+  /-- The chain invariant. -/
+  inv : r.EndUserInv P Q L oL oV total s
+  /-- `L` finalized with `oL`. -/
+  finL : s.finalizedWith L.address = some (.allocation oL)
+
+/-- The round of `P`'s call `reclaim L r.V` (Protocol 3.3 step 3) clears `L`. The landing
+    succeeds when the guarantee is there (`reclaim_can_happen`), and fails, changing nothing,
+    when it is gone. A cleared ledger stays cleared (`Route.LedgerCleared.step`), and every
+    step keeps `Route.EndUserReady`. With the guarantee gone, the credit of
+    `Route.EndUserInv` is the bound of `EndUserRecovered`. -/
+theorem satp_end_user_reclaim_round {apps : Apps E} {r : Route E} {P Q : Participant}
+    {T : Threat E P} {t : Time} {L : FixedPart} {oL oV : Allocation E} {total : Coins}
+    (w : r.EndUser P Q L oL) (hx : oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0)
+    {n0 n2 : NetworkState E P} (hseq : T.RoundSeq apps t [Op.reclaim L r.V] n0 n2)
+    (hR : r.EndUserReady P Q L oL oV total n0.chain) :
+    ∃ o, n2.chain.finalOutcome L.address = some (.allocation o) ∧ o.find r.V.address = none ∧
+      total ≤ o.owed (.external (r.dest P)) + n2.chain.balances.get (.external (r.dest P)) := by
+  have hstep : ∀ (caller : Participant) (o : Op E) (s s' : Adjudicator E),
+      r.EndUserReady P Q L oL oV total s → s.apply apps caller o = some s' →
+      r.EndUserReady P Q L oL oV total s' :=
+    fun _ _ _ _ hs h => ⟨hs.inv.step w h, Adjudicator.finalizedWith_apply h hs.finL⟩
+  have hstepC : ∀ (caller : Participant) (o : Op E) (s s' : Adjudicator E),
+      r.EndUserReady P Q L oL oV total s ∧ r.LedgerCleared L s →
+      s.apply apps caller o = some s' →
+      r.EndUserReady P Q L oL oV total s' ∧ r.LedgerCleared L s' :=
+    fun caller o s s' hs h => ⟨hstep caller o s s' hs.1 h, hs.2.step (r.dest P) h⟩
+  obtain ⟨n1, hA, hB⟩ := Threat.RoundSeq.peel_one _ _ _ hseq
+  have hR1 := hA.chainInv hstep hR
+  -- The landing of `reclaim L r.V` clears `L`.
+  have hC1 : r.LedgerCleared L (n1.applyAdv apps (.land (Op.reclaim L r.V))).chain := by
+    obtain ⟨o, ho, hG | hnone⟩ := hR1.inv.held.held hR1.finL
+    · have hext : ∀ e : E, (Address.external e : Address E) ≠ r.V.address := by
+        simp only [FixedPart.address_eq, ne_eq, reduceCtorEq, not_false_eq_true, implies_true]
+      have hrc : n1.chain.apply apps P (.reclaim L r.V) = some _ :=
+        reclaim_can_happen n1.chain L r.V o oV (r.a0 + r.b0) _ _ w.kindL w.kindV ho
+        hR1.inv.finV hG.find (by rw [Allocation.find_remove, if_neg (hext _)]; exact hG.left)
+        (by rw [Allocation.find_remove, if_neg (hext _)]; exact hG.right) hx
+      rw [NetworkState.applyAdv_land_some apps (p := P) hrc]
+      refine ⟨⟨((o.addTo (.external (r.dest P)) (oV.amountAt 0)).addTo (.external (r.dest Q))
+        (oV.amountAt 1)).remove r.V.address, ?_, by rw [Allocation.find_remove, if_pos rfl]⟩⟩
+      simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel,
+        Adjudicator.statusOf_setStatus, ↓reduceIte, ChannelStatus.finalOutcome_withOutcome]
+    · have hrc : n1.chain.apply apps P (.reclaim L r.V) = none := by
+        show n1.chain.reclaim L r.V = none
+        unfold Adjudicator.reclaim
+        simp only [if_pos (⟨w.kindL, w.kindV⟩ : L.kind = .ledger ∧ r.V.kind = .virtual), ho,
+          hR1.inv.finV, hnone]
+      rw [NetworkState.applyAdv_land_none apps hrc]
+      exact ⟨o, ho, hnone⟩
+  obtain ⟨hR2, hC2⟩ := hB.chainInv hstepC
+    ⟨NetworkState.applyAdv_chainInv apps hstep n1 _ hR1, hC1⟩
+  obtain ⟨o', ho', ho'V⟩ := hC2.cleared
+  have htot := hR2.inv.credit
+  unfold ledgerPend at htot
+  rw [ledgerCur_of_fin hR2.finL ho', ho'V,
+    if_neg (by simp only [reduceCtorEq, not_false_eq_true])] at htot
+  exact ⟨o', ho', ho'V, by simpa only [Nat.add_zero] using htot⟩
+
 /-- SATP-20 (SATP:500-501): "We omit the analogous statement that can be stated
     for the end-users Alice and Bob." The analogue for Alice (`P0`, ledger
     `L0`): if `V` finalizes with `{A : A(a), B : A(b)}` and `a + b = a0 + b0`
@@ -12508,13 +12692,80 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     (hchain : net.state.chain.finalizedWith (L0 : FixedPart).address = none) :
     Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) o.bal a
       (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
-  have _hext : P ∈ (L0 : FixedPart).participants → o.outcome.GuaranteesExternal := by
-    obtain ⟨ss, hHs, hall, hc, hos, -⟩ := hH
-    intro hPL
-    have hext := (Nitro.participant_holds_honest A.toBounds net hHs
-      (hall P (by rw [hc]; exact hPL))).guaranteesExternal
-    rw [hos] at hext
-    exact hext
-  sorry
+  have hbounds := A.toBounds
+  subst hPA
+  have hnr := net.reachable
+  obtain ⟨L0, hdur0⟩ := L0
+  -- The route facts.
+  have hr0 := hr
+  obtain ⟨-, -, -, hdnodup, hled, -, hkV, -⟩ := hr
+  obtain ⟨Pa, Qa, hPa, hQa, hLp, hkL, hcL⟩ := hled 0 L0 hL0
+  have h0 : r.peers[0]? = some P := by rw [← List.head?_eq_getElem?]; exact halice
+  rw [h0, Option.some.injEq] at hPa
+  rw [hP1, Option.some.injEq] at hQa
+  subst hPa hQa
+  have hPL : P ∈ L0.participants := by
+    rw [hLp]; simp only [List.mem_cons, List.not_mem_nil, or_false, true_or]
+  have hd : r.dest P ≠ r.dest P1 := by
+    intro hPQ
+    have hlen : 0 < (r.peers.map r.dest).length := by
+      rw [List.length_map]
+      exact List.length_pos_of_ne_nil (by
+        rintro hnil
+        simp only [hnil, List.length_nil, lt_self_iff_false, not_false_eq_true, getElem?_neg,
+          reduceCtorEq] at h0)
+    have h01 : (0 : Nat) = 1 := (List.getElem?_inj hlen hdnodup).1 (by
+      rw [List.getElem?_map, List.getElem?_map, h0, hP1, Option.map_some, Option.map_some, hPQ])
+    cases h01
+  -- The latest ledger state, and what `P`'s honest signing gives about it.
+  obtain ⟨ss, hh, hall, hch, hout, -, hsent, hst⟩ := hH
+  have hhon := Nitro.participant_holds_honest hbounds net hh (hall P (by rw [hch]; exact hPL))
+  have hg : r.GuaranteeHeld P P1 o.outcome := by
+    have hext := hhon.guaranteesExternal
+    rw [hout] at hext
+    exact ⟨o.afterRound2.2.2.2, hext, o.afterRound2.2.1, o.afterRound2.2.2.1⟩
+  have w : r.EndUser P P1 L0 o.outcome := ⟨hg, hd, hkL, hkV⟩
+  -- Phase 1 (Protocol 3.3 step 1): `P` challenges `L0` with its latest state.
+  have hU1 := latest_state_finalizable apps T A net ⟨L0, hdur0⟩ ss hcL hPL hh hall hch
+    (fun t ht hc => (hsent t ht hc).1)
+    (fun t ht hc hfin => by rw [(hsent t ht hc).2] at hfin; cases hfin)
+    (by
+      rcases hst with ho | ⟨t, ch, hstt, hlt⟩
+      · exact Or.inr (Or.inl ho)
+      · exact Or.inr (Or.inr ⟨t, ch, hstt, hlt, hpend t ch hstt⟩))
+  rw [hout] at hU1
+  -- `r.V` is virtual, so its outcome of finalization is its stored outcome.
+  set oV : Allocation E := [alloc (.external (r.dest P)) a, alloc (.external (r.dest bob)) b]
+  have hfV : net.state.chain.finalizedWith r.V.address = some (.allocation oV) := by
+    rw [← Route.V_finalOutcome_eq hr0 (Nitro.participant_chain_reachable hnr)]
+    exact hfin
+  -- The chain invariant, from the start to the goal.
+  have hJ0 : r.EndUserInv P P1 L0 o.outcome oV
+      (o.outcome.owed (.external (r.dest P)) + oV.amountAt 0 +
+        net.state.chain.balances.get (.external (r.dest P))) net.state.chain := by
+    have hc0 := ledgerCur_of_not_fin (s := net.state.chain) (L := L0) (oL := o.outcome)
+      (by rw [hchain]; simp only [ne_eq, reduceCtorEq, not_false_eq_true])
+    refine ⟨⟨fun h => ?_⟩, hfV, ?_⟩
+    · rw [hchain] at h; cases h
+    unfold ledgerPend
+    rw [hc0, if_pos hg.find]
+  refine UnbeatableIn.bind (UnbeatableIn.and_endUserInv w hU1 hJ0) (fun {net1} hn1 => ?_)
+  obtain ⟨hfL1, hJ1⟩ := hn1
+  -- Phase 2 (Protocol 3.3 step 3): `P` reclaims the guarantee of `r.V` in `L0`.
+  refine UnbeatableIn.move (.chain (.reclaim L0 r.V)) trivial
+    (by simp only [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates, List.not_mem_nil,
+      IsEmpty.forall_iff, implies_true]) (fun net2 hround => ?_)
+  rw [NetworkState.applyHonest_chain]
+  apply UnbeatableIn.done
+  obtain ⟨o', ho', ho'V, htot⟩ := satp_end_user_reclaim_round w
+    (show oV.amountAt 0 + oV.amountAt 1 = r.a0 + r.b0 from hab) hround.1 ⟨hJ1, hfL1⟩
+  refine ⟨o', ho', ho'V, ?_⟩
+  -- `o.bal = owed + a0` (`Route.LedgerAfterRound2`), and `oV.amountAt 0 = a`.
+  rw [← o.afterRound2.1]
+  have key : ∀ x y z w v u : Nat, x + y + z ≤ w + v → x + u + y + z ≤ w + u + v := by
+    intro x y z w v u h
+    rw [Nat.add_right_comm x u y, Nat.add_right_comm (x + y) u z, Nat.add_right_comm w u v]
+    exact Nat.add_le_add_right h u
+  exact key _ _ _ _ _ _ htot
 
 end ArmadaLean.Nitro
