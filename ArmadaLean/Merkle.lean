@@ -15,6 +15,7 @@
   the symbolic Poseidon hash of the path, computed exactly as `merkleStep` folds.
 -/
 import ArmadaLean.Poseidon
+import Mathlib.Tactic.Says
 
 /-- One Merkle level: `false` → the current node is the left child,
     `true` → the current node is the right child (merkle.circom:43-49). -/
@@ -132,13 +133,13 @@ theorem treePath_succ_ge (d : Nat) (leaves : List Term) (i : Nat) (h : ¬ i < 2 
 theorem List.getD_take_of_lt {α} (l : List α) (i half : Nat) (h : i < half) (d : α) :
     (l.take half).getD i d = l.getD i d := by
   induction l generalizing i half with
-  | nil => simp
+  | nil => (simp? says simp only [take_nil, getD_eq_getElem?_getD, length_nil, Nat.not_lt_zero, not_false_eq_true, getElem?_neg, Option.getD_none])
   | cons a l ih =>
     cases half with
     | zero => omega
     | succ half' =>
       cases i with
-      | zero => simp
+      | zero => (simp? says simp only [take_succ_cons, getD_eq_getElem?_getD, length_cons, length_take, Nat.zero_lt_succ, getElem?_pos, getElem_cons_zero, Option.getD_some])
       | succ i' =>
         simp only [List.take_succ_cons, List.getD_cons_succ]
         exact ih i' half' (by omega)
@@ -146,10 +147,10 @@ theorem List.getD_take_of_lt {α} (l : List α) (i half : Nat) (h : i < half) (d
 theorem List.getD_drop_eq {α} (l : List α) (half i : Nat) (d : α) :
     (l.drop half).getD i d = l.getD (half + i) d := by
   induction half generalizing l with
-  | zero => simp
+  | zero => (simp? says simp only [drop_zero, getD_eq_getElem?_getD, Nat.zero_add])
   | succ half' ih =>
     cases l with
-    | nil => simp
+    | nil => (simp? says simp only [drop_nil, getD_eq_getElem?_getD, length_nil, Nat.not_lt_zero, not_false_eq_true, getElem?_neg, Option.getD_none])
     | cons a l =>
       simp only [List.drop_succ_cons]
       rw [ih]
@@ -226,6 +227,6 @@ theorem treePath_length (d : Nat) (leaves : List Term) (i : Nat) :
   | succ d ih =>
     by_cases hlt : i < 2 ^ d
     · rw [treePath_succ_lt d leaves i hlt]
-      simp [ih]
+      (simp? [ih] says simp only [List.length_append, ih, List.length_cons, List.length_nil, Nat.zero_add, Nat.add_left_cancel_iff])
     · rw [treePath_succ_ge d leaves i hlt]
-      simp [ih]
+      (simp? [ih] says simp only [List.length_append, ih, List.length_cons, List.length_nil, Nat.zero_add, Nat.add_left_cancel_iff])
