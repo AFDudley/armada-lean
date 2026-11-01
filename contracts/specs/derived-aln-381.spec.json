@@ -1,0 +1,176 @@
+{
+  "id": "derived-aln-381",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proofs of ArmadaLean.Nitro.checkpoint_can_happen, ArmadaLean.Nitro.checkpoint_requires do not unfold Adjudicator.apply or case on Op; they rewrite with Adjudicator.apply_checkpoint_equation (ArmadaLean/Nitro/OpEquations.lean). The type-doctrine linter reports no layerDiscipline finding for any of these declarations. Statements do not change.\nWhat holds now? Describe the current, observed state. At integrated 4a9e9981, `lake env lean scripts/type_lint.lean` prints a layerDiscipline finding (linter layerDiscipline, with baseOps) for each of ArmadaLean.Nitro.checkpoint_can_happen, ArmadaLean.Nitro.checkpoint_requires. The trunk has 35 Nitro layerDiscipline hits in total.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and then `lake env lean scripts/type_lint.lean`; read the JSON lines whose linter field is layerDiscipline and their declaration field. Then run `scripts/check.sh --json`.\nWhat constraints apply? State them in plain prose. Every Lean command runs through /home/rix/bin/lean-run. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true, lint_ok included, against scripts/gate-baseline.json. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Safety.lean and the other modules that hold the proofs of ArmadaLean.Nitro.checkpoint_can_happen, ArmadaLean.Nitro.checkpoint_requires",
+  "restatement": "The proofs backing ArmadaLean.Nitro.checkpoint_can_happen and ArmadaLean.Nitro.checkpoint_requires must be rewritten so they go through the Adjudicator.apply_checkpoint_equation rewrite (not unfolding Adjudicator.apply or case-splitting on Op), so that the type-doctrine linter no longer reports a layerDiscipline finding for either declaration, while the Spec statements themselves remain byte-for-byte unchanged and the full check.sh gate (including lint_ok and all other _ok fields) continues to pass against the committed baseline.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "After running `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and `lake env lean scripts/type_lint.lean`, no JSON line with linter field layerDiscipline has declaration field ArmadaLean.Nitro.checkpoint_can_happen or ArmadaLean.Nitro.checkpoint_requires."
+    },
+    {
+      "id": "c2",
+      "text": "The proofs of ArmadaLean.Nitro.checkpoint_can_happen and ArmadaLean.Nitro.checkpoint_requires rewrite with Adjudicator.apply_checkpoint_equation and do not unfold Adjudicator.apply or case on Op."
+    },
+    {
+      "id": "c3",
+      "text": "`git diff integrated -- 'ArmadaLean/Spec*'` is empty, i.e. no Spec statement changes."
+    },
+    {
+      "id": "c4",
+      "text": "`scripts/check.sh --json` keeps every _ok field true, including lint_ok, against scripts/gate-baseline.json."
+    }
+  ],
+  "goal": "Make two specific proofs in the Nitro model use the approved style of rewriting instead of unfolding internals, so a code-quality checker stops flagging them as problems, without changing what the proofs are actually claiming, and without breaking any other project checks.",
+  "acceptance_criteria": [
+    "After building the project and running the type-discipline linter script, nobody should see a reported violation that names the specific declarations ArmadaLean.Nitro.checkpoint_can_happen or ArmadaLean.Nitro.checkpoint_requires under the layerDiscipline linter.",
+    "Checks that the two named proofs in the Nitro file use the required rewrite lemma and never unfold the apply function or case-split on Op, by scanning the proof source text.",
+    "Checking that none of the formal Spec files under ArmadaLean/Spec were changed compared to the integrated branch \u2014 the Spec statements must remain untouched.",
+    "Running the repository's check script with the --json flag should report that every quality check passed, including the lint check, when compared against the committed baseline file."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After building the project and running the type-discipline linter script, nobody should see a reported violation that names the specific declarations ArmadaLean.Nitro.checkpoint_can_happen or ArmadaLean.Nitro.checkpoint_requires under the layerDiscipline linter."
+    },
+    {
+      "id": "c2",
+      "text": "Checks that the two named proofs in the Nitro file use the required rewrite lemma and never unfold the apply function or case-split on Op, by scanning the proof source text."
+    },
+    {
+      "id": "c3",
+      "text": "Checking that none of the formal Spec files under ArmadaLean/Spec were changed compared to the integrated branch \u2014 the Spec statements must remain untouched."
+    },
+    {
+      "id": "c4",
+      "text": "Running the repository's check script with the --json flag should report that every quality check passed, including the lint check, when compared against the committed baseline file."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After building the project and running the type-discipline linter script, nobody should see a reported violation that names the specific declarations ArmadaLean.Nitro.checkpoint_can_happen or ArmadaLean.Nitro.checkpoint_requires under the layerDiscipline linter.",
+      "proves": "The linter does not flag ArmadaLean.Nitro.checkpoint_can_happen or ArmadaLean.Nitro.checkpoint_requires for layerDiscipline violations.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_type_lint_check.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "violation_found",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Checks that the two named proofs in the Nitro file use the required rewrite lemma and never unfold the apply function or case-split on Op, by scanning the proof source text.",
+      "proves": "That ArmadaLean.Nitro.checkpoint_can_happen and ArmadaLean.Nitro.checkpoint_requires rewrite with Adjudicator.apply_checkpoint_equation and avoid unfolding Adjudicator.apply or casing on Op.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_nitro_checkpoint_proofs.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "uses_apply_checkpoint_equation",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "unfolds_apply",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "cases_on_op",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checking that none of the formal Spec files under ArmadaLean/Spec were changed compared to the integrated branch \u2014 the Spec statements must remain untouched.",
+      "proves": "The task does not modify any Spec* statement files relative to the integrated branch, satisfying the clause that the diff against integrated for ArmadaLean/Spec* is empty.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_diff.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_empty",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the repository's check script with the --json flag should report that every quality check passed, including the lint check, when compared against the committed baseline file.",
+      "proves": "The gate script scripts/check.sh --json reports all *_ok fields as true (including lint_ok) when evaluated against scripts/gate-baseline.json.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c4"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_nitro_checkpoint_proofs.py",
+    "scripts/check_spec_diff.py",
+    "scripts/run_type_lint_check.py"
+  ]
+}
