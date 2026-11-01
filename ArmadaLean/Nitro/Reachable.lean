@@ -24,6 +24,7 @@ import ArmadaLean.Types.Reachable
 import ArmadaLean.Nitro.Strategy
 import ArmadaLean.Nitro.Lemmas
 import ArmadaLean.SpecTools
+import Mathlib.Tactic.Says
 
 section
 
@@ -85,7 +86,7 @@ theorem NetworkState.applyHonest_chain_reachable {apps : Apps E} {p : Participan
     (net : NetworkState E p) (m : HonestMove E) (hr : Reachable apps net.chain) :
     Reachable apps (net.applyHonest m).chain := by
   cases m with
-  | react r => simpa [NetworkState.applyHonest] using hr
+  | react r => (simpa? [NetworkState.applyHonest] using hr says simpa only [applyHonest] using hr)
   | wait dt =>
     simp only [NetworkState.applyHonest]
     have happly : net.chain.apply apps p (.tick dt) = some (net.chain.tick dt) := rfl
@@ -107,7 +108,7 @@ theorem NetworkState.applyAdv_chain_reachable {apps : Apps E} {p : Participant}
     | some s' =>
       simp only [NetworkState.applyAdv_chain_some apps h]
       exact hr.tail (Step.mk caller op net.chain s' h)
-  | deliver ss => simpa using hr
+  | deliver ss => (simpa? using hr says simpa only [applyAdv_deliver] using hr)
   | tick dt =>
     simp only [NetworkState.applyAdv_tick apps]
     have happly : net.chain.apply apps p (.tick dt) = some (net.chain.tick dt) := rfl
@@ -150,7 +151,7 @@ theorem balances_virtual_zero_step {apps : Apps E} {s s' : Adjudicator E} {calle
     obtain ⟨o, amt, x, -, hfind, -, hb, -, -, -, hak, hbf⟩ := Adjudicator.transfer_some h
     have hbc : (Address.channel c : Address E) ≠ b := by
       rintro rfl
-      simp [Address.fundable, hk] at hbf
+      (simp? [Address.fundable, hk] at hbf says simp only [Address.fundable, hk, reduceCtorEq, decide_false, Bool.false_eq_true] at hbf)
     have hac : (Address.channel c : Address E) ≠ a.address := by
       rw [FixedPart.address_eq]
       intro hcc
@@ -162,20 +163,20 @@ theorem balances_virtual_zero_step {apps : Apps E} {s s' : Adjudicator E} {calle
     exact ih
   | reclaim l v =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h
-    simpa using ih
+    (simpa? using ih says simpa only [FixedPart.address_eq, Adjudicator.setStatus_balances] using ih)
   | challenge c' proof candidate =>
     obtain ⟨_, rfl⟩ := Adjudicator.challenge_some h
-    simpa using ih
+    (simpa? using ih says simpa only [Adjudicator.setStatus_balances] using ih)
   | checkpoint c' proof candidate =>
     obtain ⟨_, rfl⟩ := Adjudicator.checkpoint_some h
-    simpa using ih
+    (simpa? using ih says simpa only [Adjudicator.setStatus_balances] using ih)
   | conclude c' ss =>
     obtain ⟨_, rfl⟩ := Adjudicator.conclude_some h
-    simpa using ih
+    (simpa? using ih says simpa only [Adjudicator.setStatus_balances] using ih)
   | tick dt =>
-    simp at h
+    (simp? at h says simp only [Adjudicator.apply_tick, Option.some.injEq] at h)
     subst h
-    simpa using ih
+    (simpa? using ih says simpa only [Adjudicator.tick_balances] using ih)
 
 /-- **A reachable chain holds no coins in a virtual-kind channel.** Operator
     ruling 2026-10-29: the counterexamples to `directly_funded_pays`,
@@ -314,7 +315,7 @@ theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T
           intro x hx
           simp only [NetworkState.applyHonest, List.mem_append]
           exact Or.inr hx
-        | wait dt => simp [NetworkState.applyHonest]
+        | wait dt => (simp? [NetworkState.applyHonest] says simp only [NetworkState.applyHonest, List.Subset.refl])
       have hrecv : (net.applyHonest m).received = net.received := by
         cases m with
         | react r => rfl
@@ -323,8 +324,8 @@ theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T
       exact NetworkState.Unforged.mono hsent (hP ss hss)
     · have hsent : net.sent = (net.applyAdv apps (.land op)).sent := by
         cases hap : net.chain.apply apps p op with
-        | none => simp [NetworkState.applyAdv, hap]
-        | some s' => simp [NetworkState.applyAdv, hap]
+        | none => (simp? [NetworkState.applyAdv, hap] says simp only [NetworkState.applyAdv, hap])
+        | some s' => (simp? [NetworkState.applyAdv, hap] says simp only [NetworkState.applyAdv, hap])
       intro ss hss
       cases hap : net.chain.apply apps p op with
       | none =>
@@ -340,10 +341,10 @@ theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T
         cases m with
         | chain caller op =>
           cases hap : net.chain.apply apps caller op with
-          | none => simp [NetworkState.applyAdv, hap]
-          | some s' => simp [NetworkState.applyAdv, hap]
-        | deliver ss' => simp [NetworkState.applyAdv]
-        | tick dt => simp [NetworkState.applyAdv]
+          | none => (simp? [NetworkState.applyAdv, hap] says simp only [NetworkState.applyAdv, hap])
+          | some s' => (simp? [NetworkState.applyAdv, hap] says simp only [NetworkState.applyAdv, hap])
+        | deliver ss' => (simp? [NetworkState.applyAdv] says simp only [NetworkState.applyAdv])
+        | tick dt => (simp? [NetworkState.applyAdv] says simp only [NetworkState.applyAdv])
         | land op => exact absurd rfl (hnoland op)
       intro ss hss
       cases m with
@@ -369,8 +370,8 @@ theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T
       | land op => exact absurd rfl (hnoland op)
     · have hsent : net.sent = (net.applyAdv apps (.land (.deposit a e x))).sent := by
         cases hap : net.chain.apply apps p (.deposit a e x) with
-        | none => simp [NetworkState.applyAdv, hap]
-        | some s' => simp [NetworkState.applyAdv, hap]
+        | none => (simp? [NetworkState.applyAdv, hap] says simp only [NetworkState.applyAdv, hap])
+        | some s' => (simp? [NetworkState.applyAdv, hap] says simp only [NetworkState.applyAdv, hap])
       intro ss hss
       cases hap : net.chain.apply apps p (.deposit a e x) with
       | none =>
@@ -587,7 +588,7 @@ theorem Network.applyHonest_react_received_self (n : Network E) (p : Participant
   have hempty : r.sends.filter (fun st => decide (p ∈ st.recipients p)) = [] := by
     rw [List.filter_eq_nil_iff]
     intro st _
-    simp [State.recipients, List.mem_filter]
+    (simp? [State.recipients, List.mem_filter] says simp only [State.recipients, ne_eq, decide_not, List.mem_filter, decide_true, Bool.not_true, Bool.false_eq_true, and_false, decide_false, not_false_eq_true])
   rw [hempty]
   rfl
 
@@ -671,12 +672,12 @@ def Network.applyAdv (apps : Apps E) (n : Network E) (p : Participant) (m : AdvM
 @[simp] theorem Network.land_of_some {apps : Apps E} {n : Network E} {p : Participant} {op : Op E}
     {s' : Adjudicator E} (h : n.chain.apply apps p op = some s') :
     Network.land apps n p op = { n with chain := s', received := fun q => op.proofStates ++ n.received q } := by
-  simp [Network.land, h]
+  (simp? [Network.land, h] says simp only [land, h])
 
 /-- `Network.land` when the call fails: nothing changes. -/
 @[simp] theorem Network.land_of_none {apps : Apps E} {n : Network E} {p : Participant} {op : Op E}
     (h : n.chain.apply apps p op = none) : Network.land apps n p op = n := by
-  simp [Network.land, h]
+  (simp? [Network.land, h] says simp only [land, h])
 
 
 @[simp] theorem Network.applyAdv_chain (apps : Apps E) (n : Network E) (p caller : Participant) (op : Op E) :
@@ -700,7 +701,7 @@ theorem Network.applyHonest_chain_reachable {apps : Apps E} (n : Network E) (p :
     (m : HonestMove E) (hr : Reachable apps n.chain) :
     Reachable apps (Network.applyHonest n p m).chain := by
   cases m with
-  | react r => simpa using hr
+  | react r => (simpa? using hr says simpa only [applyHonest_react_chain] using hr)
   | wait dt =>
     simp only [Network.applyHonest]
     have happly : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
@@ -730,7 +731,7 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     cases h : n.chain.apply apps caller op with
     | none => exact hr
     | some s' => exact hr.tail (Step.mk caller op n.chain s' h)
-  | deliver ss => simpa [Network.applyAdv_deliver] using hr
+  | deliver ss => (simpa? [Network.applyAdv_deliver] using hr says simpa only [applyAdv_deliver] using hr)
   | tick dt =>
     simp only [Network.applyAdv_tick]
     have happly : n.chain.apply apps p (.tick dt) = some (n.chain.tick dt) := rfl
@@ -924,7 +925,7 @@ theorem Nitro.network_received_signers {apps : Apps E} {Ts : Threats E apps} {n 
   · intro n hinit p q r hr
     obtain ⟨-, -, hrecv⟩ := hinit
     rw [hrecv] at hr
-    simp at hr
+    (simp? at hr says simp only [List.not_mem_nil] at hr)
   · intro n n' hP hstep p q r hr hqr
     obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
     rcases hframe with
@@ -993,7 +994,7 @@ theorem Nitro.network_received_voucher_signers {apps : Apps E} {Ts : Threats E a
   · intro n hinit p q r hr
     obtain ⟨-, -, hrecv⟩ := hinit
     rw [hrecv] at hr
-    simp at hr
+    (simp? at hr says simp only [List.not_mem_nil] at hr)
   · intro n n' hP hstep p q r hr v hv hq
     obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
     rcases hframe with
@@ -1089,7 +1090,7 @@ theorem Nitro.network_chain_reachableSigned {apps : Apps E} {Ts : Threats E apps
     obtain ⟨hc, hs, -⟩ := hinit
     refine ⟨[], ?_, ?_⟩
     · rw [hc]; exact Relation.ReflTransGen.refl
-    · intro q st; rw [hs]; simp
+    · intro q st; rw [hs]; (simp? says simp only [List.not_mem_nil, false_and, exists_false])
   · intro n n' hP hstep
     obtain ⟨signed, hreach, hmirror⟩ := hP
     obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
@@ -1165,7 +1166,7 @@ theorem Nitro.network_views_delivered {apps : Apps E} {Ts : Threats E apps} (n :
   · intro n hinit p ss hss
     obtain ⟨-, hs, -⟩ := hinit
     rw [hs] at hss
-    simp at hss
+    (simp? at hss says simp only [List.not_mem_nil] at hss)
   · intro n n' hP hstep p ss hss q hq
     obtain ⟨p₀, hframe⟩ := Nitro.network.step_frame hstep
     rcases hframe with
@@ -1244,7 +1245,7 @@ theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats 
     (hbase : (Nitro.participant apps (Ts.T q)).Reachable base) :
     (Nitro.participant apps (Ts.T q)).Reachable (base.recvBatch p₀ sends) := by
   induction sends with
-  | nil => simpa [NetworkState.recvBatch] using hbase
+  | nil => (simpa? [NetworkState.recvBatch] using hbase says simpa only [NetworkState.recvBatch, List.filter_nil, List.map_nil, List.nil_append] using hbase)
   | cons st rest ih =>
     have ihrest : (Nitro.participant apps (Ts.T q)).Reachable (base.recvBatch p₀ rest) :=
       ih (fun st' hst' => hvg st' (List.mem_cons_of_mem _ hst'))
@@ -1258,8 +1259,8 @@ theorem Nitro.participant_reachable_deliver_sends {apps : Apps E} {Ts : Threats 
       refine ⟨s₀, hinit, hsteps.tail (Or.inr (Or.inr (Or.inl
         ⟨.deliver ⟨st, [p₀]⟩, (Ts.ok q).toCapable.capableDeliver _ _ hUnforged,
           (fun op h => by cases h), ?_⟩)))⟩
-      simp [NetworkState.recvBatch, hqr]
-    · simpa [NetworkState.recvBatch, List.filter_cons, hqr] using ihrest
+      (simp? [NetworkState.recvBatch, hqr] says simp only [NetworkState.recvBatch, hqr, decide_true, List.filter_cons_of_pos, List.map_cons, List.cons_append, NetworkState.applyAdv_deliver])
+    · (simpa? [NetworkState.recvBatch, List.filter_cons, hqr] using ihrest says simpa only [NetworkState.recvBatch, hqr, decide_false, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg] using ihrest)
 
 /-- **Every view of a reachable `Network` is `Nitro.participant`-reachable.**
     The caller rule (operator ruling 2026-10-29, "Caller rule", read
@@ -1294,7 +1295,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
   · intro n hinit
     obtain ⟨hc, hs, hrv⟩ := hinit
     refine ⟨_, ?_, Relation.ReflTransGen.refl⟩
-    simp [Network.view, Nitro.participant, Nitro.participantWith, hc, hs, hrv]
+    (simp? [Network.view, Nitro.participant, Nitro.participantWith, hc, hs, hrv] says simp only [participant, participantWith, ne_eq, Network.view, hc, hrv, hs])
   · intro n n' hP hstep
     obtain ⟨p₀, ⟨m, hfeas, hvgate, rfl⟩ | ⟨op, hfeas, hsgate, rfl⟩ |
         ⟨m, hfeas, -, hnochain, hnoland, rfl⟩ | ⟨c, e, x, hxle, rfl⟩⟩ :=
@@ -1304,17 +1305,17 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         have heq : (Network.applyHonest n q m).view q = (n.view q).applyHonest m := by
           cases m with
           | react rr =>
-            simp [Network.view, Network.applyHonest_react_sent, Network.applyHonest_react_received_self,
-              NetworkState.applyHonest]
-          | wait dt => simp [Network.applyHonest, Network.view, NetworkState.applyHonest]
+            (simp? [Network.view, Network.applyHonest_react_sent, Network.applyHonest_react_received_self,
+              NetworkState.applyHonest] says simp only [Network.view, Network.applyHonest_react_chain, Network.applyHonest_react_received_self, Network.applyHonest_react_sent, ↓reduceIte, NetworkState.applyHonest])
+          | wait dt => (simp? [Network.applyHonest, Network.view, NetworkState.applyHonest] says simp only [Network.view, Network.applyHonest, NetworkState.applyHonest])
         rw [heq]
         exact hP.tail (Or.inl ⟨m, hfeas, rfl⟩)
       · cases m with
         | react rr =>
           have heq : (Network.applyHonest n p₀ (.react rr)).view q =
               (n.view q).recvBatch p₀ rr.sends := by
-            simp [Network.view, Network.applyHonest_react_sent, hqp0,
-              Network.applyHonest_react_received, NetworkState.recvBatch]
+            (simp? [Network.view, Network.applyHonest_react_sent, hqp0,
+              Network.applyHonest_react_received, NetworkState.recvBatch] says simp only [Network.view, Network.applyHonest_react_chain, Network.applyHonest_react_received, Network.applyHonest_react_sent, hqp0, ↓reduceIte, NetworkState.recvBatch])
           rw [heq]
           refine Nitro.participant_reachable_deliver_sends hqp0 rr.sends ?_ hP
           intro st hst v hv hqv
@@ -1322,7 +1323,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         | wait dt =>
           have heq : (Network.applyHonest n p₀ (.wait dt)).view q =
               (n.view q).applyAdv apps (.tick dt) := by
-            simp [Network.applyHonest, Network.view, NetworkState.applyAdv_tick apps]
+            (simp? [Network.applyHonest, Network.view, NetworkState.applyAdv_tick apps] says simp only [Network.view, Network.applyHonest, NetworkState.applyAdv_tick apps])
           rw [heq]
           exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt,
             (fun op h => by cases h), rfl⟩)))
@@ -1333,7 +1334,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
           | none => simp only [Network.land, happly, NetworkState.applyAdv_land_none (net := n.view q) apps happly]
           | some s' =>
             simp only [Network.land, happly, NetworkState.applyAdv_land_some (net := n.view q) apps happly]
-            simp [Network.view]
+            (simp? [Network.view] says simp only [Network.view])
         rw [heq]
         exact hP.tail (Or.inr (Or.inl ⟨op, hfeas, rfl⟩))
       · have heq : (Network.land apps n p₀ op).view q =
@@ -1343,7 +1344,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
             simp only [Network.land, happly, NetworkState.applyAdv_chain_none (net := n.view q) apps happly]
           | some s' =>
             simp only [Network.land, happly, NetworkState.applyAdv_chain_some (net := n.view q) apps happly]
-            simp [Network.view, if_neg hqp0]
+            (simp? [Network.view, if_neg hqp0] says simp only [Network.view])
         rw [heq]
         have hUnforged : ∀ ss ∈ op.proofStates, (n.view q).Unforged ss := by
           intro ss hss
@@ -1358,8 +1359,8 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         have heq : (Network.applyAdv apps n q m).view q = (n.view q).applyAdv apps m := by
           cases m with
           | chain caller op => exact absurd rfl (hnochain caller op)
-          | deliver ss => simp [Network.applyAdv_deliver, Network.view]
-          | tick dt => simp [NetworkState.applyAdv_tick apps, Network.view]
+          | deliver ss => (simp? [Network.applyAdv_deliver, Network.view] says simp only [Network.view, Network.applyAdv_deliver, ↓reduceIte, NetworkState.applyAdv_deliver])
+          | tick dt => (simp? [NetworkState.applyAdv_tick apps, Network.view] says simp only [Network.view, Network.applyAdv_tick, NetworkState.applyAdv_tick apps])
           | land op => exact absurd rfl (hnoland op)
         rw [heq]
         exact hP.tail (Or.inr (Or.inr (Or.inl ⟨m, hfeas, hnoland, rfl⟩)))
@@ -1367,13 +1368,13 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
         | chain caller op => exact absurd rfl (hnochain caller op)
         | deliver ss =>
           have heq : (Network.applyAdv apps n p₀ (.deliver ss)).view q = n.view q := by
-            simp [Network.applyAdv_deliver, Network.view, hqp0]
+            (simp? [Network.applyAdv_deliver, Network.view, hqp0] says simp only [Network.view, Network.applyAdv_deliver, hqp0, ↓reduceIte])
           rw [heq]
           exact hP
         | tick dt =>
           have heq : (Network.applyAdv apps n p₀ (.tick dt)).view q =
               (n.view q).applyAdv apps (.tick dt) := by
-            simp [Network.applyAdv_tick, Network.view, NetworkState.applyAdv_tick apps]
+            (simp? [Network.applyAdv_tick, Network.view, NetworkState.applyAdv_tick apps] says simp only [Network.view, Network.applyAdv_tick, NetworkState.applyAdv_tick apps])
           rw [heq]
           exact hP.tail (Or.inr (Or.inr (Or.inl ⟨.tick dt, (Ts.ok q).toCapable.capableTick _ dt,
             (fun op h => by cases h), rfl⟩)))
@@ -1387,7 +1388,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
             simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_land_none (net := n.view q) (op := Op.deposit (.channel c) e x) apps happly]
           | some s' =>
             simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_land_some (net := n.view q) (op := Op.deposit (.channel c) e x) apps happly]
-            simp [Network.view, Op.proofStates]
+            (simp? [Network.view, Op.proofStates] says simp only [Network.view, Op.proofStates, List.nil_append])
         rw [heq]
         exact hP.tail (Or.inr (Or.inr (Or.inr ⟨.channel c, e, x, rfl⟩)))
       · have heq : (Network.deposit n p₀ (.channel c) e x).view q =
@@ -1397,12 +1398,12 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
             simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_chain_none (net := n.view q) (caller := p₀) (op := Op.deposit (.channel c) e x) apps happly]
           | some s' =>
             simp only [Network.deposit, happly, Adjudicator.apply, NetworkState.applyAdv_chain_some (net := n.view q) (caller := p₀) (op := Op.deposit (.channel c) e x) apps happly]
-            simp [Network.view, Op.proofStates]
+            (simp? [Network.view, Op.proofStates] says simp only [Network.view, Op.proofStates, List.nil_append])
         rw [heq]
         have hUnforged : ∀ ss ∈ (Op.deposit (.channel c) e x : Op E).proofStates,
             (n.view q).Unforged ss := by
           intro ss hss
-          simp [Op.proofStates] at hss
+          (simp? [Op.proofStates] at hss says simp only [Op.proofStates, List.not_mem_nil] at hss)
         have hcap : (Ts.T q).feasible (n.view q) (.chain p₀ (.deposit (.channel c) e x)) :=
           (Ts.ok q).toCapable.capable (n.view q) p₀ (.deposit (.channel c) e x) (Ne.symm hqp0)
             hUnforged
@@ -1490,11 +1491,11 @@ theorem Nitro.network_positive_balance_reachable {apps : Apps E} (Ts : Threats E
       wallet := fun q => if q = p then x else 0 } with hn0def
   have hinit : (Nitro.network apps Ts).init n0 := ⟨rfl, rfl, rfl⟩
   have hr0 : (Nitro.network apps Ts).Reachable n0 := ⟨n0, hinit, Relation.ReflTransGen.refl⟩
-  have hwle : x ≤ n0.wallet p := by simp [hn0def]
+  have hwle : x ≤ n0.wallet p := by (simp? [hn0def] says simp only [hn0def, ↓reduceIte, Std.le_refl])
   have hstep : (Nitro.network apps Ts).step n0 (Network.deposit n0 p (.channel c) 0 x) :=
     ⟨p, Or.inr (Or.inr (Or.inr ⟨c, 0, x, hwle, rfl⟩))⟩
   refine ⟨Network.deposit n0 p (.channel c) 0 x, hr0.tail hstep, ?_⟩
   have hbal : (Network.deposit n0 p (.channel c) 0 x).chain.balances.get (.channel c) = x := by
-    simp [Network.deposit, Adjudicator.deposit, hck, hn0def, Adjudicator.genesis,
-      Balances.add, Balances.set, Balances.get]
+    (simp? [Network.deposit, Adjudicator.deposit, hck, hn0def, Adjudicator.genesis,
+      Balances.add, Balances.set, Balances.get] says simp only [Balances.get, Network.deposit, Adjudicator.deposit, hck, hn0def, Adjudicator.genesis, List.lookup_nil, Option.getD_none, and_self, ↓reduceIte, Balances.add, Balances.set, zero_add, ne_eq, decide_not, List.filter_nil, Nat.sub_self, List.lookup_cons_self, Option.getD_some])
   rw [hbal]; exact hx
