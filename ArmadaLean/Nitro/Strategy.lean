@@ -46,6 +46,7 @@
 import ArmadaLean.Nitro.Adjudicator
 import ArmadaLean.Nitro.Lemmas
 import ArmadaLean.Types.Honest
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -159,8 +160,8 @@ def Op.HonestFeasible {p : Participant} (net : NetworkState E p) : Op E → Prop
 theorem Op.HonestFeasible.mem {p : Participant} {net : NetworkState E p} {op : Op E}
     (h : op.HonestFeasible net) : ∀ ss ∈ op.proofStates, net.Holds ss := by
   cases op with
-  | deposit a e x => exact absurd h (by simp [Op.HonestFeasible])
-  | tick dt => exact absurd h (by simp [Op.HonestFeasible])
+  | deposit a e x => exact absurd h (by (simp? [Op.HonestFeasible] says simp only [HonestFeasible, not_false_eq_true]))
+  | tick dt => exact absurd h (by (simp? [Op.HonestFeasible] says simp only [HonestFeasible, not_false_eq_true]))
   | transfer a b => exact h
   | reclaim l v => exact h
   | challenge c proof cand => exact h
@@ -246,14 +247,14 @@ def NetworkState.applyAdv (apps : Apps E) {p : Participant}
     {net : NetworkState E p} {caller : Participant} {op : Op E} {s' : Adjudicator E}
     (h : net.chain.apply apps caller op = some s') :
     net.applyAdv apps (.chain caller op) = { net with chain := s', received := op.proofStates ++ net.received } := by
-  simp [NetworkState.applyAdv, h]
+  (simp? [NetworkState.applyAdv, h] says simp only [applyAdv, h])
 
 /-- `applyAdv` of an on that fails: nothing changes. -/
 @[simp] theorem NetworkState.applyAdv_chain_none (apps : Apps E) {p : Participant}
     {net : NetworkState E p} {caller : Participant} {op : Op E}
     (h : net.chain.apply apps caller op = none) :
     net.applyAdv apps (.chain caller op) = net := by
-  simp [NetworkState.applyAdv, h]
+  (simp? [NetworkState.applyAdv, h] says simp only [applyAdv, h])
 
 @[simp] theorem NetworkState.applyAdv_deliver (apps : Apps E) {p : Participant}
     (net : NetworkState E p) (ss : SignedState E) :
@@ -270,14 +271,14 @@ theorem NetworkState.applyAdv_tick (apps : Apps E) {p : Participant}
     {net : NetworkState E p} {op : Op E} {s' : Adjudicator E}
     (h : net.chain.apply apps p op = some s') :
     net.applyAdv apps (.land op) = { net with chain := s', received := op.proofStates ++ net.received } := by
-  simp [NetworkState.applyAdv, h]
+  (simp? [NetworkState.applyAdv, h] says simp only [applyAdv, h])
 
 /-- `applyAdv` of `p`'s own pending call landing, when it fails. -/
 @[simp] theorem NetworkState.applyAdv_land_none (apps : Apps E) {p : Participant}
     {net : NetworkState E p} {op : Op E}
     (h : net.chain.apply apps p op = none) :
     net.applyAdv apps (.land op) = net := by
-  simp [NetworkState.applyAdv, h]
+  (simp? [NetworkState.applyAdv, h] says simp only [applyAdv, h])
 
 /-- What the adversary can do. `feasible net m` holds when the adversary can
     play `m` from `net`. `ε` is the inclusion bound of Nitro:537-539: a
@@ -382,12 +383,12 @@ omit [DecidableEq E] in
 omit [DecidableEq E] in
 @[simp] theorem NetworkState.applyHonest_chain {p : Participant} (net : NetworkState E p)
     (op : Op E) : net.applyHonest (HonestMove.chain op) = net := by
-  simp [NetworkState.applyHonest, HonestMove.chain, Reaction.one]
+  (simp? [NetworkState.applyHonest, HonestMove.chain, Reaction.one] says simp only [applyHonest, HonestMove.chain, Reaction.one, List.map_nil, List.nil_append])
 
 omit [DecidableEq E] in
 @[simp] theorem NetworkState.applyHonest_send {p : Participant} (net : NetworkState E p)
     (st : State E) : net.applyHonest (HonestMove.send st) = { net with sent := ⟨st, [p]⟩ :: net.sent } := by
-  simp [NetworkState.applyHonest, HonestMove.send]
+  (simp? [NetworkState.applyHonest, HonestMove.send] says simp only [applyHonest, HonestMove.send, List.map_cons, List.map_nil, List.cons_append, List.nil_append])
 
 /-- A `RoundSeq` derivation, when its pending list is non-empty, is: a run of
     ordinary adversary moves (`tick`/`other`, no land) up to the FIRST call
@@ -432,14 +433,14 @@ theorem Threat.RoundSeq.peel_one {apps : Apps E} {p : Participant} {T : Threat E
     ∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
       Threat.RoundSeq apps T t [] (n1.applyAdv apps (.land op)) n2 := by
   obtain ⟨l1, op', l2, heq, n1, hA, hB⟩ :=
-    Threat.RoundSeq.peel_split (pending := [op]) (by simp) hseq
+    Threat.RoundSeq.peel_split (pending := [op]) (by (simp? says simp only [ne_eq, List.cons_ne_self, not_false_eq_true])) hseq
   rcases l1 with _ | ⟨a, l1⟩
   · simp only [List.nil_append, List.cons.injEq, List.nil_eq] at heq
     obtain ⟨heqop, heql2⟩ := heq
     subst heqop; subst heql2
     simp only [List.nil_append] at hB
     exact ⟨n1, hA, hB⟩
-  · simp at heq
+  · (simp? at heq says simp only [List.cons_append, List.cons.injEq, List.nil_eq, List.append_eq_nil_iff, reduceCtorEq, and_false] at heq)
 
 /-- Two calls peel off a `RoundSeq` one at a time, in whichever order the
     adversary front-runs them (Nitro:540-542): `pending = [opA, opB]` splits
@@ -458,7 +459,7 @@ theorem Threat.RoundSeq.peel_two {apps : Apps E} {p : Participant} {T : Threat E
     (∃ n1, Threat.RoundSeq apps T t [] n0 n1 ∧
       Threat.RoundSeq apps T t [opA] (n1.applyAdv apps (.land opB)) n3) := by
   obtain ⟨l1, op, l2, heq, n1, hA, hB⟩ :=
-    Threat.RoundSeq.peel_split (pending := [opA, opB]) (by simp) hseq
+    Threat.RoundSeq.peel_split (pending := [opA, opB]) (by (simp? says simp only [ne_eq, reduceCtorEq, not_false_eq_true])) hseq
   rcases l1 with _ | ⟨a, l1⟩
   · simp only [List.nil_append, List.cons.injEq] at heq
     obtain ⟨heqop, heql2⟩ := heq
@@ -470,7 +471,7 @@ theorem Threat.RoundSeq.peel_two {apps : Apps E} {p : Participant} {T : Threat E
       subst heqa; subst heqop; subst heql2
       simp only [List.append_nil] at hB
       exact Or.inr ⟨n1, hA, hB⟩
-    · simp at heq
+    · (simp? at heq says simp only [List.cons_append, List.cons.injEq, List.nil_eq, List.append_eq_nil_iff, reduceCtorEq, and_false] at heq)
 
 /-- An adversary move never moves the chain's clock backward: only `tick`
     touches it, and only forward (`Adjudicator.apply_now_le`). -/
@@ -482,14 +483,14 @@ theorem NetworkState.applyAdv_now_le (apps : Apps E) {p : Participant}
     simp only [NetworkState.applyAdv]
     cases h : net.chain.apply apps caller op with
     | none => exact le_refl _
-    | some s' => simpa using Adjudicator.apply_now_le h
+    | some s' => (simpa? using Adjudicator.apply_now_le h says simpa only using Adjudicator.apply_now_le h)
   | deliver ss => exact le_refl _
   | tick dt => simp only [NetworkState.applyAdv, Adjudicator.tick_now]; exact Nat.le_add_right _ _
   | land op =>
     simp only [NetworkState.applyAdv]
     cases h : net.chain.apply apps p op with
     | none => exact le_refl _
-    | some s' => simpa using Adjudicator.apply_now_le h
+    | some s' => (simpa? using Adjudicator.apply_now_le h says simpa only using Adjudicator.apply_now_le h)
 
 /-- Over a round's adversary play (`Threat.RoundSeq`, any pending calls),
     the chain's clock only advances (`NetworkState.applyAdv_now_le`, by
@@ -673,7 +674,7 @@ theorem Threat.Round.exists {apps : Apps E} {p : Participant} (T : Threat E p)
       have := hfeas.1 op hop
       rw [heq] at this
       exact this
-    | wait dt' => intro op hop; simp [HonestMove.calls] at hop
+    | wait dt' => intro op hop; (simp? [HonestMove.calls] at hop says simp only [HonestMove.calls, List.not_mem_nil] at hop)
   obtain ⟨net', hseq, heq⟩ := Threat.RoundSeq.landAll apps T net.chain.now m.calls hnotick net
   refine ⟨net', hseq, ?_⟩
   rw [heq]
