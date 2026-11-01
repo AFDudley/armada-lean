@@ -1,0 +1,230 @@
+{
+  "id": "derived-aln-17c",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proofs of ArmadaLean.Nitro.deposit_can_happen, ArmadaLean.Nitro.deposit_respects_funding_order, ArmadaLean.Nitro.deposits_in_order_succeed do not unfold Adjudicator.apply or case on Op; they rewrite with Adjudicator.apply_deposit_equation (ArmadaLean/Nitro/OpEquations.lean). The type-doctrine linter reports no layerDiscipline finding for any of these declarations. Statements do not change.\nWhat holds now? Describe the current, observed state. At integrated 4a9e9981, `lake env lean scripts/type_lint.lean` prints a layerDiscipline finding (linter layerDiscipline, with baseOps) for each of ArmadaLean.Nitro.deposit_can_happen, ArmadaLean.Nitro.deposit_respects_funding_order, ArmadaLean.Nitro.deposits_in_order_succeed. The trunk has 35 Nitro layerDiscipline hits in total.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and then `lake env lean scripts/type_lint.lean`; read the JSON lines whose linter field is layerDiscipline and their declaration field. Then run `scripts/check.sh --json`.\nWhat constraints apply? State them in plain prose. Every Lean command runs through /home/rix/bin/lean-run. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true, lint_ok included, against scripts/gate-baseline.json. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Safety.lean and the other modules that hold the proofs of ArmadaLean.Nitro.deposit_can_happen, ArmadaLean.Nitro.deposit_respects_funding_order, ArmadaLean.Nitro.deposits_in_order_succeed",
+  "restatement": "Three specific Nitro proofs (deposit_can_happen, deposit_respects_funding_order, deposits_in_order_succeed) currently trigger a layerDiscipline lint finding because they rewrite with Adjudicator.apply_deposit_equation instead of unfolding Adjudicator.apply or casing on Op. These proofs must be repaired per the AGENTS.md repair pass (steps R.1\u2013R.6) so the type-doctrine linter no longer reports a layerDiscipline finding for any of the three declarations, while leaving the Spec statements unchanged and keeping the overall gate checks passing.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "Running `lake env lean scripts/type_lint.lean` must not print a layerDiscipline finding for ArmadaLean.Nitro.deposit_can_happen, ArmadaLean.Nitro.deposit_respects_funding_order, or ArmadaLean.Nitro.deposits_in_order_succeed."
+    },
+    {
+      "id": "c2",
+      "text": "The proofs of these three declarations must not unfold Adjudicator.apply or case on Op, and must not rely on Adjudicator.apply_deposit_equation in a way that reintroduces the layering violation."
+    },
+    {
+      "id": "c3",
+      "text": "`git diff integrated -- 'ArmadaLean/Spec*'` must be empty \u2014 no spec statement changes."
+    },
+    {
+      "id": "c4",
+      "text": "`scripts/check.sh --json` must keep every _ok field true, including lint_ok, against scripts/gate-baseline.json."
+    },
+    {
+      "id": "c5",
+      "text": "A bare `lake clean` must never be run as part of the fix."
+    }
+  ],
+  "goal": "Fix three proofs in the Nitro deposit code so that a lint tool stops flagging them for breaking a layering rule, without changing what the proofs claim to prove, and without breaking any other project checks.",
+  "acceptance_criteria": [
+    "After running the project's lint checker, the output should contain no layerDiscipline warnings for the three named Nitro deposit lemmas (deposit_can_happen, deposit_respects_funding_order, deposits_in_order_succeed).",
+    "Check that the proofs for the three declarations do not peek inside Adjudicator.apply or branch on the Op type, and do not lean on apply_deposit_equation in a way that brings back the layering problem. This is checked by scanning the actual proof text that was submitted.",
+    "Checks that no Spec statement files under ArmadaLean/Spec were changed compared to the integrated branch.",
+    "Running the project's check script with --json should report that all quality checks passed, including the lint check, matching what the committed baseline expects.",
+    "After the fix is complete, check that nowhere in the commands actually executed during the fix (as recorded in the shell/command history log file the task run produces) does a bare 'lake clean' command appear by itself (not part of a larger lake command like 'lake clean-something' or preceded by other flags that make it a different operation)."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After running the project's lint checker, the output should contain no layerDiscipline warnings for the three named Nitro deposit lemmas (deposit_can_happen, deposit_respects_funding_order, deposits_in_order_succeed)."
+    },
+    {
+      "id": "c2",
+      "text": "Check that the proofs for the three declarations do not peek inside Adjudicator.apply or branch on the Op type, and do not lean on apply_deposit_equation in a way that brings back the layering problem. This is checked by scanning the actual proof text that was submitted."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that no Spec statement files under ArmadaLean/Spec were changed compared to the integrated branch."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script with --json should report that all quality checks passed, including the lint check, matching what the committed baseline expects."
+    },
+    {
+      "id": "c5",
+      "text": "After the fix is complete, check that nowhere in the commands actually executed during the fix (as recorded in the shell/command history log file the task run produces) does a bare 'lake clean' command appear by itself (not part of a larger lake command like 'lake clean-something' or preceded by other flags that make it a different operation)."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After running the project's lint checker, the output should contain no layerDiscipline warnings for the three named Nitro deposit lemmas (deposit_can_happen, deposit_respects_funding_order, deposits_in_order_succeed).",
+      "proves": "The named ArmadaLean.Nitro lemmas comply with layer discipline and are not flagged by the type_lint.lean checker.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_type_lint_check.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "deposit_can_happen_flagged",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "deposit_respects_funding_order_flagged",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "deposits_in_order_succeed_flagged",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Check that the proofs for the three declarations do not peek inside Adjudicator.apply or branch on the Op type, and do not lean on apply_deposit_equation in a way that brings back the layering problem. This is checked by scanning the actual proof text that was submitted.",
+      "proves": "The three declarations' proofs avoid unfolding Adjudicator.apply, avoid case-splitting on Op, and avoid misusing apply_deposit_equation to reintroduce the layering violation.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_proof_discipline.py",
+        "args": [
+          "--file",
+          "Adjudicator.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "unfolds_apply",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "cases_on_op",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "layering_violation_reintroduced",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 60,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that no Spec statement files under ArmadaLean/Spec were changed compared to the integrated branch.",
+      "proves": "Confirms the clause that `git diff integrated -- 'ArmadaLean/Spec*'` produces no output, meaning spec statements are untouched.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_diff.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_length",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script with --json should report that all quality checks passed, including the lint check, matching what the committed baseline expects.",
+      "proves": "scripts/check.sh --json reports every *_ok field (including lint_ok) as true, consistent with scripts/gate-baseline.json",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_and_report.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c4"
+    },
+    {
+      "description": "After the fix is complete, check that nowhere in the commands actually executed during the fix (as recorded in the shell/command history log file the task run produces) does a bare 'lake clean' command appear by itself (not part of a larger lake command like 'lake clean-something' or preceded by other flags that make it a different operation).",
+      "proves": "Confirms the fix did not perform a bare `lake clean` invocation at any point during its execution.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "command_history.log"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_found",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_proof_discipline.py",
+    "scripts/check_spec_diff.py",
+    "scripts/run_check_and_report.py",
+    "scripts/run_type_lint_check.py"
+  ]
+}
