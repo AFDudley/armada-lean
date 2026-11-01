@@ -9196,13 +9196,15 @@ theorem SatpLive.notFinal {P : Participant} {r : Route E} {n : NetworkState E P}
     target `r.V`), or a `challenge` or `checkpoint` on `r.V` registered a candidate that
     `satpVirtualRules` supports, with its proof now held (`Op.latest_record_step`,
     `statusOf_apply_of_not_targets`). A `conclude` on `r.V` cannot succeed: it needs `P`'s own
-    signature on a final state of `r.V`, and `P` signed none (`satpVirtual_conclude_fails`).
-    Every SATP round family below reads its `.chain` step off this one lemma. -/
-theorem satpV_record_step {apps : Apps E} {P : Participant} {T : Threat E P}
-    (hbounds : Bounds apps P T) {r : Route E} (hV : apps r.V.appDef = satpVirtualRules)
+    signature on a final state of `r.V`, and every `P`-signed proof state of the call is one
+    `P` sent (`hU`, which `Bounds.unforgeable` gives for a feasible adversary call), while `P`
+    sent no final state of `r.V` (`satpVirtual_conclude_fails`). Every SATP round family below
+    reads its `.chain` step off this one lemma. -/
+theorem satpV_record_step {apps : Apps E} {P : Participant} {r : Route E}
+    (hV : apps r.V.appDef = satpVirtualRules)
     {alice bob : Participant} (hE : SatpEnds r alice bob P) {n : NetworkState E P}
     (hVs : HoldsVirtualSetup n r alice bob true) {caller : Participant} {op : Op E}
-    (hfeas : T.feasible n (.chain caller op))
+    (hU : ∀ ss ∈ op.proofStates, P ∈ ss.signers → ∃ x ∈ n.sent, x.state = ss.state)
     (hlive : n.chain.finalOutcome r.V.address = none) :
     (n.chain.statusOf r.V).turnNumRecord ≤
       ((n.applyAdv apps (.chain caller op)).chain.statusOf r.V).turnNumRecord ∧
@@ -9246,8 +9248,7 @@ theorem satpV_record_step {apps : Apps E} {P : Participant} {T : Threat E P}
       rw [hnew, ChannelStatus.turnNumRecord_open]
       exact le_of_lt hlt
     · subst hop
-      exact (satpVirtual_conclude_fails hVs hE hcp fun ss'' hmem hsig =>
-        (hbounds.unforgeable n caller (.conclude r.V ss') hfeas ss'' hmem).1 hsig).elim
+      exact (satpVirtual_conclude_fails hVs hE hcp hU).elim
   · have hsame := statusOf_apply_of_not_targets h ht
     exact ⟨le_of_eq (by rw [hsame]), Or.inl hsame⟩
 
@@ -9288,7 +9289,8 @@ theorem satpV_live_step {apps : Apps E} {P : Participant} {T : Threat E P}
     simp only [NetworkState.applyAdv, Adjudicator.tick_statusOf]
     exact hl
   · intro n caller op ⟨hg, ⟨hεb, hVs⟩⟩ hfeas hl
-    rcases (satpV_record_step hbounds hV hE hVs hfeas (hl.notFinal hg).1).2 with
+    rcases (satpV_record_step hV hE hVs (fun ss hss hsig => (hbounds.unforgeable _ _ _ hfeas ss
+        hss).1 hsig) (hl.notFinal hg).1).2 with
         hsame | ⟨proof, cand, -, -, -, -, hnew⟩ | ⟨proof, cand, -, -, -, -, hnew⟩
     · unfold SatpLive at hl ⊢
       rw [hsame]
@@ -9354,7 +9356,8 @@ theorem satp_late_round_keeps_progress_nil {apps : Apps E} {P : Participant} {T 
     · exact Or.inr ⟨proof1, cand1, hW (.tick dt) hH, hs, hlt⟩
   · intro n caller op ⟨hg, ⟨hεb, hVsn⟩, hl⟩ hfeas hI
     rcases hI with hb | ⟨proof1, cand1, hH, hs, hlt⟩
-    · rcases (satpV_record_step hbounds hV hE hVsn hfeas (hl.notFinal hg).1).2 with
+    · rcases (satpV_record_step hV hE hVsn (fun ss hss hsig => (hbounds.unforgeable _ _ _ hfeas ss
+          hss).1 hsig) (hl.notFinal hg).1).2 with
           hsame | ⟨proof, cand, rfl, hs, hH, -, hnew⟩ | ⟨proof, cand, rfl, hs, hH, -, hnew⟩
       · left
         unfold SatpBelow at hb ⊢
@@ -9413,7 +9416,8 @@ theorem satp_late_round_keeps_challenged_above_nil {apps : Apps E} {P : Particip
     simp only [NetworkState.applyAdv, Adjudicator.tick_statusOf]
     exact hI
   · intro n caller op ⟨hg, ⟨_, hVsn⟩, hl⟩ hfeas hI
-    obtain ⟨hmono, hstep⟩ := satpV_record_step hbounds hV hE hVsn hfeas (hl.notFinal hg).1
+    obtain ⟨hmono, hstep⟩ := satpV_record_step hV hE hVsn (fun ss hss hsig =>
+      (hbounds.unforgeable _ _ _ hfeas ss hss).1 hsig) (hl.notFinal hg).1
     rcases hI with hlt | ⟨u, ch, hu, hle, hdd⟩
     · exact Or.inl (lt_of_lt_of_le hlt hmono)
     · rcases hstep with hsame | ⟨proof, cand, -, -, -, hmode, hnew⟩ |
@@ -9450,14 +9454,15 @@ theorem validResponse_channel {alice bob : Participant} {c : FixedPart} {s ch re
     exact h'.1.1.1.1.1.1.1.1.2
   · cases h
 
-/-- Any `(proof, cand)` satisfying `satpVirtualRules.supports r.V` has `cand.channel = r.V`:
+/-- A supported candidate of `r.V` (`SatpCandidate`) is a state of `r.V`:
     `consensusRules.supports` (turn ≤ 1 or 4) and `validStart`/`validChallenge`/`validResponse`
     (turn 2/3) all check it directly. Purely structural: unlike `satpVirtual_supported`, needs
     no `HoldsVirtualSetup` or `P`-held witness. -/
 theorem satpVirtual_channel {r : Route E} {alice bob : Participant}
     (hhead : r.V.participants.head? = some alice) (hlast : r.V.participants.getLast? = some bob)
-    {proof : SupportProof E} {cand : State E}
-    (hsupp : satpVirtualRules.supports r.V proof cand = true) : cand.channel = r.V := by
+    (c : SatpCandidate r) : c.cand.channel = r.V := by
+  obtain ⟨proof, cand, hsupp⟩ := c
+  dsimp only
   simp only [satpVirtualRules, hhead, hlast] at hsupp
   split_ifs at hsupp with ht1 ht4
   · match proof, hsupp with
@@ -9492,9 +9497,9 @@ theorem satpVirtual_channel {r : Route E} {alice bob : Participant}
     | _ :: _ :: _ :: _ :: _, hsupp => simp [validateOutcomeChange] at hsupp
 
 
-/-- Any `(proof, cand)` satisfying `satpVirtualRules.supports r.V` whose `P`-signed states
-    `P` sent (`hU`), with `P`'s own signed states for `r.V` bounded by `HoldsVirtualSetup`:
-    `cand`'s turn is at most 3, and its outcome is a pair summing to `r.a0 + r.b0` (the SATP
+/-- A supported candidate of `r.V` (`SatpCandidate`) whose `P`-signed proof states `P` sent
+    (`hU`), with `P`'s own signed states for `r.V` bounded by `HoldsVirtualSetup`: the
+    candidate's turn is at most 3, and its outcome is a pair summing to `r.a0 + r.b0` (the SATP
     paper, line 705). Turn ≤ 1 keeps the ORIGINAL outcome exactly (`HoldsVirtualSetup`'s own
     bound on what `P` signs); turn 4 needs a final state that `P` signed, which
     `HoldsVirtualSetup` excludes; turn 2/3 preserve the funded total of the start state
@@ -9503,11 +9508,12 @@ theorem satpVirtual_channel {r : Route E} {alice bob : Participant}
 theorem satpVirtual_supported {P : Participant} {r : Route E} {alice bob : Participant}
     (hE : SatpEnds r alice bob P)
     {net : NetworkState E P} (hVs : HoldsVirtualSetup net r alice bob true)
-    {proof : SupportProof E} {cand : State E}
-    (hsupp : satpVirtualRules.supports r.V proof cand = true)
-    (hU : ∀ ss ∈ proof, P ∈ ss.signers → ∃ x ∈ net.sent, x.state = ss.state) :
-    cand.turnNum ≤ 3 ∧
-      ∃ a b, PairOutcome (r.dest alice) (r.dest bob) cand.outcome a b ∧ a + b = r.a0 + r.b0 := by
+    (c : SatpCandidate r)
+    (hU : ∀ ss ∈ c.proof, P ∈ ss.signers → ∃ x ∈ net.sent, x.state = ss.state) :
+    c.cand.turnNum ≤ 3 ∧
+      ∃ a b, PairOutcome (r.dest alice) (r.dest bob) c.cand.outcome a b ∧ a + b = r.a0 + r.b0 := by
+  obtain ⟨proof, cand, hsupp⟩ := c
+  dsimp only at hU ⊢
   have hstart : ∀ s : SignedState E, s.ByAll → s.state.channel = r.V → s ∈ proof →
       s.state.outcome = originalOutcome (r.dest alice) (r.dest bob) r.a0 r.b0 := by
     intro s hall hchan hmem
@@ -9731,7 +9737,8 @@ theorem satp_late_round_keeps_status_nil {apps : Apps E} {P : Participant} {T : 
             ∃ x ∈ (n.applyAdv apps (.chain caller op)).sent, x.state = ss'.state := by
           rw [NetworkState.applyAdv_sent]
           exact fun ss' hss hsig => (hbounds.unforgeable n caller op hfeas ss' hss).1 hsig
-        rcases (satpV_record_step hbounds hV hE hVsn hfeas hfo).2 with
+        rcases (satpV_record_step hV hE hVsn (fun ss hss hsig => (hbounds.unforgeable _ _ _ hfeas
+            ss hss).1 hsig) hfo).2 with
             hsame | ⟨proof, cand, rfl, hs, hH, hmode, hnew⟩ |
             ⟨proof, cand, rfl, hs, hH, hlt, hnew⟩
         · exact Or.inr (Or.inl (by rw [hsame]; exact hst))
@@ -9750,7 +9757,8 @@ theorem satp_late_round_keeps_status_nil {apps : Apps E} {P : Participant} {T : 
           rw [hnew, ChannelStatus.turnNumRecord_open]
     · have hrec : (n.chain.statusOf r.V).turnNumRecord ≤
           ((n.applyAdv apps (.chain caller op)).chain.statusOf r.V).turnNumRecord :=
-        (satpV_record_step hbounds hV hE hVsn hfeas (hl.notFinal hg).1).1
+        (satpV_record_step hV hE hVsn (fun ss hss hsig => (hbounds.unforgeable _ _ _ hfeas ss
+          hss).1 hsig) (hl.notFinal hg).1).1
       exact Or.inr (Or.inr ⟨(hlive.chain hg hfeas ⟨⟨hεb, hVsn⟩, hl⟩).2, hWstep _ hrec hW⟩)
 
 
@@ -9768,7 +9776,7 @@ theorem satp_wait_resolves_or_escalates {apps : Apps E} {P : Participant} {T : T
     (hVs : HoldsVirtualSetup net2 r alice bob true)
     (hεbound : net3.chain.now < net2.chain.now + T.ε)
     (hseq2 : Threat.RoundSeq apps T t [] net2 net3)
-    (hst : net2.chain.statusOf r.V = .challenged T0 ch) :
+    (hst : SatpChallenged r net2 T0 ch) :
     (net3.chain.tick w).finalizedWith r.V.address = some ch.state.outcome ∨
     ∃ proof1 cand1, (∀ ss' ∈ proof1, net3.Holds ss') ∧
       (∀ ss' ∈ proof1, P ∈ ss'.signers → ∃ x ∈ net3.sent, x.state = ss'.state) ∧
@@ -9776,7 +9784,8 @@ theorem satp_wait_resolves_or_escalates {apps : Apps E} {P : Participant} {T : T
       cand1.turnNum ≤ (net3.chain.statusOf r.V).turnNumRecord ∧
       net3.chain.finalizedWith r.V.address = none := by
   have hmono2 : net2.chain.now ≤ net3.chain.now := hseq2.now_le
-  have hinv2 := satp_late_round_keeps_status_nil hbounds hV hdur hE hseq2 hεbound hVs (Or.inr hst)
+  have hinv2 := satp_late_round_keeps_status_nil hbounds hV hdur hE hseq2 hεbound hVs
+    (Or.inr hst.status)
   rcases hinv2 with hf3 | hst3 | ⟨proof1, cand1, hH1, hU1, hs1, hlt1, hprog1, hfin1⟩
   · left
     simpa [Adjudicator.tick_statusOf, Adjudicator.tick_now, FixedPart.address_eq] using
@@ -9793,23 +9802,25 @@ theorem satp_wait_resolves_or_escalates {apps : Apps E} {P : Participant} {T : T
 theorem satp_land_keeps_status {apps : Apps E} {P : Participant} {T : Threat E P}
     (hbounds : Bounds apps P T) {r : Route E} (hV : apps r.V.appDef = satpVirtualRules)
     (hdur : r.V.IsTimed T.ε) {alice bob : Participant}
-    (hE : SatpEnds r alice bob P) {proof0 : SupportProof E} {cand0 : State E}
-    (hsupp0 : satpVirtualRules.supports r.V proof0 cand0 = true)
+    (hE : SatpEnds r alice bob P) (c0 : SatpCandidate r)
     {net net' : NetworkState E P} {t : Time}
-    (hseq : Threat.RoundSeq apps T t [Op.challenge r.V proof0 cand0] net net') :
+    (hseq : Threat.RoundSeq apps T t [Op.challenge r.V c0.proof c0.cand] net net') :
     net'.chain.now < net.chain.now + T.ε →
-    HoldsVirtualSetup net r alice bob true → (∀ ss ∈ proof0, net.Holds ss) →
+    HoldsVirtualSetup net r alice bob true → (∀ ss ∈ c0.proof, net.Holds ss) →
     SatpLive r net net'.chain.now →
-    ((∃ ch, net'.chain.statusOf r.V = .challenged cand0.turnNum ch ∧ ch.state = cand0 ∧
+    ((∃ ch, net'.chain.statusOf r.V = .challenged c0.cand.turnNum ch ∧ ch.state = c0.cand ∧
       net'.chain.now + T.ε ≤ ch.deadline) ∨
     (∃ proof1 cand1, (∀ ss' ∈ proof1, net'.Holds ss') ∧
       (∀ ss' ∈ proof1, P ∈ ss'.signers → ∃ x ∈ net'.sent, x.state = ss'.state) ∧
-      satpVirtualRules.supports r.V proof1 cand1 = true ∧ cand0.turnNum < cand1.turnNum ∧
+      satpVirtualRules.supports r.V proof1 cand1 = true ∧ c0.cand.turnNum < cand1.turnNum ∧
       cand1.turnNum ≤ (net'.chain.statusOf r.V).turnNumRecord ∧
       net'.chain.finalizedWith r.V.address = none) ∨
-    ((cand0.turnNum < (net'.chain.statusOf r.V).turnNumRecord ∧ SatpLive r net' net'.chain.now)
-      ∨ SatpChallengedAbove r net' cand0 net'.chain.now) ∨
-    net'.chain.finalizedWith r.V.address = some cand0.outcome) := by
+    ((c0.cand.turnNum < (net'.chain.statusOf r.V).turnNumRecord ∧
+      SatpLive r net' net'.chain.now) ∨ SatpChallengedAbove r net' c0.cand net'.chain.now) ∨
+    net'.chain.finalizedWith r.V.address = some c0.cand.outcome) := by
+  have hchan : c0.cand.channel = r.V := satpVirtual_channel hE.head hE.last c0
+  obtain ⟨proof0, cand0, hsupp0⟩ := c0
+  dsimp only at hseq hchan ⊢
   generalize heq : ([Op.challenge r.V proof0 cand0] : List (Op E)) = pending at hseq
   induction hseq with
   | nil => intro _ _ _ _; cases heq
@@ -9833,7 +9844,6 @@ theorem satp_land_keeps_status {apps : Apps E} {P : Participant} {T : Threat E P
             simp only [Adjudicator.apply, Adjudicator.challenge, hV, if_pos hcon] at h
             exact absurd h (by simp)
           push_neg at hfail
-          have hchan : cand0.channel = r.V := satpVirtual_channel hE.head hE.last hsupp0
           have hmd := (hfail hE.mem hsupp0 hchan)
           rcases hlive0 with ⟨u, hu⟩ | ⟨u, ch, hu, hdd⟩
           · -- `net1` is itself open: the land attempt's own precondition gives strict
@@ -10412,12 +10422,12 @@ theorem satpVirtual_challenged_outcome_pair {P : Participant} {r : Route E}
     (hV : apps r.V.appDef = satpVirtualRules) {T : Threat E P} (hbounds : Bounds apps P T)
     {net : NetworkState E P} (hnr : (Nitro.participant apps T).Reachable net)
     (hVs : HoldsVirtualSetup net r alice bob true)
-    {u : Nat} {ch : Challenge E} (hst : net.chain.statusOf r.V = .challenged u ch) :
+    {u : Nat} {ch : Challenge E} (hst : SatpChallenged r net u ch) :
     ∃ a b, PairOutcome (r.dest alice) (r.dest bob) ch.state.outcome a b ∧ a + b = r.a0 + r.b0 := by
-  obtain ⟨-, proof, hsupp, hHP⟩ := (NetVOrigin_reachable hV hnr).2 u ch hst
+  obtain ⟨-, proof, hsupp, hHP⟩ := (NetVOrigin_reachable hV hnr).2 u ch hst.status
   have hU : ∀ ss ∈ proof, P ∈ ss.signers → ∃ x ∈ net.sent, x.state = ss.state := fun ss hss hsig =>
     ((hHP ss hss).unforged (Nitro.participant_received_unforged hbounds ⟨net, hnr⟩)).1 hsig
-  exact (satpVirtual_supported hE hVs hsupp hU).2
+  exact (satpVirtual_supported hE hVs ⟨proof, ch.state, hsupp⟩ hU).2
 
 
 /-- The goal of the virtual-channel finalization sub-game: `r.V` finalizes
@@ -10439,7 +10449,7 @@ theorem satp_virtual_wait_step {apps : Apps E} {P : Participant} {T : Threat E P
     (hE : SatpEnds r alice bob P) {net2 : NetworkState E P} {T0 : Nat} {ch : Challenge E}
     (hnr2 : (Nitro.participant apps T).Reachable net2)
     (hVs : HoldsVirtualSetup net2 r alice bob true)
-    (hst : net2.chain.statusOf r.V = .challenged T0 ch)
+    (hst : SatpChallenged r net2 T0 ch)
     (hescalate : ∀ {net' : NetworkState E P} {proof1 : SupportProof E} {cand1 : State E},
       (Nitro.participant apps T).Reachable net' → HoldsVirtualSetup net' r alice bob true →
       (∀ ss' ∈ proof1, net'.Holds ss') →
@@ -10486,7 +10496,7 @@ theorem satp_virtual_wait_step {apps : Apps E} {P : Participant} {T : Threat E P
           net3.chain.now + (ch.deadline - net2.chain.now)
       · apply UnbeatableIn.done
         obtain ⟨a, b, hpo, hab⟩ := satpVirtual_challenged_outcome_pair hE hV A.toBounds
-          hnr3 hVs3 hcs
+          hnr3 hVs3 ⟨hcs⟩
         refine ⟨ch'.state.outcome, a, b, ?_, hpo, hab⟩
         show (net3.applyHonest (.wait (ch.deadline - net2.chain.now))).chain.finalizedWith
           r.V.address = some ch'.state.outcome
@@ -10562,12 +10572,14 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
         · obtain ⟨proof0, cand0, hsupp0, hcand0, hHeld0⟩ := hNo''.1 u hcs hu0
           have hU0 : ∀ ss ∈ proof0, P ∈ ss.signers → ∃ x ∈ net''.sent, x.state = ss.state :=
             fun ss hss hsig => ((hHeld0 ss hss).unforged hUnf'').1 hsig
-          have h3 := (satpVirtual_supported hE hVs'' hsupp0 hU0).1
+          have h3 : cand0.turnNum ≤ 3 :=
+            (satpVirtual_supported hE hVs'' ⟨proof0, cand0, hsupp0⟩ hU0).1
           simp only [ChannelStatus.turnNumRecord]; omega
       · obtain ⟨hturn, proof0, hsupp0, hHeld0⟩ := hNo''.2 u ch hcs
         have hU0 : ∀ ss ∈ proof0, P ∈ ss.signers → ∃ x ∈ net''.sent, x.state = ss.state :=
           fun ss hss hsig => ((hHeld0 ss hss).unforged hUnf'').1 hsig
-        have h3 := (satpVirtual_supported hE hVs'' hsupp0 hU0).1
+        have h3 : ch.state.turnNum ≤ 3 :=
+          (satpVirtual_supported hE hVs'' ⟨proof0, ch.state, hsupp0⟩ hU0).1
         simp only [ChannelStatus.turnNumRecord]; omega
       · exfalso
         rcases hlive'' with ⟨u3, hu3⟩ | ⟨u3, ch3, hu3, -⟩ <;> rw [hcs] at hu3 <;> cases hu3
@@ -10579,7 +10591,7 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
         net''.chain.statusOf r.V = .challenged T0 ch →
         Unbeatable apps T (SatpVGoal r alice bob) net'' := by
       intro net'' T0 ch hnr'' hVs'' hle'' hst
-      refine satp_virtual_wait_step A hV hdur hE hnr'' hVs'' hst ?_
+      refine satp_virtual_wait_step A hV hdur hE hnr'' hVs'' ⟨hst⟩ ?_
       intro net' proof1 cand1 hnr' hVs' hH1 hU1 hs1 hlt1 hprog1 hfin1
       have hlive' : SatpLive r net' net'.chain.now := by
         rcases hcs' : net'.chain.statusOf r.V with u' | ⟨u', ch'⟩ | ⟨u', f', o'⟩
@@ -10631,8 +10643,9 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
       have hnet1 : net1.applyHonest (.react ⟨[Op.challenge r.V proof0 cand0], []⟩) = net1 := by
         simp [NetworkState.applyHonest]
       rw [hnet1]
-      have hres := satp_land_keeps_status hbounds hV hdur hE hsupp0 hseq hεbound hVs
-        hHeld0 (Or.inl ⟨u, hu⟩)
+      have hres := satp_land_keeps_status hbounds hV hdur hE ⟨proof0, cand0, hsupp0⟩ hseq
+        hεbound hVs hHeld0 (Or.inl ⟨u, hu⟩)
+      dsimp only at hres
       have hnr1 : (Nitro.participant apps T).Reachable net1 :=
         Threat.Round.reachable ⟨hseq, hεbound⟩ hfeasR hnr
       have hVs1 : HoldsVirtualSetup net1 r alice bob true := by
@@ -10699,7 +10712,7 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
         apply UnbeatableIn.done
         have hU0' : ∀ ss ∈ proof0, P ∈ ss.signers → ∃ x ∈ net1.sent, x.state = ss.state := by
           rw [hseq.sent_eq]; exact hU0
-        obtain ⟨a, b, hpo, hab⟩ := (satpVirtual_supported hE hVs1 hsupp0 hU0').2
+        obtain ⟨a, b, hpo, hab⟩ := (satpVirtual_supported hE hVs1 ⟨proof0, cand0, hsupp0⟩ hU0').2
         exact ⟨cand0.outcome, a, b, hFin0, hpo, hab⟩
     · -- CHALLENGED u ch: dispatch directly via `hChallenged`. No margin needed any more
       -- (gap 2's fix moved the deadline handling into `satp_late_round_keeps_status_nil`).
