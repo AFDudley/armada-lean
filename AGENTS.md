@@ -25,3 +25,40 @@ that kind of work — it is not optional.**
 
 When you dispatch a subagent into this repo, its task brief MUST point it at the
 doctrine above: a subagent starts blank and will not read it otherwise.
+
+## Lean work: standing rules
+
+Every exophial-dispatched worker that edits Lean code in this repo
+follows these rules.
+
+**Setup.** Create a branch and a worktree from `integrated`. Put the
+worktree under `.scratch/` in this repo. Symlink `.lake/packages` from
+the main checkout. Never copy `.lake/build`.
+
+**Lean commands.** Run every Lean command through
+`/home/rix/bin/lean-run`. Run at most 4 `lean-run` commands at once. Use
+absolute paths only. Put scratch files under `<worktree>/.scratch/`.
+
+**Never run a bare `lake clean`.** Every worktree in this repo symlinks
+the same `.lake/packages` directory. A bare `lake clean` run from one
+worktree deletes the shared Mathlib build every other worktree depends
+on (it happened on 2026-11-01: a several-GB build dropped to 166M). To
+measure a clean build, delete only `<your worktree>/.lake/build`. If the
+shared Mathlib build is missing, restore it with `lake exe cache get`
+from the main checkout, never a source rebuild.
+
+**Forbidden.** No `exophial` or `pb` command. No push. No change to
+`integrated` by hand.
+
+**Lean style.** The layer rule: a proof does not unfold a base
+operation. Record each search: change `simp?` to `simp only`. Do not
+leave a bare non-terminal `simp`. Call `omega` on a small context.
+`native_decide` is forbidden.
+
+**Commits.** Commit once per step, with a message.
+
+**Acceptance.** Every task meets this before it is done:
+`lean-run scripts/check.sh --json` gives `true` for every `_ok` field,
+and the type-doctrine linter summary (`lint_ok`) and the decisionScope
+findings (`decision_ok`) are no worse than the merge base with
+`integrated` (`docs/lean/type-doctrine.md`, `armada-laconic`).
