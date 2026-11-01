@@ -5216,6 +5216,50 @@ theorem turbo_redistribution_unbeatable (apps : Apps E) {p : Participant} (T : T
   exact turbo_replay_unbeatable apps T hT d x ops hops net.chain net (Adjudicator.Ahead.refl _)
     hgoal
 
+/-- A move the adversary makes before `p` starts cannot beat `p`'s strategy.
+    Every round from `net.applyAdv apps a` is a round from `net` that starts
+    with `a` (`Threat.RoundSeq.other`), so `p` plays the same tree from the
+    new state. The move must keep the clock, because a round reads its start
+    time, and it must keep the goal. Used by `deposit_bounds_value`: the
+    adversary can make the deposit itself. -/
+theorem UnbeatableIn.of_adv {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {net : NetworkState E p}
+    {a : AdvMove E} (hfeas : T.feasible net a) (hnotick : ∀ dt, a ≠ .tick dt)
+    (hnoland : ∀ op, a ≠ .land op) (hnow : (net.applyAdv apps a).chain.now = net.chain.now)
+    (hG : G net → G (net.applyAdv apps a)) (hU : UnbeatableIn apps T allowed G net) :
+    UnbeatableIn apps T allowed G (net.applyAdv apps a) := by
+  have hstep : Threat.RoundSeq apps T net.chain.now [] net (net.applyAdv apps a) :=
+    .other hfeas hnotick hnoland .nil
+  cases hU with
+  | done h => exact .done (hG h)
+  | move m hm hmf hnext =>
+    refine .move m hm (hmf.round hstep) fun n2 hround => hnext n2 ⟨?_, ?_⟩
+    · rw [← hnow]; exact .other hfeas hnotick hnoland hround.1
+    · rw [← hnow]; exact hround.2
+
+/-- A deposit into a channel cannot lower what `p` can obtain at an
+    external address. A participant other than `p` can make the same
+    deposit as an adversary move: it carries no proof state, so
+    `Capable.capable` makes it feasible, and `UnbeatableIn.of_adv` keeps
+    `p`'s strategy. -/
+theorem CanObtainIn.deposit {apps : Apps E} {p : Participant} {T : Threat E p}
+    (A : Assumptions apps p T) {allowed : HonestMove E → Prop} {net : NetworkState E p}
+    {a : Address E} {e y : Coins} {s' : Adjudicator E} (hd : net.chain.deposit a e y = some s')
+    {d : E} {x : Coins} (h : CanObtainIn apps T allowed (.external d) x net) :
+    CanObtainIn apps T allowed (.external d) x { net with chain := s' } := by
+  let q : Participant := ⟨p.key + 1⟩
+  have hq : q ≠ p := fun h => by have := congrArg Participant.key h; simp [q] at this
+  have happ : net.applyAdv apps (.chain q (.deposit a e y)) = { net with chain := s' } := by
+    simp [NetworkState.applyAdv, Adjudicator.apply, hd, Op.proofStates]
+  obtain ⟨⟨c, rfl, -⟩, -, hb, -, -, hnow⟩ := Adjudicator.deposit_some hd
+  rw [← happ]
+  refine UnbeatableIn.of_adv (A.capable net q _ hq (by simp [Op.proofStates]))
+    (fun _ h => by cases h) (fun _ h => by cases h) (by rw [happ]; exact hnow) (fun hx => ?_) h
+  rw [happ]
+  show x ≤ s'.balances.get _
+  rw [hb, Balances.get_add, if_neg (by simp)]
+  exact hx
+
 /-- Nitro-31. Nitro:785-787: "a deposit into the system cannot reduce the value of
     any address and cannot increase the value of any address by more than the
     value of the deposit." -/
@@ -5225,6 +5269,7 @@ theorem deposit_bounds_value (apps : Apps E) {p : Participant} (T : Threat E p)
     (s' : Adjudicator E) (e : Coins) (hd : net.state.chain.deposit c.address e y = some s')
     (hv : Value apps T d net.state x) (hv' : Value apps T d { net.state with chain := s' } x') :
     x ≤ x' ∧ x' ≤ x + y := by
+  refine ⟨hv'.2 x (CanObtainIn.deposit A hd hv.1), ?_⟩
   sorry
 
 /-- Nitro-31. Nitro:787-789: "Withdrawals can only occur from participant
