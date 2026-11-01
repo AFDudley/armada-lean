@@ -25,8 +25,8 @@
   then concludes allocating its 1 coin entirely to a single-participant
   *virtual* channel `myV`; `myV` concludes allocating its 1 coin entirely to
   the external destination `myD`. The resulting chain is reachable
-  (`net5_reach`, five steps: a `Nitro.participant` deposit step, two
-  honest-move/land pairs), is a DAG (`chain5_dag`, exactly one edge, `myL →
+  (`net5_reach`, five steps: a `Nitro.participant` deposit step, `p0`'s
+  sends of `stV` and then `stL`, and two lands), is a DAG (`chain5_dag`, exactly one edge, `myL →
   myV`), and has Turbo value 1 at `myD` along the order `[myL.address,
   myV.address]` (`chain5_turboValue`). But `chain5.transfer a b = none` for
   EVERY `a b` (`chain5_transfer_none`): the only entry anywhere is `myL`'s,
@@ -110,17 +110,31 @@ theorem net1_reach : (Nitro.participant apps0 (turboT p0)).Reachable net1 := by
   rw [← net1_eq]
   exact Machine.Reachable.tail net0_reach (Or.inr (Or.inr (Or.inr ⟨.channel myL, 0, 1, rfl⟩)))
 
--- Step 2: `p0` sends `stL`, the final state of `myL`.
-def net2 : NetworkState Nat p0 := { net1 with sent := [ssL] }
+-- Step 2: `p0` sends `stV`, the turn-0 state of `myV`. `myV` has the one participant `p0`, so
+-- this is the all-signed pre-fund state that `p0` must hold before it signs a state that funds
+-- `myV` (`HonestSend.fundsCommitted`; operator ruling 2026-11-01).
+def net1V : NetworkState Nat p0 := { net1 with sent := [ssV] }
 
-theorem net2_eq : net1.applyHonest (HonestMove.send stL) = net2 := rfl
+theorem net1V_eq : net1.applyHonest (HonestMove.send stV) = net1V := rfl
+
+theorem net1V_reach : (Nitro.participant apps0 (turboT p0)).Reachable net1V := by
+  rw [← net1V_eq]
+  exact Machine.Reachable.tail net1_reach
+    (Or.inl ⟨HonestMove.send stV, send_feasible (by decide) (by decide) (by decide), rfl⟩)
+
+-- Step 3: `p0` sends `stL`, the final state of `myL`, which funds `myV`.
+def net2 : NetworkState Nat p0 := { net1 with sent := [ssL, ssV] }
+
+theorem net2_eq : net1V.applyHonest (HonestMove.send stL) = net2 := rfl
 
 theorem net2_reach : (Nitro.participant apps0 (turboT p0)).Reachable net2 := by
   rw [← net2_eq]
-  exact Machine.Reachable.tail net1_reach
-    (Or.inl ⟨HonestMove.send stL, HonestMove.Feasible_send net1 stL, rfl⟩)
+  exact Machine.Reachable.tail net1V_reach
+    (Or.inl ⟨HonestMove.send stL, send_feasible_of (by decide) (by decide)
+      (fundsCommitted_one myV (by decide)
+        ⟨ssV, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl⟩), rfl⟩)
 
--- Step 3: `p0` lands `conclude myL ssL`, alone (`myL.participants = [p0]`).
+-- Step 4: `p0` lands `conclude myL ssL`, alone (`myL.participants = [p0]`).
 def opConL : Op Nat := .conclude myL ssL
 
 theorem net2_holds_ssL : net2.Holds ssL := by
@@ -141,7 +155,7 @@ def chain3 : Adjudicator Nat :=
 
 theorem chain1_conclude : chain1.apply apps0 p0 opConL = some chain3 := rfl
 
-def net3 : NetworkState Nat p0 := { chain := chain3, sent := [ssL], received := [ssL] }
+def net3 : NetworkState Nat p0 := { chain := chain3, sent := [ssL, ssV], received := [ssL] }
 
 theorem net3_eq : net2.applyAdv apps0 (.land opConL) = net3 := rfl
 
@@ -149,30 +163,20 @@ theorem net3_reach : (Nitro.participant apps0 (turboT p0)).Reachable net3 := by
   rw [← net3_eq]
   exact Machine.Reachable.tail net2_reach (Or.inr (Or.inl ⟨opConL, opConL_feasible, rfl⟩))
 
--- Step 4: `p0` sends `stV`, the final state of `myV`.
-def net4 : NetworkState Nat p0 := { net3 with sent := [ssV, ssL] }
-
-theorem net4_eq : net3.applyHonest (HonestMove.send stV) = net4 := rfl
-
-theorem net4_reach : (Nitro.participant apps0 (turboT p0)).Reachable net4 := by
-  rw [← net4_eq]
-  exact Machine.Reachable.tail net3_reach
-    (Or.inl ⟨HonestMove.send stV, HonestMove.Feasible_send net3 stV, rfl⟩)
-
 -- Step 5: `p0` lands `conclude myV ssV`, alone (`myV.participants = [p0]`).
 def opConV : Op Nat := .conclude myV ssV
 
-theorem net4_holds_ssV : net4.Holds ssV := by
+theorem net3_holds_ssV : net3.Holds ssV := by
   refine ⟨?_, ?_⟩
   · intro q hq
     simp only [ssV, List.mem_singleton] at hq
     subst hq
-    exact Or.inl ⟨rfl, ssV, by simp [net4, ssV], rfl⟩
+    exact Or.inl ⟨rfl, ssV, by simp [net3, ssV], rfl⟩
   · intro v hv
     simp [ssV, stV, State.voucher?] at hv
 
-theorem opConV_feasible : opConV.HonestFeasible net4 := by
-  have h := net4_holds_ssV
+theorem opConV_feasible : opConV.HonestFeasible net3 := by
+  have h := net3_holds_ssV
   simpa [Op.HonestFeasible, Op.proofStates, opConV] using h
 
 def chain5 : Adjudicator Nat :=
@@ -180,13 +184,13 @@ def chain5 : Adjudicator Nat :=
 
 theorem chain3_conclude : chain3.apply apps0 p0 opConV = some chain5 := rfl
 
-def net5 : NetworkState Nat p0 := { chain := chain5, sent := [ssV, ssL], received := [ssV, ssL] }
+def net5 : NetworkState Nat p0 := { chain := chain5, sent := [ssL, ssV], received := [ssV, ssL] }
 
-theorem net5_eq : net4.applyAdv apps0 (.land opConV) = net5 := rfl
+theorem net5_eq : net3.applyAdv apps0 (.land opConV) = net5 := rfl
 
 theorem net5_reach : (Nitro.participant apps0 (turboT p0)).Reachable net5 := by
   rw [← net5_eq]
-  exact Machine.Reachable.tail net4_reach (Or.inr (Or.inl ⟨opConV, opConV_feasible, rfl⟩))
+  exact Machine.Reachable.tail net3_reach (Or.inr (Or.inl ⟨opConV, opConV_feasible, rfl⟩))
 
 /-! ## `chain5` is a DAG whose Turbo value at `myD` is `1`. -/
 

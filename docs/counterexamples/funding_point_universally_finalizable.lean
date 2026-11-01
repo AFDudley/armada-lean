@@ -3,10 +3,14 @@
   Nitro-23 (Nitro:635-636), pebble `aln-cc8`, defect D11
   (`docs/nitro-repair-2026-10-27.md` section 7).
 
-  The model lets an honest participant sign two different states at one
-  turn number. `Nitro.network` gates an honest send only by
-  `Network.VoucherSendable`. `AtFundingPoint` bounds the turn number of a
-  sent state, not its outcome.
+  The unrestricted network `Nitro.networkUnrestricted` lets a participant
+  sign two different states at one turn number: it gates an honest send only
+  by `Network.VoucherSendable`. `AtFundingPoint` bounds the turn number of a
+  sent state, not its outcome. Operator ruling 2026-11-01 (option A): the
+  honest network `Nitro.network` forbids this send (`HonestSend.noAlternative`,
+  `ArmadaLean/Types/Honest.lean`), so `nE` is not reachable on it
+  (`nE_not_honest`), and the library theorem has no premise for it. This
+  file shows that the claim fails without the rule.
 
   The network `nE` starts at genesis and has three honest sends on the
   two-participant channel `c2 = [p0, q0]` (`c2.n = 2`):
@@ -49,8 +53,8 @@
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/funding_point_universally_finalizable.lean`.
-  `funding_point_universally_finalizable_false` uses only `propext`,
-  `Classical.choice` and `Quot.sound`.
+  `funding_point_universally_finalizable_false` and `nE_not_honest` use only
+  `propext`, `Classical.choice` and `Quot.sound`.
 -/
 import ArmadaLean.Nitro.NonVacuity
 
@@ -90,10 +94,12 @@ theorem voucher_gate (n : Network Nat) (st : State Nat) (hst : st.voucher? = non
   simp only [List.mem_singleton] at hst'; subst hst'
   intro v hv; rw [hst] at hv; cases hv
 
-theorem nE_reach : (Nitro.network apps1 (Ts apps1)).Reachable nE :=
-  network_reachable_honest
-    (network_reachable_honest
-      (network_reachable_honest (network_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send sA0)
+/-- `nE` is reachable on the unrestricted network (`Nitro.networkUnrestricted`): it has no
+    signing rule, only the voucher gate. -/
+theorem nE_reach : (Nitro.networkUnrestricted apps1 (Ts apps1)).Reachable nE :=
+  networkU_reachable_honest
+    (networkU_reachable_honest
+      (networkU_reachable_honest (networkU_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send sA0)
         (by simp) (voucher_gate _ _ rfl))
       q0 (.send sA1) (by simp) (voucher_gate _ _ rfl))
     q0 (.send sB1) (by simp) (voucher_gate _ _ rfl)
@@ -374,7 +380,7 @@ theorem calls_good {n : NetworkState Nat q0} (hps : PSig n) {m : HonestMove Nat}
   | wait dt => intro op hop; simp [HonestMove.calls] at hop
   | react r =>
     intro op hop
-    have h := hfeas op hop
+    have h := hfeas.1 op hop
     refine ⟨?_, ?_⟩
     · intro dt heq; subst heq; exact h
     · intro ss hss
@@ -496,7 +502,7 @@ theorem not_finalizable : ¬ Finalizable apps1 T c2 Ωg (nE.views q0) := by
     fails: `Ωg` is not finalizable for `q0`. -/
 theorem funding_point_universally_finalizable_false :
     ¬ ∀ (apps : Apps Nat) (Ts : Threats Nat apps) (v : Views Nat) (n : Network Nat)
-        (_hr : (Nitro.network apps Ts).Reachable n) (_hvn : v = n.views) (c : FixedPart)
+        (_hr : (Nitro.networkUnrestricted apps Ts).Reachable n) (_hvn : v = n.views) (c : FixedPart)
         (Ω : Outcome Nat) (vt : State Nat → State Nat → Bool)
         (_hc : apps c.appDef = forceMoveRules vt) (_hsetup : SetupPhaseKeepsOutcome vt c)
         (_hvt : SetupPhaseAccepted vt c) (_hn : 0 < c.n)
@@ -512,17 +518,23 @@ theorem funding_point_universally_finalizable_false :
   exact not_finalizable (hU q0 (by simp [c2]))
 
 
-/-- The canonical own-violation: `q0` signed two setup states at turn 1, so the
-    restated theorem makes no promise to `q0`. -/
-theorem q0_made_alternative_moves : ¬ MadeNoAlternativeSetupMoves (nE.views q0) c2 := by
+/-- The canonical own-violation: `q0` signed two setup states at turn 1, against
+    `HonestSend.noAlternative`. -/
+theorem q0_made_alternative_moves :
+    ¬ ∀ s ∈ (nE.views q0).sent, HonestSend (nE.views q0).sent (nE.views q0).HoldsPrefund s.state := by
   intro h
-  have h_eq := h ⟨sB1, [q0]⟩ (by simp [nE_views_q0])
-                  ⟨sA1, [q0]⟩ (by simp [nE_views_q0])
-                  (by simp [sB1, c2])
-                  (by simp [sA1, c2])
-                  (by decide)
-                  (by decide)
-  simp [sB1, sA1, Ωb_ne_Ωg] at h_eq
+  have h_eq := (h ⟨sB1, [q0]⟩ (by simp [nE_views_q0])).noAlternative (by decide)
+    ⟨sA1, [q0]⟩ (by simp [nE_views_q0]) (by decide) (by decide)
+  exact Ωb_ne_Ωg (congrArg State.outcome h_eq).symm
+
+/-- `nE` is not reachable on the honest network: there, every view satisfies the
+    signing rules (`Nitro.participant_sent_honest`,
+    `Nitro.network_views_participant_reachable`). -/
+theorem nE_not_honest : ¬ (Nitro.network apps1 (Ts apps1)).Reachable nE := fun h =>
+  q0_made_alternative_moves
+    (Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable ⟨nE, h⟩ q0⟩)
+
 end ArmadaLean.Nitro.Counterexample.FundingPoint
 
 #print axioms ArmadaLean.Nitro.Counterexample.FundingPoint.funding_point_universally_finalizable_false
+#print axioms ArmadaLean.Nitro.Counterexample.FundingPoint.nE_not_honest

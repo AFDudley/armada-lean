@@ -201,9 +201,11 @@ open ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
 
-/-- `p`'s own machine: from the empty state (`Adjudicator.genesis`, empty
-    `sent` and `received`, Nitro:446-454), one of `p`'s own feasible honest
-    moves (`NetworkState.applyHonest`, `HonestMove.Feasible`), `p` landing
+/-- `p`'s own machine, with its honest step gated by `honest`: from the
+    empty state (`Adjudicator.genesis`, empty
+    `sent` and `received`, Nitro:446-454), one of `p`'s own honest moves
+    that `honest` allows (`NetworkState.applyHonest`; `Nitro.participant`
+    gates it by `HonestMove.Feasible`), `p` landing
     one of its own currently-feasible calls directly (`land`, the
     explicit-time game's two-phase issue/land split collapsed back to one
     step, sound for bare reachability — this file's header), one
@@ -227,14 +229,31 @@ variable {E : Type} [DecidableEq E]
     `Nitro.participant`, not `ArmadaLean.Nitro.Nitro.participant`; this
     mirrors `Pool.machine` (`PoolMachine.lean`), itself declared outside
     `Pool.lean`'s (namespace-free) declarations. -/
-def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
-    Machine (NetworkState E p) where
+def Nitro.participantWith (apps : Apps E) {p : Participant} (T : Threat E p)
+    (honest : NetworkState E p → HonestMove E → Prop) : Machine (NetworkState E p) where
   init := fun net => net = ⟨Adjudicator.genesis, [], []⟩
   step := fun net net' =>
-    (∃ m : HonestMove E, m.Feasible net ∧ net' = net.applyHonest m) ∨
+    (∃ m : HonestMove E, honest net m ∧ net' = net.applyHonest m) ∨
     (∃ op : Op E, op.HonestFeasible net ∧ net' = net.applyAdv apps (.land op)) ∨
     (∃ m : AdvMove E, T.feasible net m ∧ (∀ op, m ≠ .land op) ∧ net' = net.applyAdv apps m) ∨
     (∃ a : Address E, ∃ e x : Coins, net' = net.applyAdv apps (.land (.deposit a e x)))
+
+/-- `p`'s own machine (`Nitro.participantWith`): an honest move must be
+    feasible (`HonestMove.Feasible`), so every send satisfies the signing
+    rules of `HonestSend` (`Types/Honest.lean`; operator ruling 2026-11-01,
+    option A). `Nitro.participant_sent_honest` is the invariant. -/
+def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
+    Machine (NetworkState E p) :=
+  Nitro.participantWith apps T (fun net m => m.Feasible net)
+
+/-- `p`'s own machine with no signing rule: an honest move needs only
+    feasible calls (`HonestMove.CallsFeasible`), so `p` may sign against
+    `HonestSend`. Only counterexamples that need such a `p` use it
+    (`docs/counterexamples/`), through the reachability helpers of
+    `NonVacuity.lean`; no spec theorem is stated over it. -/
+def Nitro.participantUnrestricted (apps : Apps E) {p : Participant} (T : Threat E p) :
+    Machine (NetworkState E p) :=
+  Nitro.participantWith apps T (fun net m => m.CallsFeasible net)
 
 /-- The reachable states of `p`'s own machine (`Nitro.participant`), as a type
     (`ArmadaLean/Types/Reachable.lean`; operator decision 2026-10-31). -/
@@ -360,6 +379,100 @@ theorem Nitro.participant_received_unforged {apps : Apps E} {p : Participant} {T
       | some s' =>
         simp only [NetworkState.applyAdv, hap, Op.proofStates, List.nil_append] at hss
         exact NetworkState.Unforged.of_sent hsent (hP ss hss)
+
+/-- An adversary move keeps `p`'s `sent` and only grows `p`'s `received`
+    (`NetworkState.applyAdv`'s per-move effect lemmas, `Strategy.lean`). -/
+theorem NetworkState.applyAdv_sent_received (apps : Apps E) {p : Participant}
+    (net : NetworkState E p) (m : AdvMove E) :
+    (net.applyAdv apps m).sent = net.sent ∧ ∀ r ∈ net.received, r ∈ (net.applyAdv apps m).received := by
+  cases m with
+  | chain caller op =>
+    cases h : net.chain.apply apps caller op with
+    | none => rw [NetworkState.applyAdv_chain_none apps h]; exact ⟨rfl, fun _ hr => hr⟩
+    | some s' =>
+      rw [NetworkState.applyAdv_chain_some apps h]
+      exact ⟨rfl, fun _ hr => List.mem_append_right _ hr⟩
+  | deliver ss =>
+    rw [NetworkState.applyAdv_deliver]
+    exact ⟨rfl, fun _ hr => List.mem_cons_of_mem _ hr⟩
+  | tick dt => rw [NetworkState.applyAdv_tick]; exact ⟨rfl, fun _ hr => hr⟩
+  | land op =>
+    cases h : net.chain.apply apps p op with
+    | none => rw [NetworkState.applyAdv_land_none apps h]; exact ⟨rfl, fun _ hr => hr⟩
+    | some s' =>
+      rw [NetworkState.applyAdv_land_some apps h]
+      exact ⟨rfl, fun _ hr => List.mem_append_right _ hr⟩
+
+/-- **Every state the honest `p` signed satisfies the signing rules**
+    (`HonestSend`, `ArmadaLean/Types/Honest.lean`, option A of
+    2026-11-01): against every state `p` signed, and with the
+    pre-fund states `p` holds now (`NetworkState.HoldsPrefund`). By
+    `Machine.invariant`. The initial `sent` is empty. A `.react` adds only
+    sends that its gate (`Reaction.SendsHonest`, part of
+    `HonestMove.Feasible`) checks against the new `sent`. An old state's
+    `noAlternative` against a new send is the new send's own
+    `noAlternative`. Every other step keeps `sent` and only grows `received`
+    (`NetworkState.applyAdv_sent_received`), so `HoldsPrefund` survives
+    (`NetworkState.HoldsPrefund.of_subset`). -/
+theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Threat E p}
+    (net : Nitro.ReachableParticipant apps T) :
+    ∀ s ∈ net.state.sent, HonestSend net.state.sent net.state.HoldsPrefund s.state := by
+  obtain_reach ⟨net, h⟩ := net
+  refine Machine.invariant (Nitro.participant apps T)
+    (P := fun net => ∀ s ∈ net.sent, HonestSend net.sent net.HoldsPrefund s.state) ?_ ?_ net h
+  · intro net hinit s hs
+    rw [hinit] at hs
+    exact absurd hs List.not_mem_nil
+  · intro net net' hP hstep
+    have keep : ∀ net' : NetworkState E p, net'.sent = net.sent →
+        (∀ r ∈ net.received, r ∈ net'.received) →
+        ∀ s ∈ net'.sent, HonestSend net'.sent net'.HoldsPrefund s.state := by
+      intro net' hs hr s hmem
+      rw [hs] at hmem ⊢
+      exact (hP s hmem).mono (fun _ hx => hx)
+        (fun V hV => hV.of_subset (fun x hx => hs ▸ hx) hr)
+    rcases hstep with ⟨m, hm, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, -, rfl⟩ | ⟨a, e, x, rfl⟩
+    · cases m with
+      | react r =>
+        have hsends : r.SendsHonest net := hm.2
+        have hheld : ∀ V, net.HoldsPrefund V → (net.applyHonest (.react r)).HoldsPrefund V :=
+          fun V hV => hV.of_subset (fun x hx => List.mem_append_right _ hx) (fun _ hx => hx)
+        intro s hs
+        change s ∈ r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent at hs
+        change HonestSend (r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent)
+          (net.applyHonest (.react r)).HoldsPrefund s.state
+        rcases List.mem_append.mp hs with hnew | hold
+        · obtain ⟨st, hst, rfl⟩ := List.mem_map.mp hnew
+          exact (hsends st hst).mono (fun _ hx => hx) hheld
+        · have hs0 := hP s hold
+          refine ⟨fun hlt t ht hc htn => ?_, hs0.guaranteesExternal,
+            fun V hV hf => hheld V (hs0.fundsCommitted V hV hf)⟩
+          rcases List.mem_append.mp ht with htnew | htold
+          · obtain ⟨st, hst, rfl⟩ := List.mem_map.mp htnew
+            have hc' : st.channel = s.state.channel := hc
+            have htn' : st.turnNum = s.state.turnNum := htn
+            have hlt' : st.turnNum < st.channel.n := by rw [hc', htn']; exact hlt
+            exact ((hsends st hst).noAlternative hlt' s hs hc'.symm htn'.symm).symm
+          · exact (hP s hold).noAlternative hlt t htold hc htn
+      | wait dt => exact keep _ rfl (fun _ hx => hx)
+    · exact keep _ (NetworkState.applyAdv_sent_received apps net (.land op)).1
+        (NetworkState.applyAdv_sent_received apps net (.land op)).2
+    · exact keep _ (NetworkState.applyAdv_sent_received apps net m).1
+        (NetworkState.applyAdv_sent_received apps net m).2
+    · exact keep _ (NetworkState.applyAdv_sent_received apps net (.land (.deposit a e x))).1
+        (NetworkState.applyAdv_sent_received apps net (.land (.deposit a e x))).2
+
+/-- **A state that the honest `p` holds with its own signature satisfies the
+    signing rules.** `p`'s signature on a held state is on a state `p` sent
+    (`NetworkState.Holds.unforged`, `Nitro.participant_received_unforged`), and
+    that sent state satisfies `HonestSend` (`Nitro.participant_sent_honest`). -/
+theorem Nitro.participant_holds_honest {apps : Apps E} {p : Participant} {T : Threat E p}
+    (B : Bounds apps p T) (net : Nitro.ReachableParticipant apps T) {ss : SignedState E}
+    (hH : net.state.Holds ss) (hp : p ∈ ss.signers) :
+    HonestSend net.state.sent net.state.HoldsPrefund ss.state := by
+  obtain ⟨s, hs, heq⟩ := (hH.unforged (Nitro.participant_received_unforged B net)).1 hp
+  rw [← heq]
+  exact Nitro.participant_sent_honest net s hs
 
 /-- A full network state: ONE shared chain, and each participant's own
     `sent`/`received`. Coordinator finding 2026-10-29: `Machine.interleave`
@@ -623,8 +736,10 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     exact hr.tail (Step.mk p (.tick dt) n.chain (n.chain.tick dt) happly)
   | land op => exact Network.land_chain_reachable n p op hr
 
-/-- The network game: at each step, some participant `p` makes one of its
-    own feasible honest moves (a reaction's sends only, calls land
+/-- The network game, with each honest step gated by `honest`: at each step,
+    some participant `p` makes one of its own honest moves that `honest`
+    allows (`Nitro.network` gates it by `HonestMove.Feasible`; a reaction's
+    sends only, calls land
     separately below), `p` lands one of its own currently-feasible calls
     (`Network.land`, gated by `Network.Sendable` on its proof states, the
     same public-broadcast fact the old `.chain` gate stated), `p`'s own
@@ -659,10 +774,11 @@ theorem Network.applyAdv_chain_reachable {apps : Apps E} (n : Network E) (p : Pa
     strategy move (`Op.HonestFeasible` still rejects `.deposit`, D3,
     `Strategy.lean:120`) and never through any other adversary move (only
     this disjunct reads or writes `wallet`). -/
-def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) where
+def Nitro.networkWith (apps : Apps E) (Ts : Threats E apps)
+    (honest : ∀ p : Participant, NetworkState E p → HonestMove E → Prop) : Machine (Network E) where
   init := fun n => n.chain = Adjudicator.genesis ∧ n.sent = (fun _ => []) ∧ n.received = (fun _ => [])
   step := fun n n' => ∃ p : Participant,
-    (∃ m : HonestMove E, m.Feasible (n.view p) ∧
+    (∃ m : HonestMove E, honest p (n.view p) m ∧
       (∀ r : Reaction E, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) ∧
       n' = Network.applyHonest n p m) ∨
     (∃ op : Op E, op.HonestFeasible (n.view p) ∧
@@ -673,6 +789,20 @@ def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) wh
       (∀ caller op, m ≠ .chain caller op) ∧ (∀ op, m ≠ .land op) ∧
       n' = Network.applyAdv apps n p m) ∨
     (∃ c : FixedPart, ∃ e x : Coins, x ≤ n.wallet p ∧ n' = Network.deposit n p (.channel c) e x)
+
+/-- The network game (`Nitro.networkWith`): an honest move must be feasible
+    (`HonestMove.Feasible`), so every send satisfies the signing rules of
+    `HonestSend` (`Types/Honest.lean`; operator ruling 2026-11-01, option A). -/
+def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) :=
+  Nitro.networkWith apps Ts (fun _ net m => m.Feasible net)
+
+/-- The network game with no signing rule: an honest move needs only
+    feasible calls (`HonestMove.CallsFeasible`). Only counterexamples that
+    need a participant that signs against `HonestSend` use it
+    (`docs/counterexamples/`), through the reachability helpers of
+    `NonVacuity.lean`; no spec theorem is stated over it. -/
+def Nitro.networkUnrestricted (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) :=
+  Nitro.networkWith apps Ts (fun _ net m => m.CallsFeasible net)
 
 /-- The reachable states of the network game (`Nitro.network`), as a type
     (`ArmadaLean/Types/Reachable.lean`; operator decision 2026-10-31). -/
@@ -1163,7 +1293,7 @@ theorem Nitro.network_views_participant_reachable {apps : Apps E} {Ts : Threats 
   · intro n hinit
     obtain ⟨hc, hs, hrv⟩ := hinit
     refine ⟨_, ?_, Relation.ReflTransGen.refl⟩
-    simp [Network.view, Nitro.participant, hc, hs, hrv]
+    simp [Network.view, Nitro.participant, Nitro.participantWith, hc, hs, hrv]
   · intro n n' hP hstep
     obtain ⟨p₀, ⟨m, hfeas, hvgate, rfl⟩ | ⟨op, hfeas, hsgate, rfl⟩ |
         ⟨m, hfeas, -, hnochain, hnoland, rfl⟩ | ⟨c, e, x, hxle, rfl⟩⟩ :=

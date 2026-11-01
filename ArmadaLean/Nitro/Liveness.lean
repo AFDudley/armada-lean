@@ -2121,7 +2121,7 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
     · simpa [Op.HonestFeasible, Op.proofStates] using hh2
   refine UnbeatableIn.move
     (.react ⟨[Op.challenge c1 [ss1] ss1.state, Op.challenge c2 [ss2] ss2.state], []⟩) trivial
-    hfeasR ?_
+    ⟨hfeasR, fun _ h => absurd h List.not_mem_nil⟩ ?_
   intro net1 hround
   obtain ⟨hseq, hεbound⟩ := hround
   have hbase1 : net.chain.finalizedWith c1.address = some ss1.state.outcome ∨
@@ -2780,7 +2780,7 @@ theorem UnbeatableIn.finalized_eq_of_steps {apps : Apps E} {p : Participant} {T 
   | move m _ hfeas hcont =>
     have hnotick : ∀ op ∈ m.calls, ∀ dt, op ≠ Op.tick dt := by
       cases m with
-      | react r => exact fun op hop => Op.HonestFeasible.not_tick (hfeas op hop)
+      | react r => exact fun op hop => Op.HonestFeasible.not_tick (hfeas.1 op hop)
       | wait _ => intro op hop; simp [HonestMove.calls] at hop
     obtain ⟨S', hseq, hnow'⟩ := Threat.RoundSeq.landAll apps T np.chain.now m.calls hnotick Sp
     have hround : T.Round apps m np S' :=
@@ -3227,7 +3227,7 @@ theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
             ∀ ss ∈ op.proofStates, SigOK p q Sp.sent Sq.sent ss ∧ VoucherOK p q Sp.sent Sq.sent ss ∧
               Sq.Unforged ss := by
           intro op hop
-          have hf : op.HonestFeasible np := hfeasp op hop
+          have hf : op.HonestFeasible np := hfeasp.1 op hop
           exact ⟨hf.not_tick, fun ss hss =>
             (hf.holds ss hss).sigOK hpq hSp.received_subset hSp.sent_eq.symm hgen.1 hgen.2.2.1⟩
         obtain ⟨Sp', Sq', hseq, hSq', hag', hgp', hgq', hvp', hvq', hnp', hnq', hsp', hsq'⟩ :=
@@ -3254,7 +3254,7 @@ theorem finalizable_joint {apps : Apps E} {p q : Participant} (hpq : p ≠ q)
               ∀ ss ∈ op.proofStates, SigOK q p Sq.sent Sp.sent ss ∧ VoucherOK q p Sq.sent Sp.sent ss ∧
                 Sp.Unforged ss := by
             intro op hop
-            have hf : op.HonestFeasible nq := hfeasq op hop
+            have hf : op.HonestFeasible nq := hfeasq.1 op hop
             exact ⟨hf.not_tick, fun ss hss =>
               (hf.holds ss hss).sigOK (Ne.symm hpq) hSq.received_subset hSq.sent_eq.symm
                 hgen.symm.1 hgen.symm.2.2.1⟩
@@ -3404,9 +3404,10 @@ theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Thr
     universally finalizable. ForceMove:862-871: the prefund states are "exactly what
     they need to launch a challenge on-chain to recover their funds". The
     setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
-    and the game library accepts its transitions. Operator ruling 2026-10-31: the
-    guarantee is per participant, for a participant that made no alternative setup
-    moves (labbook/2026-10-31-funding-point-alternative-moves.md). -/
+    and the game library accepts its transitions. An honest participant makes no
+    alternative setup moves (operator rulings 2026-10-31 and 2026-11-01;
+    labbook/2026-10-31-funding-point-alternative-moves.md): `HonestSend.noAlternative`,
+    which `Nitro.participant_sent_honest` gives for every view. -/
 theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Nitro.ReachableNetwork apps Ts)
     (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
@@ -3414,8 +3415,11 @@ theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E ap
     (hvt : SetupPhaseAccepted vt c)
     (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
     (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) :
-    ∀ p ∈ c.participants, MadeNoAlternativeSetupMoves (v p) c →
-      Finalizable apps (Ts.T p) c Ω (v p) := by
+    ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p) := by
+  intro p _
+  have _hnoAlt : ∀ s ∈ (v p).sent, HonestSend (v p).sent (v p).HoldsPrefund s.state := by
+    subst hvn
+    exact Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable n p⟩
   sorry
 
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
@@ -3754,9 +3758,8 @@ theorem Op.HonestFeasible.round {apps : Apps E} {p : Participant} {T : Threat E 
     exact fun ss hss => NetworkState.Holds.mono hseq.sent_eq.symm hseq.received_subset
       (hfeas ss hss)
 
-omit [DecidableEq E] in
 /-- A move's own feasibility, read call by call: `.wait` has none; a
-    `.react r`'s feasibility is already exactly `∀op∈r.calls,
+    `.react r`'s feasibility starts with `∀op∈r.calls,
     op.HonestFeasible net`. Used by `funded_entry_unbeatable`'s `move`
     case, so `funded_entry_round` gets its feasibility hypothesis from
     `hfeas` without naming `net` or `m` explicitly (avoiding a `cases m`
@@ -3764,7 +3767,7 @@ omit [DecidableEq E] in
 theorem HonestMove.Feasible.calls {p : Participant} {net : NetworkState E p} {m : HonestMove E}
     (hfeas : m.Feasible net) : ∀ op ∈ m.calls, op.HonestFeasible net := by
   cases m with
-  | react r => exact hfeas
+  | react r => exact hfeas.1
   | wait dt => simp [HonestMove.calls]
 
 /-- Over a whole adversary round, `funded_entry_step`'s invariant holds, and
@@ -3894,7 +3897,10 @@ theorem funded_entry_honest_step {p : Participant}
 
 /-- One round of adversary play keeps an honest move feasible: `.wait` is
     always feasible; a `.react r`'s feasibility is "every call in `r.calls`
-    is `Op.HonestFeasible`", each carried forward by `Op.HonestFeasible.round`.
+    is `Op.HonestFeasible`", each carried forward by `Op.HonestFeasible.round`,
+    and "every send satisfies `HonestSend`": the round keeps `sent`
+    (`Threat.RoundSeq.sent_eq`) and only grows `received`
+    (`Threat.RoundSeq.received_subset`), so every held pre-fund state stays held.
     Used by `funded_entry_unbeatable`: the committed move's own feasibility
     (checked before the round) still holds at the state it is actually
     applied to (after the round). -/
@@ -3903,7 +3909,11 @@ theorem HonestMove.Feasible.round {apps : Apps E} {p : Participant} {T : Threat 
     (hseq : Threat.RoundSeq apps T t pending net net') {m : HonestMove E}
     (hfeas : m.Feasible net) : m.Feasible net' := by
   cases m with
-  | react r => exact fun op hop => Op.HonestFeasible.round hseq (hfeas op hop)
+  | react r =>
+    refine ⟨fun op hop => Op.HonestFeasible.round hseq (hfeas.1 op hop), fun st hst => ?_⟩
+    rw [hseq.sent_eq]
+    exact (hfeas.2 st hst).mono (fun _ hx => hx) (fun V hV => hV.of_subset
+      (fun x hx => by rw [hseq.sent_eq]; exact hx) hseq.received_subset)
   | wait dt => trivial
 
 /-- A `FundedFor`-shaped `UnbeatableIn` tree, run from a state where `c` is
@@ -10791,11 +10801,13 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E)
     ledgers with no guarantee for `V` and its pre-protocol balances
     restored. `Pi`'s own signatures on `V` are the setup states
     (`HoldsVirtualSetup`); the game rule `Bounds.unforgeable` bounds the
-    rest. Operator ruling 2026-10-31: `P` signs a ledger state that funds
-    `V` only when it holds the all-signed pre-fund state of `V` (SATP:409,
-    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399).
-    `HoldsVirtualSetup` checks only what `P` sent; this premise is the
-    missing half of "commit", stated on `P`'s own signing. -/
+    rest. `P` signs a ledger state that funds `V` only when it holds the
+    all-signed pre-fund state of `V` (operator ruling 2026-10-31; SATP:409,
+    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399), and every
+    guarantee `P` signs names external peers (SATP:411-418). Both are rules
+    of the honest signer (`HonestSend.fundsCommitted`,
+    `HonestSend.guaranteesExternal`; operator ruling 2026-11-01), which
+    `Nitro.participant_sent_honest` and `Nitro.participant_holds_honest` give. -/
 theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules)
@@ -10813,10 +10825,6 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om)
     (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
-    (hR1 : ∀ t ∈ net.state.sent,
-      (t.state.channel = (Lm : FixedPart) ∨ t.state.channel = (Lp : FixedPart)) →
-      ∀ o, t.state.outcome = .allocation o → o.find r.V.address ≠ none →
-      ∃ ss, net.state.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0)
     (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
       net.state.DeadlineAfter r.V T.ε)
     (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
@@ -10824,6 +10832,25 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
       net.state.chain.finalizedWith r.V.address = none) :
     Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) balm balp
       (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
+  have _hfunds : ∀ t ∈ net.state.sent, ∀ o, t.state.outcome = .allocation o →
+      o.find r.V.address ≠ none → net.state.HoldsPrefund r.V := by
+    intro t ht o ho hf
+    exact (Nitro.participant_sent_honest net t ht).fundsCommitted r.V hr.2.2.2.2.2.2.1
+      (by rw [ho]; exact hf)
+  have _hextm : P ∈ (Lm : FixedPart).participants → om.GuaranteesExternal := by
+    obtain ⟨ss, hH, hall, hc, ho, -⟩ := hHm
+    intro hPL
+    have hext := (Nitro.participant_holds_honest A.toBounds net hH
+      (hall P (by rw [hc]; exact hPL))).guaranteesExternal
+    rw [ho] at hext
+    exact hext
+  have _hextp : P ∈ (Lp : FixedPart).participants → op.GuaranteesExternal := by
+    obtain ⟨ss, hH, hall, hc, ho, -⟩ := hHp
+    intro hPL
+    have hext := (Nitro.participant_holds_honest A.toBounds net hH
+      (hall P (by rw [hc]; exact hPL))).guaranteesExternal
+    rw [ho] at hext
+    exact hext
   sorry
 
 omit [DecidableEq E] in
@@ -11313,7 +11340,7 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
     finalize `L0` with no guarantee for `V` and her entry raised by `a` from
     its Round 2 level, so she is owed her pre-protocol balance minus `a0`
     plus `a`.
-    Operator ruling 2026-10-31 (aln-223 counterexample): every guarantee Alice signed in `o` names external peers, as SATP Protocol 3.1 Round 2 has her sign `G(a0 + b0, [P_i, P_{i+1}]` (SATP:411-418); signing otherwise is an own-violation of IR (armada-laconic labbook/2026-10-31-funding-point-alternative-moves.md). -/
+    Operator ruling 2026-10-31 (aln-223 counterexample): every guarantee Alice signed in `o` names external peers, as SATP Protocol 3.1 Round 2 has her sign `G(a0 + b0, [P_i, P_{i+1}]` (SATP:411-418); signing otherwise is an own-violation of IR (armada-laconic labbook/2026-10-31-funding-point-alternative-moves.md). This is a rule of the honest signer (`HonestSend.guaranteesExternal`; operator ruling 2026-11-01), which `Nitro.participant_holds_honest` gives for `o`. -/
 theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
     (hV : apps r.V.appDef = satpVirtualRules)
@@ -11321,10 +11348,10 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     (hPA : P = alice) (P1 : Participant) (hP1 : r.peers[1]? = some P1)
     (L0 : TimedChannel T.ε) (hL0 : r.ledgers[0]? = some (L0 : FixedPart))
     (hdurV : r.V.IsTimed T.ε)
-    (o : GuaranteedOutcome E) (bal : Coins)
-    (ho : r.LedgerAfterRound2 (o : Allocation E) P P1 P bal r.a0)
+    (o : Allocation E) (bal : Coins)
+    (ho : r.LedgerAfterRound2 o P P1 P bal r.a0)
     (net : Nitro.ReachableParticipant apps T)
-    (hH : HoldsLatestLedger net.state (L0 : FixedPart) (o : Allocation E))
+    (hH : HoldsLatestLedger net.state (L0 : FixedPart) o)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
     (a b : Coins) (hab : a + b = r.a0 + r.b0)
     (hfin : net.state.chain.finalOutcome r.V.address =
@@ -11333,6 +11360,13 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     (hchain : net.state.chain.finalizedWith (L0 : FixedPart).address = none) :
     Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) bal a
       (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
+  have _hext : P ∈ (L0 : FixedPart).participants → o.GuaranteesExternal := by
+    obtain ⟨ss, hHs, hall, hc, hos, -⟩ := hH
+    intro hPL
+    have hext := (Nitro.participant_holds_honest A.toBounds net hHs
+      (hall P (by rw [hc]; exact hPL))).guaranteesExternal
+    rw [hos] at hext
+    exact hext
   sorry
 
 end ArmadaLean.Nitro

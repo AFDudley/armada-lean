@@ -269,9 +269,10 @@ def Spec.single_enabled_is_finalizable : Prop :=
     universally finalizable. ForceMove:862-871: the prefund states are "exactly what
     they need to launch a challenge on-chain to recover their funds". The
     setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
-    and the game library accepts its transitions. Operator ruling 2026-10-31: the
-    guarantee is per participant, for a participant that made no alternative setup
-    moves (labbook/2026-10-31-funding-point-alternative-moves.md). -/
+    and the game library accepts its transitions. An honest participant makes no
+    alternative setup moves (operator rulings 2026-10-31 and 2026-11-01;
+    labbook/2026-10-31-funding-point-alternative-moves.md): `HonestSend.noAlternative`,
+    which `Nitro.participant_sent_honest` gives for every view. -/
 def Spec.funding_point_universally_finalizable : Prop :=
   ∀ (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Nitro.ReachableNetwork apps Ts)
@@ -281,8 +282,7 @@ def Spec.funding_point_universally_finalizable : Prop :=
     (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
     (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0),
     Claim <|
-    ∀ p ∈ c.participants, MadeNoAlternativeSetupMoves (v p) c →
-      Finalizable apps (Ts.T p) c Ω (v p)
+    ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p)
 
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
     each participant ... the channel is in the concluded state." The
@@ -828,11 +828,13 @@ def Spec.satp_peers_can_finalize : Prop :=
     ledgers with no guarantee for `V` and its pre-protocol balances
     restored. `Pi`'s own signatures on `V` are the setup states
     (`HoldsVirtualSetup`); the game rule `Bounds.unforgeable` bounds the
-    rest. Operator ruling 2026-10-31: `P` signs a ledger state that funds
-    `V` only when it holds the all-signed pre-fund state of `V` (SATP:409,
-    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399).
-    `HoldsVirtualSetup` checks only what `P` sent; this premise is the
-    missing half of "commit", stated on `P`'s own signing. -/
+    rest. `P` signs a ledger state that funds `V` only when it holds the
+    all-signed pre-fund state of `V` (operator ruling 2026-10-31; SATP:409,
+    "Proceed when s0 is committed"; Definition 3.1, SATP:394-399), and every
+    guarantee `P` signs names external peers (SATP:411-418). Both are rules
+    of the honest signer (`HonestSend.fundsCommitted`,
+    `HonestSend.guaranteesExternal`; operator ruling 2026-11-01), which
+    `Nitro.participant_sent_honest` and `Nitro.participant_holds_honest` give. -/
 def Spec.satp_theorem_3_2 : Prop :=
   ∀ (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
@@ -851,10 +853,6 @@ def Spec.satp_theorem_3_2 : Prop :=
     (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om)
     (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
-    (hR1 : ∀ t ∈ net.state.sent,
-      (t.state.channel = (Lm : FixedPart) ∨ t.state.channel = (Lp : FixedPart)) →
-      ∀ o, t.state.outcome = .allocation o → o.find r.V.address ≠ none →
-      ∃ ss, net.state.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0)
     (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
       net.state.DeadlineAfter r.V T.ε)
     (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
@@ -927,7 +925,7 @@ def Spec.satp_intermediary_before_round2 : Prop :=
     finalize `L0` with no guarantee for `V` and her entry raised by `a` from
     its Round 2 level, so she is owed her pre-protocol balance minus `a0`
     plus `a`.
-    Operator ruling 2026-10-31 (aln-223 counterexample): every guarantee Alice signed in `o` names external peers, as SATP Protocol 3.1 Round 2 has her sign `G(a0 + b0, [P_i, P_{i+1}]` (SATP:411-418); signing otherwise is an own-violation of IR (armada-laconic labbook/2026-10-31-funding-point-alternative-moves.md). -/
+    Operator ruling 2026-10-31 (aln-223 counterexample): every guarantee Alice signed in `o` names external peers, as SATP Protocol 3.1 Round 2 has her sign `G(a0 + b0, [P_i, P_{i+1}]` (SATP:411-418); signing otherwise is an own-violation of IR (armada-laconic labbook/2026-10-31-funding-point-alternative-moves.md). This is a rule of the honest signer (`HonestSend.guaranteesExternal`; operator ruling 2026-11-01), which `Nitro.participant_holds_honest` gives for `o`. -/
 def Spec.satp_end_user_recovers : Prop :=
   ∀ (apps : Apps E) {P : Participant} (T : Threat E P)
     (A : Assumptions apps P T) (r : Route E) (alice bob : Participant) (hr : r.WellFormed apps)
@@ -936,10 +934,10 @@ def Spec.satp_end_user_recovers : Prop :=
     (hPA : P = alice) (P1 : Participant) (hP1 : r.peers[1]? = some P1)
     (L0 : TimedChannel T.ε) (hL0 : r.ledgers[0]? = some (L0 : FixedPart))
     (hdurV : r.V.IsTimed T.ε)
-    (o : GuaranteedOutcome E) (bal : Coins)
-    (ho : r.LedgerAfterRound2 (o : Allocation E) P P1 P bal r.a0)
+    (o : Allocation E) (bal : Coins)
+    (ho : r.LedgerAfterRound2 o P P1 P bal r.a0)
     (net : Nitro.ReachableParticipant apps T)
-    (hH : HoldsLatestLedger net.state (L0 : FixedPart) (o : Allocation E))
+    (hH : HoldsLatestLedger net.state (L0 : FixedPart) o)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
     (a b : Coins) (hab : a + b = r.a0 + r.b0)
     (hfin : net.state.chain.finalOutcome r.V.address =

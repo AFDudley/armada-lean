@@ -38,10 +38,13 @@
   Operator ruling 2026-10-31: `satp_theorem_3_2` gained the hypothesis `hR1`, the missing
   half of "commit" (SATP:409, "Proceed when s0 is committed"; Definition 3.1, SATP:394-399)
   stated on `P`'s own signing — exactly the fact `net3_holds_no_V3_prefund` shows `net3`
-  lacks. `net3_violates_hR1`, at the end of this file, shows `net3` (unmodified) no longer
-  satisfies the amended theorem's hypotheses at all, so it is no longer a counterexample to
-  it; the theorem's own `sorry` is otherwise unaffected by this file. `NonVacuity.lean`'s
-  `net3R` is the new nonvacuity witness, carrying the one extra fact `hR1` needs.
+  lacks. Operator ruling 2026-11-01 (option A) moved that rule into the honest signer's type
+  (`HonestSend.fundsCommitted`, `ArmadaLean/Types/Honest.lean`) and removed `hR1`: the
+  honest machine `Nitro.participant` does not let `q0` send `Sm` before it holds the
+  all-signed `V0`. So `net3` is reachable only on the unrestricted machine
+  `Nitro.participantUnrestricted` (`net3_reach`), and `net3_not_honest` shows it is not
+  reachable on the honest one. `NonVacuity.lean`'s `net3R` is the nonvacuity witness: it
+  delivers the all-signed `V0` before `q0` signs either ledger state.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/satp_theorem_3_2.lean`.
@@ -51,6 +54,41 @@ import ArmadaLean.Nitro.NonVacuity
 namespace ArmadaLean.Nitro.Counterexample.Theorem32
 
 open ArmadaLean.Nitro ArmadaLean.Nitro.NonVacuity
+
+/-! ## The instance, on the unrestricted machine -/
+
+/-- `q0` sent `V0`, `Sp` and `Sm`, and received only `p0`'s and `w0`'s ledger signatures:
+    nothing all-signed for `V3`. -/
+def net3 : NetworkState Nat q0 :=
+  ⟨g0, [⟨Sm, [p0]⟩, ⟨Sp, [w0]⟩], [⟨Sm, [q0]⟩, ⟨Sp, [q0]⟩, ⟨V0, [q0]⟩]⟩
+
+theorem net3_latest_m : HoldsLatestLedger net3 Lm3 om3 :=
+  ⟨⟨Sm, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
+    by decide, .inl ⟨0, rfl, by decide⟩⟩
+
+theorem net3_latest_p : HoldsLatestLedger net3 Lp3 op3 :=
+  ⟨⟨Sp, [q0, w0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
+    by decide, .inl ⟨0, rfl, by decide⟩⟩
+
+/-- `net3` is reachable on the unrestricted machine: `q0`'s own three sends (`V0`, then
+    `Sp`, then `Sm`, the order `.send` prepends into `net3`'s own `sent`), then two
+    adversary delivers of `p0`'s and `w0`'s claimed signatures (delivered in reverse order,
+    for the same prepend reason). -/
+theorem net3_reach : (Nitro.participantUnrestricted apps2 (canon q0)).Reachable net3 :=
+  participantU_reachable_adv
+    (participantU_reachable_adv
+      (participantU_reachable_honest
+        (participantU_reachable_honest
+          (participantU_reachable_honest (participantU_reachable_init apps2 (canon q0)) (.send V0)
+            (by simp))
+          (.send Sp) (by simp))
+        (.send Sm) (by simp))
+      (.deliver ⟨Sp, [w0]⟩)
+      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
+      (fun op h => by cases h))
+    (.deliver ⟨Sm, [p0]⟩)
+    (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
+    (fun op h => by cases h)
 
 theorem validChallenge_channel {alice bob : Participant} {c : FixedPart}
     {s ch : SignedState Nat} (h : validChallenge c alice bob s ch = true) : ch.state.channel = c := by
@@ -637,7 +675,7 @@ theorem round (n : NetworkState Nat q0) (hI : Inv n) (m : HonestMove Nat) (hfeas
     ∃ n', (canon q0).Round apps2 m n n' ∧ Inv (n'.applyHonest m) := by
   have hgood : ∀ op ∈ m.calls, Good op ∧ op.HonestFeasible n := by
     cases m with
-    | react r => intro op hop; exact ⟨good_of_feasible hI.1 (hfeas op hop), hfeas op hop⟩
+    | react r => intro op hop; exact ⟨good_of_feasible hI.1 (hfeas.1 op hop), hfeas.1 op hop⟩
     | wait dt => intro op hop; simp [HonestMove.calls] at hop
   obtain ⟨n', hseq, hI', hnow'⟩ := land_all n.chain.now m.calls n hgood hI
   refine ⟨n', ⟨hseq, ?_⟩, ?_⟩
@@ -726,25 +764,26 @@ theorem net3_holds_no_V3_prefund :
     exact hV r hr (by rw [hrs]; exact hchan)
 
 
-/-- Operator ruling 2026-10-31: `satp_theorem_3_2` gained `hR1`, the missing half of "commit"
-    (SATP:409) stated on `P`'s own signing. `net3` (unmodified) no longer satisfies the
-    theorem's hypotheses at all: it sent `Sm`, a guarantee-funded ledger state, and
-    `net3_holds_no_V3_prefund` already shows it holds no `ByAll` proof of `V3`'s pre-fund
-    state. The old `example : False` no longer applies — `satp_theorem_3_2` needs a
-    DIFFERENT witness now (`net3R`, `NonVacuity.lean`), which `net3R_hR1` shows does satisfy
-    `hR1`. -/
-theorem net3_violates_hR1 :
-    ¬ (∀ t ∈ net3.sent, (t.state.channel = Lm3 ∨ t.state.channel = Lp3) →
-      ∀ o, t.state.outcome = .allocation o → o.find V3.address ≠ none →
-      ∃ ss, net3.Holds ss ∧ ss.ByAll ∧ ss.state.channel = V3 ∧ ss.state.turnNum = 0) := by
+/-- `net3` breaks the signing rule `HonestSend.fundsCommitted` (operator ruling 2026-11-01):
+    `q0` sent `Sm`, a ledger state with a guarantee for `V3`, and
+    `net3_holds_no_V3_prefund` shows that `q0` holds no `ByAll` pre-fund state of `V3`. -/
+theorem net3_violates_fundsCommitted :
+    ¬ ∀ s ∈ net3.sent, HonestSend net3.sent net3.HoldsPrefund s.state := by
   intro h
-  exact net3_holds_no_V3_prefund (h ⟨Sm, [q0]⟩ (by simp [net3]) (.inl rfl) om3 rfl (by decide))
+  exact net3_holds_no_V3_prefund
+    ((h ⟨Sm, [q0]⟩ (by simp [net3])).fundsCommitted V3 rfl (by decide))
+
+/-- `net3` is not reachable on the honest machine: there every sent state satisfies the
+    signing rules (`Nitro.participant_sent_honest`). -/
+theorem net3_not_honest : ¬ (Nitro.participant apps2 (canon q0)).Reachable net3 := fun h =>
+  net3_violates_fundsCommitted (Nitro.participant_sent_honest ⟨net3, h⟩)
 
 #print axioms netX_not_unbeatable
 #print axioms net3_reach
 #print axioms net3_latest_m
 #print axioms net3_latest_p
 #print axioms net3_holds_no_V3_prefund
-#print axioms net3_violates_hR1
+#print axioms net3_violates_fundsCommitted
+#print axioms net3_not_honest
 
 end ArmadaLean.Nitro.Counterexample.Theorem32

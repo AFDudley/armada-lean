@@ -18,8 +18,14 @@
     fundable. No operation removes the entry of `Vr`.
 
   So the stored outcome of `Lr` always has an entry for `Vr`, and the goal
-  `EndUserRecovered` never holds (`not_unbeatable`). The `example` at the end
-  applies the library theorem to this instance and derives `False`.
+  `EndUserRecovered` never holds (`not_unbeatable`).
+
+  Operator ruling 2026-11-01 (option A): an honest participant signs no
+  guarantee with a channel peer (`HonestSend.guaranteesExternal`,
+  `ArmadaLean/Types/Honest.lean`), so the library theorem has no premise for
+  it. `netX` is reachable only on the unrestricted machine
+  `Nitro.participantUnrestricted` (`netX_reach`); `netX_not_honest` shows it is
+  not reachable on the honest machine `Nitro.participant`.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/satp_end_user_recovers.lean`.
@@ -54,24 +60,24 @@ def sX : Adjudicator Nat :=
 def netX : NetworkState Nat p0 :=
   ⟨sX, [⟨SX, [q0]⟩, ⟨V0r, [p0, q0]⟩, ⟨SL, [q0]⟩, ⟨V0r, [q0]⟩], [⟨SL, [p0]⟩, ⟨V0r, [p0]⟩]⟩
 
-/-- `netX` is reachable: `netE_reach` of `NonVacuity.lean` with `SL` for
-    `S0`, and one more adversary move before the wait: `q0` challenges `Vx`. -/
-theorem netX_reach : (Nitro.participant apps2 (canon p0)).Reachable netX :=
-  participant_reachable_honest
-    (participant_reachable_adv
-      (participant_reachable_land
-        (participant_reachable_adv
-          (participant_reachable_honest
-            (participant_reachable_adv
-              (participant_reachable_honest (participant_reachable_init apps2 (canon p0))
+/-- `netX` is reachable on the unrestricted machine: `netE_reach` of `NonVacuity.lean` with
+    `SL` for `S0`, and one more adversary move before the wait: `q0` challenges `Vx`. -/
+theorem netX_reach : (Nitro.participantUnrestricted apps2 (canon p0)).Reachable netX :=
+  participantU_reachable_honest
+    (participantU_reachable_adv
+      (participantU_reachable_land
+        (participantU_reachable_adv
+          (participantU_reachable_honest
+            (participantU_reachable_adv
+              (participantU_reachable_honest (participantU_reachable_init apps2 (canon p0))
                 (.send V0r) (by simp))
               (.deliver ⟨V0r, [q0]⟩) (by
                 refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
-                cases h; exact absurd hp (by decide)))
+                cases h; exact absurd hp (by decide)) (fun op h => by cases h))
             (.send SL) (by simp))
           (.deliver ⟨SL, [q0]⟩) (by
             refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
-            cases h))
+            cases h) (fun op h => by cases h))
         (.challenge Vr [⟨V0r, [p0, q0]⟩] V0r)
         (fun ss h => by
           simp only [Op.proofStates, List.mem_singleton] at h; subst h
@@ -86,7 +92,8 @@ theorem netX_reach : (Nitro.participant apps2 (canon p0)).Reachable netX :=
       (.chain q0 (.challenge Vx [⟨SX, [q0]⟩] SX))
       ⟨by decide, fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h
-        exact ⟨fun h => absurd h (by decide), fun v h => by cases h⟩⟩)
+        exact ⟨fun h => absurd h (by decide), fun v h => by cases h⟩⟩
+      (fun op h => by cases h))
     (.wait 2) trivial
 
 /-! ## Allocation facts -/
@@ -369,7 +376,7 @@ theorem round (n : NetworkState Nat p0) (hI : Inv n) (m : HonestMove Nat) (hfeas
     ∃ n', (canon p0).Round apps2 m n n' ∧ Inv (n'.applyHonest m) := by
   have hgood : ∀ op ∈ m.calls, Good op := by
     cases m with
-    | react r => intro op hop; exact good_of_feasible hI.1 (hfeas op hop)
+    | react r => intro op hop; exact good_of_feasible hI.1 (hfeas.1 op hop)
     | wait dt => intro op hop; simp [HonestMove.calls] at hop
   set n1 := n.applyAdv apps2 (.chain q0 (.reclaim Lr Vx)) with hn1
   obtain ⟨hI1, hnow1⟩ := adv_first hI
@@ -458,21 +465,20 @@ theorem netX_setup : HoldsVirtualSetup netX r2 p0 q0 true := by
   · exact ⟨rfl, rfl, .inl rfl⟩
 
 
-/-
-  The own-violation: Alice's `oX` holds a guarantee whose peer is the virtual
-    channel `Vr`, so the restated theorem makes no promise to her. -/
-theorem oX_violates_hog : ¬ (∀ e ∈ oX, ∀ x ps, e.item = .guarantee x ps → ∀ d ∈ ps, d.isExternal = true) := by
-  intro h
-  have hmem : gX ∈ oX := by decide
-  have hspec : ∀ x ps, gX.item = .guarantee x ps → ∀ d ∈ ps, d.isExternal = true := h gX hmem
-  have hinst : ∀ d ∈ [Vr.address, .external 1], d.isExternal = true := hspec 1 [Vr.address, .external 1] (by decide)
-  have hd : Vr.address ∈ [Vr.address, .external 1] := by decide
-  have htrue : (Vr.address : Address Nat).isExternal = true := hinst Vr.address hd
-  have hfalse : (Vr.address : Address Nat).isExternal = false := by decide
-  contradiction
+/-- The own-violation: Alice's `oX` holds a guarantee whose peer is the virtual
+    channel `Vr`, against `HonestSend.guaranteesExternal`. -/
+theorem oX_violates_guaranteesExternal : ¬ oX.GuaranteesExternal := by decide
+
+/-- `netX` is not reachable on the honest machine: there every state Alice sent satisfies
+    the signing rules (`Nitro.participant_sent_honest`), and she sent `SL`. -/
+theorem netX_not_honest : ¬ (Nitro.participant apps2 (canon p0)).Reachable netX := fun h =>
+  oX_violates_guaranteesExternal
+    (Nitro.participant_sent_honest ⟨netX, h⟩ ⟨SL, [p0]⟩
+      (show (⟨SL, [p0]⟩ : SignedState Nat) ∈ netX.sent by decide)).guaranteesExternal
 end ArmadaLean.Nitro.Counterexample.EndUser
 
 #print axioms ArmadaLean.Nitro.Counterexample.EndUser.netX_not_unbeatable
 #print axioms ArmadaLean.Nitro.Counterexample.EndUser.netX_reach
 #print axioms ArmadaLean.Nitro.Counterexample.EndUser.netX_latest
 #print axioms ArmadaLean.Nitro.Counterexample.EndUser.netX_setup
+#print axioms ArmadaLean.Nitro.Counterexample.EndUser.netX_not_honest

@@ -45,6 +45,7 @@
 -/
 import ArmadaLean.Nitro.Adjudicator
 import ArmadaLean.Nitro.Lemmas
+import ArmadaLean.Types.Honest
 
 namespace ArmadaLean.Nitro
 
@@ -74,6 +75,37 @@ def NetworkState.Holds {p : Participant} (net : NetworkState E p) (ss : SignedSt
   ∀ v, ss.state.voucher? = some v → ∀ q ∈ v.signers,
     (q = p ∧ ∃ s ∈ net.sent, s.state.voucher? = some v) ∨
     (∃ r ∈ net.received, r.state.voucher? = some v)
+
+omit [DecidableEq E] in
+/-- `Holds` survives a larger `sent` and a larger `received`: each disjunct
+    names one member of one of the two lists. -/
+theorem NetworkState.Holds.of_subset {p : Participant} {net net' : NetworkState E p}
+    {ss : SignedState E} (hsent : ∀ s ∈ net.sent, s ∈ net'.sent)
+    (hrecv : ∀ r ∈ net.received, r ∈ net'.received) (h : net.Holds ss) : net'.Holds ss := by
+  obtain ⟨h1, h2⟩ := h
+  refine ⟨fun q hq => ?_, fun v hv q hq => ?_⟩
+  · rcases h1 q hq with ⟨hqp, s, hs, heq⟩ | ⟨r, hr, heq, hqr⟩
+    · exact .inl ⟨hqp, s, hsent s hs, heq⟩
+    · exact .inr ⟨r, hrecv r hr, heq, hqr⟩
+  · rcases h2 v hv q hq with ⟨hqp, s, hs, heq⟩ | ⟨r, hr, heq⟩
+    · exact .inl ⟨hqp, s, hsent s hs, heq⟩
+    · exact .inr ⟨r, hrecv r hr, heq⟩
+
+/-- `p` holds the all-signed pre-fund (turn 0) state of `V`: SATP:409,
+    "Proceed when s0 is committed" (Definition 3.1, SATP:394-399). The held
+    pre-fund states of `HonestSend.fundsCommitted` (`Types/Honest.lean`). -/
+def NetworkState.HoldsPrefund {p : Participant} (net : NetworkState E p) (V : FixedPart) : Prop :=
+  ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = V ∧ ss.state.turnNum = 0
+
+omit [DecidableEq E] in
+/-- `HoldsPrefund` survives a larger `sent` and a larger `received`
+    (`NetworkState.Holds.of_subset`). -/
+theorem NetworkState.HoldsPrefund.of_subset {p : Participant} {net net' : NetworkState E p}
+    {V : FixedPart} (hsent : ∀ s ∈ net.sent, s ∈ net'.sent)
+    (hrecv : ∀ r ∈ net.received, r ∈ net'.received) (h : net.HoldsPrefund V) :
+    net'.HoldsPrefund V := by
+  obtain ⟨ss, hH, hall, hc, ht⟩ := h
+  exact ⟨ss, hH.of_subset hsent hrecv, hall, hc, ht⟩
 
 /-- One honest reaction (Nitro:485-488: "signing commitments, refusing to
     sign commitments, launching/responding to on-chain challenges and
@@ -140,11 +172,37 @@ theorem Op.HonestFeasible.mem {p : Participant} {net : NetworkState E p} {op : O
 def Reaction.Feasible {p : Participant} (net : NetworkState E p) (r : Reaction E) : Prop :=
   ∀ op ∈ r.calls, op.HonestFeasible net
 
+/-- Every send of `r` satisfies the signing rules (`HonestSend`,
+    `Types/Honest.lean`): against every state `p` has signed once `r`'s sends
+    are out (`NetworkState.applyHonest`'s `.react` arm), and against the
+    pre-fund states `p` holds now. -/
+def Reaction.SendsHonest {p : Participant} (net : NetworkState E p) (r : Reaction E) : Prop :=
+  ∀ st ∈ r.sends,
+    HonestSend (r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent) net.HoldsPrefund st
+
 /-- The honest participant may play a reaction only when every one of its
-    calls is feasible; `wait` is always feasible. -/
+    calls is feasible and every one of its sends satisfies the signing rules
+    (`Reaction.SendsHonest`; operator ruling 2026-11-01, `Types/Honest.lean`:
+    the honest strategy makes a signed state only here). `wait` is always
+    feasible. -/
 def HonestMove.Feasible {p : Participant} (net : NetworkState E p) : HonestMove E → Prop
+  | .react r => r.Feasible net ∧ r.SendsHonest net
+  | .wait _ => True
+
+/-- A move whose calls are feasible, with no rule on its sends: the honest
+    step of the unrestricted machines (`Nitro.participantUnrestricted`,
+    `Nitro.networkUnrestricted`, `Reachable.lean`), whose counterexamples need
+    a participant that signs against the rules of `HonestSend`. -/
+def HonestMove.CallsFeasible {p : Participant} (net : NetworkState E p) : HonestMove E → Prop
   | .react r => r.Feasible net
   | .wait _ => True
+
+/-- A feasible move's calls are feasible. -/
+theorem HonestMove.Feasible.callsFeasible {p : Participant} {net : NetworkState E p}
+    {m : HonestMove E} (h : m.Feasible net) : m.CallsFeasible net := by
+  cases m with
+  | react r => exact h.1
+  | wait dt => trivial
 
 /-- Apply an honest move, once its round has landed every call (`Threat.Round`
     below runs the round first; this only ever touches `sent`/`chain` for
@@ -302,15 +360,25 @@ omit [DecidableEq E] in
 omit [DecidableEq E] in
 @[simp] theorem HonestMove.calls_wait (dt : Time) : (HonestMove.wait (E := E) dt).calls = [] := rfl
 
-omit [DecidableEq E] in
 @[simp] theorem HonestMove.Feasible_chain {p : Participant} (net : NetworkState E p) (op : Op E) :
     (HonestMove.chain op).Feasible net ↔ op.HonestFeasible net := by
-  simp [HonestMove.Feasible, HonestMove.chain, Reaction.Feasible, Reaction.one]
+  simp only [HonestMove.Feasible, HonestMove.chain, Reaction.one, Reaction.Feasible, List.mem_cons,
+    List.not_mem_nil, or_false, forall_eq, Reaction.SendsHonest, List.map_nil, List.nil_append,
+    IsEmpty.forall_iff, implies_true, and_true]
+
+/-- One send is feasible exactly when it satisfies the signing rules
+    (`HonestSend`) against `p`'s sent states with itself added. -/
+@[simp] theorem HonestMove.Feasible_send {p : Participant} (net : NetworkState E p) (st : State E) :
+    (HonestMove.send st).Feasible net ↔ HonestSend (⟨st, [p]⟩ :: net.sent) net.HoldsPrefund st := by
+  simp only [HonestMove.Feasible, HonestMove.send, Reaction.Feasible, List.not_mem_nil,
+    IsEmpty.forall_iff, implies_true, Reaction.SendsHonest, List.mem_cons, or_false, List.map_cons,
+    List.map_nil, List.cons_append, List.nil_append, forall_eq, true_and]
 
 omit [DecidableEq E] in
-@[simp] theorem HonestMove.Feasible_send {p : Participant} (net : NetworkState E p) (st : State E) :
-    (HonestMove.send st).Feasible net := by
-  simp [HonestMove.Feasible, HonestMove.send, Reaction.Feasible]
+/-- A send has no calls, so its calls are feasible (`HonestMove.CallsFeasible`). -/
+@[simp] theorem HonestMove.CallsFeasible_send {p : Participant} (net : NetworkState E p)
+    (st : State E) : (HonestMove.send st).CallsFeasible net :=
+  fun _ h => absurd h List.not_mem_nil
 
 omit [DecidableEq E] in
 @[simp] theorem NetworkState.applyHonest_chain {p : Participant} (net : NetworkState E p)
@@ -603,7 +671,7 @@ theorem Threat.Round.exists {apps : Apps E} {p : Participant} (T : Threat E p)
     cases m with
     | react r =>
       intro op hop dt heq
-      have := hfeas op hop
+      have := hfeas.1 op hop
       rw [heq] at this
       exact this
     | wait dt' => intro op hop; simp [HonestMove.calls] at hop
@@ -844,15 +912,6 @@ def AtFundingPoint (v : Views E) (c : FixedPart) (Ω : Outcome E) : Prop :=
     ∃ ss, (v p).Holds ss ∧ ss.state.channel = c ∧ ss.state.turnNum = k ∧
       ss.state.outcome = Ω ∧ ss.state.isFinal = false ∧ ss.ByMover) ∧
   (∀ p ∈ c.participants, ∀ ss ∈ (v p).sent, ss.state.channel = c → ss.state.turnNum < c.n)
-/-- ForceMove §3.1.5 (ForceMove:782-794): `p` made no alternative moves on `c`
-    during the setup phase (turns below `c.n`): it sent at most one state per turn.
-    A participant that signs two states at one turn gives the next player the choice
-    (operator ruling 2026-10-31; armada-laconic
-    `labbook/2026-10-31-funding-point-alternative-moves.md`). -/
-def MadeNoAlternativeSetupMoves {p : Participant} (net : NetworkState E p) (c : FixedPart) : Prop :=
-  ∀ s1 ∈ net.sent, ∀ s2 ∈ net.sent, s1.state.channel = c → s2.state.channel = c →
-    s1.state.turnNum = s2.state.turnNum → s1.state.turnNum < c.n → s1.state = s2.state
-
 
 /-- Nitro:637-638: "When a single conclusion proof is known to each participant.
     In this state, we say the channel is in the concluded state." -/

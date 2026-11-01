@@ -314,7 +314,7 @@ partial def splitFacts (g : MVarId) (done : FVarIdSet) : MetaM MVarId := g.withC
   return g
 
 /-- The embedded property of a non-Prop local `e` whose type is a refined type
-    in the `Subtype` form (`TimedChannel ε`, `GuaranteedOutcome E`, …): `none`
+    in the `Subtype` form (`TimedChannel ε`, …): `none`
     when `e`'s type does not unfold to `Subtype`. The example's own context
     carries such a local whole (`splitFacts` destructs only `Exists`/`And`),
     so its property is not otherwise a usable fact; this exposes it as one,

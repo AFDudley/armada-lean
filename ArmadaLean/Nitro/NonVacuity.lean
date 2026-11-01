@@ -857,12 +857,12 @@ theorem value_zero (apps : Apps E) {p : Participant} (T : Threat E p) (net : Net
     | react r =>
       have hnodep : ∀ op ∈ r.calls, ∀ a e x, op ≠ .deposit a e x := by
         intro op hop a e x heq
-        have := hfeas op hop
+        have := hfeas.1 op hop
         rw [heq] at this
         exact this
       have hnotick : ∀ op ∈ r.calls, ∀ dt, op ≠ Op.tick dt := by
         intro op hop dt heq
-        have := hfeas op hop
+        have := hfeas.1 op hop
         rw [heq] at this
         exact this
       obtain ⟨net', hrseq, hz1, heqnow⟩ := zeroBalRound T n.chain.now r.calls hnodep hnotick n hz'
@@ -966,6 +966,51 @@ theorem participant_reachable_adv {apps : Apps E} {p : Participant} {T : Threat 
     ∃ m' : AdvMove E, T.feasible net m' ∧ (∀ op, m' ≠ .land op) ∧
       net.applyAdv apps m = net.applyAdv apps m'))))
 
+/-- One send is feasible (`HonestMove.Feasible_send`) when it repeats no
+    earlier turn below the funding point with a different state (`hna`),
+    its guarantees name only external peers (`hge`), and `p` holds the
+    pre-fund state of every virtual channel it funds (`hfc`). -/
+theorem send_feasible_of {p : Participant} {net : NetworkState E p} {st : State E}
+    (hna : st.turnNum < st.channel.n → ∀ s ∈ net.sent, s.state.channel = st.channel →
+      s.state.turnNum = st.turnNum → s.state = st)
+    (hge : st.outcome.entries.GuaranteesExternal)
+    (hfc : ∀ V : FixedPart, V.kind = .virtual → st.outcome.entries.find V.address ≠ none →
+      net.HoldsPrefund V) :
+    (HonestMove.send st).Feasible net := by
+  rw [HonestMove.Feasible_send]
+  refine ⟨fun hlt s hs hc ht => ?_, hge, hfc⟩
+  rcases List.mem_cons.mp hs with rfl | hs
+  · rfl
+  · exact hna hlt s hs hc ht
+
+/-- `send_feasible_of` for a state whose allocation names no virtual
+    channel: it funds none (`HonestSend.fundsCommitted_of_fundable`). -/
+theorem send_feasible {p : Participant} {net : NetworkState E p} {st : State E}
+    (hna : st.turnNum < st.channel.n → ∀ s ∈ net.sent, s.state.channel = st.channel →
+      s.state.turnNum = st.turnNum → s.state = st)
+    (hge : st.outcome.entries.GuaranteesExternal)
+    (hfund : ∀ e ∈ st.outcome.entries, e.dest.fundable = true) :
+    (HonestMove.send st).Feasible net :=
+  send_feasible_of hna hge (HonestSend.fundsCommitted_of_fundable hfund)
+
+/-- `send_feasible_of`'s `hfc` for a state whose allocation names one channel
+    `W` and otherwise only external destinations: `p` must hold the pre-fund
+    state of `W` alone. -/
+theorem fundsCommitted_one {held : FixedPart → Prop} {st : State E} (W : FixedPart)
+    (hdest : ∀ e ∈ st.outcome.entries, e.dest = W.address ∨ e.dest.isExternal = true)
+    (hW : held W) :
+    ∀ V : FixedPart, V.kind = .virtual → st.outcome.entries.find V.address ≠ none → held V := by
+  intro V _ hf
+  obtain ⟨e, he⟩ := Option.ne_none_iff_exists'.mp hf
+  have hd : e.dest = V.address := Allocation.find_dest he
+  rcases hdest e (List.mem_of_find?_eq_some he) with hW' | hx
+  · rw [hd, FixedPart.address_eq, FixedPart.address_eq] at hW'
+    injection hW' with hVW
+    rw [hVW]
+    exact hW
+  · rw [hd, FixedPart.address_eq] at hx
+    cases hx
+
 /-- Every wallet-funded genesis network is reachable: `Nitro.network.init`
     leaves `wallet` unconstrained (D10 ruling). -/
 theorem network_reachable_init (apps : Apps E) (Ts : Threats E apps) (w : Participant → Coins) :
@@ -1000,6 +1045,46 @@ theorem network_reachable_deposit {apps : Apps E} {Ts : Threats E apps} {n : Net
     (e x : Coins) (hxle : x ≤ n.wallet p) :
     (Nitro.network apps Ts).Reachable (Network.deposit n p (.channel c) e x) :=
   h.tail ⟨p, Or.inr (Or.inr (Or.inr ⟨c, e, x, hxle, rfl⟩))⟩
+
+/-! The same steps on the unrestricted machines (`Nitro.participantUnrestricted`,
+    `Nitro.networkUnrestricted`): an honest move needs only feasible calls
+    (`HonestMove.CallsFeasible`). Only the counterexamples of `docs/counterexamples/`
+    use them. -/
+
+theorem participantU_reachable_init {p : Participant} (apps : Apps E) (T : Threat E p) :
+    (Nitro.participantUnrestricted apps T).Reachable
+      (⟨Adjudicator.genesis, [], []⟩ : NetworkState E p) :=
+  ⟨_, rfl, .refl⟩
+
+theorem participantU_reachable_honest {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net : NetworkState E p} (h : (Nitro.participantUnrestricted apps T).Reachable net)
+    (m : HonestMove E) (hm : m.CallsFeasible net) :
+    (Nitro.participantUnrestricted apps T).Reachable (net.applyHonest m) :=
+  h.tail (Or.inl ⟨m, hm, rfl⟩)
+
+theorem participantU_reachable_land {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net : NetworkState E p} (h : (Nitro.participantUnrestricted apps T).Reachable net) (op : Op E)
+    (hop : op.HonestFeasible net) :
+    (Nitro.participantUnrestricted apps T).Reachable (net.applyAdv apps (.land op)) :=
+  h.tail (Or.inr (Or.inl ⟨op, hop, rfl⟩))
+
+theorem participantU_reachable_adv {apps : Apps E} {p : Participant} {T : Threat E p}
+    {net : NetworkState E p} (h : (Nitro.participantUnrestricted apps T).Reachable net)
+    (m : AdvMove E) (hm : T.feasible net m) (hnoland : ∀ op, m ≠ .land op) :
+    (Nitro.participantUnrestricted apps T).Reachable (net.applyAdv apps m) :=
+  h.tail (Or.inr (Or.inr (Or.inl ⟨m, hm, hnoland, rfl⟩)))
+
+theorem networkU_reachable_init (apps : Apps E) (Ts : Threats E apps) (w : Participant → Coins) :
+    (Nitro.networkUnrestricted apps Ts).Reachable
+      (⟨Adjudicator.genesis, fun _ => [], fun _ => [], w⟩ : Network E) :=
+  ⟨_, ⟨rfl, rfl, rfl⟩, .refl⟩
+
+theorem networkU_reachable_honest {apps : Apps E} {Ts : Threats E apps} {n : Network E}
+    (h : (Nitro.networkUnrestricted apps Ts).Reachable n) (p : Participant) (m : HonestMove E)
+    (hm : m.CallsFeasible (n.view p))
+    (hvgate : ∀ r : Reaction E, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) :
+    (Nitro.networkUnrestricted apps Ts).Reachable (Network.applyHonest n p m) :=
+  h.tail ⟨p, Or.inl ⟨m, hm, hvgate, rfl⟩⟩
 
 end Reachability
 
@@ -1120,7 +1205,7 @@ theorem netF_reach : (Nitro.participant apps0 (canon p0)).Reachable netF :=
     (participant_reachable_adv (participant_reachable_init apps0 (canon p0))
       (.chain q0 (.deposit c1.address 0 1)) ⟨by decide, fun ss h => absurd h List.not_mem_nil⟩
       (fun op h => by cases h))
-    (.send stF) (by simp)
+    (.send stF) (send_feasible (by decide) (by decide) (by decide))
 
 /-- `⟨sCon, [ssF], [ssF]⟩` is reachable: `netF_reach`, then `p0`'s own call landing (the
     explicit-time game lands a call separately from issuing it, `participant_reachable_land`),
@@ -1195,12 +1280,12 @@ theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
   participant_reachable_honest
     (participant_reachable_land
       (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stO0)
-        (by simp))
+        (send_feasible (by decide) (by decide) (by decide)))
       (.challenge c1 [ssO0] stO0)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h
         exact holds_intro _ _ (by decide) (fun _ h => by cases h)))
-    (.send stO) (by simp)
+    (.send stO) (send_feasible (by decide) (by decide) (by decide))
 
 /-- `late_observer_can_checkpoint`. -/
 theorem late_observer_can_checkpoint.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
@@ -1237,7 +1322,7 @@ def nFU : Network Nat :=
 theorem nFU_reach : (Nitro.network apps0 (Ts apps0)).Reachable nFU :=
   network_reachable_land
     (network_reachable_honest (network_reachable_init apps0 (Ts apps0) noDeposits)
-      p0 (.send stF) (by simp)
+      p0 (.send stF) (send_feasible (by decide) (by decide) (by decide))
       (fun r hr st hst => by
         injection hr with hr; subst hr
         simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -1330,7 +1415,8 @@ def nFP : Network Nat :=
 theorem st0_voucher : st0.voucher? = none := rfl
 
 theorem nFP_reach : (Nitro.network apps1 (Ts apps1)).Reachable nFP :=
-  network_reachable_honest (network_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send st0) (by simp)
+  network_reachable_honest (network_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send st0)
+    (send_feasible (by decide) (by decide) (by decide))
     (fun r hr st hst => by
       injection hr with hr; subst hr
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -1374,7 +1460,8 @@ def nCF : Network Nat :=
   Network.applyHonest (⟨g0, fun _ => [], fun _ => [], noDeposits⟩ : Network Nat) p0 (.send stF)
 
 theorem nCF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nCF :=
-  network_reachable_honest (network_reachable_init apps0 (Ts apps0) noDeposits) p0 (.send stF) (by simp)
+  network_reachable_honest (network_reachable_init apps0 (Ts apps0) noDeposits) p0 (.send stF)
+    (send_feasible (by decide) (by decide) (by decide))
     (fun r hr st hst => by
       injection hr with hr; subst hr
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -1424,7 +1511,7 @@ def mC2 : AdvMove Nat := .chain q0 (.conclude c2 ⟨stF2, [p0, q0]⟩)
 theorem netC2_reach : (Nitro.participant apps0 (canon p0)).Reachable netC2 :=
   participant_reachable_adv
     (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stF2)
-      (by simp))
+      (send_feasible (by decide) (by decide) (by decide)))
     (.deliver ⟨stF2, [q0]⟩) (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
       NetworkState.Unforged _ ⟨stF2, [q0]⟩) (fun op h => by cases h)
 
@@ -1460,7 +1547,7 @@ theorem consensus_enabled_outcomes.nonvacuity : ∃ (net : NetworkState Nat p0) 
       have h := hfeas netC2
       rw [hm] at h
       subst heq
-      exact h _ hop
+      exact h.1 _ hop
     obtain ⟨net2, hland, heqnow⟩ :=
       Threat.RoundSeq.landAll apps0 (canon p0) netC2.chain.now r.calls hnotick
         (netC2.applyAdv apps0 mC2)
@@ -1521,7 +1608,8 @@ theorem g0_concludeP : g0.apply apps0 p0 (.conclude c1 ssP) = some sP := rfl
 theorem sP_reach : (Nitro.participant apps0 (canon p0)).Reachable
     (⟨sP, [ssP], [ssP]⟩ : NetworkState Nat p0) :=
   participant_reachable_land
-    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stP) (by simp))
+    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stP)
+      (send_feasible (by decide) (by decide) (by decide)))
     (.conclude c1 ssP)
     (fun ss h => by
       simp only [Op.proofStates, List.mem_singleton] at h; subst h
@@ -1612,12 +1700,12 @@ def nLW : Network Nat :=
 theorem nLW_reach : (Nitro.network apps0 (Ts apps0)).Reachable nLW :=
   network_reachable_honest
     (network_reachable_honest (network_reachable_init apps0 (Ts apps0) noDeposits) p0 (.send stLW)
-      (by simp)
+      (send_feasible (by decide) (by decide) (by decide))
       (fun r hr st hst => by
         injection hr with hr; subst hr
         simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
         intro v hv; rw [stLW_voucher] at hv; cases hv))
-    q0 (.send stLW) (by simp) (fun r hr st hst => by
+    q0 (.send stLW) (send_feasible (by decide) (by decide) (by decide)) (fun r hr st hst => by
       injection hr with hr; subst hr
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
       intro v hv; rw [stLW_voucher] at hv; cases hv)
@@ -1691,6 +1779,8 @@ def nLWF0 : Network Nat := ⟨g0, fun _ => [], fun _ => [], wLWalletF⟩
 def nLWF1 : Network Nat := Network.deposit nLWF0 p0 cLWF.address 0 5
 
 theorem nLWF1_chain : nLWF1.chain = gLWF := rfl
+theorem nLWF1_sent_p0 : nLWF1.sent p0 = [] := rfl
+theorem nLWF1_sent_q0 : nLWF1.sent q0 = [] := rfl
 
 theorem nLWF1_reach : (Nitro.network apps0 (Ts apps0)).Reachable nLWF1 :=
   network_reachable_deposit (network_reachable_init apps0 (Ts apps0) wLWalletF) p0 cLWF 0 5
@@ -1704,12 +1794,12 @@ theorem nLWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nLWF :=
     (network_reachable_honest
       (network_reachable_deposit (network_reachable_init apps0 (Ts apps0) wLWalletF) p0 cLWF 0 5
         (by simp [wLWalletF]))
-      p0 (.send stLWF) (by simp)
+      p0 (.send stLWF) (send_feasible (by decide) (by decide) (by decide))
       (fun r hr st hst => by
         injection hr with hr; subst hr
         simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
         intro v hv; rw [stLWF_voucher] at hv; cases hv))
-    q0 (.send stLWF) (by simp) (fun r hr st hst => by
+    q0 (.send stLWF) (send_feasible (by decide) (by decide) (by decide)) (fun r hr st hst => by
       injection hr with hr; subst hr
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
       intro v hv; rw [stLWF_voucher] at hv; cases hv)
@@ -1814,16 +1904,54 @@ theorem n0G_chain : n0G.chain = g0 := rfl
 def nOneCh (n0 : Network Nat) (st : State Nat) : Network Nat :=
   Network.applyHonest (Network.applyHonest n0 p0 (.send st)) q0 (.send st)
 
+/-- A send of `p` leaves the `sent` list of another participant `q`. -/
+theorem sent_after_send_other (n0 : Network Nat) {p q : Participant} (h : q ≠ p) (st : State Nat) :
+    ((Network.applyHonest n0 p (.send st)).view q).sent = (n0.view q).sent := by
+  show (Network.applyHonest n0 p (.react ⟨[], [st]⟩)).sent q = n0.sent q
+  rw [Network.applyHonest_react_sent, if_neg h]
+
+/-- A send of `p` adds the one signed state to `p`'s own `sent` list. -/
+theorem sent_after_send_self (n0 : Network Nat) (p : Participant) (st : State Nat) :
+    ((Network.applyHonest n0 p (.send st)).view p).sent = ⟨st, [p]⟩ :: (n0.view p).sent := by
+  show (Network.applyHonest n0 p (.react ⟨[], [st]⟩)).sent p = _
+  rw [Network.applyHonest_react_sent, if_pos rfl]
+  rfl
+
+/-- `send_feasible`'s `hna` when `p` has sent nothing. -/
+theorem hna_nil {p : Participant} {net : NetworkState Nat p} {st : State Nat} (h : net.sent = []) :
+    st.turnNum < st.channel.n → ∀ s ∈ net.sent, s.state.channel = st.channel →
+      s.state.turnNum = st.turnNum → s.state = st := by
+  intro _ s hs
+  rw [h] at hs
+  exact absurd hs List.not_mem_nil
+
+/-- `send_feasible`'s `hna` when `p` has sent one state `st1`. -/
+theorem hna_single {p : Participant} {net : NetworkState Nat p} {st st1 : State Nat}
+    {q : List Participant} (h : net.sent = [⟨st1, q⟩])
+    (h1 : st.turnNum < st.channel.n → st1.channel = st.channel → st1.turnNum = st.turnNum →
+      st1 = st) :
+    st.turnNum < st.channel.n → ∀ s ∈ net.sent, s.state.channel = st.channel →
+      s.state.turnNum = st.turnNum → s.state = st := by
+  intro hlt s hs
+  rw [h, List.mem_singleton] at hs
+  subst hs
+  exact h1 hlt
+
 theorem nOneCh_reach {n0 : Network Nat} {st : State Nat}
-    (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0) (hv : st.voucher? = none) :
+    (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0) (hv : st.voucher? = none)
+    (hsp : n0.sent p0 = []) (hsq : n0.sent q0 = [])
+    (hge : st.outcome.entries.GuaranteesExternal)
+    (hfund : ∀ e ∈ st.outcome.entries, e.dest.fundable = true) :
     (Nitro.network apps0 (Ts apps0)).Reachable (nOneCh n0 st) :=
   network_reachable_honest
-    (network_reachable_honest hr0 p0 (.send st) (by simp)
+    (network_reachable_honest hr0 p0 (.send st) (send_feasible (hna_nil hsp) hge hfund)
       (fun r hr st' hst => by
         injection hr with hr; subst hr
         simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
         intro v hv'; rw [hv] at hv'; cases hv'))
-    q0 (.send st) (by simp)
+    q0 (.send st)
+    (send_feasible (hna_nil (by rw [sent_after_send_other n0 (p := p0) (q := q0) (by decide) st]; exact hsq))
+      hge hfund)
     (fun r hr st' hst => by
       injection hr with hr; subst hr
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -1903,27 +2031,45 @@ def nTwoCh (n0 : Network Nat) (st1 st2 : State Nat) : Network Nat :=
 
 theorem nTwoCh_reach {n0 : Network Nat} {st1 st2 : State Nat}
     (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0)
-    (hv1 : st1.voucher? = none) (hv2 : st2.voucher? = none) :
+    (hv1 : st1.voucher? = none) (hv2 : st2.voucher? = none)
+    (hsp : n0.sent p0 = []) (hsq : n0.sent q0 = [])
+    (hge1 : st1.outcome.entries.GuaranteesExternal)
+    (hfund1 : ∀ e ∈ st1.outcome.entries, e.dest.fundable = true)
+    (hge2 : st2.outcome.entries.GuaranteesExternal)
+    (hfund2 : ∀ e ∈ st2.outcome.entries, e.dest.fundable = true)
+    (h12 : st2.turnNum < st2.channel.n → st1.channel = st2.channel →
+      st1.turnNum = st2.turnNum → st1 = st2) :
     (Nitro.network apps0 (Ts apps0)).Reachable (nTwoCh n0 st1 st2) :=
+  have hp1 : ((Network.applyHonest (Network.applyHonest n0 p0 (.send st1)) q0 (.send st1)).view
+      p0).sent = [⟨st1, [p0]⟩] := by
+    rw [sent_after_send_other _ (p := q0) (q := p0) (by decide), sent_after_send_self]
+    exact congrArg _ hsp
+  have hq1 : ((Network.applyHonest (Network.applyHonest (Network.applyHonest n0 p0 (.send st1))
+      q0 (.send st1)) p0 (.send st2)).view q0).sent = [⟨st1, [q0]⟩] := by
+    rw [sent_after_send_other _ (p := p0) (q := q0) (by decide), sent_after_send_self,
+      sent_after_send_other _ (p := p0) (q := q0) (by decide)]
+    exact congrArg _ hsq
   network_reachable_honest
     (network_reachable_honest
       (network_reachable_honest
-        (network_reachable_honest hr0 p0 (.send st1) (by simp)
+        (network_reachable_honest hr0 p0 (.send st1) (send_feasible (hna_nil hsp) hge1 hfund1)
           (fun r hr st' hst => by
             injection hr with hr; subst hr
             simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
             intro v hv'; rw [hv1] at hv'; cases hv'))
-        q0 (.send st1) (by simp)
+        q0 (.send st1)
+        (send_feasible (hna_nil (by rw [sent_after_send_other n0 (p := p0) (q := q0) (by decide) st1]; exact hsq))
+          hge1 hfund1)
         (fun r hr st' hst => by
           injection hr with hr; subst hr
           simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
           intro v hv'; rw [hv1] at hv'; cases hv'))
-      p0 (.send st2) (by simp)
+      p0 (.send st2) (send_feasible (hna_single hp1 h12) hge2 hfund2)
       (fun r hr st' hst => by
         injection hr with hr; subst hr
         simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
         intro v hv'; rw [hv2] at hv'; cases hv'))
-    q0 (.send st2) (by simp)
+    q0 (.send st2) (send_feasible (hna_single hq1 h12) hge2 hfund2)
     (fun r hr st' hst => by
       injection hr with hr; subst hr
       simp only [Reaction.sends, List.mem_singleton] at hst; subst hst
@@ -2147,11 +2293,13 @@ theorem gLWF_finalOutcome (c : FixedPart) : gLWF.finalOutcome c.address = none :
 
 def nOpenF : Network Nat := nTwoCh nLWF1 stL1F stXF
 theorem nOpenF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nOpenF :=
-  nTwoCh_reach nLWF1_reach stL1F_voucher stXF_voucher
+  nTwoCh_reach nLWF1_reach stL1F_voucher stXF_voucher nLWF1_sent_p0 nLWF1_sent_q0
+    (by decide) (by decide) (by decide) (by decide) (by decide)
 
 def nOpenF' : Network Nat := nTwoCh nLWF1 stLWF stXF
 theorem nOpenF'_reach : (Nitro.network apps0 (Ts apps0)).Reachable nOpenF' :=
-  nTwoCh_reach nLWF1_reach stLWF_voucher stXF_voucher
+  nTwoCh_reach nLWF1_reach stLWF_voucher stXF_voucher nLWF1_sent_p0 nLWF1_sent_q0
+    (by decide) (by decide) (by decide) (by decide) (by decide)
 
 theorem subchannel_open_value_preserving.nonvacuity : ∃ (v v' : Views Nat) (n n' : Network Nat) (A B : Participant) (dA dB : Nat)
     (L χ : FixedPart) (a b a' b' : Coins),
@@ -2186,7 +2334,7 @@ theorem subchannel_open_value_preserving.nonvacuity : ∃ (v v' : Views Nat) (n 
     deposit-funded base. `w.c = 5 > 0`, the `D10` subchannel value. -/
 def nCloseF' : Network Nat := nOneCh nLWF1 stL1F
 theorem nCloseF'_reach : (Nitro.network apps0 (Ts apps0)).Reachable nCloseF' :=
-  nOneCh_reach nLWF1_reach stL1F_voucher
+  nOneCh_reach nLWF1_reach stL1F_voucher nLWF1_sent_p0 nLWF1_sent_q0 (by decide) (by decide)
 
 theorem subchannel_close_value_preserving.nonvacuity : ∃ (v v' : Views Nat) (n n' : Network Nat) (w : LedgerWithSub Nat) (a' b' : Coins),
     (Nitro.network apps0 (Ts apps0)).Reachable n ∧ v = n.views ∧
@@ -2237,7 +2385,8 @@ theorem cLWF_ne_cL2F : cLWF ≠ cL2F := by decide
 
 def nPWF : Network Nat := nTwoCh nLWF1 stPWLF stPWLF'
 theorem nPWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPWF :=
-  nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher
+  nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher nLWF1_sent_p0 nLWF1_sent_q0
+    (by decide) (by decide) (by decide) (by decide) (by decide)
 
 theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
     (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps0) (χ : FixedPart)
@@ -2382,7 +2531,7 @@ def netV : NetworkState Nat p0 := ⟨g0, [⟨stV, [q0]⟩], [⟨stV, [p0]⟩]⟩
 theorem netV_reach : (Nitro.participant apps2 (canon p0)).Reachable netV :=
   participant_reachable_adv
     (participant_reachable_honest (participant_reachable_init apps2 (canon p0)) (.send stV)
-      (by simp))
+      (send_feasible (by decide) (by decide) (by decide)))
     (.deliver ⟨stV, [q0]⟩) (⟨fun h => absurd h (by decide),
       fun v h hp => by cases h; exact absurd hp (by decide)⟩ :
       NetworkState.Unforged _ ⟨stV, [q0]⟩) (fun op h => by cases h)
@@ -2428,39 +2577,25 @@ def op3 : Allocation Nat := [alloc (.external 1) 0, alloc (.external 2) 0, r3.gu
 def Sm : State Nat := ⟨Lm3, 1, .allocation om3, false, .opaque 0⟩
 def Sp : State Nat := ⟨Lp3, 1, .allocation op3, false, .opaque 0⟩
 def V0 : State Nat := ⟨V3, 0, originalOutcome 0 2 1 1, false, .satpVirtual ⟨.none, ⟨V3, 0, 0, 0, []⟩⟩⟩
-def net3 : NetworkState Nat q0 :=
-  ⟨g0, [⟨Sm, [p0]⟩, ⟨Sp, [w0]⟩], [⟨Sm, [q0]⟩, ⟨Sp, [q0]⟩, ⟨V0, [q0]⟩]⟩
 
-theorem net3_latest_m : HoldsLatestLedger net3 Lm3 om3 :=
-  ⟨⟨Sm, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
-    by decide, .inl ⟨0, rfl, by decide⟩⟩
+/-- `q0` holds the all-signed pre-fund state of `V3` once it sent its own
+    signature on `V0` and received `V0` signed by every participant of `V3`. -/
+theorem prefund_V3 {net : NetworkState Nat q0} (hs : (⟨V0, [q0]⟩ : SignedState Nat) ∈ net.sent)
+    (hr : (⟨V0, [p0, q0, w0]⟩ : SignedState Nat) ∈ net.received) : net.HoldsPrefund V3 := by
+  refine ⟨⟨V0, [p0, q0, w0]⟩, holds_intro _ _ (fun q hq => ?_) (fun v hv => ?_), by decide, rfl, rfl⟩
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+    rcases hq with rfl | rfl | rfl
+    · exact .inr ⟨_, hr, rfl, List.mem_cons_self⟩
+    · exact .inl ⟨rfl, _, hs, rfl⟩
+    · exact .inr ⟨_, hr, rfl, List.mem_cons_of_mem _ (List.mem_cons_of_mem _ List.mem_cons_self)⟩
+  · cases hv
+    rfl
 
-theorem net3_latest_p : HoldsLatestLedger net3 Lp3 op3 :=
-  ⟨⟨Sp, [q0, w0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl, rfl,
-    by decide, .inl ⟨0, rfl, by decide⟩⟩
-
-/-- `net3` is reachable: `q0`'s own three honest sends (`V0`, then `Sp`, then `Sm`, the order
-    `.send` prepends into `net3`'s own `sent`), then two adversary delivers of `p0`'s and `w0`'s
-    claimed signatures (delivered in reverse order, for the same prepend reason). -/
-theorem net3_reach : (Nitro.participant apps2 (canon q0)).Reachable net3 :=
-  participant_reachable_adv
-    (participant_reachable_adv
-      (participant_reachable_honest
-        (participant_reachable_honest
-          (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send V0)
-            (by simp))
-          (.send Sp) (by simp))
-        (.send Sm) (by simp))
-      (.deliver ⟨Sp, [w0]⟩)
-      (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
-      (fun op h => by cases h))
-    (.deliver ⟨Sm, [p0]⟩)
-    (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sm, [p0]⟩)
-    (fun op h => by cases h)
-
-/-- `net3` extended: `q0` also received the all-signed pre-fund state of `V3`, delivered
-    right after `q0`'s own send of it and before `q0` sends either ledger state — operator
-    ruling 2026-10-31, `satp_theorem_3_2`'s new `hR1`. -/
+/-- `q0`'s view: `q0` received the all-signed pre-fund state of `V3`, delivered right
+    after `q0`'s own send of it and before `q0` sends either ledger state. `q0` signs a
+    ledger state that funds `V3` only then (`HonestSend.fundsCommitted`; operator rulings
+    2026-10-31 and 2026-11-01). The same states without the delivery are the counterexample
+    `net3` of `docs/counterexamples/satp_theorem_3_2.lean`, on the unrestricted machine. -/
 def net3R : NetworkState Nat q0 :=
   ⟨g0, [⟨Sm, [p0]⟩, ⟨Sp, [w0]⟩, ⟨V0, [p0, q0, w0]⟩], [⟨Sm, [q0]⟩, ⟨Sp, [q0]⟩, ⟨V0, [q0]⟩]⟩
 
@@ -2471,15 +2606,17 @@ theorem net3R_reach : (Nitro.participant apps2 (canon q0)).Reachable net3R :=
         (participant_reachable_honest
           (participant_reachable_adv
             (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send V0)
-              (by simp))
+              (send_feasible (by decide) (by decide) (by decide)))
             (.deliver ⟨V0, [p0, q0, w0]⟩)
             (⟨fun _ => ⟨⟨V0, [q0]⟩, by simp, rfl⟩,
               fun v h hp => by
                 simp [V0, State.voucher?] at h; subst h; exact absurd hp List.not_mem_nil⟩ :
               NetworkState.Unforged _ ⟨V0, [p0, q0, w0]⟩)
             (fun op h => by cases h))
-          (.send Sp) (by simp))
-        (.send Sm) (by simp))
+          (.send Sp) (send_feasible_of (by decide) (by decide)
+            (fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide)))))
+        (.send Sm) (send_feasible_of (by decide) (by decide)
+          (fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide)))))
       (.deliver ⟨Sp, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
       (fun op h => by cases h))
@@ -2502,24 +2639,6 @@ theorem net3R_virtualSetup : HoldsVirtualSetup net3R r3 p0 w0 true :=
         first | exact ⟨rfl, rfl, .inl rfl⟩ | exact absurd hc (by decide),
     ⟨V0, [q0]⟩, by simp [net3R], rfl, rfl⟩
 
-/-- `net3R` satisfies the new `hR1`: the all-signed pre-fund state of `V3` is the witness,
-    held via `q0`'s own send of it plus the extra `.deliver` `net3R_reach` adds. -/
-theorem net3R_hR1 : ∀ t ∈ net3R.sent, (t.state.channel = Lm3 ∨ t.state.channel = Lp3) →
-    ∀ o, t.state.outcome = .allocation o → o.find r3.V.address ≠ none →
-    ∃ ss, net3R.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r3.V ∧ ss.state.turnNum = 0 := by
-  intro t ht _ o ho _
-  refine ⟨⟨V0, [p0, q0, w0]⟩, ?_, by decide, rfl, rfl⟩
-  refine ⟨fun q hq => ?_, fun v hv q hq => ?_⟩
-  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
-    rcases hq with rfl | rfl | rfl
-    · exact .inr ⟨⟨V0, [p0, q0, w0]⟩, by simp [net3R], rfl, by simp⟩
-    · exact .inl ⟨rfl, ⟨V0, [q0]⟩, by simp [net3R], rfl⟩
-    · exact .inr ⟨⟨V0, [p0, q0, w0]⟩, by simp [net3R], rfl, by simp⟩
-  · simp [V0, State.voucher?] at hv
-    subst hv
-    exact absurd hq List.not_mem_nil
-
-
 /-- `satp_theorem_3_2`. -/
 theorem satp_theorem_3_2.nonvacuity : ∃ (r : Route Nat) (alice bob P Pprev Pnext : Participant) (i : Nat)
     (Lm Lp : TimedChannel (canon P).ε) (om op : Allocation Nat) (balm balp : Coins)
@@ -2533,9 +2652,6 @@ theorem satp_theorem_3_2.nonvacuity : ∃ (r : Route Nat) (alice bob P Pprev Pne
     (Nitro.participant apps2 (canon P)).Reachable net ∧
     HoldsLatestLedger net (Lm : FixedPart) om ∧ HoldsLatestLedger net (Lp : FixedPart) op ∧
     HoldsVirtualSetup net r alice bob true ∧
-    (∀ t ∈ net.sent, (t.state.channel = (Lm : FixedPart) ∨ t.state.channel = (Lp : FixedPart)) →
-      ∀ o', t.state.outcome = .allocation o' → o'.find r.V.address ≠ none →
-      ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = r.V ∧ ss.state.turnNum = 0) ∧
     (net.DeadlineAfter (Lm : FixedPart) (canon P).ε ∧
       net.DeadlineAfter (Lp : FixedPart) (canon P).ε ∧ net.DeadlineAfter r.V (canon P).ε) ∧
     (net.chain.finalizedWith (Lm : FixedPart).address = none ∧
@@ -2544,12 +2660,12 @@ theorem satp_theorem_3_2.nonvacuity : ∃ (r : Route Nat) (alice bob P Pprev Pne
   ⟨r3, p0, w0, q0, p0, w0, 1, ⟨Lm3, by decide⟩, ⟨Lp3, by decide⟩, om3, op3, 1, 1, net3R,
     canon_ok _ _, r3_wf, rfl, rfl, rfl, le_rfl, by decide, rfl, rfl, rfl, rfl, rfl, by decide,
     by unfold Route.LedgerAfterRound2; decide, by unfold Route.LedgerAfterRound2; decide,
-    net3R_reach, net3R_latest_m, net3R_latest_p, net3R_virtualSetup, net3R_hR1,
+    net3R_reach, net3R_latest_m, net3R_latest_p, net3R_virtualSetup,
     ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _,
       deadlineAfter_open (t := 0) rfl _⟩, by decide⟩
 
-/-- `satp_intermediary_before_round2`. `netB` is reachable the same way `net3` is, with two sends
-    and two delivers instead of three and two. -/
+/-- `satp_intermediary_before_round2`. `netB` is reachable the same way `net3R` is, with two
+    sends and two delivers instead of three and three. -/
 def omB : Allocation Nat := [alloc (.external 1) 1]
 def SmB : State Nat := ⟨Lm3, 1, .allocation omB, false, .opaque 0⟩
 def SpB : State Nat := ⟨Lp3, 1, .allocation omB, false, .opaque 0⟩
@@ -2560,8 +2676,8 @@ theorem netB_reach : (Nitro.participant apps2 (canon q0)).Reachable netB :=
     (participant_reachable_adv
       (participant_reachable_honest
         (participant_reachable_honest (participant_reachable_init apps2 (canon q0)) (.send SpB)
-          (by simp))
-        (.send SmB) (by simp))
+          (send_feasible (by decide) (by decide) (by decide)))
+        (.send SmB) (send_feasible (by decide) (by decide) (by decide)))
       (.deliver ⟨SpB, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ :
         NetworkState.Unforged _ ⟨SpB, [w0]⟩)
@@ -2611,11 +2727,14 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
         (participant_reachable_honest
           (participant_reachable_adv
             (participant_reachable_honest (participant_reachable_init apps2 (canon p0))
-              (.send V0r) (by simp))
+              (.send V0r) (send_feasible (by decide) (by decide) (by decide)))
             (.deliver ⟨V0r, [q0]⟩) (by
               refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
               cases h; exact absurd hp (by decide)) (fun op h => by cases h))
-          (.send S0) (by simp))
+          (.send S0) (send_feasible_of (by decide) (by decide)
+            (fundsCommitted_one Vr (by decide)
+              ⟨⟨V0r, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h; rfl), by decide,
+                rfl, rfl⟩)))
         (.deliver ⟨S0, [q0]⟩) (by
           refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
           cases h) (fun op h => by cases h))
@@ -2633,41 +2752,20 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
     (.wait 2) trivial
 
 theorem satp_end_user_recovers.nonvacuity : ∃ (r : Route Nat) (alice bob P P1 : Participant) (L0 : TimedChannel (canon P).ε)
-    (o : GuaranteedOutcome Nat) (bal a b : Coins) (net : NetworkState Nat P),
+    (o : Allocation Nat) (bal a b : Coins) (net : NetworkState Nat P),
     Assumptions apps2 P (canon P) ∧ r.WellFormed apps2 ∧ apps2 r.V.appDef = satpVirtualRules ∧
     r.peers.head? = some alice ∧ r.peers.getLast? = some bob ∧ P = alice ∧ r.peers[1]? = some P1 ∧
     r.ledgers[0]? = some (L0 : FixedPart) ∧
     r.V.IsTimed (canon P).ε ∧
-    r.LedgerAfterRound2 (o : Allocation Nat) P P1 P bal r.a0 ∧
+    r.LedgerAfterRound2 o P P1 P bal r.a0 ∧
     (Nitro.participant apps2 (canon P)).Reachable net ∧
-    HoldsLatestLedger net (L0 : FixedPart) (o : Allocation Nat) ∧
+    HoldsLatestLedger net (L0 : FixedPart) o ∧
     HoldsVirtualSetup net r alice bob true ∧ a + b = r.a0 + r.b0 ∧
     net.chain.finalOutcome r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]) ∧
     net.DeadlineAfter (L0 : FixedPart) (canon P).ε ∧
     net.chain.finalizedWith (L0 : FixedPart).address = none := by
-  refine ⟨r2, p0, q0, p0, q0, ⟨Lr, by decide⟩, ⟨o0, by
-    intro e he
-    simp only [o0, List.mem_cons, List.not_mem_nil, or_false] at he
-    rcases he with h1 | h2 | h3
-    · subst h1
-      intro x ps hxps
-      intro d hd
-      have hf : False := by cases hxps
-      exact hf.elim
-    · subst h2
-      intro x ps hxps
-      intro d hd
-      have hf : False := by cases hxps
-      exact hf.elim
-    · subst h3
-      intro x ps hxps
-      simp only [Route.guarantee, Item.guarantee.injEq] at hxps
-      obtain ⟨hx, hps⟩ := hxps
-      subst hps
-      intro d hd
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hd
-      rcases hd with rfl | rfl <;> rfl⟩, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl,
+  refine ⟨r2, p0, q0, p0, q0, ⟨Lr, by decide⟩, o0, 1, 1, 0, netE, canon_ok _ _, r2_wf, rfl,
     rfl, rfl, rfl, rfl, rfl, by decide, by unfold Route.LedgerAfterRound2; decide, netE_reach,
     ⟨⟨S0, [p0, q0]⟩, ?_, by decide, rfl, rfl, rfl, ?_, ?_⟩, ⟨?_, ?_⟩, rfl, by decide, ?_, by decide⟩
   · refine ⟨fun q hq => ?_, fun v hv => ?_⟩

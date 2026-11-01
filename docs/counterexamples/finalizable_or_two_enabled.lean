@@ -228,7 +228,7 @@ theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit) (h
   obtain ⟨⟨k, hk⟩, hpo⟩ := hI
   have hgood : ∀ op ∈ m.calls, Good op := by
     cases m with
-    | react r => intro op hop; exact good_of_feasible hpo (hfeas op hop)
+    | react r => intro op hop; exact good_of_feasible hpo (hfeas.1 op hop)
     | wait dt => intro op hop; simp [HonestMove.calls] at hop
   have hnf : NF n.chain := by unfold NF; rw [hk]; rfl
   obtain ⟨n1, hseq1, hnf1, hpo1, hnow1⟩ := land_all n.chain.now m.calls hgood n hnf hpo
