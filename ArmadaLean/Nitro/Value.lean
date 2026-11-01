@@ -289,7 +289,7 @@ theorem payoutValues_absorb_le {o : Allocation E} (hnd : (o.map Entry.dest).Nodu
         (remaining - Allocation.paidTo held o b)
         (Allocation.reduceOwed o b (Allocation.paidTo held o b))).get n := by
   induction o generalizing vals held remaining with
-  | nil => simp at hb
+  | nil => cases hb
   | cons e rest ih =>
     rw [Allocation.find_cons] at hb
     have hndr : (rest.map Entry.dest).Nodup := (List.nodup_cons.1 hnd).2
@@ -299,22 +299,23 @@ theorem payoutValues_absorb_le {o : Allocation E} (hnd : (o.map Entry.dest).Nodu
       rw [if_pos rfl] at hb
       have hee : e = (⟨e.dest, .alloc amt⟩ : Entry E) := by injection hb
       have heitem : e.item = Item.alloc amt := by rw [hee]
-      have heamt : e.amount = amt := by simp [Entry.amount, heitem]
+      have heamt : e.amount = amt := by show e.item.amount = amt; rw [heitem]; rfl
       have hx : Allocation.paidTo held (e :: rest) e.dest = min amt held := by
         rw [Allocation.paidTo_eq_get, hdeq]
         conv_lhs => rw [hee]
-        simp [Allocation.payout_cons, Balances.get_cons]
+        simp only [Allocation.payout_cons, Entry.amount_mk, Item.amount_alloc, Balances.get_cons,
+          ↓reduceIte]
       rw [hx]
       have hro : Allocation.reduceOwed (e :: rest) e.dest (min amt held) =
           ({ e with item := .alloc (amt - min amt held) } : Entry E) :: rest := by
         rw [Allocation.reduceOwed_cons, if_pos rfl]
-        simp [Entry.amount, heitem]
+        simp only [Entry.amount, heitem, Item.amount_alloc]
       rw [hro]
       simp only [payoutValues]
-      have hcond1 : ¬ e.item.isGuarantee = true := by rw [heitem]; simp [Item.isGuarantee]
+      have hcond1 : ¬ e.item.isGuarantee = true := by rw [heitem]; exact Bool.false_ne_true
       have hcond2 :
           ¬ ({ e with item := .alloc (amt - min amt held) } : Entry E).item.isGuarantee = true := by
-        simp [Item.isGuarantee]
+        exact Bool.false_ne_true
       have hmodamt : ({ e with item := .alloc (amt - min amt held) } : Entry E).amount
           = amt - min amt held := rfl
       rw [if_neg hcond1, if_neg hcond2, heamt, hmodamt]

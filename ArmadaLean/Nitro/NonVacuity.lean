@@ -1475,8 +1475,10 @@ theorem sP_allocationOf (n : Address Nat) :
       rw [if_pos (FixedPart.address_eq c1).symm]
       rfl
     · rw [if_neg (fun h => hc (by cases h; rfl))]
-      simp [sP, Adjudicator.allocationOf, Adjudicator.finalOutcome, Adjudicator.statusOf,
-        Adjudicator.setStatus, g0, Adjudicator.genesis, List.lookup_cons, beq_false_of_ne hc]
+      simp only [Adjudicator.allocationOf, Adjudicator.finalOutcome, Adjudicator.statusOf, sP,
+        Adjudicator.setStatus, g0, Adjudicator.genesis, ne_eq, decide_not, List.filter_nil,
+        List.lookup_cons, beq_false_of_ne hc, List.lookup_nil, Option.getD_none,
+        ChannelStatus.finalOutcome_open]
 
 /-- `sP` has no edge: its one entry names an external destination. -/
 theorem sP_dag : sP.IsDAG := by
@@ -1509,7 +1511,7 @@ theorem sP_turboScope : sP.TurboScope := by
 
 theorem sP_turboOutcomeNetwork : sP.IsTurboOutcomeNetwork := ⟨sP_dag, sP_turboScope⟩
 
-theorem payout_to_other_affects_only_owner.nonvacuity : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
+theorem payout_to_other_affects_only_owner.nonvacuity : ∃ (net : NetworkState Nat p0) (_d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsTurboOutcomeNetwork ∧ net.chain.transfer a (.external q) = some s' :=
