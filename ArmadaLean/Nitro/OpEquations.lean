@@ -15,6 +15,7 @@
   unmodified, armada-nitro commit `8edacc10`, `src/nitro/`.
 -/
 import ArmadaLean.Nitro.Lemmas
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -32,10 +33,10 @@ theorem apply_deposit_equation (apps : Apps E) (caller : Participant) (a : Addre
   · rw [dif_pos h]
     have ⟨h1, h2, h3⟩ := h
     cases a with
-    | external e => simp [Address.isExternal] at h1
+    | external e => (simp? [Address.isExternal] at h1 says simp only [Address.isExternal, Bool.true_eq_false] at h1)
     | channel c =>
       simp only [Address.fundable, decide_eq_true_eq] at h2
-      simp [apply, deposit, depositEffect, h2, h3]
+      (simp? [apply, deposit, depositEffect, h2, h3] says simp only [apply, deposit, h2, h3, and_self, ↓reduceIte, depositEffect])
   · rw [dif_neg h]
     cases a with
     | external e => rfl
@@ -43,7 +44,7 @@ theorem apply_deposit_equation (apps : Apps E) (caller : Participant) (a : Addre
       simp only [apply, deposit]
       rw [if_neg]
       rintro ⟨h2, h3⟩
-      exact h ⟨rfl, by simp [Address.fundable, h2], h3⟩
+      exact h ⟨rfl, by (simp? [Address.fundable, h2] says simp only [Address.fundable, h2, decide_true]), h3⟩
 
 /-- The `transfer` equation. go-nitro MultiAssetHolder.sol:75-110 `transfer`. -/
 theorem apply_transfer_equation (apps : Apps E) (caller : Participant) (a : FixedPart)
@@ -54,22 +55,22 @@ theorem apply_transfer_equation (apps : Apps E) (caller : Participant) (a : Fixe
   · rw [dif_pos h]
     have ⟨hk, hb, hs⟩ := h
     obtain ⟨o, hso⟩ := Option.isSome_iff_exists.1 hs
-    have hget : (s.transferSource? a b).get hs = o := by simp [hso]
+    have hget : (s.transferSource? a b).get hs = o := by (simp? [hso] says simp only [hso, Option.get_some])
     simp only [apply, transfer, transferEffect, if_pos (And.intro hk hb), hget]
     unfold transferSource? at hso
     split at hso
     · split at hso
       · cases hso
-        simp
-      · simp at hso
-    · simp at hso
+        (simp? says simp only [FixedPart.address_eq, payTo_balances, setStatus_balances, payTo_held, setStatus_held, payTo_status, payTo_now, setStatus_now])
+      · (simp? at hso says simp only [reduceCtorEq] at hso)
+    · (simp? at hso says simp only [reduceCtorEq] at hso)
   · rw [dif_neg h]
     simp only [apply, transfer]
     split_ifs with hk
     · unfold TransferPre transferSource? at h
       split
       · split
-        · simp_all
+        · (simp_all? says simp_all only [FixedPart.address_eq, finalOutcome_channel, true_and, Bool.not_eq_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none, payTo_balances, setStatus_balances, payTo_held, setStatus_held, payTo_status, payTo_now, setStatus_now, reduceCtorEq])
         · rfl
       · rfl
     · rfl
@@ -83,7 +84,7 @@ theorem apply_reclaim_equation (apps : Apps E) (caller : Participant) (l v : Fix
   · rw [dif_pos h]
     have ⟨hk, hv, hs⟩ := h
     obtain ⟨r, hso⟩ := Option.isSome_iff_exists.1 hs
-    have hget : (s.reclaimSource? l v).get hs = r := by simp [hso]
+    have hget : (s.reclaimSource? l v).get hs = r := by (simp? [hso] says simp only [hso, Option.get_some])
     simp only [apply, reclaim, reclaimEffect, if_pos (And.intro hk hv), hget]
     unfold reclaimSource? at hso
     split at hso
@@ -91,8 +92,8 @@ theorem apply_reclaim_equation (apps : Apps E) (caller : Participant) (l v : Fix
       · split_ifs at hso with hc
         cases hso
         rw [if_pos hc]
-      · simp at hso
-    · simp at hso
+      · (simp? at hso says simp only [reduceCtorEq] at hso)
+    · (simp? at hso says simp only [reduceCtorEq] at hso)
   · rw [dif_neg h]
     simp only [apply, reclaim]
     split_ifs with hk
