@@ -367,7 +367,41 @@ theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps))
       s'.held + (if b.isExternal then x else 0) = s.state.held ∧ s'.now = s.state.now := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
-  obtain ⟨o, _, x, hf, -, hx, hb, hh, hs, hn, -, -⟩ := Adjudicator.transfer_some h
+  classical
+  have heq : s.transfer a b =
+      (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
+    Adjudicator.apply_transfer_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ a b s
+  rw [heq] at h
+  by_cases hpre : s.TransferPre a b
+  swap
+  · rw [dif_neg hpre] at h; cases h
+  rw [dif_pos hpre] at h
+  have hs'eq : s' = s.transferEffect b ⟨a, hpre⟩ := (Option.some.inj h).symm
+  obtain ⟨o, ho⟩ := Option.isSome_iff_exists.1 hpre.2.2
+  have hget : (s.transferSource? a b).get hpre.2.2 = o := by (simp? [ho] says simp only [ho, Option.get_some])
+  have ho2 := ho
+  unfold Adjudicator.transferSource? at ho2
+  have hf : s.finalOutcome a.address = some (.allocation o) := by
+    split at ho2
+    · rename_i hf'
+      split at ho2
+      · cases ho2; exact hf'
+      · cases ho2
+    · cases ho2
+  set x := o.paidTo (s.balances.get a.address) b with hx
+  have hb : s'.balances = (s.balances.add b x).sub a.address x := by
+    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
+    (simp? [hx] says simp only [FixedPart.address_eq, Adjudicator.payTo_balances, Adjudicator.setStatus_balances, hx])
+  have hh : s'.held = (if b.isExternal then s.held - x else s.held) := by
+    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
+    (simp? [hx] says simp only [FixedPart.address_eq, Adjudicator.payTo_held, Adjudicator.setStatus_held, hx])
+  have hs : s'.status = (s.setStatus a ((s.statusOf a).withOutcome
+      (.allocation (o.reduceOwed b x)))).status := by
+    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
+    (simp? [hx] says simp only [FixedPart.address_eq, Adjudicator.payTo_status, hx])
+  have hn : s'.now = s.now := by
+    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
+    (simp? says simp only [FixedPart.address_eq, Adjudicator.payTo_now, Adjudicator.setStatus_now])
   have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
   have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
     (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
@@ -379,8 +413,8 @@ theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps))
   · (simp? [Adjudicator.statusOf_of_status hs, hn] says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus, ↓reduceIte, hn, ChannelStatus.finalOutcome_withOutcome])
   · rw [hh]
     split
-    · (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ↓reduceIte]); (grind? says grind only)
-    · (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Bool.false_eq_true, ↓reduceIte, Bool.not_eq_true, add_zero])
+    · (simp_all? says simp_all only [↓reduceDIte, Option.get_some, FixedPart.address_eq, Adjudicator.finalOutcome_channel, ↓reduceIte]); (grind? says grind only)
+    · (simp_all? says simp_all only [↓reduceDIte, Option.get_some, FixedPart.address_eq, Adjudicator.finalOutcome_channel, Bool.false_eq_true, ↓reduceIte, Bool.not_eq_true, add_zero])
 
 /-- Nitro-28. The reduction of an owed amount is exact. -/
 theorem reduceOwed_owed (o : Allocation E) (d : Address E) (x : Coins) :
@@ -425,11 +459,28 @@ theorem transfer_fails_otherwise (s : Adjudicator E) (a : FixedPart) (b : Addres
     (h : ∀ o, s.finalOutcome a.address = some (.allocation o) →
       ∀ amt, o.find b ≠ some ⟨b, .alloc amt⟩) :
     s.transfer a b = none := by
-  cases ht : s.transfer a b with
-  | none => rfl
-  | some s' =>
-    obtain ⟨o, amt, _, hf, hfind, -⟩ := Adjudicator.transfer_some ht
-    exact absurd hfind (h o hf amt)
+  classical
+  have heq : s.transfer a b =
+      (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
+    Adjudicator.apply_transfer_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ a b s
+  rw [heq]
+  by_cases hpre : s.TransferPre a b
+  · rw [dif_pos hpre]
+    exfalso
+    obtain ⟨o, ho⟩ := Option.isSome_iff_exists.1 hpre.2.2
+    have ho2 := ho
+    unfold Adjudicator.transferSource? at ho2
+    split at ho2
+    · rename_i hf'
+      split at ho2
+      · rename_i d amt hfind
+        cases ho2
+        have hd : d = b := Allocation.find_dest hfind
+        subst hd
+        exact absurd hfind (h o hf' amt)
+      · cases ho2
+    · cases ho2
+  · rw [dif_neg hpre]
 
 /-- Nitro-29. When `a` affords nothing for `b`, the transfer moves no coins.
     Every balance reads the same; the list itself can change (`add b 0`
@@ -456,7 +507,24 @@ theorem transfer_zero_moves_nothing (s : Adjudicator E) (a : FixedPart) (b : Add
     succeeds only on a finalized channel. -/
 theorem transfer_requires_finalized (s : Adjudicator E) (a : FixedPart) (b : Address E)
     (s' : Adjudicator E) (h : s.transfer a b = some s') : s.mode a = .finalized := by
-  obtain ⟨o, -, -, hf, -⟩ := Adjudicator.transfer_some h
+  classical
+  have heq : s.transfer a b =
+      (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
+    Adjudicator.apply_transfer_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ a b s
+  rw [heq] at h
+  by_cases hpre : s.TransferPre a b
+  swap
+  · rw [dif_neg hpre] at h; cases h
+  obtain ⟨o, ho⟩ := Option.isSome_iff_exists.1 hpre.2.2
+  have ho2 := ho
+  unfold Adjudicator.transferSource? at ho2
+  have hf : s.finalOutcome a.address = some (.allocation o) := by
+    split at ho2
+    · rename_i hf'
+      split at ho2
+      · cases ho2; exact hf'
+      · cases ho2
+    · cases ho2
   rw [Adjudicator.mode_eq, ChannelStatus.mode_eq_finalized_iff]
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
   (simp? [hf] says simp only [hf, Option.isSome_some])
