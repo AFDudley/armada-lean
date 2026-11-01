@@ -878,8 +878,15 @@ omit [DecidableEq E] in
 theorem conclude_requires (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) (s' : Adjudicator E)
     (h : s.conclude c ss = some s') :
     s.mode c ≠ .finalized ∧ ss.state.channel = c ∧ ss.state.isFinal = true ∧ ss.ByAll := by
-  obtain ⟨⟨ho, hc, hf, hall⟩, -⟩ := Adjudicator.conclude_some h
-  exact ⟨ho, hc, hf, hall⟩
+  classical
+  have heq : s.conclude c ss =
+      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
+    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
+  have hpre : s.ConcludePre c ss := by
+    by_contra hcon
+    rw [heq, dif_neg hcon] at h
+    cases h
+  exact hpre
 
 omit [DecidableEq E] in
 /-- ForceMove-A09, Nitro-13, SATP-08, SATP-16, docs-0070-01, docs-0020-01.
@@ -890,8 +897,15 @@ omit [DecidableEq E] in
 theorem conclude_needs_all (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) (s' : Adjudicator E)
     (h : s.conclude c ss = some s') (p : Participant) (hp : p ∈ c.participants) :
     p ∈ ss.signers := by
-  obtain ⟨⟨-, hc, -, hall⟩, -⟩ := Adjudicator.conclude_some h
-  exact hall p (hc ▸ hp)
+  classical
+  have heq : s.conclude c ss =
+      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
+    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
+  have hpre : s.ConcludePre c ss := by
+    by_contra hcon
+    rw [heq, dif_neg hcon] at h
+    cases h
+  exact hpre.2.2.2 p (hpre.2.1 ▸ hp)
 
 omit [DecidableEq E] in
 /-- ForceMove-A14, Nitro-13, SATP-16, docs-0070-09. go-nitro
@@ -906,9 +920,14 @@ theorem conclude_can_happen (s : Adjudicator E) (c : FixedPart) (ss : SignedStat
       c.address = some ss.state.outcome ∧
     (s.setStatus c (.finalized ss.state.turnNum ss.state.outcome ss.state.outcome)).mode c =
       .finalized := by
+  have hpre : s.ConcludePre c ss := ⟨hm, hproof⟩
+  classical
+  have heq : s.conclude c ss =
+      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
+    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
   refine ⟨?_, by (simp? says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.finalOutcome_finalized]), by rw [Adjudicator.mode_eq]; (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.mode_finalized])⟩
-  simp only [Adjudicator.conclude]
-  rw [if_pos ⟨hm, hproof⟩]
+  rw [heq, dif_pos hpre]
+  rfl
 
 omit [DecidableEq E] in
 /-- ForceMove-A04, ForceMove-A05, docs-0070-07. go-nitro `_conclude` writes
@@ -917,8 +936,17 @@ omit [DecidableEq E] in
 theorem conclude_moves_no_value (s : Adjudicator E) (c : FixedPart) (ss : SignedState E)
     (s' : Adjudicator E) (h : s.conclude c ss = some s') :
     s'.balances = s.balances ∧ s'.held = s.held ∧ s'.now = s.now := by
-  obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
-  exact ⟨rfl, rfl, rfl⟩
+  classical
+  have heq : s.conclude c ss =
+      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
+    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
+  rw [heq] at h
+  by_cases hpre : s.ConcludePre c ss
+  · rw [dif_pos hpre] at h
+    cases h
+    exact ⟨rfl, rfl, rfl⟩
+  · rw [dif_neg hpre] at h
+    cases h
 
 omit [DecidableEq E] in
 /-- ForceMove-B03, ForceMove-D12, Nitro-12, docs-0040-05, docs-0040-06.
