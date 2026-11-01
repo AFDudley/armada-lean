@@ -8,6 +8,7 @@
 import Mathlib.Algebra.Order.BigOperators.Group.List
 import Mathlib.Algebra.Order.Group.Nat
 import ArmadaLean.Nitro.Adjudicator
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -34,8 +35,8 @@ theorem get_cons (k a : Address E) (w : Coins) (t : Balances E) :
     Balances.get ((k, w) :: t) a = if a = k then w else t.get a := by
   unfold Balances.get
   by_cases h : a = k
-  · subst h; simp
-  · simp [List.lookup_cons, beq_false_of_ne h, h]
+  · subst h; (simp? says simp only [List.lookup_cons_self, Option.getD_some, ↓reduceIte])
+  · (simp? [List.lookup_cons, beq_false_of_ne h, h] says simp only [List.lookup_cons, beq_false_of_ne h, h, ↓reduceIte])
 
 /-- Dropping the entries of another address does not change a reading.
     Stated in `simp` normal form (`decide (x ≠ a)` becomes `!decide (x = a)`). -/
@@ -46,22 +47,22 @@ theorem get_filter_ne (b : Balances E) {a a' : Address E} (h : a' ≠ a) :
   | cons e t ih =>
     obtain ⟨k, w⟩ := e
     by_cases hk : k = a
-    · subst hk; simp [get_cons, h, ih]
-    · simp [hk, get_cons, ih]
+    · subst hk; (simp? [get_cons, h, ih] says simp only [decide_true, Bool.not_true, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, ih, get_cons, h, ↓reduceIte])
+    · (simp? [hk, get_cons, ih] says simp only [hk, decide_false, Bool.not_false, List.filter_cons_of_pos, get_cons, ih])
 
 @[simp] theorem get_set (b : Balances E) (a a' : Address E) (v : Coins) :
     (b.set a v).get a' = if a' = a then v else b.get a' := by
   by_cases h : a' = a
-  · subst h; simp [Balances.set, get_cons]
-  · simp [Balances.set, get_cons, h, get_filter_ne b h]
+  · subst h; (simp? [Balances.set, get_cons] says simp only [set, ne_eq, decide_not, get_cons, ↓reduceIte])
+  · (simp? [Balances.set, get_cons, h, get_filter_ne b h] says simp only [set, ne_eq, decide_not, get_cons, h, ↓reduceIte, get_filter_ne b h])
 
 @[simp] theorem get_add (b : Balances E) (a a' : Address E) (x : Coins) :
     (b.add a x).get a' = if a' = a then b.get a + x else b.get a' := by
-  simp [Balances.add]
+  (simp? [Balances.add] says simp only [add, get_set])
 
 @[simp] theorem get_sub (b : Balances E) (a a' : Address E) (x : Coins) :
     (b.sub a x).get a' = if a' = a then b.get a - x else b.get a' := by
-  simp [Balances.sub]
+  (simp? [Balances.sub] says simp only [sub, get_set])
 
 /-- The sum of the entries whose address satisfies `q`. `total`,
     `channelTotal` and `paidOutTotal` are instances. -/
@@ -78,7 +79,7 @@ theorem sumIf_cons (q : Address E → Bool) (k : Address E) (w : Coins) (t : Bal
 
 omit [DecidableEq E] in
 theorem total_eq_sumIf (b : Balances E) : b.total = sumIf (fun _ => true) b := by
-  simp [Balances.total, sumIf]
+  (simp? [Balances.total, sumIf] says simp only [total, sumIf, List.filter_true])
 
 omit [DecidableEq E] in
 theorem channelTotal_eq_sumIf (b : Balances E) :
@@ -92,13 +93,13 @@ theorem paidOutTotal_eq_sumIf (b : Balances E) :
 theorem get_le_sumIf (q : Address E → Bool) (b : Balances E) {a : Address E} (hq : q a = true) :
     b.get a ≤ sumIf q b := by
   induction b with
-  | nil => simp
+  | nil => (simp? says simp only [get_nil, sumIf_nil, Std.le_refl])
   | cons e t ih =>
     obtain ⟨k, w⟩ := e
     rw [get_cons, sumIf_cons]
     by_cases h : a = k
-    · subst h; simp [hq]
-    · simp only [h, if_false]; grind
+    · subst h; (simp? [hq] says simp only [↓reduceIte, hq, le_add_iff_nonneg_right, zero_le])
+    · simp only [h, if_false]; (grind? says grind only)
 
 /-- Each address has one entry. -/
 def KeysNodup (b : Balances E) : Prop := (b.map Prod.fst).Nodup
@@ -114,7 +115,7 @@ theorem KeysNodup.filter {b : Balances E} (hb : b.KeysNodup) (p : Address E × C
 theorem KeysNodup.set {b : Balances E} (hb : b.KeysNodup) (a : Address E) (v : Coins) :
     KeysNodup (b.set a v) := by
   refine List.nodup_cons.2 ⟨?_, hb.filter _⟩
-  simp
+  (simp? says simp only [ne_eq, decide_not, List.mem_map, List.mem_filter, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not, Prod.exists, exists_and_right, exists_eq_right, not_true_eq_false, and_false, not_false_eq_true])
 
 theorem KeysNodup.add {b : Balances E} (hb : b.KeysNodup) (a : Address E) (x : Coins) :
     KeysNodup (b.add a x) := hb.set _ _
@@ -126,7 +127,7 @@ theorem KeysNodup.sub {b : Balances E} (hb : b.KeysNodup) (a : Address E) (x : C
 theorem sumIf_filter_ne (q : Address E → Bool) {b : Balances E} (hb : b.KeysNodup) (a : Address E) :
     sumIf q (b.filter (fun e => decide (e.1 ≠ a))) + (if q a then b.get a else 0) = sumIf q b := by
   induction b with
-  | nil => simp
+  | nil => (simp? says simp only [ne_eq, decide_not, List.filter_nil, sumIf_nil, get_nil, ite_self, add_zero])
   | cons e t ih =>
     obtain ⟨k, w⟩ := e
     have hk : k ∉ t.map Prod.fst := (List.nodup_cons.1 hb).1
@@ -136,20 +137,20 @@ theorem sumIf_filter_ne (q : Address E → Bool) {b : Balances E} (hb : b.KeysNo
       have hself : t.filter (fun e => decide (e.1 ≠ k)) = t := by
         refine List.filter_eq_self.2 fun e he => ?_
         have : e.1 ≠ k := fun h' => hk (List.mem_map.2 ⟨e, he, h'⟩)
-        simpa using this
+        (simpa? using this says simpa only [ne_eq, decide_not, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not] using this)
       simp only [List.filter_cons, ne_eq, not_true_eq_false, decide_false, Bool.false_eq_true,
         if_false, hself, sumIf_cons, get_cons, if_true]
-      grind
+      (grind? says grind only)
     · have := ih ht
       simp only [List.filter_cons, ne_eq, h, not_false_eq_true, decide_true, if_true, sumIf_cons,
         get_cons, Ne.symm h, if_false]
-      grind
+      (grind? says grind only)
 
 theorem sumIf_set (q : Address E → Bool) {b : Balances E} (hb : b.KeysNodup) (a : Address E) (v : Coins) :
     sumIf q (b.set a v) + (if q a then b.get a else 0) = sumIf q b + (if q a then v else 0) := by
   have := sumIf_filter_ne q hb a
   simp only [Balances.set, sumIf_cons]
-  grind
+  (grind? says grind only)
 
 /-- With one entry per address, the sum for one address is its reading. -/
 theorem sumIf_eq_get {b : Balances E} (hb : b.KeysNodup) (d : Address E) :
@@ -157,16 +158,16 @@ theorem sumIf_eq_get {b : Balances E} (hb : b.KeysNodup) (d : Address E) :
   have h := sumIf_filter_ne (fun a => decide (a = d)) hb d
   have h0 : sumIf (fun a => decide (a = d)) (b.filter (fun e => decide (e.1 ≠ d))) = 0 := by
     simp only [sumIf, List.filter_filter]
-    rw [List.filter_eq_nil_iff.2 (by intro e _; simp)]
+    rw [List.filter_eq_nil_iff.2 (by intro e _; (simp? says simp only [ne_eq, decide_not, Bool.and_not_self, Bool.false_eq_true, not_false_eq_true]))]
     rfl
   simp only [decide_true, if_true] at h
-  grind
+  (grind? says grind only)
 
 /-- A reading at a list position, when each address has one entry. -/
 theorem get_of_getElem? {b : Balances E} (hb : b.KeysNodup) {j : Nat} {d : Address E} {x : Coins}
     (h : b[j]? = some (d, x)) : b.get d = x := by
   induction b generalizing j with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [List.length_nil, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h)
   | cons e t ih =>
     obtain ⟨k, w⟩ := e
     have hk : k ∉ t.map Prod.fst := (List.nodup_cons.1 hb).1
@@ -174,7 +175,7 @@ theorem get_of_getElem? {b : Balances E} (hb : b.KeysNodup) {j : Nat} {d : Addre
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
-      simp [get_cons]
+      (simp? [get_cons] says simp only [get_cons, ↓reduceIte])
     | succ j =>
       simp only [List.getElem?_cons_succ] at h
       have hdt : d ∈ t.map Prod.fst := List.mem_map.2 ⟨(d, x), List.mem_of_getElem? h, rfl⟩
@@ -199,9 +200,9 @@ theorem sumIf_add_sub (q : Address E → Bool) {b : Balances E} (hb : b.KeysNodu
   have h1 := sumIf_set q hb d (b.get d + x)
   have h2 := sumIf_set q (hb.add d x) a ((b.add d x).get a - x)
   have hge : x ≤ (b.add d x).get a := by
-    rw [get_add]; split <;> grind
+    rw [get_add]; split <;> (grind? says grind only)
   simp only [Balances.sub, Balances.add] at h1 h2 hge ⊢
-  split <;> split <;> grind
+  split <;> split <;> (grind? says grind only)
 
 
 omit [DecidableEq E] in
@@ -218,18 +219,18 @@ theorem total_eq_channelTotal_add_paidOutTotal (b : Balances E) :
   | cons e t ih =>
     obtain ⟨k, w⟩ := e
     have h3 : Balances.total ((k, w) :: t) = w + Balances.total t := by
-      simp [Balances.total]
+      (simp? [Balances.total] says simp only [total, List.map_cons, List.sum_cons, Nat.add_left_cancel_iff])
     rcases hk : k.isExternal with _ | _
     · have h1 : Balances.channelTotal ((k, w) :: t) = w + Balances.channelTotal t := by
-        simp [Balances.channelTotal, hk]
+        (simp? [Balances.channelTotal, hk] says simp only [channelTotal, Bool.decide_eq_false, hk, Bool.not_false, List.filter_cons_of_pos, List.map_cons, List.sum_cons, Nat.add_left_cancel_iff])
       have h2 : Balances.paidOutTotal ((k, w) :: t) = Balances.paidOutTotal t := by
-        simp [Balances.paidOutTotal, hk]
-      grind
+        (simp? [Balances.paidOutTotal, hk] says simp only [paidOutTotal, Bool.decide_eq_true, hk, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg])
+      (grind? says grind only)
     · have h1 : Balances.channelTotal ((k, w) :: t) = Balances.channelTotal t := by
-        simp [Balances.channelTotal, hk]
+        (simp? [Balances.channelTotal, hk] says simp only [channelTotal, Bool.decide_eq_false, hk, Bool.not_true, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg])
       have h2 : Balances.paidOutTotal ((k, w) :: t) = w + Balances.paidOutTotal t := by
-        simp [Balances.paidOutTotal, hk]
-      grind
+        (simp? [Balances.paidOutTotal, hk] says simp only [paidOutTotal, Bool.decide_eq_true, hk, List.filter_cons_of_pos, List.map_cons, List.sum_cons, Nat.add_left_cancel_iff])
+      (grind? says grind only)
 end Balances
 
 /-- A sum over a duplicate-free list `L` is at most the sum over a
@@ -242,7 +243,7 @@ theorem sum_le_sum_of_support_subset {α : Type} [DecidableEq α] :
     (L.map g).sum ≤ (M.map g).sum := by
   intro L
   induction L with
-  | nil => intro M _ _ g _; simp
+  | nil => intro M _ _ g _; (simp? says simp only [List.map_nil, List.sum_nil, zero_le])
   | cons a rest ih =>
     intro M hL hM g hsupp
     rw [List.nodup_cons] at hL
@@ -286,18 +287,18 @@ omit [DecidableEq E] in
 omit [DecidableEq E] in
 @[simp] theorem total_cons (e : Entry E) (o : Allocation E) :
     Allocation.total (e :: o) = e.amount + Allocation.total o := by
-  simp [Allocation.total]
+  (simp? [Allocation.total] says simp only [total, List.map_cons, List.sum_cons, Nat.add_left_cancel_iff])
 
 omit [DecidableEq E] in
 theorem total_append (o o' : Allocation E) :
     Allocation.total (o ++ o') = Allocation.total o + Allocation.total o' := by
-  simp [Allocation.total]
+  (simp? [Allocation.total] says simp only [total, List.map_append, List.sum_append, Nat.add_left_cancel_iff])
 
 omit [DecidableEq E] in
 theorem total_take_succ {o : Allocation E} {k : Nat} {e : Entry E} (h : o[k]? = some e) :
     Allocation.total (o.take (k + 1)) = Allocation.total (o.take k) + e.amount := by
   rw [List.take_add_one, total_append, h]
-  simp
+  (simp? says simp only [Option.toList_some, total_cons, total_nil, add_zero, Nat.add_left_cancel_iff])
 
 omit [DecidableEq E] in
 theorem total_take_mono (o : Allocation E) {i j : Nat} (h : i ≤ j) :
@@ -325,11 +326,11 @@ theorem find_cons (e : Entry E) (o : Allocation E) (d : Address E) :
 
 theorem find_dest {o : Allocation E} {d : Address E} {e : Entry E} (h : o.find d = some e) :
     e.dest = d := by
-  simpa using List.find?_some h
+  (simpa? using List.find?_some h says simpa only [decide_eq_true_eq] using List.find?_some h)
 
 theorem find_eq_none {o : Allocation E} {d : Address E} :
     o.find d = none ↔ d ∉ o.map Entry.dest := by
-  simp [Allocation.find, List.find?_eq_none]
+  (simp? [Allocation.find, List.find?_eq_none] says simp only [find, List.find?_eq_none, decide_eq_true_eq, List.mem_map, not_exists, not_and])
 
 theorem owed_cons (e : Entry E) (o : Allocation E) (d : Address E) :
     Allocation.owed (e :: o) d = if e.dest = d then e.amount else o.owed d := by
@@ -340,12 +341,12 @@ theorem owed_cons (e : Entry E) (o : Allocation E) (d : Address E) :
 theorem find_of_getElem? {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) {j : Nat} {f : Entry E}
     (h : o[j]? = some f) : o.find f.dest = some f := by
   induction o generalizing j with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [List.length_nil, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h)
   | cons e t ih =>
     cases j with
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq] at h
-      subst h; simp [find_cons]
+      subst h; (simp? [find_cons] says simp only [find_cons, ↓reduceIte])
     | succ j =>
       simp only [List.getElem?_cons_succ] at h
       have hne : e.dest ≠ f.dest := fun h' =>
@@ -365,7 +366,7 @@ theorem dedupFrom_cons (seen : List (Address E)) (e : Entry E) (o : Allocation E
 theorem dedupFrom_sublist (seen : List (Address E)) (o : Allocation E) :
     (Allocation.dedupFrom seen o).Sublist o := by
   induction o generalizing seen with
-  | nil => simp
+  | nil => (simp? says simp only [dedupFrom_nil, List.Sublist.refl])
   | cons e t ih =>
     rw [dedupFrom_cons]
     split
@@ -375,7 +376,7 @@ theorem dedupFrom_sublist (seen : List (Address E)) (o : Allocation E) :
 theorem dest_not_mem_of_mem_dedupFrom {seen : List (Address E)} {o : Allocation E} {e : Entry E}
     (h : e ∈ Allocation.dedupFrom seen o) : e.dest ∉ seen := by
   induction o generalizing seen with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [dedupFrom_nil, List.not_mem_nil] at h)
   | cons e' t ih =>
     rw [dedupFrom_cons] at h
     split at h
@@ -387,7 +388,7 @@ theorem dest_not_mem_of_mem_dedupFrom {seen : List (Address E)} {o : Allocation 
 theorem dedupFrom_nodup (seen : List (Address E)) (o : Allocation E) :
     ((Allocation.dedupFrom seen o).map Entry.dest).Nodup := by
   induction o generalizing seen with
-  | nil => simp
+  | nil => (simp? says simp only [dedupFrom_nil, List.map_nil, List.nodup_nil])
   | cons e t ih =>
     rw [dedupFrom_cons]
     split
@@ -403,25 +404,25 @@ theorem dedup_sublist (o : Allocation E) : o.dedup.Sublist o := dedupFrom_sublis
 theorem find_dedupFrom (seen : List (Address E)) (o : Allocation E) (d : Address E) :
     (Allocation.dedupFrom seen o).find d = if d ∈ seen then none else o.find d := by
   induction o generalizing seen with
-  | nil => simp
+  | nil => (simp? says simp only [dedupFrom_nil, find_nil, ite_self])
   | cons e t ih =>
     rw [dedupFrom_cons, find_cons]
     by_cases hs : e.dest ∈ seen
     · rw [if_pos hs, ih]
       by_cases hd : e.dest = d
-      · subst hd; simp [hs]
-      · simp [hd]
+      · subst hd; (simp? [hs] says simp only [hs, ↓reduceIte])
+      · (simp? [hd] says simp only [hd, ↓reduceIte])
     · rw [if_neg hs, find_cons, ih]
       by_cases hd : e.dest = d
-      · subst hd; simp [hs]
+      · subst hd; (simp? [hs] says simp only [↓reduceIte, hs])
       · have : d ≠ e.dest := Ne.symm hd
-        simp [hd, this]
+        (simp? [hd, this] says simp only [hd, ↓reduceIte, List.mem_cons, this, false_or])
 
 @[simp] theorem find_dedup (o : Allocation E) (d : Address E) : o.dedup.find d = o.find d := by
-  simp [Allocation.dedup, find_dedupFrom]
+  (simp? [Allocation.dedup, find_dedupFrom] says simp only [dedup, find_dedupFrom, List.not_mem_nil, ↓reduceIte])
 
 @[simp] theorem owed_dedup (o : Allocation E) (d : Address E) : o.dedup.owed d = o.owed d := by
-  simp [Allocation.owed]
+  (simp? [Allocation.owed] says simp only [owed, find_dedup])
 
 /-- `dedupFrom` is a no-op on an allocation whose destinations are already
     distinct from each other and from `seen`: every entry passes the
@@ -446,7 +447,7 @@ theorem dedupFrom_eq_self {seen : List (Address E)} {o : Allocation E}
     unchanged by `dedup`. -/
 theorem dedup_eq_self_of_nodup {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) :
     o.dedup = o :=
-  dedupFrom_eq_self (by simp) hnd
+  dedupFrom_eq_self (by (simp? says simp only [List.not_mem_nil, not_false_eq_true, implies_true])) hnd
 
 /-! ### `payout` and `paidTo` -/
 
@@ -463,7 +464,7 @@ theorem payout_map_fst (held : Coins) (o : Allocation E) :
     (o.payout held).map Prod.fst = o.map Entry.dest := by
   induction o generalizing held with
   | nil => rfl
-  | cons e t ih => simp [ih]
+  | cons e t ih => (simp? [ih] says simp only [payout_cons, List.map_cons, ih])
 
 omit [DecidableEq E] in
 /-- ForceMove:1837-1853: entry `k` is paid `min(amount, held − total before k)`. -/
@@ -471,26 +472,26 @@ theorem payout_getElem? {held : Coins} {o : Allocation E} {k : Nat} {e : Entry E
     (h : o[k]? = some e) :
     (o.payout held)[k]? = some (e.dest, min e.amount (held - Allocation.total (o.take k))) := by
   induction o generalizing held k with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [List.length_nil, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h)
   | cons e' t ih =>
     cases k with
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq] at h
-      subst h; simp
+      subst h; (simp? says simp only [payout_cons, List.length_cons, lt_add_iff_pos_left, add_pos_iff, zero_lt_one, or_true, getElem?_pos, List.getElem_cons_zero, List.take_zero, total_nil, tsub_zero])
     | succ k =>
       simp only [List.getElem?_cons_succ] at h
       rw [payout_cons, List.getElem?_cons_succ, ih h, List.take_succ_cons, total_cons]
       congr 3
-      grind
+      (grind? says grind only [= min_def, #9d14, #839b, #d2b4])
 
 omit [DecidableEq E] in
 theorem payout_sum_le (held : Coins) (o : Allocation E) : ((o.payout held).map (·.2)).sum ≤ held := by
   induction o generalizing held with
-  | nil => simp
+  | nil => (simp? says simp only [payout_nil, List.map_nil, List.sum_nil, zero_le])
   | cons e t ih =>
     have := ih (held - min e.amount held)
     simp only [payout_cons, List.map_cons, List.sum_cons]
-    grind
+    (grind? says grind only [= min_def, #7e16, #ab6a])
 
 omit [DecidableEq E] in
 theorem payout_keysNodup {held : Coins} {o : Allocation E} (h : (o.map Entry.dest).Nodup) :
@@ -506,24 +507,24 @@ theorem paidTo_eq_get (held : Coins) (o : Allocation E) (d : Address E) :
 theorem payout_get_le_owed (held : Coins) (o : Allocation E) (d : Address E) :
     Balances.get (o.payout held) d ≤ o.owed d := by
   induction o generalizing held with
-  | nil => simp [Allocation.owed]
+  | nil => (simp? [Allocation.owed] says simp only [payout_nil, Balances.get_nil, owed, find_nil, Option.map_none, Option.getD_none, Std.le_refl])
   | cons e t ih =>
     rw [payout_cons, Balances.get_cons, owed_cons]
     by_cases h : e.dest = d
-    · simp [h]
+    · (simp? [h] says simp only [h, ↓reduceIte, inf_le_left])
     · simp only [Ne.symm h, if_false, h]; exact ih _
 
 /-- When the coins held cover the total, each first entry is paid in full. -/
 theorem owed_le_payout_get {held : Coins} {o : Allocation E} (h : o.total ≤ held) (d : Address E) :
     o.owed d ≤ Balances.get (o.payout held) d := by
   induction o generalizing held with
-  | nil => simp [Allocation.owed]
+  | nil => (simp? [Allocation.owed] says simp only [owed, find_nil, Option.map_none, Option.getD_none, payout_nil, Balances.get_nil, Std.le_refl])
   | cons e t ih =>
     rw [payout_cons, Balances.get_cons, owed_cons]
     rw [total_cons] at h
     by_cases hd : e.dest = d
-    · simp only [hd, if_true]; grind
-    · simp only [Ne.symm hd, if_false, hd]; exact ih (by grind)
+    · simp only [hd, if_true]; (grind? says grind only [= min_def, #ab6a])
+    · simp only [Ne.symm hd, if_false, hd]; exact ih (by (grind? says grind only [= min_def, #7e16, #ab6a]))
 
 theorem paidTo_le_held (held : Coins) (o : Allocation E) (d : Address E) : o.paidTo held d ≤ held := by
   rw [paidTo_eq_get]
@@ -552,18 +553,18 @@ theorem reduceOwed_cons (e : Entry E) (o : Allocation E) (d : Address E) (x : Co
 theorem owed_reduceOwed (o : Allocation E) (d d' : Address E) (x : Coins) :
     (o.reduceOwed d x).owed d' = if d' = d then o.owed d - x else o.owed d' := by
   induction o with
-  | nil => simp [Allocation.owed]
+  | nil => (simp? [Allocation.owed] says simp only [owed, reduceOwed_nil, find_nil, Option.map_none, Option.getD_none, zero_le, Nat.sub_eq_zero_of_le, ite_self])
   | cons e t ih =>
     rw [reduceOwed_cons]
     by_cases he : e.dest = d
     · subst he
       by_cases hd : d' = e.dest
-      · subst hd; simp [owed_cons, Entry.amount]
-      · simp [owed_cons, hd, Ne.symm hd]
+      · subst hd; (simp? [owed_cons, Entry.amount] says simp only [↓reduceIte, Entry.amount, owed_cons, Item.amount_alloc])
+      · (simp? [owed_cons, hd, Ne.symm hd] says simp only [↓reduceIte, owed_cons, Ne.symm hd, hd])
     · rw [if_neg he, owed_cons, owed_cons, ih]
       by_cases hd : d' = d
-      · subst hd; simp [he]
-      · simp [owed_cons, hd]
+      · subst hd; (simp? [he] says simp only [he, ↓reduceIte])
+      · (simp? [owed_cons, hd] says simp only [hd, ↓reduceIte, owed_cons])
 
 /-- Reducing the amount owed to `d` by `x` leaves every other destination's
     first entry untouched, and rewrites `d`'s own first entry (if any) to an
@@ -575,16 +576,16 @@ theorem find_reduceOwed (o : Allocation E) (d d' : Address E) (x : Coins) :
       if d' = d then (o.find d).map (fun e => (⟨d, .alloc (e.amount - x)⟩ : Entry E))
       else o.find d' := by
   induction o with
-  | nil => simp [Allocation.reduceOwed]
+  | nil => (simp? [Allocation.reduceOwed] says simp only [reduceOwed, find_nil, Option.map_none, ite_self])
   | cons e t ih =>
     rw [reduceOwed_cons]
     by_cases he : e.dest = d
     · subst he
       by_cases hd : d' = e.dest
-      · subst hd; simp [find_cons]
-      · simp [find_cons, hd, Ne.symm hd]
+      · subst hd; (simp? [find_cons] says simp only [↓reduceIte, find_cons, Option.map_some])
+      · (simp? [find_cons, hd, Ne.symm hd] says simp only [↓reduceIte, find_cons, Ne.symm hd, hd])
     · by_cases hd : d' = d
-      · subst hd; simp [find_cons, he, ih]
+      · subst hd; (simp? [find_cons, he, ih] says simp only [he, ↓reduceIte, find_cons, ih])
       · simp only [if_neg he, find_cons, ih, if_neg hd]
 
 /-- The amount owed to one destination never exceeds the allocation's whole
@@ -592,12 +593,12 @@ theorem find_reduceOwed (o : Allocation E) (d d' : Address E) (x : Coins) :
     non-negatives. -/
 theorem owed_le_total (o : Allocation E) (d : Address E) : o.owed d ≤ o.total := by
   induction o with
-  | nil => simp [Allocation.owed]
+  | nil => (simp? [Allocation.owed] says simp only [owed, find_nil, Option.map_none, Option.getD_none, total_nil, Std.le_refl])
   | cons e t ih =>
     rw [owed_cons, total_cons]
     by_cases h : e.dest = d
-    · rw [if_pos h]; grind
-    · rw [if_neg h]; grind
+    · rw [if_pos h]; (grind? says grind only)
+    · rw [if_neg h]; (grind? says grind only)
 
 /-- Reducing the amount owed to `d` by `x` (at most what `d` is owed) drops
     the total by exactly `x`: only `d`'s own first entry changes, by exactly
@@ -606,7 +607,7 @@ theorem owed_le_total (o : Allocation E) (d : Address E) : o.owed d ≤ o.total 
 theorem total_reduceOwed (o : Allocation E) (d : Address E) {x : Coins} (hx : x ≤ o.owed d) :
     (o.reduceOwed d x).total + x = o.total := by
   induction o with
-  | nil => simp [Allocation.owed] at hx; simp [hx]
+  | nil => (simp? [Allocation.owed] at hx says simp only [owed, find_nil, Option.map_none, Option.getD_none, nonpos_iff_eq_zero] at hx); (simp? [hx] says simp only [hx, reduceOwed_nil, total_nil, add_zero])
   | cons e t ih =>
     rw [owed_cons] at hx
     rw [reduceOwed_cons]
@@ -616,11 +617,11 @@ theorem total_reduceOwed (o : Allocation E) (d : Address E) {x : Coins} (hx : x 
       have hv : Entry.amount ({ e with item := .alloc (e.amount - x) } : Entry E) = e.amount - x :=
         rfl
       rw [total_cons, hv, total_cons]
-      grind
+      (grind? says grind only)
     · rw [if_neg he] at hx ⊢
       rw [total_cons, total_cons]
       have := ih hx
-      grind
+      (grind? says grind only)
 
 /-! ### Priority position, and one allocation ahead of another
 
@@ -643,11 +644,11 @@ theorem get_payout (held : Coins) (o : Allocation E) (b : Address E) :
     Balances.get (o.payout held) b =
       min (o.owed b) (held - Allocation.total (o.takeWhile (fun e => !decide (e.dest = b)))) := by
   induction o generalizing held with
-  | nil => simp [Allocation.owed]
+  | nil => (simp? [Allocation.owed] says simp only [payout_nil, Balances.get_nil, owed, find_nil, Option.map_none, Option.getD_none, List.takeWhile_nil, total_nil, tsub_zero, zero_le, inf_of_le_left])
   | cons e t ih =>
     rw [payout_cons, Balances.get_cons, owed_cons, List.takeWhile_cons]
     by_cases h : e.dest = b
-    · simp [h]
+    · (simp? [h] says simp only [h, ↓reduceIte, decide_true, Bool.not_true, Bool.false_eq_true, total_nil, tsub_zero])
     · simp only [Ne.symm h, h, if_false, ih, decide_false, Bool.not_false, if_true, total_cons]
       congr 1
       rcases le_total e.amount held with h1 | h1 <;> simp [h1] <;> unfold Coins at * <;> omega
@@ -657,11 +658,11 @@ theorem get_payout (held : Coins) (o : Allocation E) (b : Address E) :
 theorem total_takeWhile_add_owed_le (o : Allocation E) (b : Address E) :
     Allocation.total (o.takeWhile (fun e => !decide (e.dest = b))) + o.owed b ≤ o.total := by
   induction o with
-  | nil => simp [Allocation.owed]
+  | nil => (simp? [Allocation.owed] says simp only [List.takeWhile_nil, total_nil, owed, find_nil, Option.map_none, Option.getD_none, add_zero, Std.le_refl])
   | cons e t ih =>
     rw [owed_cons, List.takeWhile_cons, total_cons]
     by_cases h : e.dest = b
-    · simp [h]
+    · (simp? [h] says simp only [h, decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte, total_nil, zero_add, le_add_iff_nonneg_right, zero_le])
     · simp only [h, decide_false, Bool.not_false, if_true, if_false, total_cons]
       unfold Coins at *
       omega
@@ -675,7 +676,7 @@ theorem total_takeWhile_reduceOwed (o : Allocation E) (b c : Address E) {x : Coi
         (if c ∈ (o.map Entry.dest).takeWhile (fun d => !decide (d = b)) then x else 0) =
       Allocation.total (o.takeWhile (fun e => !decide (e.dest = b))) := by
   induction o with
-  | nil => simp
+  | nil => (simp? says simp only [reduceOwed_nil, List.takeWhile_nil, total_nil, List.map_nil, List.not_mem_nil, ↓reduceIte, add_zero])
   | cons e t ih =>
     rw [owed_cons] at hx
     rw [reduceOwed_cons]
@@ -684,15 +685,15 @@ theorem total_takeWhile_reduceOwed (o : Allocation E) (b c : Address E) {x : Coi
       subst hc
       rw [List.takeWhile_cons, List.takeWhile_cons, List.map_cons, List.takeWhile_cons]
       by_cases hb : e.dest = b
-      · simp [hb]
-      · simp [hb]
+      · (simp? [hb] says simp only [hb, decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte, total_nil, List.not_mem_nil, add_zero])
+      · (simp? [hb] says simp only [hb, decide_false, Bool.not_false, ↓reduceIte, total_cons, Entry.amount_mk, Item.amount_alloc, List.mem_cons, true_or])
         unfold Coins at *
         omega
     · rw [if_neg hc] at hx ⊢
       rw [List.takeWhile_cons, List.takeWhile_cons, List.map_cons, List.takeWhile_cons]
       by_cases hb : e.dest = b
-      · simp [hb]
-      · simp [hb, Ne.symm hc]
+      · (simp? [hb] says simp only [hb, decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte, total_nil, List.not_mem_nil, add_zero])
+      · (simp? [hb, Ne.symm hc] says simp only [hb, decide_false, Bool.not_false, ↓reduceIte, total_cons, List.mem_cons, Ne.symm hc, false_or])
         rw [← ih hx]
         unfold Coins at *
         omega
@@ -704,20 +705,20 @@ theorem total_takeWhile_lt (o : Allocation E) {b c : Address E} (hbc : b ≠ c)
     Allocation.total (o.takeWhile (fun e => !decide (e.dest = b))) + o.owed b ≤
       Allocation.total (o.takeWhile (fun e => !decide (e.dest = c))) := by
   induction o with
-  | nil => simp [Allocation.owed] at hc
+  | nil => (simp? [Allocation.owed] at hc says simp only [owed, find_nil, Option.map_none, Option.getD_none, lt_self_iff_false] at hc)
   | cons e t ih =>
     rw [owed_cons] at hc
     by_cases hb : e.dest = b
     · subst hb
-      simp [owed_cons, hbc]
+      (simp? [owed_cons, hbc] says simp only [decide_true, Bool.not_true, Bool.false_eq_true, not_false_eq_true, List.takeWhile_cons_of_neg, total_nil, owed_cons, ↓reduceIte, zero_add, hbc, decide_false, Bool.not_false, List.takeWhile_cons_of_pos, total_cons, le_add_iff_nonneg_right, zero_le])
     · have hec : e.dest ≠ c := by
         rintro rfl
-        exact hnot (by simp [hb])
+        exact hnot (by (simp? [hb] says simp only [List.map_cons, hb, decide_false, Bool.not_false, List.takeWhile_cons_of_pos, List.mem_cons, true_or]))
       rw [if_neg hec] at hc
       have hnot' : c ∉ (t.map Entry.dest).takeWhile (fun d => !decide (d = b)) := by
-        simpa [List.takeWhile_cons, hb, Ne.symm hec] using hnot
+        (simpa? [List.takeWhile_cons, hb, Ne.symm hec] using hnot says simpa only [List.map_cons, hb, decide_false, Bool.not_false, List.takeWhile_cons_of_pos, List.mem_cons, Ne.symm hec, false_or] using hnot)
       have := ih hc hnot'
-      simp [hb, hec, owed_cons]
+      (simp? [hb, hec, owed_cons] says simp only [hb, decide_false, Bool.not_false, List.takeWhile_cons_of_pos, total_cons, owed_cons, ↓reduceIte, hec, ge_iff_le])
       unfold Coins at *
       omega
 
@@ -733,11 +734,11 @@ theorem dedupFrom_reduceOwed (o : Allocation E) (c : Address E) (x : Coins) :
     rw [reduceOwed_cons, dedupFrom_cons]
     by_cases hec : e.dest = c
     · have hs : e.dest ∉ seen := hec ▸ hc
-      simp [hec, dedupFrom_cons, reduceOwed_cons, hc]
+      (simp? [hec, dedupFrom_cons, reduceOwed_cons, hc] says simp only [hec, ↓reduceIte, dedupFrom_cons, hc, reduceOwed_cons])
     · by_cases hs : e.dest ∈ seen
-      · simp [hec, dedupFrom_cons, hs, ih seen hc]
-      · have hc' : c ∉ e.dest :: seen := by simp [Ne.symm hec, hc]
-        simp [hec, dedupFrom_cons, hs, reduceOwed_cons, ih _ hc']
+      · (simp? [hec, dedupFrom_cons, hs, ih seen hc] says simp only [hec, ↓reduceIte, dedupFrom_cons, hs, ih seen hc])
+      · have hc' : c ∉ e.dest :: seen := by (simp? [Ne.symm hec, hc] says simp only [List.mem_cons, Ne.symm hec, hc, or_self, not_false_eq_true])
+        (simp? [hec, dedupFrom_cons, hs, reduceOwed_cons, ih _ hc'] says simp only [hec, ↓reduceIte, dedupFrom_cons, hs, ih _ hc', reduceOwed_cons])
 
 /-- Paying an allocation item keeps every entry's kind. -/
 theorem map_kind_reduceOwed {o : Allocation E} {c : Address E} {amt : Coins}
@@ -751,9 +752,9 @@ theorem map_kind_reduceOwed {o : Allocation E} {c : Address E} {amt : Coins}
     by_cases hec : e.dest = c
     · rw [if_pos hec] at h
       cases h
-      simp [Entry.kind, Item.isGuarantee]
+      (simp? [Entry.kind, Item.isGuarantee] says simp only [↓reduceIte, Entry.amount_mk, Item.amount_alloc, List.map_cons, Entry.kind, Item.isGuarantee])
     · rw [if_neg hec] at h
-      simp [hec, ih h]
+      (simp? [hec, ih h] says simp only [hec, ↓reduceIte, List.map_cons, ih h])
 
 /-- Two allocations with the same entry kinds find entries of the same kind. -/
 theorem find_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.map Entry.kind)
@@ -762,13 +763,13 @@ theorem find_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.map Entry
   | nil => cases o' <;> simp_all
   | cons e t ih =>
     cases o' with
-    | nil => simp at h
+    | nil => (simp? at h says simp only [List.map_cons, List.map_nil, reduceCtorEq] at h)
     | cons e' t' =>
       simp only [List.map_cons, List.cons.injEq] at h
       have hd : e.dest = e'.dest := congrArg Prod.fst h.1
       rw [find_cons, find_cons, ← hd]
       split
-      · simp [h.1]
+      · (simp? [h.1] says simp only [Option.map_some, h.1])
       · exact ih h.2
 
 /-- An allocation item for `c` in one allocation is an allocation item for
@@ -785,9 +786,9 @@ theorem find_alloc_of_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.
     obtain ⟨d', i'⟩ := e'
     cases i' with
     | alloc a' =>
-      simp [Entry.kind] at hk
+      (simp? [Entry.kind] at hk says simp only [Option.map_some, Entry.kind, Option.some.injEq, Prod.mk.injEq] at hk)
       exact ⟨a', by rw [hk.1]⟩
-    | guarantee x ps => simp [Entry.kind, Item.isGuarantee] at hk
+    | guarantee x ps => (simp? [Entry.kind, Item.isGuarantee] at hk says simp only [Option.map_some, Entry.kind, Item.isGuarantee, Option.some.injEq, Prod.mk.injEq, Bool.false_eq_true, and_false] at hk)
 
 /-- The coins due, in priority order, ahead of `b`'s first entry. -/
 def dueBefore (o : Allocation E) (b : Address E) : Coins :=
@@ -819,7 +820,7 @@ theorem dueBefore_add_owed_le (o : Allocation E) (b : Address E) :
 
 theorem not_precedes_self (o : Allocation E) (c : Address E) : ¬ o.Precedes c c := by
   intro h
-  simpa using List.all_eq_true.1 List.all_takeWhile c h
+  (simpa? using List.all_eq_true.1 List.all_takeWhile c h says simpa only [decide_true, Bool.not_true, Bool.false_eq_true] using List.all_eq_true.1 List.all_takeWhile c h)
 
 theorem dedup_reduceOwed (o : Allocation E) (c : Address E) (x : Coins) :
     (o.reduceOwed c x).dedup = o.dedup.reduceOwed c x :=
@@ -982,7 +983,7 @@ theorem find_addTo_of_ne (o : Allocation E) {d d' : Address E} (x : Coins) (h : 
   | cons e t ih =>
     rw [addTo_cons]
     split
-    · rename_i he; subst he; simp [find_cons, Ne.symm h]
+    · rename_i he; subst he; (simp? [find_cons, Ne.symm h] says simp only [find_cons, Ne.symm h, ↓reduceIte])
     · rw [find_cons, find_cons, ih]
 
 /-- Raising the amount owed to `d` by `x` rewrites `d`'s own first entry (if
@@ -996,34 +997,34 @@ theorem find_addTo_self (o : Allocation E) (d : Address E) (x : Coins) :
   | cons e t ih =>
     rw [addTo_cons]
     by_cases he : e.dest = d
-    · subst he; simp [find_cons]
-    · simp [find_cons, he, ih]
+    · subst he; (simp? [find_cons] says simp only [↓reduceIte, find_cons, Option.map_some])
+    · (simp? [find_cons, he, ih] says simp only [he, ↓reduceIte, find_cons, ih])
 
 theorem owed_addTo_self {o : Allocation E} {d : Address E} (x : Coins) (h : o.find d ≠ none) :
     (o.addTo d x).owed d = o.owed d + x := by
   induction o with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [find_nil, ne_eq, not_true_eq_false] at h)
   | cons e t ih =>
     rw [addTo_cons]
     by_cases he : e.dest = d
-    · subst he; simp [owed_cons, Entry.amount]
+    · subst he; (simp? [owed_cons, Entry.amount] says simp only [↓reduceIte, Entry.amount, owed_cons, Item.amount_alloc, Nat.add_left_cancel_iff])
     · rw [find_cons, if_neg he] at h
       rw [if_neg he, owed_cons, owed_cons, if_neg he, if_neg he, ih h]
 
 theorem owed_addTo_of_ne (o : Allocation E) {d d' : Address E} (x : Coins) (h : d' ≠ d) :
     (o.addTo d x).owed d' = o.owed d' := by
-  simp [Allocation.owed, find_addTo_of_ne o x h]
+  (simp? [Allocation.owed, find_addTo_of_ne o x h] says simp only [owed, find_addTo_of_ne o x h])
 
 theorem total_addTo {o : Allocation E} {d : Address E} (x : Coins) (h : o.find d ≠ none) :
     (o.addTo d x).total = o.total + x := by
   induction o with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [find_nil, ne_eq, not_true_eq_false] at h)
   | cons e t ih =>
     rw [addTo_cons]
     by_cases he : e.dest = d
-    · simp only [he, if_true, total_cons, Entry.amount]; simp only [Item.amount_alloc]; grind
+    · simp only [he, if_true, total_cons, Entry.amount]; simp only [Item.amount_alloc]; (grind? says grind only)
     · rw [find_cons, if_neg he] at h
-      rw [if_neg he, total_cons, total_cons, ih h]; grind
+      rw [if_neg he, total_cons, total_cons, ih h]; (grind? says grind only)
 
 /-- `addTo` never raises the total by more than `x`, whether or not `d` is
     found (if not found it is a no-op, by the same recursion as
@@ -1031,12 +1032,12 @@ theorem total_addTo {o : Allocation E} {d : Address E} (x : Coins) (h : o.find d
 theorem total_addTo_le (o : Allocation E) (d : Address E) (x : Coins) :
     (o.addTo d x).total ≤ o.total + x := by
   induction o with
-  | nil => simp [Allocation.addTo]
+  | nil => (simp? [Allocation.addTo] says simp only [addTo, total_nil, zero_add, zero_le])
   | cons e t ih =>
     rw [addTo_cons]
     by_cases he : e.dest = d
-    · simp only [he, if_true, total_cons, Entry.amount]; simp only [Item.amount_alloc]; grind
-    · simp only [he, if_false, total_cons]; grind
+    · simp only [he, if_true, total_cons, Entry.amount]; simp only [Item.amount_alloc]; (grind? says grind only)
+    · simp only [he, if_false, total_cons]; (grind? says grind only)
 
 /-- `addTo` never lowers the amount owed anywhere: at `d` itself it only
     raises it (`owed_addTo_self`, or leaves it at `0` when `d` has no entry
@@ -1046,34 +1047,34 @@ theorem owed_addTo_ge (o : Allocation E) (d d' : Address E) (x : Coins) :
   by_cases h : d' = d
   · subst h
     by_cases hf : o.find d' = none
-    · simp [Allocation.owed, hf]
-    · rw [owed_addTo_self x hf]; grind
+    · (simp? [Allocation.owed, hf] says simp only [owed, hf, Option.map_none, Option.getD_none, zero_le])
+    · rw [owed_addTo_self x hf]; (grind? says grind only)
   · rw [owed_addTo_of_ne o x h]
 
 theorem find_remove (o : Allocation E) (d d' : Address E) :
     (o.remove d).find d' = if d' = d then none else o.find d' := by
   induction o with
-  | nil => simp [Allocation.remove]
+  | nil => (simp? [Allocation.remove] says simp only [remove, ne_eq, decide_not, List.filter_nil, find_nil, ite_self])
   | cons e t ih =>
     simp only [Allocation.remove, List.filter_cons, ne_eq, decide_not] at ih ⊢
     by_cases he : e.dest = d
     · subst he
       by_cases hd : d' = e.dest
-      · subst hd; simp [ih]
-      · simp [find_cons, Ne.symm hd, ih, hd]
+      · subst hd; (simp? [ih] says simp only [decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte, ih])
+      · (simp? [find_cons, Ne.symm hd, ih, hd] says simp only [decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte, ih, hd, find_cons, Ne.symm hd])
     · by_cases hd : d' = d
-      · subst hd; simp [he, find_cons, ih]
-      · simp [he, find_cons, ih, hd]
+      · subst hd; (simp? [he, find_cons, ih] says simp only [he, decide_false, Bool.not_false, ↓reduceIte, find_cons, ih])
+      · (simp? [he, find_cons, ih, hd] says simp only [he, decide_false, Bool.not_false, ↓reduceIte, find_cons, ih, hd])
 
 theorem owed_remove_of_ne (o : Allocation E) {d d' : Address E} (h : d' ≠ d) :
     (o.remove d).owed d' = o.owed d' := by
-  simp [Allocation.owed, find_remove, h]
+  (simp? [Allocation.owed, find_remove, h] says simp only [owed, find_remove, h, ↓reduceIte])
 
 /-- With distinct destinations, removing `d` lowers the total by its amount. -/
 theorem total_remove {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) (d : Address E) :
     (o.remove d).total + o.owed d = o.total := by
   induction o with
-  | nil => simp [Allocation.remove, Allocation.owed]
+  | nil => (simp? [Allocation.remove, Allocation.owed] says simp only [remove, ne_eq, decide_not, List.filter_nil, total_nil, owed, find_nil, Option.map_none, Option.getD_none, add_zero])
   | cons e t ih =>
     have ht := ih (List.nodup_cons.1 hnd).2
     simp only [Allocation.remove, List.filter_cons] at ht ⊢
@@ -1082,12 +1083,12 @@ theorem total_remove {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) (d : Ad
     · subst he
       have hno : Allocation.find t e.dest = none :=
         find_eq_none.2 (List.nodup_cons.1 hnd).1
-      have hown : Allocation.owed t e.dest = 0 := by simp [Allocation.owed, hno]
+      have hown : Allocation.owed t e.dest = 0 := by (simp? [Allocation.owed, hno] says simp only [owed, hno, Option.map_none, Option.getD_none])
       simp only [ne_eq, not_true_eq_false, decide_false, Bool.false_eq_true, if_false, if_true,
         total_cons]
-      grind
+      (grind? says grind only)
     · simp only [ne_eq, he, not_false_eq_true, decide_true, if_true, if_false, total_cons]
-      grind
+      (grind? says grind only)
 
 /-- Without distinctness, removing `d` still lowers the total by at least
     its (first-entry) owed amount: every duplicate entry for `d` only
@@ -1095,7 +1096,7 @@ theorem total_remove {o : Allocation E} (hnd : (o.map Entry.dest).Nodup) (d : Ad
 theorem total_remove_le (o : Allocation E) (d : Address E) :
     (o.remove d).total + o.owed d ≤ o.total := by
   induction o with
-  | nil => simp [Allocation.remove, Allocation.owed]
+  | nil => (simp? [Allocation.remove, Allocation.owed] says simp only [remove, ne_eq, decide_not, List.filter_nil, total_nil, owed, find_nil, Option.map_none, Option.getD_none, add_zero, Std.le_refl])
   | cons e t ih =>
     simp only [Allocation.remove, List.filter_cons] at ih ⊢
     rw [owed_cons]
@@ -1103,9 +1104,9 @@ theorem total_remove_le (o : Allocation E) (d : Address E) :
     · subst he
       simp only [ne_eq, not_true_eq_false, decide_false, Bool.false_eq_true, if_false, if_true,
         total_cons]
-      grind
+      (grind? says grind only)
     · simp only [ne_eq, he, not_false_eq_true, decide_true, if_true, if_false, total_cons]
-      grind
+      (grind? says grind only)
 
 
 /-! ### `chainPay`: paying an allocation's own destinations in order -/
@@ -1176,7 +1177,7 @@ theorem owed_le_total_takeWhile_of_mem {o : Allocation E} {c : Address E} {p : A
     (hc : c ∈ (o.map Entry.dest).takeWhile p) :
     o.owed c ≤ Allocation.total (o.takeWhile (fun e => p e.dest)) := by
   induction o with
-  | nil => simp at hc
+  | nil => (simp? at hc says simp only [List.map_nil, List.takeWhile_nil, List.not_mem_nil] at hc)
   | cons e t ih =>
     rw [List.map_cons, List.takeWhile_cons] at hc
     rw [owed_cons, List.takeWhile_cons]
@@ -1185,11 +1186,11 @@ theorem owed_le_total_takeWhile_of_mem {o : Allocation E} {c : Address E} {p : A
       rw [List.mem_cons] at hc
       rw [total_cons]
       by_cases hec : e.dest = c
-      · simp [hec]
+      · (simp? [hec] says simp only [hec, ↓reduceIte, le_add_iff_nonneg_right, zero_le])
       · rw [if_neg hec]
         have hc' : c ∈ (t.map Entry.dest).takeWhile p := hc.resolve_left (Ne.symm hec)
         exact le_trans (ih hc') (Nat.le_add_left _ _)
-    · simp [hp] at hc
+    · (simp? [hp] at hc says simp only [hp, Bool.false_eq_true, ↓reduceIte, List.not_mem_nil] at hc)
 
 /-- When `c` precedes `d` in priority order, `c`'s own entry is one of the
     entries due before `d`. -/
@@ -1283,13 +1284,13 @@ theorem chainPay_processes_alloc (ds : List (Address E)) (og : Allocation E) (hg
 theorem find_mem_map_dest {o : Allocation E} {d : Address E} {f : Entry E}
     (h : o.find d = some f) : f.dest ∈ o.map Entry.dest := by
   induction o with
-  | nil => simp at h
+  | nil => (simp? at h says simp only [find_nil, reduceCtorEq] at h)
   | cons e t ih =>
     rw [find_cons] at h
     by_cases he : e.dest = d
     · rw [if_pos he] at h
       cases h
-      simp
+      (simp? says simp only [List.map_cons, List.mem_cons, List.mem_map, true_or])
     · rw [if_neg he] at h
       exact List.mem_cons_of_mem _ (ih h)
 
@@ -1301,11 +1302,11 @@ theorem find_some_of_map_kind {o o' : Allocation E} (h : o.map Entry.kind = o'.m
   have hk := find_map_kind h d
   rw [hf] at hk
   cases hc : o'.find d with
-  | none => rw [hc] at hk; simp at hk
+  | none => rw [hc] at hk; (simp? at hk says simp only [Option.map_some, Option.map_none, reduceCtorEq] at hk)
   | some g' =>
     refine ⟨g', rfl, ?_⟩
     rw [hc] at hk
-    simp [Entry.kind] at hk
+    (simp? [Entry.kind] at hk says simp only [Option.map_some, Entry.kind, Option.some.injEq, Prod.mk.injEq] at hk)
     exact hk.2.symm
 
 /-- Processing every destination of an allocation `o`, in `o`'s own
@@ -1323,7 +1324,7 @@ theorem chainPay_exhausted (o : Allocation E) (hg : Coins) (d : Address E) :
     rw [hfod] at hk
     cases hc : (chainPay (o.map Entry.dest) o hg).1.find d with
     | none => trivial
-    | some f' => rw [hc] at hk; simp at hk
+    | some f' => rw [hc] at hk; (simp? at hk says simp only [Option.map_some, Option.map_none, reduceCtorEq] at hk)
   | some f =>
     obtain ⟨fd, fi⟩ := f
     have hfd : fd = d := find_dest hfod
@@ -1341,7 +1342,7 @@ theorem chainPay_dedup_total_conservation (ds : List (Address E)) (og : Allocati
     (chainPay ds og hg).2 + (og.dedup.total - (chainPay ds og hg).1.dedup.total) = hg ∧
     (chainPay ds og hg).1.dedup.total ≤ og.dedup.total := by
   induction ds generalizing og hg with
-  | nil => simp [chainPay]
+  | nil => (simp? [chainPay] says simp only [chainPay, Nat.sub_self, add_zero, Std.le_refl, and_self])
   | cons e ds ih =>
     cases hf : og.find e with
     | none =>
@@ -1471,8 +1472,8 @@ theorem reduceOwed_map_dest (o : Allocation E) (c : Address E) (x : Coins) :
   | cons e t ih =>
     rw [reduceOwed_cons]
     by_cases h : e.dest = c
-    · simp [h]
-    · simp [h, ih]
+    · (simp? [h] says simp only [h, ↓reduceIte, List.map_cons])
+    · (simp? [h, ih] says simp only [h, ↓reduceIte, List.map_cons, ih])
 
 /-- `Precedes` only reads the destination list, which `reduceOwed` never
     changes. -/
@@ -1525,7 +1526,7 @@ theorem chainPay_owed_eq (og : Allocation E) (hnd : (og.map Entry.dest).Nodup) (
       by_cases hxd : x = d
       · subst hxd
         exact absurd hx hdpre
-      · simp [hxd]
+      · (simp? [hxd] says simp only [hxd, decide_false, Bool.not_false])
   rw [heq, chainPay_append, chainPay_cons]
   set og1 := (chainPay pre og hg).1 with hog1
   set hg1 := (chainPay pre og hg).2 with hhg1
@@ -1576,7 +1577,7 @@ theorem owed_le_chainPay_owed_add (og : Allocation E) (hnd : (og.map Entry.dest)
     og.owed d ≤ (chainPay (og.map Entry.dest) og hg).1.owed d +
       if ((og.find d).elim false (fun e => !e.item.isGuarantee)) then og.paidTo hg d else 0 := by
   cases hf : og.find d with
-  | none => simp [Allocation.owed, hf]
+  | none => (simp? [Allocation.owed, hf] says simp only [owed, hf, Option.map_none, Option.getD_none, Option.elim_none, Bool.false_eq_true, ↓reduceIte, add_zero, zero_le])
   | some e =>
     obtain ⟨de, item⟩ := e
     obtain rfl : de = d := find_dest hf
@@ -1588,7 +1589,7 @@ theorem owed_le_chainPay_owed_add (og : Allocation E) (hnd : (og.map Entry.dest)
       omega
     | guarantee x ps =>
       rw [chainPay_owed_of_find_guarantee _ og hg de x ps hf]
-      simp
+      (simp? says simp only [Option.elim_some, Bool.not_eq_eq_eq_not, Bool.not_true, le_add_iff_nonneg_right, zero_le])
 
 end Allocation
 
@@ -1704,14 +1705,14 @@ omit [DecidableEq E] in
 theorem finalOutcome_mono {st : ChannelStatus E} {now now' : Time} {o : Outcome E}
     (h : st.finalOutcome now = some o) (hle : now ≤ now') : st.finalOutcome now' = some o := by
   cases st <;> simp at h ⊢
-  · exact ⟨by grind, h.2⟩
+  · exact ⟨by (grind? says grind only), h.2⟩
   · exact h
 
 omit [DecidableEq E] in
 theorem finalizedWith_mono {st : ChannelStatus E} {now now' : Time} {o : Outcome E}
     (h : st.finalizedWith now = some o) (hle : now ≤ now') : st.finalizedWith now' = some o := by
   cases st <;> simp at h ⊢
-  · exact ⟨by grind, h.2⟩
+  · exact ⟨by (grind? says grind only), h.2⟩
   · exact h
 
 omit [DecidableEq E] in
@@ -1733,10 +1734,10 @@ theorem validRun_getElem? {vt : State E → State E → Bool} {l : SupportProof 
     {i : Nat} {m1 m2 : SignedState E} (h1 : l[i]? = some m1) (h2 : l[i + 1]? = some m2) :
     validMove vt m1 m2 = true := by
   induction l generalizing i with
-  | nil => simp at h1
+  | nil => (simp? at h1 says simp only [List.length_nil, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h1)
   | cons a t ih =>
     cases t with
-    | nil => simp at h2
+    | nil => (simp? at h2 says simp only [List.length_cons, List.length_nil, zero_add, add_lt_iff_neg_right, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at h2)
     | cons b t =>
       simp only [validRun, Bool.and_eq_true] at h
       cases i with
@@ -1745,7 +1746,7 @@ theorem validRun_getElem? {vt : State E → State E → Bool} {l : SupportProof 
         subst h1 h2; exact h.1
       | succ i =>
         simp only [List.getElem?_cons_succ] at h1 h2
-        exact ih h.2 (by simpa using h1) (by simpa using h2)
+        exact ih h.2 (by (simpa? using h1 says simpa only using h1)) (by (simpa? using h2 says simpa only [List.getElem?_cons_succ] using h2))
 
 /-- A run whose consecutive pairs are valid moves is a valid run: the
     converse of `validRun_getElem?`. -/
@@ -1771,8 +1772,8 @@ theorem consensusRules_noUnilateralSupport :
     simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hcon
     obtain ⟨⟨-, hchan⟩, hall⟩ := hcon
     exact ⟨ss, List.mem_singleton_self ss, hall q (by rw [hchan]; exact hq)⟩
-  | [], hcon => simp [consensusRules] at hcon
-  | _ :: _ :: _, hcon => simp [consensusRules] at hcon
+  | [], hcon => (simp? [consensusRules] at hcon says simp only [consensusRules, Bool.false_eq_true] at hcon)
+  | _ :: _ :: _, hcon => (simp? [consensusRules] at hcon says simp only [consensusRules, Bool.false_eq_true] at hcon)
 
 /-- `(t0 + i) % n` covers every residue `k < n` as `i` ranges over `0, …,
     n - 1`: the modular-arithmetic fact `forceMoveRules_noUnilateralSupport`
@@ -1806,7 +1807,7 @@ theorem forceMoveRules_noUnilateralSupport (vt : State E → State E → Bool) :
   have hklt' : k < c.n := hklt
   have hn : 0 < c.n := by omega
   cases proof with
-  | nil => simp at hlen; omega
+  | nil => (simp? at hlen says simp only [List.length_nil] at hlen); omega
   | cons m0 rest =>
     have hm0mover : m0.ByMover := (SignedState.byMover_iff _).1 (hhead m0 rfl)
     have hm0chan : m0.state.channel = c := hchanAll m0 List.mem_cons_self
@@ -1829,7 +1830,7 @@ theorem forceMoveRules_noUnilateralSupport (vt : State E → State E → Bool) :
           m.state.turnNum = m0.state.turnNum + i ∧ m.ByMover := by
       intro i
       induction i with
-      | zero => intro _; exact ⟨m0, rfl, hm0chan, by simp, hm0mover⟩
+      | zero => intro _; exact ⟨m0, rfl, hm0chan, by (simp? says simp only [add_zero]), hm0mover⟩
       | succ i ih =>
         intro hi
         obtain ⟨m, hmget, hmchan, hmturn, hmmv⟩ := ih (by omega)
@@ -1861,7 +1862,7 @@ theorem sum_map_update {α : Type} [DecidableEq α] {L : List α} (hL : L.Nodup)
     {a : α} {y : Nat} (hne : ∀ c, c ≠ a → f c = g c) (ha : f a + y = g a) :
     (L.map f).sum + (if a ∈ L then y else 0) = (L.map g).sum := by
   induction L with
-  | nil => simp
+  | nil => (simp? says simp only [List.map_nil, List.sum_nil, List.not_mem_nil, ↓reduceIte, add_zero])
   | cons c t ih =>
     obtain ⟨hct, ht⟩ := List.nodup_cons.1 hL
     have ih := ih ht
@@ -1887,18 +1888,18 @@ theorem lookup_filter_ne (l : List (FixedPart × (ChannelStatus E))) {c c' : Fix
   | cons e t ih =>
     obtain ⟨k, w⟩ := e
     by_cases hk : k = c
-    · subst hk; simp [List.lookup_cons, beq_false_of_ne h, ih]
+    · subst hk; (simp? [List.lookup_cons, beq_false_of_ne h, ih] says simp only [decide_true, Bool.not_true, Bool.false_eq_true, not_false_eq_true, List.filter_cons_of_neg, ih, List.lookup_cons, beq_false_of_ne h])
     · by_cases hk' : c' = k
-      · subst hk'; simp [hk]
-      · simp [hk, List.lookup_cons, beq_false_of_ne hk', ih]
+      · subst hk'; (simp? [hk] says simp only [hk, decide_false, Bool.not_false, List.filter_cons_of_pos, List.lookup_cons_self])
+      · (simp? [hk, List.lookup_cons, beq_false_of_ne hk', ih] says simp only [hk, decide_false, Bool.not_false, List.filter_cons_of_pos, List.lookup_cons, beq_false_of_ne hk', ih])
 
 omit [DecidableEq E] in
 @[simp] theorem statusOf_setStatus (s : Adjudicator E) (c : FixedPart) (st : ChannelStatus E)
     (c' : FixedPart) : (s.setStatus c st).statusOf c' = if c' = c then st else s.statusOf c' := by
   unfold statusOf setStatus
   by_cases h : c' = c
-  · subst h; simp
-  · simp [List.lookup_cons, beq_false_of_ne h, h, lookup_filter_ne _ h]
+  · subst h; (simp? says simp only [ne_eq, decide_not, List.lookup_cons_self, Option.getD_some, ↓reduceIte])
+  · (simp? [List.lookup_cons, beq_false_of_ne h, h, lookup_filter_ne _ h] says simp only [ne_eq, decide_not, List.lookup_cons, beq_false_of_ne h, lookup_filter_ne _ h, h, ↓reduceIte])
 
 omit [DecidableEq E] in
 @[simp] theorem setStatus_balances (s : Adjudicator E) (c : FixedPart) (st : ChannelStatus E) :
@@ -1986,7 +1987,7 @@ theorem transfer_some {s : Adjudicator E} {a : FixedPart} {b : Address E} {s' : 
         have hd : d = b := Allocation.find_dest hfind
         subst hd
         cases h
-        exact ⟨o, amt, _, hf, hfind, rfl, by simp, by simp, by simp, by simp, hcond.1, hcond.2⟩
+        exact ⟨o, amt, _, hf, hfind, rfl, by (simp? says simp only [FixedPart.address_eq, payTo_balances, setStatus_balances]), by (simp? says simp only [FixedPart.address_eq, payTo_held, setStatus_held]), by (simp? says simp only [FixedPart.address_eq, payTo_status]), by (simp? says simp only [FixedPart.address_eq, payTo_now, setStatus_now]), hcond.1, hcond.2⟩
       · cases h
     · cases h
   · cases h
@@ -1999,7 +2000,7 @@ theorem transfer_ne_none {s : Adjudicator E} {a : FixedPart} {b : Address E} {o 
     s.transfer a b ≠ none := by
   unfold transfer
   rw [if_pos ⟨hk, hb⟩, hf]
-  simp [hfind]
+  (simp? [hfind] says simp only [hfind, FixedPart.address_eq, payTo_balances, setStatus_balances, payTo_held, setStatus_held, payTo_status, payTo_now, setStatus_now, ne_eq, reduceCtorEq, not_false_eq_true])
 
 /-- The exact effect of a successful reclaim. -/
 theorem reclaim_some {s : Adjudicator E} {l v : FixedPart} {s' : Adjudicator E}
@@ -2117,19 +2118,19 @@ theorem applyAll_append (apps : Apps E) (l l' : List (Participant × (Op E))) (s
 theorem applyAll_singleton_of_some {apps : Apps E} {caller : Participant} {op : Op E}
     {s s' : Adjudicator E} (h : s.apply apps caller op = some s') :
     applyAll apps [(caller, op)] s = s' := by
-  simp [applyAll, h]
+  (simp? [applyAll, h] says simp only [applyAll, h, Option.getD_some])
 
 /-- Only `tick` moves the clock, and only forward. -/
 theorem apply_now_le {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
     (h : s.apply apps caller op = some s') : s.now ≤ s'.now := by
   cases op with
-  | deposit a e x => simp [(deposit_some h).2.2.2.2.2]
-  | transfer a b => obtain ⟨_, _, _, _, _, _, _, _, _, hn, _, _⟩ := transfer_some h; simp [hn]
-  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; simp
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; simp
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; simp
-  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; simp
-  | tick dt => simp at h; subst h; simp
+  | deposit a e x => (simp? [(deposit_some h).2.2.2.2.2] says simp only [(deposit_some h).2.2.2.2.2, Std.le_refl])
+  | transfer a b => obtain ⟨_, _, _, _, _, _, _, _, _, hn, _, _⟩ := transfer_some h; (simp? [hn] says simp only [hn, Std.le_refl])
+  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; (simp? says simp only [FixedPart.address_eq, setStatus_now, Std.le_refl])
+  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; (simp? says simp only [setStatus_now, Std.le_refl])
+  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; (simp? says simp only [setStatus_now, Std.le_refl])
+  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; (simp? says simp only [setStatus_now, Std.le_refl])
+  | tick dt => (simp? at h says simp only [apply_tick, Option.some.injEq] at h); subst h; (simp? says simp only [tick_now, le_add_iff_nonneg_right, zero_le])
 
 /-- Any operation that is not `tick` never moves the clock at all (not just
     forward, `apply_now_le`): `deposit`, `transfer`, `reclaim`, `challenge`,
@@ -2167,9 +2168,9 @@ theorem apply_balances_frame {apps : Apps E} {caller : Participant} {op : Op E}
     s'.balances = s.balances := by
   cases op with
   | deposit a e x =>
-    simp [Op.touchesBalances] at hop
+    (simp? [Op.touchesBalances] at hop says simp only [Op.touchesBalances, Bool.true_eq_false] at hop)
   | transfer a b =>
-    simp [Op.touchesBalances] at hop
+    (simp? [Op.touchesBalances] at hop says simp only [Op.touchesBalances, Bool.true_eq_false] at hop)
   | reclaim l v =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h
     rfl
@@ -2193,9 +2194,9 @@ theorem apply_held_frame {apps : Apps E} {caller : Participant} {op : Op E}
     s'.held = s.held := by
   cases op with
   | deposit a e x =>
-    simp [Op.touchesHeld] at hop
+    (simp? [Op.touchesHeld] at hop says simp only [Op.touchesHeld, Bool.true_eq_false] at hop)
   | transfer a b =>
-    simp [Op.touchesHeld] at hop
+    (simp? [Op.touchesHeld] at hop says simp only [Op.touchesHeld, Bool.true_eq_false] at hop)
   | reclaim l v =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h
     rfl
@@ -2351,24 +2352,24 @@ theorem heldInv_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : 
     rw [Balances.channelTotal_eq_sumIf] at hheld ⊢
     rw [hh, hb]
     simp only [Balances.add]
-    simp at this
-    grind
+    (simp? at this says simp only [Bool.decide_eq_false, Address.isExternal_channel, decide_true, ↓reduceIte] at this)
+    (grind? says grind only [#3a2f, #8010, #3acd])
   | transfer a b =>
     obtain ⟨o, _, x, -, -, hx, hb, hh, -, -, -, -⟩ := transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
     refine ⟨hb ▸ (hnd.add _ _).sub _ _, ?_⟩
     have := Balances.sumIf_add_sub (fun a => decide (a.isExternal = false)) hnd a.address b hxa
     have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-      (a := a.address) (by simp)
+      (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
     rw [hh, hb, Balances.channelTotal_eq_sumIf]
     rw [Balances.channelTotal_eq_sumIf] at hheld
-    cases b <;> simp at this ⊢ <;> grind
+    cases b <;> simp at this ⊢ <;> (grind? says grind only [#3a2f, #8010, #3acd])
   | reclaim l v =>
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; exact ⟨hnd, hheld⟩
   | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; exact ⟨hnd, hheld⟩
   | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; exact ⟨hnd, hheld⟩
   | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; exact ⟨hnd, hheld⟩
-  | tick dt => simp at h; subst h; exact ⟨hnd, hheld⟩
+  | tick dt => (simp? at h says simp only [apply_tick, Option.some.injEq] at h); subst h; exact ⟨hnd, hheld⟩
 
 theorem heldInv_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s) : s.HeldInv := by
   induction hr with
@@ -2393,7 +2394,7 @@ theorem total_step_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Part
   have hs := Balances.sumIf_set (fun _ => true) hnd a (s.balances.get a + x)
   rw [hb]
   simp only [Balances.add, Balances.total_eq_sumIf]
-  grind
+  (grind? says grind only)
 
 /-- **The balances sum is unchanged by every on-chain operation except
     `deposit`.** `transfer` moves `x` from the source to the destination,
@@ -2413,15 +2414,15 @@ theorem total_step_no_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : P
     obtain ⟨o, amt, x, -, -, hx, hb, -, -, -, -, -⟩ := transfer_some h
     have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
     have hs := Balances.sumIf_add_sub (fun _ => true) hnd a.address b hxa
-    simp at hs
+    (simp? at hs says simp only [FixedPart.address_eq, ↓reduceIte, Nat.add_right_cancel_iff] at hs)
     rw [hb]
-    simp [Balances.total_eq_sumIf]
+    (simp? [Balances.total_eq_sumIf] says simp only [FixedPart.address_eq, Balances.total_eq_sumIf])
     omega
-  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; simp
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; simp
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; simp
-  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; simp
-  | tick dt => simp at h; subst h; simp
+  | reclaim l v => obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; (simp? says simp only [FixedPart.address_eq, setStatus_balances])
+  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; (simp? says simp only [setStatus_balances])
+  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; (simp? says simp only [setStatus_balances])
+  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; (simp? says simp only [setStatus_balances])
+  | tick dt => (simp? at h says simp only [apply_tick, Option.some.injEq] at h); subst h; (simp? says simp only [tick_balances])
 
 /-- **A deposit's `held` plus everything ever paid out rises by exactly its
     own amount.** `HeldInv` (`held = channelTotal`) at both `s` and `s'`
@@ -2514,13 +2515,13 @@ theorem transfer_effect {s s' : Adjudicator E} {a : FixedPart} {b : Address E}
     simp only [FixedPart.address_eq, finalOutcome_channel, statusOf_of_status hst, hnow,
       statusOf_setStatus]
     split_ifs with hc
-    · simp
+    · (simp? says simp only [ChannelStatus.finalOutcome_withOutcome])
     · rfl
   refine ⟨o, amt, x, hf, hfind, hk, hb, hx, hfo, fun d => ?_, fun d => ?_, fun d L hL => ?_⟩
   · rw [hbal, Balances.get_sub, Balances.get_add, Balances.get_add]
     split_ifs <;> simp_all
   · cases d with
-    | external e => simp [dueTotal]
+    | external e => (simp? [dueTotal] says simp only [dueTotal, finalOutcome_external, FixedPart.address_eq, reduceCtorEq, ↓reduceIte, add_zero])
     | channel c =>
       have hc := hfo c
       simp only [FixedPart.address_eq] at hc hf
@@ -2530,7 +2531,7 @@ theorem transfer_effect {s s' : Adjudicator E} {a : FixedPart} {b : Address E}
         simp only [dueTotal, hc, hf, FixedPart.address_eq, if_true]
         unfold Coins at *
         omega
-      · simp [dueTotal, hc, hca]
+      · (simp? [dueTotal, hc, hca] says simp only [dueTotal, hc, hca, ↓reduceIte, finalOutcome_channel, FixedPart.address_eq, Address.channel.injEq, add_zero])
   · refine sum_map_update hL (fun c hca => ?_) ?_
     · simp only [owedBy, hfo c, if_neg hca]
     · rw [owedBy_of (by rw [hfo a, if_pos rfl]), owedBy_of hf, Allocation.owed_reduceOwed]
@@ -2564,7 +2565,7 @@ theorem Ahead.refl (s : Adjudicator E) : s.Ahead s where
 
 theorem Ahead.get_external_le {sp sg : Adjudicator E} (h : sp.Ahead sg) (d : E) :
     sp.balances.get (.external d) ≤ sg.balances.get (.external d) := by
-  simpa [dueTotal] using h.flow (.external d) [] List.nodup_nil
+  (simpa? [dueTotal] using h.flow (.external d) [] List.nodup_nil says simpa only [dueTotal, finalOutcome_external, add_zero, List.map_nil, List.sum_nil] using h.flow (.external d) [] List.nodup_nil)
 
 /-- A held amount that does not fall keeps a channel ahead. -/
 theorem Ahead.chan_mono {sp sg sg' : Adjudicator E} {c : FixedPart}
@@ -2597,7 +2598,7 @@ theorem Ahead.transfer_right {sp sg sg' : Adjudicator E} {a : FixedPart} {b : Ad
         simp only [if_true] at hgc
         split_ifs at hgc <;> unfold Coins at * <;> omega
     · refine Ahead.chan_mono (h.chan c) ?_
-      have : (c.address : Address E) ≠ a.address := by simpa using hca
+      have : (c.address : Address E) ≠ a.address := by (simpa? using hca says simpa only [FixedPart.address_eq, ne_eq, Address.channel.injEq] using hca)
       rw [if_neg this] at hgc
       split_ifs at hgc <;> unfold Coins at * <;> omega
   · have h0 := h.flow d L hL
@@ -2647,7 +2648,7 @@ theorem Ahead.transfer_both {sp sg sp' sg' : Adjudicator E} {a : FixedPart} {b :
       sg.balances.get a.address + op.dedup.total := by
     have := h.flow a.address [] List.nodup_nil
     rw [dueTotal_of hfp, dueTotal_of hfg] at this
-    simpa using this
+    (simpa? using this says simpa only [FixedPart.address_eq, ge_iff_le, List.map_nil, List.sum_nil, add_zero] using this)
   have hrel : og.AheadOf op (sg.balances.get a.address) := by
     have hc := h.chan a
     rw [hfp, hfg] at hc
@@ -2665,7 +2666,7 @@ theorem Ahead.transfer_both {sp sg sp' sg' : Adjudicator E} {a : FixedPart} {b :
       simp only [if_true] at hgc
       split_ifs at hgc <;> unfold Coins at * <;> omega
     · refine Ahead.chan_mono (h.chan c) ?_
-      have : (c.address : Address E) ≠ a.address := by simpa using hca
+      have : (c.address : Address E) ≠ a.address := by (simpa? using hca says simpa only [FixedPart.address_eq, ne_eq, Address.channel.injEq] using hca)
       rw [if_neg this] at hgc
       split_ifs at hgc <;> unfold Coins at * <;> omega
   · have h1 := hgetp d
@@ -2698,7 +2699,7 @@ theorem Ahead.transfer {sp sg : Adjudicator E} (h : sp.Ahead sg) (a : FixedPart)
   | none => rw [(h.transfer_eq_none_iff a b).1 hp]; exact h
   | some sp' =>
     cases hg : sg.transfer a b with
-    | none => exact absurd ((h.transfer_eq_none_iff a b).2 hg) (by simp [hp])
+    | none => exact absurd ((h.transfer_eq_none_iff a b).2 hg) (by (simp? [hp] says simp only [hp, reduceCtorEq, not_false_eq_true]))
     | some sg' => exact h.transfer_both hp hg
 
 end Adjudicator
