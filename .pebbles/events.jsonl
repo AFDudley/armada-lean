@@ -1310,3 +1310,7 @@
 {"type":"comment","timestamp":"2026-11-01T09:42:15.555429Z","issue_id":"aln-2ee","payload":{"body":"gate-verdict: 9336ec97ddb7a3e9196ffda587a56c80311a3160 passed 0.2.1+1fbe8026","build":"0.2.1+1fbe8026","outcome":"passed","sha":"9336ec97ddb7a3e9196ffda587a56c80311a3160","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-01T09:42:15.573504Z","issue_id":"aln-2ee","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-01T09:42:15.579294Z","issue_id":"aln-2ee","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"comment","timestamp":"2026-11-01T09:42:26.833363Z","issue_id":"aln-a98","payload":{"body":"exophial-integration-attempt-started: at 7e2bfde1e1e2f87dd03a3fea7331d0ef0a442f50"}}
+{"type":"comment","timestamp":"2026-11-01T09:52:17.423426Z","issue_id":"aln-a98","payload":{"body":"gate-verdict: 441ef07262810598f28c6b9f23678066f9b9500c passed 0.2.1+1fbe8026","build":"0.2.1+1fbe8026","outcome":"passed","sha":"441ef07262810598f28c6b9f23678066f9b9500c","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-01T09:52:17.441145Z","issue_id":"aln-a98","payload":{"body":"exophiald: merged (merged_after_rebase).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-01T09:52:17.447004Z","issue_id":"aln-a98","payload":{"outcome":"merged_after_rebase","reason":"main had advanced since the branch was cut; the branch was rebased then fast-forwarded"}}
