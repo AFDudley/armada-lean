@@ -1,0 +1,227 @@
+{
+  "id": "derived-aln-caa",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proofs of ArmadaLean.Nitro.reclaim_effects, ArmadaLean.Nitro.reclaim_requires, ArmadaLean.Nitro.satp_reclaim_credits_intermediary do not unfold Adjudicator.apply or case on Op; they rewrite with Adjudicator.apply_reclaim_equation (ArmadaLean/Nitro/OpEquations.lean). The type-doctrine linter reports no layerDiscipline finding for any of these declarations. Statements do not change.\nWhat holds now? Describe the current, observed state. At integrated 4a9e9981, `lake env lean scripts/type_lint.lean` prints a layerDiscipline finding (linter layerDiscipline, with baseOps) for each of ArmadaLean.Nitro.reclaim_effects, ArmadaLean.Nitro.reclaim_requires, ArmadaLean.Nitro.satp_reclaim_credits_intermediary. The trunk has 35 Nitro layerDiscipline hits in total.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and then `lake env lean scripts/type_lint.lean`; read the JSON lines whose linter field is layerDiscipline and their declaration field. Then run `scripts/check.sh --json`.\nWhat constraints apply? State them in plain prose. Every Lean command runs through /home/rix/bin/lean-run. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true, lint_ok included, against scripts/gate-baseline.json. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Safety.lean and the other modules that hold the proofs of ArmadaLean.Nitro.reclaim_effects, ArmadaLean.Nitro.reclaim_requires, ArmadaLean.Nitro.satp_reclaim_credits_intermediary",
+  "restatement": "Fix the three Lean proofs ArmadaLean.Nitro.reclaim_effects, ArmadaLean.Nitro.reclaim_requires, and ArmadaLean.Nitro.satp_reclaim_credits_intermediary so that they no longer unfold Adjudicator.apply or case-split on Op directly, instead rewriting through Adjudicator.apply_reclaim_equation (as defined in ArmadaLean/Nitro/OpEquations.lean), without altering any Spec statement. After this change, running `lake env lean scripts/type_lint.lean` must report no layerDiscipline finding for any of these three declarations, and `scripts/check.sh --json` must keep every _ok field (including lint_ok) true against scripts/gate-baseline.json.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proofs of ArmadaLean.Nitro.reclaim_effects, ArmadaLean.Nitro.reclaim_requires, and ArmadaLean.Nitro.satp_reclaim_credits_intermediary must rewrite using Adjudicator.apply_reclaim_equation and must not unfold Adjudicator.apply or case on Op."
+    },
+    {
+      "id": "c2",
+      "text": "Running `lake env lean scripts/type_lint.lean` must produce no layerDiscipline finding (linter layerDiscipline, with baseOps) for any of the three named declarations."
+    },
+    {
+      "id": "c3",
+      "text": "No Spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` must be empty."
+    },
+    {
+      "id": "c4",
+      "text": "`scripts/check.sh --json` must keep every _ok field true, including lint_ok, against scripts/gate-baseline.json."
+    },
+    {
+      "id": "c5",
+      "text": "The statements (types) of the three proved declarations themselves must remain unchanged, only their proof terms/tactics change."
+    }
+  ],
+  "goal": "Make three specific mathematical proofs in the Nitro module follow the correct layering discipline (using the proven equation instead of unfolding low-level definitions), so that an automated checker stops flagging them as violations, while making sure nothing else about the proven statements or the overall build health changes.",
+  "acceptance_criteria": [
+    "Checks that the three named proofs in the Nitro Lean file rely on the apply_reclaim_equation helper lemma instead of manually unfolding the adjudicator's apply function or splitting on the Op type.",
+    "Running the type lint script against the repo's Lean sources should report zero layerDiscipline problems for the three declarations named in the lint rule, confirming they respect the required layering.",
+    "Checks that no files under the ArmadaLean/Spec directory were changed compared to the 'integrated' branch, by looking at the actual diff output.",
+    "Running the project's check script in JSON mode should report that every quality check, including lint, is passing.",
+    "Three Lean declarations were supposed to have their proofs rewritten while keeping their stated theorems exactly the same. This check reads the current source file, extracts the type/statement portion (everything between the declaration name and the ':=' that starts the proof) for each of the three declarations, and compares it character-for-character against the original statement text recorded before the change. It reports whether all three statements still match."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Checks that the three named proofs in the Nitro Lean file rely on the apply_reclaim_equation helper lemma instead of manually unfolding the adjudicator's apply function or splitting on the Op type."
+    },
+    {
+      "id": "c2",
+      "text": "Running the type lint script against the repo's Lean sources should report zero layerDiscipline problems for the three declarations named in the lint rule, confirming they respect the required layering."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that no files under the ArmadaLean/Spec directory were changed compared to the 'integrated' branch, by looking at the actual diff output."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script in JSON mode should report that every quality check, including lint, is passing."
+    },
+    {
+      "id": "c5",
+      "text": "Three Lean declarations were supposed to have their proofs rewritten while keeping their stated theorems exactly the same. This check reads the current source file, extracts the type/statement portion (everything between the declaration name and the ':=' that starts the proof) for each of the three declarations, and compares it character-for-character against the original statement text recorded before the change. It reports whether all three statements still match."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Checks that the three named proofs in the Nitro Lean file rely on the apply_reclaim_equation helper lemma instead of manually unfolding the adjudicator's apply function or splitting on the Op type.",
+      "proves": "The proofs of reclaim_effects, reclaim_requires, and satp_reclaim_credits_intermediary rewrite using Adjudicator.apply_reclaim_equation and never unfold Adjudicator.apply or case-split on Op.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_reclaim_proofs.py",
+        "args": [
+          "ArmadaLean/Nitro.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_use_equation",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "any_unfold_apply",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "any_case_op",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 60,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the type lint script against the repo's Lean sources should report zero layerDiscipline problems for the three declarations named in the lint rule, confirming they respect the required layering.",
+      "proves": "The three named declarations pass the layerDiscipline linter check with baseOps enabled, with no findings reported.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/run_type_lint_check.sh",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "layerDiscipline_finding_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 2,
+      "timeout_seconds": 120,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that no files under the ArmadaLean/Spec directory were changed compared to the 'integrated' branch, by looking at the actual diff output.",
+      "proves": "The clause that Spec statement files must remain untouched relative to the integrated branch.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_diff.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_length",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script in JSON mode should report that every quality check, including lint, is passing.",
+      "proves": "scripts/check.sh --json reports all _ok fields (including lint_ok) as true when compared against scripts/gate-baseline.json",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_and_report.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Three Lean declarations were supposed to have their proofs rewritten while keeping their stated theorems exactly the same. This check reads the current source file, extracts the type/statement portion (everything between the declaration name and the ':=' that starts the proof) for each of the three declarations, and compares it character-for-character against the original statement text recorded before the change. It reports whether all three statements still match.",
+      "proves": "The three declarations named still assert exactly the same statement as before the change; only their proof bodies were allowed to differ.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_statements_unchanged.py",
+        "args": [
+          "armada-laconic/Proved.lean",
+          "decl_one",
+          "decl_two",
+          "decl_three",
+          "expected_statements.json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "statements_match",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 30,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_reclaim_proofs.py",
+    "scripts/check_spec_diff.py",
+    "scripts/check_statements_unchanged.py",
+    "scripts/run_check_and_report.py",
+    "scripts/run_type_lint_check.sh"
+  ]
+}
