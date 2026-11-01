@@ -12,10 +12,16 @@
   and it is proved once, where the signed state is made.
 
   The rules replace four premises that single theorems carried before:
-  * `noAlternative`: the premise `MadeNoAlternativeSetupMoves` of
-    `funding_point_universally_finalizable` (operator ruling 2026-10-31,
-    armada-laconic `labbook/2026-10-31-funding-point-alternative-moves.md`;
-    ForceMove:783-784, "Alternative moves").
+  * `setupOutcome`: the premise `MadeNoAlternativeSetupMoves` of
+    `funding_point_universally_finalizable` (operator rulings 2026-10-31 and
+    2026-11-01, armada-laconic
+    `labbook/2026-10-31-funding-point-alternative-moves.md`). Below the
+    funding point, every state the participant signs on a channel, final or
+    not, carries the setup outcome (ForceMove:1094, ForceMove:1112-1114,
+    ForceMove:1155-1161, ForceMove:1208). It replaces the earlier rule
+    `noAlternative` (one state per setup turn), which did not cover a final
+    setup state with another outcome
+    (`docs/counterexamples/funding_point_universally_finalizable_conclude.lean`).
   * `guaranteesExternal`: the premise `hog` (the type `GuaranteedOutcome`) of
     `satp_end_user_recovers` (operator ruling 2026-10-31, `aln-223`
     counterexample, `docs/counterexamples/satp_end_user_recovers.lean`), and
@@ -63,12 +69,27 @@ instance (o : Allocation E) : Decidable o.GuaranteesExternal :=
   decidable_of_iff (∀ e ∈ o, e.GuaranteesExternalB = true)
     (forall_congr' fun e => forall_congr' fun _ => (entry_guaranteesExternal_iff e).symm)
 
-/-- The rule `HonestSend.noAlternative`: below the funding point
-    (`turnNum < n`), no state in `signed` has the channel and turn of `st`
-    unless it is `st` (ForceMove:783-784). -/
-abbrev HonestSend.NoAlternative (signed : List (SignedState E)) (st : State E) : Prop :=
+/-- The rule `HonestSend.setupOutcome`: below the funding point
+    (`turnNum < n`), every state in `signed` of the channel of `st`, also
+    below the funding point, has the outcome of `st`. So all the setup
+    states that the participant signs on one channel, final or not, carry
+    one outcome: the setup outcome.
+
+    ForceMove:1112-1114: "Each player's PREFUNDSETUP state must have the
+    same game attributes a0 and resolution r0". ForceMove:1094 and
+    ForceMove:1155-1161: every setup transition, a CONCLUDE included,
+    requires `s2.resolution == s1.resolution`. ForceMove:1208: "If a player
+    transitions from either a PREFUNDSETUP or POSTFUNDSETUP state, s, to a
+    CONCLUDE state, s′, we require the resolution to match." Alternative
+    moves with the same outcome stay allowed (ForceMove §3.1.5,
+    ForceMove:783-784; operator ruling 2026-10-31). go-nitro's unanimous
+    `conclude` checks no transition, so the rule is a rule of the honest
+    signer, not of the adjudicator. The rule reads every pair in both
+    directions, so it holds whichever state of the pair the participant
+    signs first (`Nitro.participant_sent_honest`). -/
+abbrev HonestSend.SetupOutcome (signed : List (SignedState E)) (st : State E) : Prop :=
   st.turnNum < st.channel.n → ∀ s ∈ signed, s.state.channel = st.channel →
-    s.state.turnNum = st.turnNum → s.state = st
+    s.state.turnNum < st.channel.n → s.state.outcome = st.outcome
 
 /-- The rule `HonestSend.fundsCommitted`: every virtual channel `V` that the
     allocation of `st` names satisfies `prefundHeld` (SATP:409). -/
@@ -82,9 +103,10 @@ abbrev HonestSend.FundsCommitted (prefundHeld : FixedPart → Prop) (st : State 
     `Strategy.lean`). Each field is one rule of this module's header. -/
 structure HonestSend (signed : List (SignedState E)) (prefundHeld : FixedPart → Prop)
     (st : State E) : Prop where
-  /-- Below the funding point (`turnNum < n`), the participant signs no second
-      state of the channel at the same turn (ForceMove:783-784). -/
-  noAlternative : HonestSend.NoAlternative signed st
+  /-- Below the funding point (`turnNum < n`), every state of the channel
+      that the participant signs, final or not, carries the setup outcome
+      (ForceMove:1112-1114, ForceMove:1208). -/
+  setupOutcome : HonestSend.SetupOutcome signed st
   /-- Every guarantee the participant signs names only external peers
       (SATP:411-418). -/
   guaranteesExternal : st.outcome.entries.GuaranteesExternal
@@ -105,21 +127,21 @@ theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Pro
   refine ⟨fun hlt s hs hc ht => ?_, hst.guaranteesExternal,
     fun V hV hf => (hst.fundsCommitted V hV hf).elim⟩
   rcases hcover s hs with h | ⟨s', hs', heq⟩
-  · exact h
+  · rw [h]
   · rw [← heq] at hc ht ⊢
-    exact hst.noAlternative hlt s' hs' hc ht
+    exact hst.setupOutcome hlt s' hs' hc ht
 
 end HonestSend
 
 namespace HonestSend
 
 /-- The rules survive a smaller signed record and a larger set of held
-    pre-fund states: `noAlternative` reads `signed` only under `∀`, and
+    pre-fund states: `setupOutcome` reads `signed` only under `∀`, and
     `fundsCommitted` concludes `prefundHeld`. -/
 theorem mono {signed signed' : List (SignedState E)} {held held' : FixedPart → Prop}
     {st : State E} (hsigned : ∀ s ∈ signed', s ∈ signed) (hheld : ∀ V, held V → held' V)
     (h : HonestSend signed held st) : HonestSend signed' held' st :=
-  ⟨fun hlt s hs => h.noAlternative hlt s (hsigned s hs), h.guaranteesExternal,
+  ⟨fun hlt s hs => h.setupOutcome hlt s (hsigned s hs), h.guaranteesExternal,
     fun V hV hf => hheld V (h.fundsCommitted V hV hf)⟩
 
 /-- A state whose allocation names no virtual channel (every destination is

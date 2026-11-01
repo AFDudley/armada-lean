@@ -3411,29 +3411,6 @@ theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Thr
     Finalizable apps T (c : FixedPart) Ω net.state := by
   sorry
 
-/-- Nitro-23, ForceMove-B06, ForceMove-A06, ForceMove-A07. Nitro:635-636, Nitro:639-640: at the funding
-    point, "After the first n states have been broadcast", the outcome is
-    universally finalizable. ForceMove:862-871: the prefund states are "exactly what
-    they need to launch a challenge on-chain to recover their funds". The
-    setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
-    and the game library accepts its transitions. An honest participant makes no
-    alternative setup moves (operator rulings 2026-10-31 and 2026-11-01;
-    labbook/2026-10-31-funding-point-alternative-moves.md): `HonestSend.noAlternative`,
-    which `Nitro.participant_sent_honest` gives for every view. -/
-theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
-    (n : Nitro.ReachableNetwork apps Ts)
-    (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
-    (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
-    (hvt : SetupPhaseAccepted vt c)
-    (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
-    (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) :
-    ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p) := by
-  intro p _
-  have _hnoAlt : ∀ s ∈ (v p).sent, HonestSend (v p).sent (v p).HoldsPrefund s.state := by
-    subst hvn
-    exact Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable n p⟩
-  sorry
-
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
     each participant ... the channel is in the concluded state." The
     concluded outcome is universally finalizable. -/
@@ -12767,5 +12744,510 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     rw [Nat.add_right_comm x u y, Nat.add_right_comm (x + y) u z, Nat.add_right_comm w u v]
     exact Nat.add_le_add_right h u
   exact key _ _ _ _ _ _ htot
+
+/-! ### The funding point (`funding_point_universally_finalizable`)
+
+The strategy of `p`: challenge an open `c` with a held support proof (first
+the funding window, later the proof that the last checkpoint published, D9),
+and wait for a running challenge to end. Every supported candidate of `c`
+has the outcome `Ω` (`funding_candidate`), and so does every conclusion
+proof (`funding_conclusion`): each one carries a signature of `p`, and every
+state of `c` that `p` signed has the outcome `Ω` (`FundingSent`, from
+`HonestSend.setupOutcome`). The rank `fundingRank` falls at each change of
+the status of `c`. -/
+
+/-- The setup facts of a ForceMove channel `c` at the funding point: the app
+    of `c` is `forceMoveRules vt`, and the game library keeps the outcome and
+    accepts the setup transitions. -/
+structure ForceMoveSetup (apps : Apps E) (vt : State E → State E → Bool) (c : FixedPart) :
+    Prop where
+  rules : apps c.appDef = forceMoveRules vt
+  keeps : SetupPhaseKeepsOutcome vt c
+  accepted : SetupPhaseAccepted vt c
+
+/-- What `p` signed for `c`, at the funding point and later in its strategy:
+    every state is below the funding point and has the outcome `Ω`. The final
+    theorem derives it from `AtFundingPoint` and the signing rule
+    `HonestSend.setupOutcome`. -/
+structure FundingSent (c : FixedPart) (Ω : Outcome E) (sent : List (SignedState E)) : Prop where
+  below : ∀ s ∈ sent, s.state.channel = c → s.state.turnNum < c.n
+  outcome : ∀ s ∈ sent, s.state.channel = c → s.state.outcome = Ω
+
+/-- Every candidate of a `forceMoveRules` support proof of `c`, whose
+    signatures of `p` are on states `p` sent, has the outcome `Ω` and a turn
+    below `2 * c.n`. The proof carries a state at a turn of `p`
+    (`forceMove_mover_pos`); `p` sent it, so its turn is below `c.n` and its
+    outcome is `Ω`. From there to the candidate, a step into a final state
+    keeps the outcome (`forceMove_conclude_keeps_outcome`), and any other step
+    is a setup step that the game library keeps (`SetupPhaseKeepsOutcome`),
+    because its turn stays below `2 * c.n`. -/
+theorem funding_candidate {apps : Apps E} {vt : State E → State E → Bool} {c : FixedPart}
+    {Ω : Outcome E} {p : Participant} {sent : List (SignedState E)}
+    (G : ForceMoveSetup apps vt c) (hp : p ∈ c.participants) (hF : FundingSent c Ω sent)
+    {proof : SupportProof E} {cand : State E}
+    (h : (forceMoveRules vt).supports c proof cand = true)
+    (hU : ∀ ss ∈ proof, p ∈ ss.signers → ∃ s ∈ sent, s.state = ss.state) :
+    cand.outcome = Ω ∧ cand.turnNum < 2 * c.n := by
+  obtain ⟨i0, hi0, m0, h0, hchan, -, hsig⟩ := forceMove_mover_pos h hp
+  obtain ⟨s, hs, hseq⟩ := hU m0 (List.mem_of_getElem? h0) hsig
+  have hsc : s.state.channel = c := by rw [hseq]; exact hchan
+  have hb : m0.state.turnNum < c.n := by rw [← hseq]; exact hF.below s hs hsc
+  have hΩ : m0.state.outcome = Ω := by rw [← hseq]; exact hF.outcome s hs hsc
+  have hlen : proof.length = c.n := (forceMove_supports_valid_run vt c proof cand h).1
+  have hfwd : ∀ k, i0 + k < proof.length → ∃ mk : SignedState E, proof[i0 + k]? = some mk ∧
+      mk.state.outcome = Ω := by
+    intro k
+    induction k with
+    | zero => intro _; exact ⟨m0, by simpa using h0, hΩ⟩
+    | succ k ih =>
+      intro hlt
+      obtain ⟨mk, hmk, hout⟩ := ih (by omega)
+      obtain ⟨mk', hmk', hturn⟩ := forceMove_fwd_turnNum h h0 k (by omega)
+      obtain rfl : mk = mk' := Option.some.inj (hmk.symm.trans hmk')
+      obtain ⟨mk1, hmk1⟩ : ∃ mk1, proof[(i0 + k) + 1]? = some mk1 :=
+        ⟨proof[(i0 + k) + 1], List.getElem?_eq_getElem hlt⟩
+      have hstep := (forceMove_supports_valid_run vt c proof cand h).2.1 (i0 + k) mk mk1 hmk hmk1
+      have hfin := forceMove_conclude_keeps_outcome vt c proof cand h (i0 + k) mk mk1 hmk hmk1
+      have hchank : mk.state.channel = c :=
+        forceMove_supports_all_channel h mk (List.mem_of_getElem? hmk)
+      refine ⟨mk1, hmk1, ?_⟩
+      rw [← hout]
+      cases hf : mk1.state.isFinal
+      · exact G.keeps mk.state mk1.state (hstep.2.2.2 hf) hchank (by omega)
+      · exact hfin.1 hf
+  obtain ⟨mlast, hlast, rfl⟩ := (forceMove_supports_valid_run vt c proof cand h).2.2
+  have hidx : i0 + (proof.length - 1 - i0) = proof.length - 1 := by omega
+  obtain ⟨mk, hmk, hout⟩ := hfwd (proof.length - 1 - i0) (by omega)
+  obtain ⟨mk', hmk', hturn⟩ := forceMove_fwd_turnNum h h0 (proof.length - 1 - i0) (by omega)
+  rw [hidx, ← List.getLast?_eq_getElem?, hlast] at hmk hmk'
+  obtain rfl : mlast = mk := Option.some.inj hmk
+  obtain rfl : mlast = mk' := Option.some.inj hmk'
+  exact ⟨hout, by omega⟩
+
+omit [DecidableEq E] in
+/-- Every conclusion proof of `c`, whose signature of `p` is on a state `p`
+    sent, has the outcome `Ω`: `p` signs it, and every state of `c` that `p`
+    sent has the outcome `Ω`. -/
+theorem funding_conclusion {c : FixedPart} {Ω : Outcome E} {p : Participant}
+    {sent : List (SignedState E)} (hp : p ∈ c.participants) (hF : FundingSent c Ω sent)
+    {ss : SignedState E} (hcp : ConclusionProof c ss)
+    (hU : p ∈ ss.signers → ∃ s ∈ sent, s.state = ss.state) : ss.state.outcome = Ω := by
+  obtain ⟨hchan, -, hall⟩ := hcp
+  obtain ⟨s, hs, hseq⟩ := hU (hall p (by rw [hchan]; exact hp))
+  rw [← hseq]
+  exact hF.outcome s hs (by rw [hseq]; exact hchan)
+
+/-- The statuses of `c` from which no outcome but `Ω` finalizes: the turn
+    record is below `2 * c.n`, and a challenge or a finalization carries `Ω`. -/
+def FundingSafe (c : FixedPart) (Ω : Outcome E) : ChannelStatus E → Prop
+  | .open t => t < 2 * c.n
+  | .challenged t ch => t < 2 * c.n ∧ ch.state.outcome = Ω
+  | .finalized _ f _ => f = Ω
+
+/-- The progress rank of the strategy of `p`: it falls at each change of the
+    status of `c` (`funding_status_step`). A challenge ranks below an open
+    status at the same record; a finalization ranks lowest. -/
+def fundingRank (c : FixedPart) : ChannelStatus E → Nat
+  | .open t => 2 * (2 * c.n - t) + 2
+  | .challenged t _ => 2 * (2 * c.n - t) + 1
+  | .finalized .. => 0
+
+/-- One step of the status of `c` under an operation `op`: the new status is
+    safe, it is the old one or has a lower rank or the rank `0`, and a new
+    open status comes from a support proof that `op` publishes. -/
+structure FundingStep (apps : Apps E) (c : FixedPart) (Ω : Outcome E) (op : Op E)
+    (st st' : ChannelStatus E) : Prop where
+  safe : FundingSafe c Ω st'
+  rank : st' = st ∨ fundingRank c st' < fundingRank c st ∨ fundingRank c st' = 0
+  witness : ∀ t, st' = .open t → st' ≠ st → ∃ cand,
+    (apps c.appDef).supports c op.proofStates cand = true ∧ cand.channel = c ∧ t ≤ cand.turnNum
+
+/-- A successful operation whose signatures of `p` are on states `p` sent
+    is a `FundingStep` of the status of `c`. A payout (`transfer`, `reclaim`)
+    of `c` needs `c` finalized and keeps the outcome of finalization; a
+    challenge or a checkpoint raises the record to a candidate with the
+    outcome `Ω` (`funding_candidate`); a conclusion has the outcome `Ω`
+    (`funding_conclusion`). -/
+theorem funding_status_step {apps : Apps E} {vt : State E → State E → Bool} {c : FixedPart}
+    {Ω : Outcome E} {p : Participant} {sent : List (SignedState E)}
+    (G : ForceMoveSetup apps vt c) (hp : p ∈ c.participants) (hF : FundingSent c Ω sent)
+    {s s' : Adjudicator E} {caller : Participant} {op : Op E} (h : s.apply apps caller op = some s')
+    (hU : ∀ ss ∈ op.proofStates, p ∈ ss.signers → ∃ x ∈ sent, x.state = ss.state)
+    (hS : FundingSafe c Ω (s.statusOf c)) :
+    FundingStep apps c Ω op (s.statusOf c) (s'.statusOf c) := by
+  have hpay : ∀ {x : Outcome E} (o : Outcome E), (s.statusOf c).finalOutcome s.now = some x →
+      FundingStep apps c Ω op (s.statusOf c) ((s.statusOf c).withOutcome o) := by
+    intro x o hf
+    cases hst : s.statusOf c with
+    | «open» r => rw [hst] at hf; simp [ChannelStatus.finalOutcome] at hf
+    | challenged r ch =>
+      rw [hst] at hS
+      exact ⟨hS.2, Or.inr (Or.inr rfl), fun _ h' => by cases h'⟩
+    | finalized r f o' =>
+      rw [hst] at hS
+      exact ⟨hS, Or.inr (Or.inr rfl), fun _ h' => by cases h'⟩
+  by_cases ht : Op.targets op c
+  swap
+  · rw [statusOf_apply_of_not_targets h ht]
+    exact ⟨hS, Or.inl rfl, fun _ _ hne => absurd rfl hne⟩
+  cases op with
+  | deposit a e x => simp [Op.targets] at ht
+  | tick dt => simp [Op.targets] at ht
+  | transfer a b =>
+    simp only [Op.targets] at ht; subst a
+    obtain ⟨o, amt, x, hf, -, -, -, -, hst, -⟩ := Adjudicator.transfer_some h
+    rw [Adjudicator.statusOf_of_status hst]
+    simp only [Adjudicator.statusOf_setStatus, if_true]
+    simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
+    exact hpay _ hf
+  | reclaim l v =>
+    simp only [Op.targets] at ht; subst l
+    obtain ⟨oL, -, -, -, -, hL, -, -, -, -, -, rfl, -, -⟩ := Adjudicator.reclaim_some h
+    simp only [Adjudicator.statusOf_setStatus, if_true]
+    simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hL
+    exact hpay _ hL
+  | challenge c' proof cand =>
+    simp only [Op.targets] at ht; subst c'
+    obtain ⟨⟨-, hsup, -, hmode⟩, rfl⟩ := Adjudicator.challenge_some h
+    simp only [Adjudicator.statusOf_setStatus, if_true]
+    rw [G.rules] at hsup
+    obtain ⟨hΩ, hturn⟩ := funding_candidate G hp hF hsup hU
+    refine ⟨⟨hturn, hΩ⟩, Or.inr (Or.inl ?_), fun _ h' => by cases h'⟩
+    rw [Adjudicator.mode_eq] at hmode
+    cases hst : s.statusOf c with
+    | «open» r =>
+      rw [hst] at hmode
+      rcases hmode with ⟨-, hr⟩ | ⟨hm, -⟩
+      · simp only [ChannelStatus.turnNumRecord_open] at hr
+        simp only [fundingRank]
+        omega
+      · cases hm
+    | challenged r ch' =>
+      rw [hst] at hmode
+      rcases hmode with ⟨hm, -⟩ | ⟨-, hr⟩
+      · simp only [ChannelStatus.mode] at hm
+        split at hm <;> cases hm
+      · simp only [ChannelStatus.turnNumRecord_challenged] at hr
+        simp only [fundingRank]
+        omega
+    | finalized r f o =>
+      rw [hst] at hmode
+      rcases hmode with ⟨hm, -⟩ | ⟨hm, -⟩ <;> cases hm
+  | checkpoint c' proof cand =>
+    simp only [Op.targets] at ht; subst c'
+    obtain ⟨⟨hopen, hsup, hcc, hlt⟩, rfl⟩ := Adjudicator.checkpoint_some h
+    simp only [Adjudicator.statusOf_setStatus, if_true]
+    have hsup' := hsup
+    rw [G.rules] at hsup'
+    obtain ⟨-, hturn⟩ := funding_candidate G hp hF hsup' hU
+    refine ⟨hturn, Or.inr (Or.inl ?_), fun t h' _ => ?_⟩
+    · cases hst : s.statusOf c with
+      | «open» r =>
+        rw [hst] at hlt
+        simp only [ChannelStatus.turnNumRecord_open] at hlt
+        simp only [fundingRank]
+        omega
+      | challenged r ch =>
+        rw [hst] at hlt
+        simp only [ChannelStatus.turnNumRecord_challenged] at hlt
+        simp only [fundingRank]
+        omega
+      | finalized r f o => rw [hst] at hopen; exact absurd rfl hopen
+    · cases h'
+      exact ⟨cand, hsup, hcc, le_refl _⟩
+  | conclude c' ss =>
+    simp only [Op.targets] at ht; subst c'
+    obtain ⟨⟨-, hcp⟩, rfl⟩ := Adjudicator.conclude_some h
+    simp only [Adjudicator.statusOf_setStatus, if_true]
+    exact ⟨funding_conclusion hp hF hcp (hU ss (List.mem_singleton_self ss)), Or.inr (Or.inr rfl),
+      fun _ h' => by cases h'⟩
+
+/-- The invariant of the strategy of `p` at the funding point: the network is
+    reachable, `p` signs nothing new, the status of `c` is safe, and `p`
+    holds a support proof for every open record of `c`, to challenge with. -/
+structure FundingInv (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart)
+    (Ω : Outcome E) (sent : List (SignedState E)) (net : NetworkState E p) : Prop where
+  reach : (Nitro.participant apps T).Reachable net
+  sent_eq : net.sent = sent
+  safe : FundingSafe c Ω (net.chain.statusOf c)
+  witness : ∀ t, net.chain.statusOf c = .open t → ∃ proof cand, (∀ ss ∈ proof, net.Holds ss) ∧
+    (apps c.appDef).supports c proof cand = true ∧ cand.channel = c ∧ t ≤ cand.turnNum
+
+/-- The progress bound of one round: the rank stays below `K`, or the status
+    stays `S`. `K` is positive and `S` ranks at most `K`. -/
+structure FundingBound (c : FixedPart) (K : Nat) (S : ChannelStatus E) : Prop where
+  pos : 0 < K
+  le : fundingRank c S ≤ K
+
+omit [DecidableEq E] in
+/-- The rank stays below `K`, or the status stays `S`, over a step that keeps
+    the status, lowers the rank, or gives the rank `0`. -/
+theorem FundingBound.step {c : FixedPart} {K : Nat} {S st st' : ChannelStatus E}
+    (hB : FundingBound c K S) (hprev : fundingRank c st < K ∨ st = S)
+    (hstep : st' = st ∨ fundingRank c st' < fundingRank c st ∨ fundingRank c st' = 0) :
+    fundingRank c st' < K ∨ st' = S := by
+  rcases hstep with rfl | hlt | h0
+  · exact hprev
+  · rcases hprev with h | rfl
+    · exact Or.inl (lt_trans hlt h)
+    · exact Or.inl (lt_of_lt_of_le hlt hB.le)
+  · exact Or.inl (by rw [h0]; exact hB.pos)
+
+/-- An adversary move that keeps the status of `c` keeps `FundingInv`. -/
+theorem FundingInv.of_adv {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedPart}
+    {Ω : Outcome E} {sent : List (SignedState E)} {n : NetworkState E p}
+    (hI : FundingInv apps T c Ω sent n) (m : AdvMove E)
+    (hreach : (Nitro.participant apps T).Reachable (n.applyAdv apps m))
+    (hst : (n.applyAdv apps m).chain.statusOf c = n.chain.statusOf c) :
+    FundingInv apps T c Ω sent (n.applyAdv apps m) := by
+  refine ⟨hreach, by rw [NetworkState.applyAdv_sent]; exact hI.sent_eq,
+    by rw [hst]; exact hI.safe, fun t ht => ?_⟩
+  obtain ⟨proof, cand, hH, hsup, hcc, hle⟩ := hI.witness t (hst ▸ ht)
+  exact ⟨proof, cand, fun ss hss => NetworkState.Holds.mono (NetworkState.applyAdv_sent apps n m).symm
+    (NetworkState.applyAdv_received_subset apps n m) (hH ss hss), hsup, hcc, hle⟩
+
+/-- An on-chain call whose proof states are unforged keeps `FundingInv`, and
+    keeps the status of `c`, lowers its rank, or gives the rank `0`. -/
+theorem FundingInv.chain {apps : Apps E} {vt : State E → State E → Bool} {c : FixedPart}
+    {Ω : Outcome E} {p : Participant} {T : Threat E p} {sent : List (SignedState E)}
+    (G : ForceMoveSetup apps vt c) (hp : p ∈ c.participants) (hF : FundingSent c Ω sent)
+    {n : NetworkState E p} (hI : FundingInv apps T c Ω sent n) {caller : Participant} {op : Op E}
+    (hreach : (Nitro.participant apps T).Reachable (n.applyAdv apps (.chain caller op)))
+    (hU : ∀ ss ∈ op.proofStates, n.Unforged ss) :
+    FundingInv apps T c Ω sent (n.applyAdv apps (.chain caller op)) ∧
+      ((n.applyAdv apps (.chain caller op)).chain.statusOf c = n.chain.statusOf c ∨
+        fundingRank c ((n.applyAdv apps (.chain caller op)).chain.statusOf c) <
+          fundingRank c (n.chain.statusOf c) ∨
+        fundingRank c ((n.applyAdv apps (.chain caller op)).chain.statusOf c) = 0) := by
+  cases hap : n.chain.apply apps caller op with
+  | none =>
+    rw [NetworkState.applyAdv_chain_none apps hap] at hreach ⊢
+    exact ⟨hI, Or.inl rfl⟩
+  | some s' =>
+    rw [NetworkState.applyAdv_chain_some apps hap] at hreach ⊢
+    have hU' : ∀ ss ∈ op.proofStates, p ∈ ss.signers → ∃ x ∈ sent, x.state = ss.state := by
+      intro ss hss hps
+      rw [← hI.sent_eq]
+      exact (hU ss hss).1 hps
+    have hst := funding_status_step G hp hF hap hU' hI.safe
+    refine ⟨⟨hreach, hI.sent_eq, hst.safe, fun t ht => ?_⟩, hst.rank⟩
+    by_cases hch : s'.statusOf c = n.chain.statusOf c
+    · obtain ⟨proof, cand, hH, hsup, hcc, hle⟩ := hI.witness t (hch ▸ ht)
+      exact ⟨proof, cand, fun ss hss => NetworkState.Holds.of_subset (net := n) (fun x hx => hx)
+        (fun r hr => List.mem_append_right _ hr) (hH ss hss), hsup, hcc, hle⟩
+    · obtain ⟨cand, hsup, hcc, hle⟩ := hst.witness t ht hch
+      exact ⟨op.proofStates, cand, fun ss hss => holds_of_mem_received (List.mem_append_left _ hss),
+        hsup, hcc, hle⟩
+
+/-- `FundingInv` with the progress bound (`FundingBound.step`), as a step
+    invariant of a sub-round of pure adversary play
+    (`Threat.RoundSeq.nil_invariant`). -/
+theorem funding_nil_step {apps : Apps E} {vt : State E → State E → Bool} {c : FixedPart}
+    {Ω : Outcome E} {p : Participant} {T : Threat E p} {sent : List (SignedState E)}
+    (A : Assumptions apps p T) (G : ForceMoveSetup apps vt c) (hp : p ∈ c.participants)
+    (hF : FundingSent c Ω sent) {Guard : NetworkState E p → Prop} {K : Nat}
+    {S : ChannelStatus E} (hB : FundingBound c K S) :
+    T.StepInvariant apps Guard
+      (fun n => FundingInv apps T c Ω sent n ∧
+        (fundingRank c (n.chain.statusOf c) < K ∨ n.chain.statusOf c = S))
+      (fun _ _ => False) where
+  land := fun _ h _ => h.elim
+  deliver := fun {_ ss} _ hfeas hI =>
+    ⟨hI.1.of_adv (.deliver ss) ((Threat.reachable_step (T := T)).deliver trivial hfeas hI.1.reach) rfl,
+      hI.2⟩
+  tick := fun {n dt} _ hfeas hI =>
+    ⟨hI.1.of_adv (.tick dt) ((Threat.reachable_step (T := T)).tick trivial hfeas hI.1.reach)
+      (Adjudicator.tick_statusOf n.chain dt c), hI.2⟩
+  chain := fun {n caller op} _ hfeas hI => by
+    obtain ⟨hI', hstep⟩ := hI.1.chain G hp hF
+      ((Threat.reachable_step (T := T)).chain trivial hfeas hI.1.reach)
+      (A.unforgeable n caller op hfeas)
+    exact ⟨hI', hB.step hI.2 hstep⟩
+
+/-- **The strategy of `p` at the funding point.** From a state with
+    `FundingInv`, `p` finalizes `c` with `Ω`: it challenges an open `c` with
+    its held support proof, and waits for a running challenge to end. Each
+    round lowers `fundingRank` or ends at the goal. Strong induction on the
+    rank. -/
+theorem funding_strategy {apps : Apps E} {vt : State E → State E → Bool} {c : FixedPart}
+    {Ω : Outcome E} {p : Participant} {T : Threat E p} {sent : List (SignedState E)}
+    (A : Assumptions apps p T) (G : ForceMoveSetup apps vt c) (hp : p ∈ c.participants)
+    (hF : FundingSent c Ω sent) :
+    ∀ μ (n : NetworkState E p), FundingInv apps T c Ω sent n →
+      fundingRank c (n.chain.statusOf c) ≤ μ →
+      UnbeatableIn apps T (fun _ => True) (fun n => n.Finalized c Ω) n := by
+  intro μ
+  induction μ using Nat.strong_induction_on with
+  | _ μ ih =>
+  intro n hI hμ
+  cases hst : n.chain.statusOf c with
+  | finalized t f o =>
+    have hf : f = Ω := by have h := hI.safe; rw [hst] at h; exact h
+    apply UnbeatableIn.done
+    simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hst,
+      ChannelStatus.finalizedWith_finalized, hf]
+  | challenged t ch =>
+    have hsafe : t < 2 * c.n ∧ ch.state.outcome = Ω := by have h := hI.safe; rw [hst] at h; exact h
+    rw [hst] at hμ
+    by_cases hexp : ch.deadline ≤ n.chain.now
+    · apply UnbeatableIn.done
+      simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hst,
+        ChannelStatus.finalizedWith_challenged, if_pos hexp, hsafe.2]
+    · refine UnbeatableIn.move (.wait (ch.deadline - n.chain.now)) trivial trivial
+        fun n1 hround => ?_
+      have hK : 0 < fundingRank c (ChannelStatus.challenged t ch) := Nat.succ_pos _
+      obtain ⟨hI1, hprog⟩ := Threat.RoundSeq.nil_invariant hround.1
+        (funding_nil_step A G hp hF ⟨hK, le_refl _⟩) ⟨hI, Or.inr hst⟩
+      have hI2 : FundingInv apps T c Ω sent (n1.applyHonest (.wait (ch.deadline - n.chain.now))) :=
+        ⟨Machine.Reachable.tail hI1.reach (Or.inl ⟨.wait (ch.deadline - n.chain.now), trivial, rfl⟩), hI1.sent_eq, hI1.safe,
+          hI1.witness⟩
+      rcases hprog with hlt | heq
+      · exact ih _ (lt_of_lt_of_le hlt hμ) _ hI2 (le_refl _)
+      · apply UnbeatableIn.done
+        have hnow : n.chain.now ≤ n1.chain.now := hround.1.now_le
+        have hge : ch.deadline ≤ n1.chain.now + (ch.deadline - n.chain.now) :=
+          (Nat.add_sub_cancel' (le_of_lt (not_le.mp hexp))).symm.le.trans (Nat.add_le_add_right hnow _)
+        simp only [NetworkState.applyHonest, NetworkState.Finalized, FixedPart.address_eq,
+          Adjudicator.finalizedWith_channel, Adjudicator.tick_statusOf, heq, Adjudicator.tick_now,
+          ChannelStatus.finalizedWith_challenged, if_pos hge, hsafe.2]
+  | «open» t =>
+    rw [hst] at hμ
+    obtain ⟨proof, cand, hH, hsup, hcc, hle⟩ := hI.witness t hst
+    have hfeas : (Op.challenge c proof cand).HonestFeasible n := hH
+    refine UnbeatableIn.move (.chain (.challenge c proof cand)) trivial
+      ((HonestMove.Feasible_chain _ _).2 hfeas) fun n1 hround => ?_
+    rw [NetworkState.applyHonest_chain]
+    obtain ⟨na, hseqA, hseqB⟩ := Threat.Round.single hround
+    have hK : 0 < fundingRank c (ChannelStatus.open t : ChannelStatus E) := Nat.succ_pos _
+    obtain ⟨hIa, hproga⟩ := Threat.RoundSeq.nil_invariant hseqA
+      (funding_nil_step A G hp hF ⟨hK, le_refl _⟩) ⟨hI, Or.inr hst⟩
+    have hfeasA : (Op.challenge c proof cand).HonestFeasible na := Op.HonestFeasible.round hseqA hfeas
+    have hland : na.applyAdv apps (.land (.challenge c proof cand)) =
+        na.applyAdv apps (.chain p (.challenge c proof cand)) := rfl
+    have hreachL := (Threat.reachable_step (T := T)).land trivial hfeasA hIa.reach
+    rw [hland] at hreachL hseqB
+    have hUL : ∀ ss ∈ (Op.challenge c proof cand).proofStates, na.Unforged ss := fun ss hss =>
+      (hfeasA ss hss).unforged (Nitro.participant_received_unforged A.toBounds ⟨na, hIa.reach⟩)
+    obtain ⟨hIL, hstepL⟩ := hIa.chain G hp hF hreachL hUL
+    have hprogL : fundingRank c ((na.applyAdv apps (.chain p (.challenge c proof cand))).chain.statusOf c) <
+        fundingRank c (ChannelStatus.open t : ChannelStatus E) := by
+      rcases hproga with hlt | hopen
+      · rcases hstepL with heq | hlt' | h0
+        · rw [heq]; exact hlt
+        · exact lt_trans hlt' hlt
+        · rw [h0]; exact hK
+      · have hmode : (na.chain.statusOf c).mode na.chain.now = .open ∧
+            (na.chain.statusOf c).turnNumRecord ≤ cand.turnNum := by
+          rw [hopen]; exact ⟨rfl, hle⟩
+        have happ : na.chain.apply apps p (.challenge c proof cand) = some (na.chain.setStatus c
+            (.challenged cand.turnNum ⟨cand, na.chain.now + c.challengeDuration⟩)) := by
+          simp only [Adjudicator.apply, Adjudicator.challenge]
+          rw [if_pos ⟨hp, hsup, hcc, Or.inl ⟨by rw [Adjudicator.mode_eq]; exact hmode.1, hmode.2⟩⟩]
+        have hsafeL := hIL.safe
+        rw [NetworkState.applyAdv_chain_some apps happ] at hsafeL ⊢
+        simp only [Adjudicator.statusOf_setStatus, if_true] at hsafeL ⊢
+        have hturn := hsafeL.1
+        simp only [fundingRank]
+        omega
+    obtain ⟨hIB, hprogB⟩ := Threat.RoundSeq.nil_invariant hseqB
+      (funding_nil_step A G hp hF (S := .finalized 0 Ω Ω) ⟨hK, Nat.zero_le _⟩)
+      ⟨hIL, Or.inl hprogL⟩
+    have hlt : fundingRank c (n1.chain.statusOf c) < fundingRank c (ChannelStatus.open t : ChannelStatus E) := by
+      rcases hprogB with h | h
+      · exact h
+      · rw [h]; exact hK
+    exact ih _ (lt_of_lt_of_le hlt hμ) n1 hIB (le_refl _)
+
+/-- Nitro-23, ForceMove-B06, ForceMove-A06, ForceMove-A07. Nitro:635-636, Nitro:639-640: at the funding
+    point, "After the first n states have been broadcast", the outcome is
+    universally finalizable. ForceMove:862-871: the prefund states are "exactly what
+    they need to launch a challenge on-chain to recover their funds". The
+    setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
+    and the game library accepts its transitions. An honest participant signs
+    every setup state of `c` with the setup outcome (operator rulings 2026-10-31 and
+    2026-11-01; labbook/2026-10-31-funding-point-alternative-moves.md):
+    `HonestSend.setupOutcome`, which `Nitro.participant_sent_honest` gives for
+    every view. The strategy is `funding_strategy`; `hdur` is not needed,
+    because no candidate or conclusion proof of `c` carries another outcome. -/
+theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
+    (n : Nitro.ReachableNetwork apps Ts)
+    (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
+    (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
+    (hvt : SetupPhaseAccepted vt c)
+    (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
+    (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) :
+    ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p) := by
+  intro p hp
+  have G : ForceMoveSetup apps vt c := ⟨hc, hsetup, hvt⟩
+  have hreach : (Nitro.participant apps (Ts.T p)).Reachable (v p) := by
+    subst hvn; exact Nitro.network_views_participant_reachable n p
+  have hhon := Nitro.participant_sent_honest ⟨_, hreach⟩
+  have hunf := Nitro.participant_received_unforged (Ts.ok p).toBounds ⟨_, hreach⟩
+  obtain ⟨hfund, hbelow⟩ := h
+  have hsentk : ∀ k, k < c.n → c.participants[k]? = some p →
+      ∃ s ∈ (v p).sent, s.state.channel = c ∧ s.state.turnNum = k ∧ s.state.outcome = Ω := by
+    intro k hk hkp
+    obtain ⟨ss, hH, hc', ht, hΩ, -, hbm⟩ := hfund p hp k hk
+    have hmv : ss.state.mover = some p := by
+      unfold State.mover
+      rw [hc', ht, Nat.mod_eq_of_lt hk]
+      exact hkp
+    obtain ⟨s, hs, hseq⟩ := (hH.unforged hunf).1 (hbm.signer_of_mover hmv)
+    exact ⟨s, hs, by rw [hseq]; exact hc', by rw [hseq]; exact ht, by rw [hseq]; exact hΩ⟩
+  have hF : FundingSent c Ω (v p).sent := by
+    refine ⟨hbelow p hp, fun s hs hsc => ?_⟩
+    obtain ⟨k, hkp⟩ := List.mem_iff_getElem?.mp hp
+    have hk : k < c.n := (List.getElem?_eq_some_iff.mp hkp).1
+    obtain ⟨s', hs', hc', ht', hΩ'⟩ := hsentk k hk hkp
+    have heq := (hhon s hs).setupOutcome (by rw [hsc]; exact hbelow p hp s hs hsc) s' hs'
+      (by rw [hc', hsc]) (by rw [hsc, ht']; exact hk)
+    rw [← heq, hΩ']
+  -- The funding window: the `c.n` setup states that `p` holds form a
+  -- `forceMoveRules` support proof (`SetupPhaseAccepted` accepts each step).
+  have hwindow : ∃ proof cand, (∀ ss ∈ proof, (v p).Holds ss) ∧
+      (apps c.appDef).supports c proof cand = true ∧ cand.channel = c := by
+    choose f hf using fun k : Fin c.n => hfund p hp k.1 k.2
+    have hget : ∀ i (hi : i < c.n), (List.ofFn f)[i]? = some (f ⟨i, hi⟩) := fun i hi => by
+      simp [hi]
+    refine ⟨List.ofFn f, (f ⟨c.n - 1, by omega⟩).state, fun ss hss => ?_, ?_, (hf _).2.1⟩
+    · obtain ⟨i, rfl⟩ := List.mem_ofFn.1 hss
+      exact (hf i).1
+    · rw [G.rules]
+      simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq]
+      refine ⟨⟨⟨⟨List.length_ofFn, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+      · rw [List.head?_eq_getElem?, hget 0 hn]
+        exact (SignedState.byMover_iff _).2 (hf _).2.2.2.2.2
+      · apply validRun_of_getElem?
+        intro i m1 m2 h1 h2
+        have hi1 : i + 1 < c.n := by
+          by_contra hge
+          rw [List.getElem?_eq_none (by simp only [List.length_ofFn]; omega)] at h2
+          cases h2
+        rw [hget i (by omega)] at h1
+        rw [hget (i + 1) hi1] at h2
+        obtain rfl := Option.some.inj h1
+        obtain rfl := Option.some.inj h2
+        obtain ⟨-, hc1, ht1, hΩ1, hf1, -⟩ := hf ⟨i, by omega⟩
+        obtain ⟨-, hc2, ht2, hΩ2, hf2, hbm2⟩ := hf ⟨i + 1, hi1⟩
+        have hvt' := G.accepted _ _ hc1 hc2 (by rw [ht1, ht2]) (by rw [ht2]; exact hi1)
+          (by rw [hΩ1, hΩ2]) hf2
+        simp only [validMove, hc1, hc2, ht1, ht2, hf1, hf2, hvt', (SignedState.byMover_iff _).2 hbm2,
+          decide_true, Bool.not_false, Bool.true_or, Bool.false_or, Bool.and_self]
+      · rw [List.all_eq_true]
+        intro m hm
+        obtain ⟨i, rfl⟩ := List.mem_ofFn.1 hm
+        exact decide_eq_true (hf i).2.1
+      · rw [List.getLast?_eq_getElem?, List.length_ofFn, hget _ (by omega)]
+        rfl
+  have hI0 : FundingInv apps (Ts.T p) c Ω (v p).sent (v p) := by
+    refine ⟨hreach, rfl, ?_, fun t ht => ?_⟩
+    · rw [(hchain p).2]
+      show 0 < 2 * c.n
+      omega
+    · rw [(hchain p).2] at ht
+      cases ht
+      obtain ⟨proof, cand, hH, hsup, hcc⟩ := hwindow
+      exact ⟨proof, cand, hH, hsup, hcc, Nat.zero_le _⟩
+  exact funding_strategy (Ts.ok p) G hp hF _ _ hI0 (le_refl _)
 
 end ArmadaLean.Nitro

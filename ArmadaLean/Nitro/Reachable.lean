@@ -410,8 +410,8 @@ theorem NetworkState.applyAdv_sent_received (apps : Apps E) {p : Participant}
     `Machine.invariant`. The initial `sent` is empty. A `.react` adds only
     sends that its gate (`Reaction.SendsHonest`, part of
     `HonestMove.Feasible`) checks against the new `sent`. An old state's
-    `noAlternative` against a new send is the new send's own
-    `noAlternative`. Every other step keeps `sent` and only grows `received`
+    `setupOutcome` against a new send is the new send's own
+    `setupOutcome`, read in the other direction. Every other step keeps `sent` and only grows `received`
     (`NetworkState.applyAdv_sent_received`), so `HoldsPrefund` survives
     (`NetworkState.HoldsPrefund.mono`, `NetworkState.Holds.of_subset`). -/
 theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Threat E p}
@@ -451,10 +451,10 @@ theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Thr
           rcases List.mem_append.mp ht with htnew | htold
           · obtain ⟨st, hst, rfl⟩ := List.mem_map.mp htnew
             have hc' : st.channel = s.state.channel := hc
-            have htn' : st.turnNum = s.state.turnNum := htn
-            have hlt' : st.turnNum < st.channel.n := by rw [hc', htn']; exact hlt
-            exact ((hsends st hst).noAlternative hlt' s hs hc'.symm htn'.symm).symm
-          · exact (hP s hold).noAlternative hlt t htold hc htn
+            have hlt' : st.turnNum < st.channel.n := by rw [hc']; exact htn
+            have hs' : s.state.turnNum < st.channel.n := by rw [hc']; exact hlt
+            exact ((hsends st hst).setupOutcome hlt' s hs hc'.symm hs').symm
+          · exact (hP s hold).setupOutcome hlt t htold hc htn
       | wait dt => exact keep _ rfl (fun _ hx => hx)
     · exact keep _ (NetworkState.applyAdv_sent_received apps net (.land op)).1
         (NetworkState.applyAdv_sent_received apps net (.land op)).2

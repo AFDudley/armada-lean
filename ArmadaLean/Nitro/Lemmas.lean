@@ -1747,6 +1747,20 @@ theorem validRun_getElem? {vt : State E → State E → Bool} {l : SupportProof 
         simp only [List.getElem?_cons_succ] at h1 h2
         exact ih h.2 (by simpa using h1) (by simpa using h2)
 
+/-- A run whose consecutive pairs are valid moves is a valid run: the
+    converse of `validRun_getElem?`. -/
+theorem validRun_of_getElem? {vt : State E → State E → Bool} {l : SupportProof E}
+    (h : ∀ (i : Nat) m1 m2, l[i]? = some m1 → l[i + 1]? = some m2 → validMove vt m1 m2 = true) :
+    validRun vt l = true := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+    cases t with
+    | nil => rfl
+    | cons b t' =>
+      simp only [validRun, Bool.and_eq_true]
+      exact ⟨h 0 a b rfl rfl, ih fun i m1 m2 h1 h2 => h (i + 1) m1 m2 h1 h2⟩
+
 /-- SATP:262-266: the one signed state of a supported candidate is signed by
     every participant. Operator ruling 2026-10-30. -/
 theorem consensusRules_noUnilateralSupport :

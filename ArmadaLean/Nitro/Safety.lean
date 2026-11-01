@@ -982,6 +982,97 @@ theorem forceMove_conclude_keeps_outcome (vt : State E → State E → Bool) (c 
     · rw [hf] at hfin; cases hfin
     · exact hfin
 
+/-- Every state of a `forceMoveRules` support proof is a state of `c`: the
+    conjunct `proof.all (channel = c)` of `forceMoveRules.supports`. -/
+theorem forceMove_supports_all_channel {vt : State E → State E → Bool} {c : FixedPart}
+    {proof : SupportProof E} {candidate : State E}
+    (h : (forceMoveRules vt).supports c proof candidate = true) :
+    ∀ m ∈ proof, m.state.channel = c := by
+  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨-, -⟩, -⟩, hall⟩, -⟩ := h
+  intro m hm
+  exact of_decide_eq_true (List.all_eq_true.mp hall m hm)
+
+/-- The first state of a `forceMoveRules` support proof is signed by its
+    mover: the conjunct `proof.head?.all byMover` of `forceMoveRules.supports`. -/
+theorem forceMove_supports_head_byMover {vt : State E → State E → Bool} {c : FixedPart}
+    {proof : SupportProof E} {candidate : State E}
+    (h : (forceMoveRules vt).supports c proof candidate = true)
+    {m0 : SignedState E} (h0 : proof[0]? = some m0) : m0.ByMover := by
+  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨-, hhead⟩, -⟩, -⟩, -⟩ := h
+  have hm0 : proof.head? = some m0 := by
+    cases proof with
+    | nil => simp at h0
+    | cons a t => simpa using h0
+  rw [hm0] at hhead
+  exact (SignedState.byMover_iff m0).1 hhead
+
+/-- The turn number along a `forceMoveRules` support proof: the state `k`
+    positions after position `i0` has the turn of position `i0` plus `k`
+    (`UniversalTransition`). -/
+theorem forceMove_fwd_turnNum {vt : State E → State E → Bool} {c : FixedPart}
+    {proof : SupportProof E} {candidate : State E}
+    (h : (forceMoveRules vt).supports c proof candidate = true)
+    {i0 : Nat} {m0 : SignedState E} (h0 : proof[i0]? = some m0) :
+    ∀ k, i0 + k < proof.length → ∃ mk : SignedState E, proof[i0 + k]? = some mk ∧
+      mk.state.turnNum = m0.state.turnNum + k := by
+  intro k
+  induction k with
+  | zero => intro _; exact ⟨m0, by simpa using h0, by simp⟩
+  | succ k ih =>
+    intro hlt
+    obtain ⟨mk, hmk, hturn⟩ := ih (by omega)
+    obtain ⟨mk1, hmk1⟩ : ∃ mk1, proof[(i0 + k) + 1]? = some mk1 :=
+      ⟨proof[(i0 + k) + 1], List.getElem?_eq_getElem hlt⟩
+    have hstep := (forceMove_supports_valid_run vt c proof candidate h).2.1 (i0 + k) mk mk1 hmk hmk1
+    exact ⟨mk1, hmk1, by rw [hstep.2.1, hturn]; rfl⟩
+
+omit [DecidableEq E] in
+/-- A state signed by its mover carries the signature of its mover. -/
+theorem SignedState.ByMover.signer_of_mover {ss : SignedState E} (hbm : ss.ByMover)
+    {p : Participant} (hmv : ss.state.mover = some p) : p ∈ ss.signers := by
+  obtain ⟨m, hm, hms⟩ := hbm
+  rw [hmv] at hm
+  cases hm
+  exact hms
+
+/-- A `forceMoveRules` support proof carries, at some position, a state of
+    `c` whose mover is `p` and which `p` signed: its `c.n` consecutive turns
+    cover every participant once (`turn_mod_exists`). -/
+theorem forceMove_mover_pos {vt : State E → State E → Bool} {c : FixedPart}
+    {proof : SupportProof E} {candidate : State E}
+    (h : (forceMoveRules vt).supports c proof candidate = true)
+    {p : Participant} (hp : p ∈ c.participants) :
+    ∃ i, i < proof.length ∧ ∃ mi : SignedState E, proof[i]? = some mi ∧
+      mi.state.channel = c ∧ mi.state.mover = some p ∧ p ∈ mi.signers := by
+  have hn : 0 < c.n := List.length_pos_of_mem hp
+  have hlen : proof.length = c.n := (forceMove_supports_valid_run vt c proof candidate h).1
+  obtain ⟨m0, h0⟩ : ∃ m0, proof[0]? = some m0 :=
+    ⟨proof[0], List.getElem?_eq_getElem (by rw [hlen]; exact hn)⟩
+  obtain ⟨k, hk_get⟩ := List.mem_iff_getElem?.mp hp
+  have hk_lt : k < c.n := (List.getElem?_eq_some_iff.mp hk_get).1
+  obtain ⟨i0, hi0lt, hmodeq⟩ := turn_mod_exists c.n m0.state.turnNum k hn hk_lt
+  obtain ⟨mi, hmi, hturn⟩ := forceMove_fwd_turnNum h h0 i0 (by rw [hlen, Nat.zero_add]; exact hi0lt)
+  rw [Nat.zero_add] at hmi
+  have hchan : mi.state.channel = c :=
+    forceMove_supports_all_channel h mi (List.mem_of_getElem? hmi)
+  have hmv : mi.state.mover = some p := by
+    unfold State.mover
+    rw [hchan, hturn, hmodeq]
+    exact hk_get
+  refine ⟨i0, by rw [hlen]; exact hi0lt, mi, hmi, hchan, hmv, ?_⟩
+  cases i0 with
+  | zero =>
+    have heq : mi = m0 := Option.some.inj (hmi.symm.trans h0)
+    subst heq
+    exact (forceMove_supports_head_byMover h h0).signer_of_mover hmv
+  | succ j =>
+    obtain ⟨mprev, hmprev, -⟩ :=
+      forceMove_fwd_turnNum h h0 j (by rw [hlen, Nat.zero_add]; exact Nat.lt_of_succ_lt hi0lt)
+    rw [Nat.zero_add] at hmprev
+    exact ((forceMove_supports_valid_run vt c proof candidate h).2.1 j mprev mi hmprev hmi).2.2.1.signer_of_mover hmv
+
 omit [DecidableEq E] in
 /-- ForceMove-D05, ForceMove-D06 (ForceMove only). ForceMove:724-727: "the
     mover is fully determined by the turn number". -/

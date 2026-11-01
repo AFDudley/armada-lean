@@ -1,43 +1,46 @@
 /-
   Counterexample to `funding_point_universally_finalizable` (Liveness.lean),
-  Nitro-23 (Nitro:635-636), pebble `aln-cc8`, on the honest network
-  `Nitro.network` (every send satisfies `HonestSend`, `Types/Honest.lean`).
+  Nitro-23 (Nitro:635-636), pebble `aln-cc8`: a final setup state with
+  another outcome.
 
-  `HonestSend.noAlternative` forbids two states of one channel at one turn
-  below the funding point. It does not forbid a final state. `AtFundingPoint`
-  bounds the turn number of a sent state, not its `isFinal` flag. So an
-  honest participant can sign a final state below the funding point, at a
-  turn where another participant is the mover.
+  The earlier rule `HonestSend.noAlternative` forbade two states of one
+  channel at one turn below the funding point. It did not forbid a final
+  state. `AtFundingPoint` bounds the turn number of a sent state, not its
+  `isFinal` flag. So a participant that kept that rule could still sign a
+  final state below the funding point, at a turn where another participant
+  is the mover, and the claim failed on the honest network of that time.
+  Operator ruling 2026-11-01: `HonestSend.setupOutcome` replaces
+  `noAlternative`. Below the funding point, every state that an honest
+  participant signs on a channel, final or not, carries the setup outcome
+  (ForceMove:1112-1114, ForceMove:1208). So `nF` is not reachable on the
+  honest network `Nitro.network` (`nF_not_honest`), and the library theorem
+  holds. This file shows that the claim fails without the rule, on the
+  unrestricted network `Nitro.networkUnrestricted`.
 
-  The network `nF` starts at genesis and has three honest sends on the
+  The network `nF` starts at genesis and has three sends on the
   two-participant channel `c2 = [p0, q0]` (`c2.n = 2`):
   * `p0` sends `sA0` (turn 0, outcome `Ωg`, not final).
   * `q0` sends `sA1` (turn 1, outcome `Ωg`, not final).
   * `p0` sends `sF1` (turn 1, outcome `Ωb ≠ Ωg`, final).
-  Each send satisfies `HonestSend` (`nF_reach`): `p0` signs one state at
-  turn 0 and one state at turn 1. Every participant holds the turn-0 and
-  turn-1 states with outcome `Ωg`, so `AtFundingPoint` holds for `Ωg`. Every
-  other hypothesis holds, with `vtAll` and the canonical threats `Ts apps1`.
+  Every participant holds the turn-0 and turn-1 states with outcome `Ωg`,
+  so `AtFundingPoint` holds for `Ωg`. Every other hypothesis holds, with
+  `vtAll` and the canonical threats `Ts apps1`.
 
   In `p0`'s game, `q0` is the adversary. Before the first call of `p0`
   lands, the adversary calls `conclude` with `⟨sF1, [p0, q0]⟩`. This is a
   conclusion proof (`ConclusionProof`): `sF1` is final and both participants
   sign it. The `p0` signature is not forged, because `p0` sent `sF1`. The
   channel then finalizes with `Ωb`, and the outcome of finalization never
-  changes (`UnbeatableIn.finalized_eq_of_steps`). So `Ωg` is not finalizable
-  for `p0` (`not_finalizable`), and `funding_point_universally_finalizable_false`
-  refutes the spec statement `Spec.funding_point_universally_finalizable`.
+  changes (`UnbeatableIn.finalized_eq_of_steps`). So `Ωg` is not
+  finalizable for `p0` (`not_finalizable`).
 
-  The missing rule: an honest participant signs no final state below the
-  funding point, or, more narrowly, no final state whose outcome differs
-  from the setup outcome. ForceMove:1150-1184 (the setup phase) has every
-  setup state carry the agreed outcome. `HonestSend` has no rule on
-  `isFinal`.
+  go-nitro's unanimous `conclude` checks no transition; ForceMove:1208
+  requires the resolution to match on a setup-to-CONCLUDE transition. The
+  rule is therefore a rule of the honest signer.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/funding_point_universally_finalizable_conclude.lean`.
 -/
-import ArmadaLean.Spec.Nitro.Liveness
 import ArmadaLean.Nitro.NonVacuity
 
 namespace ArmadaLean.Nitro.Counterexample.FundingPointConclude
@@ -72,14 +75,30 @@ theorem voucher_gate (n : Network Nat) (st : State Nat) (hst : st.voucher? = non
   simp only [List.mem_singleton] at hst'; subst hst'
   intro v hv; rw [hst] at hv; cases hv
 
-/-- `nF` is reachable on the honest network: each send satisfies `HonestSend`. -/
-theorem nF_reach : (Nitro.network apps1 (Ts apps1)).Reachable nF :=
-  network_reachable_honest
-    (network_reachable_honest
-      (network_reachable_honest (network_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send sA0)
-        (by honest_send) (voucher_gate _ _ rfl))
-      q0 (.send sA1) (by honest_send) (voucher_gate _ _ rfl))
-    p0 (.send sF1) (by honest_send) (voucher_gate _ _ rfl)
+/-! Reachability steps on the unrestricted network `Nitro.networkUnrestricted` (an honest
+    move needs only feasible calls, `HonestMove.CallsFeasible`). -/
+
+theorem networkU_reachable_init (apps : Apps Nat) (Ts : Threats Nat apps) (w : Participant → Coins) :
+    (Nitro.networkUnrestricted apps Ts).Reachable
+      (⟨Adjudicator.genesis, fun _ => [], fun _ => [], w⟩ : Network Nat) :=
+  ⟨_, ⟨rfl, rfl, rfl⟩, .refl⟩
+
+theorem networkU_reachable_honest {apps : Apps Nat} {Ts : Threats Nat apps} {n : Network Nat}
+    (h : (Nitro.networkUnrestricted apps Ts).Reachable n) (p : Participant) (m : HonestMove Nat)
+    (hm : m.CallsFeasible (n.view p))
+    (hvgate : ∀ r : Reaction Nat, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) :
+    (Nitro.networkUnrestricted apps Ts).Reachable (Network.applyHonest n p m) :=
+  h.tail ⟨p, Or.inl ⟨m, hm, hvgate, rfl⟩⟩
+
+/-- `nF` is reachable on the unrestricted network: it has no signing rule, only
+    the voucher gate. -/
+theorem nF_reach : (Nitro.networkUnrestricted apps1 (Ts apps1)).Reachable nF :=
+  networkU_reachable_honest
+    (networkU_reachable_honest
+      (networkU_reachable_honest (networkU_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send sA0)
+        (by simp) (voucher_gate _ _ rfl))
+      q0 (.send sA1) (by simp) (voucher_gate _ _ rfl))
+    p0 (.send sF1) (by simp) (voucher_gate _ _ rfl)
 
 theorem nF_views_p0 : nF.views p0 = ⟨g0, [⟨sA1, [q0]⟩], [⟨sF1, [p0]⟩, ⟨sA0, [p0]⟩]⟩ := by
   simp [nF, nB, nA, n0, Network.views, Network.view, Network.applyHonest, HonestMove.send,
@@ -167,23 +186,44 @@ theorem not_finalizable : ¬ Finalizable apps1 T c2 Ωg (nF.views p0) := by
 /-! ## The counterexample -/
 
 /-- Every hypothesis of `funding_point_universally_finalizable` holds for
-    `apps1`, `Ts apps1`, `nF`, `c2`, `Ωg` and `vtAll`, on the honest
-    network, and the conclusion fails: `Ωg` is not finalizable for `p0`. -/
+    `apps1`, `Ts apps1`, `nF`, `c2`, `Ωg` and `vtAll`, with `nF` reachable on
+    the unrestricted network, and the conclusion fails: `Ωg` is not
+    finalizable for `p0`. -/
 theorem funding_point_universally_finalizable_false :
-    ¬ Spec.funding_point_universally_finalizable (E := Nat) := by
+    ¬ ∀ (apps : Apps Nat) (Ts : Threats Nat apps) (v : Views Nat) (n : Network Nat)
+        (_hr : (Nitro.networkUnrestricted apps Ts).Reachable n) (_hvn : v = n.views) (c : FixedPart)
+        (Ω : Outcome Nat) (vt : State Nat → State Nat → Bool)
+        (_hc : apps c.appDef = forceMoveRules vt) (_hsetup : SetupPhaseKeepsOutcome vt c)
+        (_hvt : SetupPhaseAccepted vt c) (_hn : 0 < c.n)
+        (_hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (_h : AtFundingPoint v c Ω)
+        (_hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0),
+        UniversallyFinalizable apps Ts v c Ω := by
   intro h
-  have hU := h apps1 (Ts apps1) nF.views ⟨nF, nF_reach⟩ rfl c2 Ωg vtAll rfl
+  have hU := h apps1 (Ts apps1) nF.views nF nF_reach rfl c2 Ωg vtAll rfl
     (fun s1 s2 h _ _ => by simpa [vtAll] using h)
     (fun s1 s2 _ _ _ _ ho _ => by simp [vtAll, ho])
     (by decide) (fun _ => (by decide : 2 * 1 ≤ 2)) atFundingPoint
     (fun r => by rw [nF_views_chain]; exact ⟨rfl, rfl⟩)
   exact not_finalizable (hU p0 (by simp [c2]))
 
-/-- `p0`'s sends satisfy the signing rules: the network is honest. -/
-theorem p0_sent_honest :
-    ∀ s ∈ (nF.views p0).sent, HonestSend (nF.views p0).sent (nF.views p0).HoldsPrefund s.state :=
-  Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable ⟨nF, nF_reach⟩ p0⟩
+/-- The own-violation: `p0` signed two setup states of `c2` with two outcomes
+    (`sA0` with `Ωg`, the final `sF1` with `Ωb`), against
+    `HonestSend.setupOutcome`. -/
+theorem p0_breaks_setupOutcome :
+    ¬ ∀ s ∈ (nF.views p0).sent, HonestSend (nF.views p0).sent (nF.views p0).HoldsPrefund s.state := by
+  intro h
+  have h_eq := (h ⟨sF1, [p0]⟩ (by simp [nF_views_p0])).setupOutcome (by decide)
+    ⟨sA0, [p0]⟩ (by simp [nF_views_p0]) (by decide) (by decide)
+  exact Ωb_ne_Ωg h_eq.symm
+
+/-- `nF` is not reachable on the honest network: there, every view satisfies the
+    signing rules (`Nitro.participant_sent_honest`,
+    `Nitro.network_views_participant_reachable`). -/
+theorem nF_not_honest : ¬ (Nitro.network apps1 (Ts apps1)).Reachable nF := fun h =>
+  p0_breaks_setupOutcome
+    (Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable ⟨nF, h⟩ p0⟩)
 
 end ArmadaLean.Nitro.Counterexample.FundingPointConclude
 
 #print axioms ArmadaLean.Nitro.Counterexample.FundingPointConclude.funding_point_universally_finalizable_false
+#print axioms ArmadaLean.Nitro.Counterexample.FundingPointConclude.nF_not_honest
