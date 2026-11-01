@@ -1303,6 +1303,9 @@ theorem appsB_not_IR : ¬ AppIR appsB ⟨0⟩ destB := by
   exact not_finalizable_from (fun Ω => 5 ≤ share Ω true) cut1 (by decide) net1 (invA_net1 _)
     (Or.inl ⟨0, rfl⟩) (UnbeatableIn.imp (fun ⟨Ω, hf, hs⟩ => ⟨Ω, hf, by simpa [destB] using hs⟩) hU)
 
+/-- The trivial game is not desirable: it fails IR (`appsB_not_IR`). -/
+theorem appsB_not_desirable : ¬ Desirable appsB ⟨0⟩ destB := fun h => appsB_not_IR h.ir
+
 /-- The trivial game fails `NoTakeFromNonMover`: `q0`'s move at turn 2 cuts
     `p0`'s payment from 5 to 0. -/
 theorem vtAll_not_noTake : ¬ NoTakeFromNonMover vtAll destB := by
@@ -1311,6 +1314,7 @@ theorem vtAll_not_noTake : ¬ NoTakeFromNonMover vtAll destB := by
   exact absurd this (by decide)
 
 #print axioms appsB_not_IR
+#print axioms appsB_not_desirable
 #print axioms vtAll_not_noTake
 
 end ArmadaLean.Nitro.CounterexampleIRGame

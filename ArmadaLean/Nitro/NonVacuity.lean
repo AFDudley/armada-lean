@@ -1218,32 +1218,32 @@ theorem netF_reach_noOwnViolation (dest : Participant → Nat) :
       (fun op h => by cases h))
     (.send stF) (by honest_send)
 
-/-- `finalizable_or_two_enabled`. `apps0` runs the consensus app, which is IR
-    for every destination map (`TakeOut.consensus_IR`). -/
+/-- `finalizable_or_two_enabled`. `apps0` runs the consensus app, which is
+    desirable for every destination map (`TakeOut.consensus_desirable`). -/
 theorem finalizable_or_two_enabled.nonvacuity : ∃ (dest : Participant → Nat) (net : NetworkState Nat p0)
     (c : TimedChannel (canon p0).ε),
     Assumptions apps0 p0 (canon p0) ∧
     (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable net ∧
-    (apps0 (c : FixedPart).appDef).SupportWindow ∧ AppIR apps0 (c : FixedPart).appDef dest ∧
+    (apps0 (c : FixedPart).appDef).SupportWindow ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
     p0 ∈ (c : FixedPart).participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
       candidate.channel = (c : FixedPart)) :=
   ⟨fun _ => 0, netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach_noOwnViolation _,
-    consensusRules_supportWindow, TakeOut.consensus_IR rfl, by decide,
+    consensusRules_supportWindow, TakeOut.consensus_desirable _, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
       by decide, rfl⟩⟩
 
 /-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
     is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `p0`'s
     own conclude lands after `netF_reach_noOwnViolation`.
-    `apps0` runs the consensus app, which is IR for every destination map
-    (`TakeOut.consensus_IR`). -/
+    `apps0` runs the consensus app, which is desirable for every destination
+    map (`TakeOut.consensus_desirable`). -/
 theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → Nat)
     (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧
     (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable net ∧
-    (apps0 (c : FixedPart).appDef).SupportWindow ∧ AppIR apps0 (c : FixedPart).appDef dest ∧
+    (apps0 (c : FixedPart).appDef).SupportWindow ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
     p0 ∈ (c : FixedPart).participants ∧
     (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
@@ -1254,7 +1254,7 @@ theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → N
     participant_reachable_land (netF_reach_noOwnViolation _) (.conclude c1 ssF)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h; exact netF_holds),
-    consensusRules_supportWindow, TakeOut.consensus_IR rfl, by decide,
+    consensusRules_supportWindow, TakeOut.consensus_desirable _, by decide,
     (fun t h _ => by
       rw [List.mem_singleton] at h; subst h
       exact ⟨[ssF], fun ss h' => by

@@ -1505,6 +1505,21 @@ theorem noTake_vtS : NoTakeFromNonMover vtS destS := by
 theorem appsS_IR : AppIR appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IR rfl noTake_vtS
 
+/-- A valid move can be kept: the next state with the same outcome is valid. -/
+theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.turnNum + 1 } = true := by
+  intro s s' h
+  obtain ⟨-, -, a', b', -, h1, -⟩ := (vtS_iff _ _).1 h
+  exact (vtS_iff _ _).2 ⟨a', b', a', b', h1, h1, rfl, Or.inr (le_refl _), Or.inr (le_refl _)⟩
+
+/-- The app is IC at every state (`TakeOut.forceMove_IC`). -/
+theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
+  TakeOut.forceMove_IC stay_vtS _
+
+/-- `SingleAssetPayments` is desirable: IR and IC at every state. Its
+    failure test is the own-violation rule, not the class `Desirable`. -/
+theorem appsS_desirable : Desirable appsS (tc0 : FixedPart).appDef destS :=
+  ⟨appsS_IR, appsS_IC⟩
+
 /-- `Spec.finalizable_or_two_enabled` read against the full threat `T`, not
     against `T.noOwnViolation dest` (the form before the operator ruling of
     2026-11-01 on own-violations). -/
@@ -1569,7 +1584,7 @@ current Nitro-24 statements. -/
 theorem gift_is_ownViolation : OwnViolation destS q0 [s1] (st 2 (ansQ O1)) :=
   Or.inr ⟨s1, List.mem_singleton_self _, rfl, rfl, by decide⟩
 
-#print axioms appsS_IR
+#print axioms appsS_desirable
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 #print axioms gift_is_ownViolation

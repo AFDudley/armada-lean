@@ -235,10 +235,10 @@ def Spec.channel_finalizability_cases : Prop :=
     must fail the claim (`docs/counterexamples/finalizable_or_two_enabled.lean`,
     `docs/counterexamples/finalizable_or_two_enabled_happ.lean`). Operator
     ruling 2026-11-01: the papers assume desirable apps and do not state it.
-    The app must carry `AppIR` for a destination map `dest`: armada-laconic
-    `labbook/2026-10-30-app-classes-ic-ir.md` §2, "from any state, an online
-    honest participant can enforce at least what its holdings give it"
-    (ForceMove:410-416, 125-130). Game B fails `AppIR`
+    The app must be `Desirable` for a destination map `dest`, a class defined
+    first and independently of the claim: IR and IC at every state
+    (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2;
+    ForceMove:410-416, 125-130, 339-347). Game B fails `AppIR`
     (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
     2026-11-01: own-violation is one rule for every participant; a state
     signed against the signer's own interest costs only the signer. The claim
@@ -247,17 +247,17 @@ def Spec.channel_finalizability_cases : Prop :=
     honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
     The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
     (`docs/counterexamples/single_asset_payments_ir.lean`). The claim fails
-    as stated: `docs/counterexamples/unowned_pool_take.lean` (an IR app that
-    moves value out of the entry of no participant) and
-    `docs/counterexamples/strict_premise_mint.lean` (an app with the strict
-    premise that mints). -/
+    as stated: `docs/counterexamples/unowned_pool_take.lean` (a desirable
+    app that moves value out of the entry of no participant) and
+    `docs/counterexamples/strict_premise_mint.lean` (a desirable app that
+    mints). -/
 def Spec.finalizable_or_two_enabled : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
     (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
     (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).SupportWindow)
-    (hir : AppIR apps (c : FixedPart).appDef dest)
+    (hdes : Desirable apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
@@ -275,10 +275,10 @@ def Spec.finalizable_or_two_enabled : Prop :=
     lets old signatures support a higher turn must fail the claim
     (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`). Operator
     ruling 2026-11-01: the papers assume desirable apps and do not state it.
-    The app must carry `AppIR` for a destination map `dest`: armada-laconic
-    `labbook/2026-10-30-app-classes-ic-ir.md` §2, "from any state, an online
-    honest participant can enforce at least what its holdings give it"
-    (ForceMove:410-416, 125-130). Game B fails `AppIR`
+    The app must be `Desirable` for a destination map `dest`, a class defined
+    first and independently of the claim: IR and IC at every state
+    (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2;
+    ForceMove:410-416, 125-130, 339-347). Game B fails `AppIR`
     (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
     2026-11-01: own-violation is one rule for every participant; a state
     signed against the signer's own interest costs only the signer. The claim
@@ -287,17 +287,17 @@ def Spec.finalizable_or_two_enabled : Prop :=
     honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
     The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
     (`docs/counterexamples/single_asset_payments_ir.lean`). The claim fails
-    as stated: `docs/counterexamples/unowned_pool_take.lean` (an IR app that
-    moves value out of the entry of no participant) and
-    `docs/counterexamples/strict_premise_mint.lean` (an app with the strict
-    premise that mints). -/
+    as stated: `docs/counterexamples/unowned_pool_take.lean` (a desirable
+    app that moves value out of the entry of no participant) and
+    `docs/counterexamples/strict_premise_mint.lean` (a desirable app that
+    mints). -/
 def Spec.single_enabled_is_finalizable : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
     (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
     (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).SupportWindow)
-    (hir : AppIR apps (c : FixedPart).appDef dest)
+    (hdes : Desirable apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧

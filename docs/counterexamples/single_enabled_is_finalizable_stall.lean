@@ -610,4 +610,35 @@ theorem finalizable_or_two_enabled_false :
 #print axioms finalizable_or_two_enabled_false
 #print axioms appsΩ_not_supportWindow
 
+/-! ## `appsΩ` is not desirable
+
+Operator ruling 2026-11-01: the Nitro-24 claims take `Desirable`. `appsΩ`
+fails `AppIR`: at `net1`, `p0` holds `P`, a support of `stAt 2`, with the
+channel open, and no outcome ever finalizes (`not_unbeatable_any`). -/
+
+theorem not_unbeatable_any {G : Outcome Unit → Prop} (n : NetworkState Unit p0)
+    (h : UnbeatableIn appsΩ T0 (fun _ => True) (fun n => ∃ Ω, n.Finalized c0 Ω ∧ G Ω) n) :
+    Inv1 n → False := by
+  induction h with
+  | done hG =>
+    rintro ⟨⟨k, hk⟩, -⟩
+    obtain ⟨Ω, hf, -⟩ := hG
+    simp [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hk] at hf
+  | move m _ hfeas _ ih =>
+    intro hI
+    obtain ⟨n', hR, hI'⟩ := round1 _ hI m hfeas
+    exact ih n' hR hI'
+
+theorem appsΩ_not_desirable (dest : Participant → Unit) : ¬ Desirable appsΩ ⟨0⟩ dest := by
+  intro h
+  have hH : HoldsShare appsΩ net1 c0 (dest p0) 0 :=
+    ⟨P, stAt 2, holds_P, supports_P_stAt 2, rfl, Nat.zero_le _, fun s hs _ => by
+      simp only [net1, List.mem_singleton] at hs; subst hs
+      exact ⟨le_refl _, fun _ => Nat.zero_le _⟩, 0, statusOf_genesis, Nat.zero_le _⟩
+  exact not_unbeatable_any net1
+    (h.ir.takeOut T0 A0 ⟨net1, net1_reachable⟩ ⟨c0, by decide⟩ 0 rfl (by simp [c0]) hH)
+    ⟨⟨0, statusOf_genesis⟩, qnf_net1, ssF, by simp [net1], rfl⟩
+
+#print axioms appsΩ_not_desirable
+
 end ArmadaLean.Nitro.CounterexampleSingleEnabled

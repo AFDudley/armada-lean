@@ -1,6 +1,6 @@
 /-
-  Individual rationality (IR) of an app at every state, as one type
-  (`AppIR`).
+  Desirable apps (`Desirable`): individual rationality (IR) and incentive
+  compatibility (IC) of an app at every state (`AppIR`, `AppIC`).
 
   armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2 (operator,
   2026-10-30): a desirable app is a compliant app that is incentive
@@ -23,12 +23,29 @@
   Operator ruling 2026-11-01: the papers assume desirable apps and never
   state the premise, as they assume participants that follow the protocol.
   The Nitro-24 statements (`finalizable_or_two_enabled`,
-  `single_enabled_is_finalizable`, `Liveness.lean`) take `AppIR`.
+  `single_enabled_is_finalizable`, `Liveness.lean`) take `Desirable`
+  (operator ruling 2026-11-01: desirable apps are defined first, and
+  independently of the theorems).
+
+  "IC at every state: at no state does a participant gain by deviating from
+  the rules or by aborting" (labbook §2; ForceMove:339-347, the
+  Rock-Paper-Scissors example: "Without the added incentive of Bob being the
+  default winner in this position, it could be in Alice's interest to end
+  the game at this point, by refusing to reveal the outcome"). Each state
+  carries a resolution, the outcome that finalizes if the game stops there.
+  The mover of the next turn aborts when it signs no next state; the
+  current state then finalizes. A move outside the rules is not supported,
+  so it gives the mover nothing an abort does not give. `AppIC` asks: when
+  the rules let the game go on from a supported non-final state, the next
+  mover has a move by the rules (`RulesMove`) that pays it at least the
+  current resolution. A final state ends the game, so a conclude move is not
+  a move of the game.
 
   The proofs that the consensus app and the ForceMove apps whose game
   library takes nothing from a non-mover are IR are in
   `ArmadaLean/Nitro/TakeOut.lean` (`TakeOut.consensus_IR`,
-  `TakeOut.forceMove_IR`).
+  `TakeOut.forceMove_IR`). The IC proofs and the proof that the go-nitro
+  payment rules (`PaymentRules`) give a desirable app are there too.
 -/
 import ArmadaLean.Nitro.Reachable
 import ArmadaLean.Types.Channel
@@ -80,5 +97,48 @@ structure AppIR (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop wh
     ∀ (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε) (x : Coins),
       (c : FixedPart).appDef = a → p ∈ (c : FixedPart).participants →
       HoldsShare apps net.state c (dest p) x → CanTakeOut apps T c (dest p) x net.state
+
+/-- A move by the rules `r` from the supported state `cand` of `c`: a
+    non-final state `cand'` of `c` at the next turn, with a support `proof'`
+    whose states are states of `cand`'s support `proof` or new states with
+    `cand'`. -/
+def RulesMove (r : Rules E) (c : FixedPart) (proof : SupportProof E) (cand : State E)
+    (proof' : SupportProof E) (cand' : State E) : Prop :=
+  r.supports c proof' cand' = true ∧ cand'.channel = c ∧ cand'.turnNum = cand.turnNum + 1 ∧
+    cand'.isFinal = false ∧ ∀ ss ∈ proof', ss ∈ proof ∨ ss.state = cand'
+
+/-- IC at every state of the app `a`, for the destination map `dest`: at
+    every supported non-final state of a channel of `a`, if the rules let
+    the game go on, the mover `q` of the next turn has a move by the rules
+    that pays `dest q` at least the current resolution. So `q` does not gain
+    by aborting. -/
+structure AppIC (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop where
+  noAbortGain : ∀ (c : FixedPart) (proof : SupportProof E) (cand : State E) (q : Participant),
+    c.appDef = a → (apps a).supports c proof cand = true → cand.channel = c →
+    cand.isFinal = false → ({ cand with turnNum := cand.turnNum + 1 } : State E).mover = some q →
+    (∃ proof' cand', RulesMove (apps a) c proof cand proof' cand') →
+    ∃ proof' cand', RulesMove (apps a) c proof cand proof' cand' ∧
+      share cand.outcome (dest q) ≤ share cand'.outcome (dest q)
+
+/-- A desirable app: IR and IC at every state, for the destination map
+    `dest`. -/
+structure Desirable (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop where
+  ir : AppIR apps a dest
+  ic : AppIC apps a dest
+
+/-- A move of the go-nitro payment rules (`SingleAssetPayments.sol`,
+    `_requireValidTransition`): the destinations and their order stay, the
+    total stays ("Total allocated cannot change"), and an amount falls only
+    at the mover's own destination, which no other participant has. -/
+def PaymentMove (dest : Participant → E) (s s' : State E) : Prop :=
+  s'.outcome.entries.map Entry.dest = s.outcome.entries.map Entry.dest ∧
+    s'.outcome.entries.total = s.outcome.entries.total ∧
+    ∀ k, share s'.outcome k < share s.outcome k →
+      (∃ q, s'.mover = some q ∧ dest q = k) ∧ ∀ q, s'.mover ≠ some q → dest q ≠ k
+
+/-- A ForceMove game library with the go-nitro payment rules: a transition
+    is valid exactly when it is a `PaymentMove`. -/
+structure PaymentRules (vt : State E → State E → Bool) (dest : Participant → E) : Prop where
+  valid_iff : ∀ s s', vt s s' = true ↔ PaymentMove dest s s'
 
 end ArmadaLean.Nitro

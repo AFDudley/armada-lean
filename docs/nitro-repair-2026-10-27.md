@@ -939,12 +939,17 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E) (ali
 - A search of `ArmadaLean/Nitro/` and `docs/` for the renamed constructor's earlier spelling, concatenated,
   hyphenated or spaced, finds nothing.
 
-## 7. Nitro-24 with `AppIR` and own-violations, 2026-11-01
+## 7. Nitro-24 with `Desirable` and own-violations, 2026-11-01
 
 Two operator rulings of 2026-11-01 apply to Nitro-24 (Nitro:653-658):
 
-1. The papers assume desirable apps. `AppIR` (`ArmadaLean/Types/App.lean`, armada-laconic
-   `labbook/2026-10-30-app-classes-ic-ir.md` §2) is a premise of both statements, next to `SupportWindow`.
+1. The papers assume desirable apps. The class is defined first, and independently of the theorems:
+   `Desirable apps a dest` (`ArmadaLean/Types/App.lean`) is `AppIR` and `AppIC`, from armada-laconic
+   `labbook/2026-10-30-app-classes-ic-ir.md` §2. IR: "from any state, an online honest participant can enforce at
+   least what its holdings give it" (ForceMove:410-416, 125-130). IC: "at no state does a participant gain by
+   deviating from the rules or by aborting" (ForceMove:339-347). `AppIC`: at every supported non-final state, when
+   the rules let the game go on, the mover of the next turn has a move by the rules (`RulesMove`) that pays it at
+   least the current resolution. Both statements take `Desirable`, next to `SupportWindow`.
 2. Own-violation is one rule for every participant (`ArmadaLean/Types/OwnViolation.lean`). A signer `q` commits an
    own-violation with a state `st` when (a) `q` already signed a state of the same channel and slot with another
    outcome (`OwnViolation.Conflict`; every setup turn is slot 0, `State.signSlot`), or (b) `st` pays `q`, at
@@ -961,30 +966,36 @@ The rule binds both sides:
 ### 7.1 Statement changes (`ArmadaLean/Spec/Nitro/Liveness.lean`)
 
 - `finalizable_or_two_enabled`, `single_enabled_is_finalizable`: new binder `dest`, premise
-  `hir : AppIR apps c.appDef dest`, `net : ReachableParticipant apps (T.noOwnViolation dest)`, and `Finalizable` /
-  `Enabled` over `T.noOwnViolation dest`. `A : Assumptions apps p T` and `SupportWindow` stay.
+  `hdes : Desirable apps c.appDef dest`, `net : ReachableParticipant apps (T.noOwnViolation dest)`, and
+  `Finalizable` / `Enabled` over `T.noOwnViolation dest`. `A : Assumptions apps p T` and `SupportWindow` stay.
 - `funding_point_universally_finalizable`: doc comment only. Its type changes through `HonestSend`.
 - `participant_sent_honest`: no text change. Its type changes through `HonestSend`.
 
 The payout forms `FinalizableFor` and `EnabledFor` are removed.
 
-### 7.2 Tests
+The go-nitro payment rules are not a premise. `PaymentRules vt dest` (a transition is valid exactly when it keeps
+the destinations, their order and the total, and lowers an amount only at the mover's own destination) is a
+sufficient condition: `TakeOut.paymentRules_desirable`. The consensus app is desirable:
+`TakeOut.consensus_desirable`.
 
-| Test | File | Result |
-|---|---|---|
-| Game B, an app that is not IR | `docs/counterexamples/ir_game_rewrites_share.lean` | `appsB_not_IR`; the statements before `AppIR` fail. |
-| `SingleAssetPayments`, the gift play | `docs/counterexamples/single_asset_payments_ir.lean` | The statements against the full threat fail. The answer of `q0` is a gift (`gift_is_ownViolation`), so the play is not a play of `T.noOwnViolation dest`. |
-| Consensus double-sign | `docs/counterexamples/consensus_double_sign.lean` | Two states at one slot with two outcomes are a conflict (`doubleSign_conflict`); the honest participant never sends the second (`doubleSign_not_honest`). |
-| Unowned pool | `docs/counterexamples/unowned_pool_take.lean` | Both current statements fail. `q0` moves coins of a pool (the destination of no participant) to `p0`. The app is IR, the answers are no own-violations. |
-| Strict form, minting | `docs/counterexamples/strict_premise_mint.lean` | Both current statements fail. The app meets the strict form "a valid transition lowers no entry except the mover's own" (`strict_vtS`). `q0` mints coins for `p0`. |
+### 7.2 Classification of the counterexample apps
+
+| App | File | `SupportWindow` | `Desirable` | Payment rules | Result |
+|---|---|---|---|---|---|
+| `appsAll` | `finalizable_or_two_enabled.lean` | no (`appsAll_not_supportWindow`) | no (`appsAll_not_desirable`, fails IR) | — | failure test |
+| `appsU` | `finalizable_or_two_enabled_happ.lean` | no (`appsU_not_supportWindow`) | no (`appsU_not_desirable`, fails IR) | — | failure test |
+| `appsΩ` | `single_enabled_is_finalizable_stall.lean` | no (`appsΩ_not_supportWindow`) | no (`appsΩ_not_desirable`, fails IR) | — | failure test |
+| Game B | `ir_game_rewrites_share.lean` | yes | no (`appsB_not_desirable`, fails IR) | no (`vtAll_not_noTake`) | failure test |
+| `SingleAssetPayments` | `single_asset_payments_ir.lean` | yes | yes (`appsS_desirable`) | — | refutes only the full-threat form; its play is an own-violation (`gift_is_ownViolation`) |
+| Unowned pool | `unowned_pool_take.lean` | yes | yes (`appsS_desirable`) | no (`appsS_not_paymentRules`) | refutes both current statements |
+| Minting | `strict_premise_mint.lean` | yes | yes (`appsS_desirable`) | no (`appsS_not_paymentRules`) | refutes both current statements |
+
+`consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
 
 ### 7.3 Status
 
-Both statements stay `sorry`. They are false as stated: `unowned_pool_take.lean` refutes them. The strict form of
-the app premise does not repair them: `strict_premise_mint.lean` meets it and refutes them too. In both files, the
-honest `p0` restores its outcome `O1` after each move of `q0`, so only `O1` is enabled, and `q0` answers each
-challenge by a new outcome that pays `p0` more, so no outcome is finalizable.
-
-[INFERENCE] The minting app breaks a go-nitro rule: `SingleAssetPayments.sol` keeps the total ("Total allocated
-cannot change"). With the strict form and a kept total, a clean move of `q0` changes no amount. Then `q0` can change
-the outcome only by its form (for example the order of the entries), unless the app fixes the form.
+Both statements stay `sorry`. They are false for desirable apps: `unowned_pool_take.lean` and
+`strict_premise_mint.lean` refute them with an app that meets `SupportWindow` and `Desirable`, against the threat
+without own-violations. In both files, the honest `p0` restores its outcome `O1` after each move of `q0`, so only
+`O1` is enabled, and `q0` answers each challenge by a new outcome that pays `p0` more, so no outcome is
+finalizable. Neither app is a go-nitro app, and neither has the go-nitro payment rules.

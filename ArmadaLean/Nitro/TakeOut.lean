@@ -829,5 +829,121 @@ theorem consensus_IR {apps : Apps E} {a : AppId} {dest : Participant → E}
   | _ :: _ :: _, h, _ =>
     (simp? [consensusRules] at h says simp only [consensusRules, Bool.false_eq_true] at h)
 
+/-! ## IC, and desirable apps -/
+
+/-- A valid run, with one more valid move after its last state `y`. -/
+theorem validRun_snoc {vt : State E → State E → Bool} {y new : SignedState E}
+    (hy : ∀ z, validMove vt z y = true → validMove vt y new = true) :
+    ∀ (l : SupportProof E) (x : SignedState E), validRun vt (x :: l) = true →
+      (x :: l).getLast? = some y → l ≠ [] → validRun vt (l ++ [new]) = true
+  | [], _, _, _, hne => absurd rfl hne
+  | [m], x, h, hl, _ => by
+    simp only [validRun, Bool.and_true] at h
+    rw [List.getLast?_cons_cons, List.getLast?_singleton, Option.some.injEq] at hl
+    subst hl
+    show validRun vt [m, new] = true
+    simp only [validRun, Bool.and_true]
+    exact hy x h
+  | m :: m2 :: l, x, h, hl, _ => by
+    rw [validRun, Bool.and_eq_true] at h
+    have h2 := h.2
+    have ih := validRun_snoc hy (m2 :: l) m h2 (by rw [List.getLast?_cons_cons] at hl; exact hl)
+      (List.cons_ne_nil _ _)
+    rw [validRun, Bool.and_eq_true] at h2
+    rw [List.cons_append] at ih
+    rw [List.cons_append, List.cons_append, validRun, Bool.and_eq_true]
+    exact ⟨h2.1, ih⟩
+
+/-- **A ForceMove app is IC** when its game library lets the mover keep
+    the state of a valid move: from a supported non-final candidate, the
+    mover of the next turn moves to the same outcome. -/
+theorem forceMove_IC {vt : State E → State E → Bool} {dest : Participant → E}
+    (hstay : ∀ s s', vt s s' = true → vt s' { s' with turnNum := s'.turnNum + 1 } = true)
+    (a : AppId) : AppIC (fun _ => forceMoveRules vt) a dest := by
+  refine ⟨fun c proof cand q _ hsup hc hfin hq _ => ?_⟩
+  have hsup' := hsup
+  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hsup'
+  obtain ⟨⟨⟨⟨hlen, hhead⟩, hrun⟩, hch⟩, hlast⟩ := hsup'
+  obtain ⟨mlast, hml, hmls⟩ := Option.map_eq_some_iff.1 hlast
+  let new : SignedState E := ⟨{ cand with turnNum := cand.turnNum + 1 }, [q]⟩
+  have hnewM : new.ByMover := ⟨q, hq, List.mem_singleton_self q⟩
+  have hstep : ∀ z, validMove vt z mlast = true → validMove vt mlast new = true := by
+    intro z hz
+    obtain ⟨-, -, hzv, -⟩ := (validMove_iff vt z mlast).1 hz
+    refine (validMove_iff vt mlast new).2 ⟨⟨?_, ?_⟩, ⟨fun h => ?_, fun h => ?_⟩, fun _ => ?_, hnewM⟩
+    · show cand.channel = mlast.state.channel
+      rw [hmls]
+    · show cand.turnNum + 1 = mlast.state.turnNum + 1
+      rw [hmls]
+    · exact absurd h (by rw [show new.state.isFinal = cand.isFinal from rfl, hfin]; decide)
+    · rw [hmls, hfin] at h; cases h
+    · have hv := hzv (by rw [hmls]; exact hfin)
+      rw [hmls] at hv
+      show vt mlast.state new.state = true
+      rw [hmls]
+      exact hstay _ _ hv
+  match proof, hlen, hhead, hrun, hch, hml with
+  | [], _, _, _, _, hml => (simp? at hml says simp only [List.getLast?_nil, reduceCtorEq] at hml)
+  | m0 :: rest, hlen, hhead, hrun, hch, hml =>
+    refine ⟨rest ++ [new], new.state, ⟨?_, hc, rfl, hfin, fun ss hss => ?_⟩, le_refl _⟩
+    · simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+      refine ⟨⟨⟨⟨?_, ?_⟩, ?_⟩, fun m hm => ?_⟩, ?_⟩
+      · simp only [List.length_append, List.length_singleton]
+        simp only [List.length_cons] at hlen
+        exact hlen
+      · cases rest with
+        | nil => exact (SignedState.byMover_iff new).2 hnewM
+        | cons m1 r =>
+          rw [validRun, Bool.and_eq_true] at hrun
+          exact (SignedState.byMover_iff m1).2 ((validMove_iff vt m0 m1).1 hrun.1).2.2.2
+      · cases rest with
+        | nil => rfl
+        | cons m1 r => exact validRun_snoc hstep (m1 :: r) m0 hrun hml (List.cons_ne_nil _ _)
+      · rcases List.mem_append.1 hm with hm | hm
+        · exact hch m (List.mem_cons_of_mem _ hm)
+        · rw [List.mem_singleton.1 hm]; exact hc
+      · rw [List.getLast?_append, List.getLast?_singleton]
+        rfl
+    · rcases List.mem_append.1 hss with hss | hss
+      · exact Or.inl (List.mem_cons_of_mem _ hss)
+      · exact Or.inr (by rw [List.mem_singleton.1 hss])
+
+/-- **The consensus app is IC**: the next state, with the same outcome and
+    every signature, is a move by the rules. -/
+theorem consensus_IC {dest : Participant → E} (a : AppId) :
+    AppIC (fun _ => consensusRules) a dest := by
+  refine ⟨fun c proof cand q _ _ hc hfin _ _ => ?_⟩
+  let cand' : State E := { cand with turnNum := cand.turnNum + 1 }
+  refine ⟨[⟨cand', c.participants⟩], cand', ⟨?_, hc, rfl, hfin, fun ss hss => ?_⟩, le_refl _⟩
+  · show (decide (cand' = cand') && decide (cand'.channel = c) &&
+      decide (SignedState.ByAll ⟨cand', c.participants⟩)) = true
+    simp only [decide_true, Bool.true_and, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨hc, fun x hx => by
+      have hx' : x ∈ cand.channel.participants := hx
+      rwa [hc] at hx'⟩
+  · exact Or.inr (by rw [List.mem_singleton.1 hss])
+
+/-- The go-nitro payment rules take nothing from a non-mover. -/
+theorem paymentRules_noTake {vt : State E → State E → Bool} {dest : Participant → E}
+    (h : PaymentRules vt dest) : NoTakeFromNonMover vt dest := by
+  intro s s' hv q hq
+  by_contra hlt
+  exact ((h.valid_iff s s').1 hv).2.2 (dest q) (Nat.lt_of_not_le hlt) |>.2 q hq rfl
+
+/-- The go-nitro payment rules let the mover keep the state. -/
+theorem paymentRules_stay {vt : State E → State E → Bool} {dest : Participant → E}
+    (h : PaymentRules vt dest) :
+    ∀ s s', vt s s' = true → vt s' { s' with turnNum := s'.turnNum + 1 } = true :=
+  fun _ _ _ => (h.valid_iff _ _).2 ⟨rfl, rfl, fun _ hk => absurd hk (lt_irrefl _)⟩
+
+/-- **A ForceMove app with the go-nitro payment rules is desirable.** -/
+theorem paymentRules_desirable {vt : State E → State E → Bool} {dest : Participant → E}
+    (h : PaymentRules vt dest) (a : AppId) : Desirable (fun _ => forceMoveRules vt) a dest :=
+  ⟨forceMove_IR rfl (paymentRules_noTake h), forceMove_IC (paymentRules_stay h) a⟩
+
+/-- **The consensus app is desirable.** -/
+theorem consensus_desirable {dest : Participant → E} (a : AppId) :
+    Desirable (fun _ => consensusRules) a dest :=
+  ⟨consensus_IR rfl, consensus_IC a⟩
 
 end ArmadaLean.Nitro.TakeOut

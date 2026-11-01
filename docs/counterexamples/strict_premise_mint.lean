@@ -10,7 +10,8 @@
   slot is fixed at 5, and `p0`'s slot drops only on a move of `p0`. A move
   of `q0` can raise `p0`'s slot: it mints coins. The app meets every
   premise of both statements: `Rules.SupportWindow` (`appsS_supportWindow`)
-  and `AppIR` (`appsS_IR`, from `noTake_vtS` and `TakeOut.forceMove_IR`).
+  and `Desirable` (`appsS_desirable`: IR from `noTake_vtS` and
+  `TakeOut.forceMove_IR`, IC from `stay_vtS` and `TakeOut.forceMove_IC`).
   The adversary is the threat `T1 = T0.noOwnViolation destS`. Its answers
   mint one coin for `p0`. That is no gift and no conflict
   (`answer_clean`).
@@ -25,7 +26,8 @@
 
   The minted coins have no funding: `c0` holds 15, and the answers allocate
   more. go-nitro `SingleAssetPayments.sol` refuses such a move ("Total
-  allocated cannot change").
+  allocated cannot change"), so the app does not have the go-nitro payment
+  rules (`appsS_not_paymentRules`). It is still desirable.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/strict_premise_mint.lean`.
@@ -1598,9 +1600,31 @@ theorem noTake_vtS : NoTakeFromNonMover vtS destS := fun s s' h q hq =>
 theorem appsS_IR : AppIR appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IR rfl noTake_vtS
 
+/-- A valid move can be kept: the next state with the same outcome is valid. -/
+theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.turnNum + 1 } = true := by
+  intro s s' h
+  obtain ⟨-, -, a', b', -, h1, -⟩ := (vtS_iff _ _).1 h
+  exact (vtS_iff _ _).2 ⟨a', b', a', b', h1, h1, rfl, Or.inr (le_refl _), Or.inr (le_refl _)⟩
+
+/-- The app is IC at every state (`TakeOut.forceMove_IC`). -/
+theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
+  TakeOut.forceMove_IC stay_vtS _
+
+/-- The app is desirable: IR and IC at every state. -/
+theorem appsS_desirable : Desirable appsS (tc0 : FixedPart).appDef destS :=
+  ⟨appsS_IR, appsS_IC⟩
+
+/-- The app does not have the go-nitro payment rules: a move of `q0` that
+    mints one coin for `p0` changes the total. -/
+theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := by
+  intro h
+  have hv : vtS (st 1 O1) (st 2 (pay 6 5)) = true := by decide
+  exact absurd ((h.valid_iff _ _).1 hv).2.1 (by decide)
+
 theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
   intro h
-  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_IR (by decide)
+  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_desirable
+      (by decide)
       ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
     ⟨Ω, hΩ⟩ | ⟨Ω1, Ω2, hne, hE1, hE2⟩
   · exact not_finalizable Ω hΩ
@@ -1611,14 +1635,14 @@ theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E
 theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Nat) := by
   intro h
   refine not_finalizable O1 (h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow
-    appsS_IR (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
+    appsS_desirable (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
   · rw [List.mem_singleton.1 ht]
     exact ⟨[r0, s1], holds_r0s1, supports_r0s1⟩
   · by_contra hne
     exact hE (prevents_other Ω' hne)
 
 #print axioms strict_vtS
-#print axioms appsS_IR
+#print axioms appsS_desirable
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 

@@ -531,4 +531,34 @@ theorem appsAll_not_supportWindow :
   obtain ⟨ss, hss, -⟩ := h c0 [] (stAt 0) rfl p0 (by simp [c0])
   exact List.not_mem_nil hss
 
+/-! ## `appsAll` is not desirable
+
+Operator ruling 2026-11-01: the Nitro-24 claims take `Desirable`. `appsAll`
+fails `AppIR`: at `net0`, `p0` holds the empty support of `stAt 0` with the
+channel open, and no outcome ever finalizes (`not_unbeatable_any`). -/
+
+theorem not_unbeatable_any {G : Outcome Unit → Prop} (n : NetworkState Unit p0)
+    (h : UnbeatableIn appsAll T0 (fun _ => True) (fun n => ∃ Ω, n.Finalized c0 Ω ∧ G Ω) n) :
+    Inv1 n → False := by
+  induction h with
+  | done hG =>
+    rintro ⟨⟨k, hk⟩, -⟩
+    obtain ⟨Ω, hf, -⟩ := hG
+    simp [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hk] at hf
+  | move m _ hfeas _ ih =>
+    intro hI
+    obtain ⟨n', hR, hI'⟩ := round1 _ hI m hfeas
+    exact ih n' hR hI'
+
+theorem appsAll_not_desirable (dest : Participant → Unit) : ¬ Desirable appsAll ⟨0⟩ dest := by
+  intro h
+  have hH : HoldsShare appsAll net0 c0 (dest p0) 0 :=
+    ⟨[], stAt 0, by simp, rfl, rfl, Nat.zero_le _, fun s hs => by simp [net0] at hs, 0,
+      statusOf_genesis, le_refl _⟩
+  exact not_unbeatable_any net0
+    (h.ir.takeOut T0 A0 ⟨net0, ⟨net0, rfl, .refl⟩⟩ ⟨c0, by decide⟩ 0 rfl (by simp [c0]) hH)
+    ⟨⟨0, statusOf_genesis⟩, by simp [POnly, net0]⟩
+
+#print axioms appsAll_not_desirable
+
 end ArmadaLean.Nitro.Counterexample

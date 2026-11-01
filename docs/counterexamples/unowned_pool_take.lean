@@ -3,7 +3,7 @@
   (Nitro:653-658; `Spec.finalizable_or_two_enabled`,
   `Spec.single_enabled_is_finalizable`, `ArmadaLean/Spec/Nitro/Liveness.lean`):
   the threat is `Threat.noOwnViolation`, with the premises `SupportWindow`
-  and `AppIR`.
+  and `Desirable`.
 
   The app is a three-slot variant of go-nitro `SingleAssetPayments.sol` on a
   two-party ledger channel `c0` (`[q0, p0]`, `n = 2`): `q0`'s slot is fixed
@@ -11,8 +11,9 @@
   `0`, the destination of no participant) drops only on a move of `q0`, and
   the total is conserved. The app meets every premise of both statements:
   * `Rules.SupportWindow` (`appsS_supportWindow`);
-  * `AppIR` (`appsS_IR`): `vtS` lowers no participant's own slot on another
-    participant's move (`noTake_vtS`), so `TakeOut.forceMove_IR` applies.
+  * `Desirable` (`appsS_desirable`): IR (`appsS_IR`, from `noTake_vtS` and
+    `TakeOut.forceMove_IR`) and IC (`appsS_IC`, from `stay_vtS` and
+    `TakeOut.forceMove_IC`).
   The adversary is the threat `T1 = T0.noOwnViolation destS`. Its answers
   move one pool coin to `p0`. That is no gift (`q0`'s own slot stays 5) and
   no conflict (one answer per slot), so it is no own-violation
@@ -30,10 +31,9 @@
   `single_enabled_is_finalizable_false`).
 
   The value in the pool belongs to no participant, and `q0` takes it
-  (`pool_take`). The app fails the strict form "a valid transition lowers no
-  entry except the mover's own" (`StrictNoTake`). The strict form does not
-  rescue the statements: `strict_premise_mint.lean` meets it, and both
-  statements still fail there.
+  (`pool_take`). So the app does not have the go-nitro payment rules
+  (`appsS_not_paymentRules`). It is still desirable: the class `Desirable`
+  is defined first, from labbook §2, and it does not exclude this app.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/unowned_pool_take.lean`.
@@ -1617,9 +1617,33 @@ theorem noTake_vtS : NoTakeFromNonMover vtS destS := by
 theorem appsS_IR : AppIR appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IR rfl noTake_vtS
 
+/-- A valid move can be kept: the next state with the same outcome is valid. -/
+theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.turnNum + 1 } = true := by
+  intro s s' h
+  obtain ⟨-, -, a', b', -, h1, -⟩ := (vtS_iff _ _).1 h
+  exact (vtS_iff _ _).2 ⟨a', b', a', b', h1, h1, rfl, Or.inr (le_refl _), Or.inr (le_refl _)⟩
+
+/-- The app is IC at every state (`TakeOut.forceMove_IC`). -/
+theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
+  TakeOut.forceMove_IC stay_vtS _
+
+/-- The app is desirable: IR and IC at every state. -/
+theorem appsS_desirable : Desirable appsS (tc0 : FixedPart).appDef destS :=
+  ⟨appsS_IR, appsS_IC⟩
+
+/-- The app does not have the go-nitro payment rules: the answer of `q0`
+    lowers the pool, which is not the mover's own destination
+    (`pool_take`). -/
+theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := by
+  intro h
+  obtain ⟨hv, hlt, hd⟩ := pool_take
+  obtain ⟨q, -, hq⟩ := (((h.valid_iff _ _).1 hv).2.2 0 hlt).1
+  exact hd q hq
+
 theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
   intro h
-  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_IR (by decide)
+  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_desirable
+      (by decide)
       ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
     ⟨Ω, hΩ⟩ | ⟨Ω1, Ω2, hne, hE1, hE2⟩
   · exact not_finalizable Ω hΩ
@@ -1630,13 +1654,13 @@ theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E
 theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Nat) := by
   intro h
   refine not_finalizable O1 (h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow
-    appsS_IR (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
+    appsS_desirable (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
   · rw [List.mem_singleton.1 ht]
     exact ⟨[r0, s1], holds_r0s1, supports_r0s1⟩
   · by_contra hne
     exact hE (prevents_other Ω' hne)
 
-#print axioms appsS_IR
+#print axioms appsS_desirable
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 
