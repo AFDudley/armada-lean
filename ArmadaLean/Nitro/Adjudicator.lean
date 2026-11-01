@@ -298,6 +298,205 @@ def Adjudicator.apply (apps : Apps E) (caller : Participant) (op : Op E) (s : Ad
   | .conclude c ss => s.conclude c ss
   | .tick dt => some (s.tick dt)
 
+/-! ## One precondition and one effect per operation
+
+Repair pass step R.2 (armada-laconic `docs/process.md`, "The repair pass"). Each `Op`
+constructor has a decidable precondition `…Pre` and an effect `…Effect`. The effect takes
+the argument that the precondition checks as a subtype value that carries the proof, so a
+lemma about an effect needs no precondition hypothesis. `ArmadaLean/Nitro/OpEquations.lean`
+states `apply` in the form `if h : Pre then some (Effect ⟨_, h⟩) else none`. The bodies are
+the bodies of the operations above. `apply` does not change in this step.
+
+The go-nitro line numbers are those of the go-nitro contracts as armada-nitro vendored them
+unmodified, armada-nitro commit `8edacc10`, `src/nitro/`. -/
+
+/-- The precondition of `deposit`. go-nitro MultiAssetHolder.sol:38-64 `deposit`: the
+    destination is not external (line 44) and `held == expectedHeld` (lines 50-51). Only a
+    ledger channel accepts a deposit (operator ruling 2026-10-27, `ChannelKind`). A channel
+    address is fundable exactly when it is a ledger channel (`Address.fundable`). -/
+def Adjudicator.DepositPre (s : Adjudicator E) (a : Address E) (expectedHeld : Coins) : Prop :=
+  a.isExternal = false ∧ a.fundable = true ∧ s.balances.get a = expectedHeld
+
+instance (s : Adjudicator E) (a : Address E) (expectedHeld : Coins) :
+    Decidable (s.DepositPre a expectedHeld) :=
+  inferInstanceAs (Decidable (a.isExternal = false ∧ a.fundable = true ∧
+    s.balances.get a = expectedHeld))
+
+/-- The effect of `deposit`. go-nitro MultiAssetHolder.sol:38-64 `deposit`: the contract
+    receives the coins (lines 54-58) and `held += amount` (lines 60-62). -/
+def Adjudicator.depositEffect (s : Adjudicator E) (expectedHeld : Coins)
+    (a : {a : Address E // s.DepositPre a expectedHeld}) (x : Coins) : Adjudicator E :=
+  { s with balances := s.balances.add a.1 x, held := s.held + x }
+
+/-- The allocation that `transfer` pays from: the finalized allocation of `a`, when its first
+    entry for `b` is an `alloc` entry. go-nitro MultiAssetHolder.sol:75-110 `transfer` reads
+    the outcome of a finalized channel (`_apply_transfer_checks`, lines 112-134), and
+    `compute_transfer_effects_and_interactions` (lines 136-192) rejects a guarantee entry. -/
+def Adjudicator.transferSource? (s : Adjudicator E) (a : FixedPart) (b : Address E) :
+    Option (Allocation E) :=
+  match s.finalOutcome a.address with
+  | some (.allocation o) =>
+    match o.find b with
+    | some ⟨_, .alloc _⟩ => some o
+    | _ => none
+  | _ => none
+
+/-- The precondition of `transfer`. go-nitro MultiAssetHolder.sol:75-110 `transfer`: the
+    channel is finalized and the destination's entry is an `alloc` entry
+    (`transferSource?`). Only a ledger channel pays out, and a channel destination is a
+    ledger channel (operator ruling 2026-10-27, `ChannelKind`). -/
+def Adjudicator.TransferPre (s : Adjudicator E) (a : FixedPart) (b : Address E) : Prop :=
+  a.kind = .ledger ∧ b.fundable = true ∧ (s.transferSource? a b).isSome = true
+
+instance (s : Adjudicator E) (a : FixedPart) (b : Address E) : Decidable (s.TransferPre a b) :=
+  inferInstanceAs (Decidable (a.kind = .ledger ∧ b.fundable = true ∧
+    (s.transferSource? a b).isSome = true))
+
+/-- The effect of `transfer`. go-nitro MultiAssetHolder.sol:75-110 `transfer`: pay `b` the
+    amount that the holding of `a` affords (`compute_transfer_effects_and_interactions`,
+    lines 136-192), reduce the holding of `a` and the entry of `b` in the stored outcome
+    (`_apply_transfer_effects`, lines 204-209), and pay the destination
+    (`_executeSingleAssetExit`, lines 405-416). -/
+def Adjudicator.transferEffect (s : Adjudicator E) (b : Address E)
+    (a : {a : FixedPart // s.TransferPre a b}) : Adjudicator E :=
+  let o := (s.transferSource? a.1 b).get a.2.2.2
+  let x := o.paidTo (s.balances.get a.1.address) b
+  ((s.setStatus a.1 ((s.statusOf a.1).withOutcome (.allocation (o.reduceOwed b x)))).payTo b x)
+    |> fun s' => { s' with balances := s'.balances.sub a.1.address x }
+
+/-- The values that a `reclaim` reads: the ledger's finalized allocation, the target's
+    finalized allocation, and the two destinations of the ledger's guarantee entry for the
+    target. go-nitro MultiAssetHolder.sol:234-256 `reclaim`. -/
+structure ReclaimSource (E : Type) where
+  ledger : Allocation E
+  target : Allocation E
+  left : Address E
+  right : Address E
+
+/-- The values that `reclaim l v` reads, when every check passes. go-nitro
+    MultiAssetHolder.sol:261-315 `_apply_reclaim_checks` and MultiAssetHolder.sol:320-369
+    `compute_reclaim_effects`: both channels are finalized, the ledger's entry for the target
+    is a guarantee with two destinations, each destination has an entry in the ledger, and
+    the target's two amounts sum to the guarantee's amount. The target's outcome is the one
+    it finalized with (operator ruling 2026-10-27, `Adjudicator.reclaim`). -/
+def Adjudicator.reclaimSource? (s : Adjudicator E) (l v : FixedPart) :
+    Option (ReclaimSource E) :=
+  match s.finalOutcome l.address, s.finalizedWith v.address with
+  | some (.allocation oLedger), some (.allocation oTarget) =>
+    match oLedger.find v.address with
+    | some ⟨_, .guarantee x [left, right]⟩ =>
+      if (oLedger.remove v.address).find left ≠ none ∧
+          (oLedger.remove v.address).find right ≠ none ∧
+          oTarget.amountAt 0 + oTarget.amountAt 1 = x then
+        some ⟨oLedger, oTarget, left, right⟩
+      else
+        none
+    | _ => none
+  | _, _ => none
+
+/-- The precondition of `reclaim`. go-nitro MultiAssetHolder.sol:234-256 `reclaim` and its
+    checks (`reclaimSource?`). The ledger is a ledger channel and the target is a virtual
+    channel (operator ruling 2026-10-27, `ChannelKind`). -/
+def Adjudicator.ReclaimPre (s : Adjudicator E) (l v : FixedPart) : Prop :=
+  l.kind = .ledger ∧ v.kind = .virtual ∧ (s.reclaimSource? l v).isSome = true
+
+instance (s : Adjudicator E) (l v : FixedPart) : Decidable (s.ReclaimPre l v) :=
+  inferInstanceAs (Decidable (l.kind = .ledger ∧ v.kind = .virtual ∧
+    (s.reclaimSource? l v).isSome = true))
+
+/-- The effect of `reclaim`. go-nitro MultiAssetHolder.sol:320-369
+    `compute_reclaim_effects` and MultiAssetHolder.sol:374-398 `_apply_reclaim_effects`:
+    credit the target's two amounts to the two destinations in the ledger's allocation, and
+    delete the guarantee entry. The balances do not change (line 397). -/
+def Adjudicator.reclaimEffect (s : Adjudicator E) (v : FixedPart)
+    (l : {l : FixedPart // s.ReclaimPre l v}) : Adjudicator E :=
+  let r := (s.reclaimSource? l.1 v).get l.2.2.2
+  let o1 := r.ledger.addTo r.left (r.target.amountAt 0)
+  let o2 := o1.addTo r.right (r.target.amountAt 1)
+  s.setStatus l.1 ((s.statusOf l.1).withOutcome (.allocation (o2.remove v.address)))
+
+/-- The precondition of `challenge`. go-nitro ForceMove.sol:39-81 `challenge`: the candidate's
+    turn does not decrease the record in Open mode and increases it in Challenge mode
+    (lines 48-55), the proof supports the candidate (lines 57-60), and the challenger is a
+    participant (line 63). -/
+def Adjudicator.ChallengePre (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E) (candidate : State E) : Prop :=
+  challenger ∈ c.participants ∧
+    (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
+    ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
+     (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum))
+
+instance (apps : Apps E) (s : Adjudicator E) (challenger : Participant) (c : FixedPart)
+    (proof : SupportProof E) (candidate : State E) :
+    Decidable (s.ChallengePre apps challenger c proof candidate) :=
+  inferInstanceAs (Decidable (challenger ∈ c.participants ∧
+    (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
+    ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
+     (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum))))
+
+/-- The effect of `challenge`. go-nitro ForceMove.sol:39-81 `challenge`: the status becomes
+    the candidate's turn and `block.timestamp + challengeDuration` (lines 73-80). -/
+def Adjudicator.challengeEffect (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
+    (c : FixedPart) (proof : SupportProof E)
+    (candidate : {st : State E // s.ChallengePre apps challenger c proof st}) : Adjudicator E :=
+  s.setStatus c (.challenged candidate.1.turnNum ⟨candidate.1, s.now + c.challengeDuration⟩)
+
+/-- The precondition of `checkpoint`. go-nitro ForceMove.sol:90-119 `checkpoint`: the channel
+    is not finalized (line 99), the candidate's turn increases the record (line 100), and the
+    proof supports the candidate (lines 101-104). -/
+def Adjudicator.CheckpointPre (apps : Apps E) (s : Adjudicator E) (c : FixedPart)
+    (proof : SupportProof E) (candidate : State E) : Prop :=
+  (s.statusOf c).IsOpen s.now ∧
+    (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
+    (s.statusOf c).turnNumRecord < candidate.turnNum
+
+instance (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (proof : SupportProof E)
+    (candidate : State E) : Decidable (s.CheckpointPre apps c proof candidate) :=
+  inferInstanceAs (Decidable ((s.statusOf c).IsOpen s.now ∧
+    (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
+    (s.statusOf c).turnNumRecord < candidate.turnNum))
+
+/-- The effect of `checkpoint`. go-nitro ForceMove.sol:90-119 `checkpoint`: the status
+    becomes Open at the candidate's turn, and a running challenge is cleared
+    (lines 108-111). -/
+def Adjudicator.checkpointEffect (apps : Apps E) (s : Adjudicator E) (c : FixedPart)
+    (proof : SupportProof E) (candidate : {st : State E // s.CheckpointPre apps c proof st}) :
+    Adjudicator E :=
+  s.setStatus c (.open candidate.1.turnNum)
+
+/-- The precondition of `conclude`. go-nitro ForceMove.sol:127-132 `conclude` and
+    ForceMove.sol:140-170 `_conclude`: the channel is not finalized (line 147), the candidate
+    is final (line 148), and every participant signed it (lines 149-157). -/
+def Adjudicator.ConcludePre (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) : Prop :=
+  (s.statusOf c).IsOpen s.now ∧ ConclusionProof c ss
+
+instance (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) :
+    Decidable (s.ConcludePre c ss) :=
+  inferInstanceAs (Decidable ((s.statusOf c).IsOpen s.now ∧ ConclusionProof c ss))
+
+/-- The effect of `conclude`. go-nitro ForceMove.sol:140-170 `_conclude`: the channel
+    finalizes at once with the candidate's outcome (lines 160-167). The model keeps the
+    candidate's turn (`Adjudicator.conclude`). -/
+def Adjudicator.concludeEffect (s : Adjudicator E) (c : FixedPart)
+    (ss : {ss : SignedState E // s.ConcludePre c ss}) : Adjudicator E :=
+  s.setStatus c (.finalized ss.1.state.turnNum ss.1.state.outcome ss.1.state.outcome)
+
+/-- The precondition of `tick`: the clock does not move backward. go-nitro reads
+    `block.timestamp` (StatusManager.sol:17-30 `_mode`, line 25). No contract call moves the
+    clock and no contract check can stop it, so the precondition holds for every `dt`
+    (`Time` is `Nat`). -/
+def Adjudicator.TickPre (s : Adjudicator E) (dt : Time) : Prop := s.now ≤ s.now + dt
+
+instance (s : Adjudicator E) (dt : Time) : Decidable (s.TickPre dt) :=
+  inferInstanceAs (Decidable (s.now ≤ s.now + dt))
+
+/-- The effect of `tick`: the chain clock moves forward by `dt`. go-nitro
+    StatusManager.sol:17-30 `_mode` compares `finalizesAt` with `block.timestamp`
+    (line 25). -/
+def Adjudicator.tickEffect (s : Adjudicator E) (dt : {dt : Time // s.TickPre dt}) :
+    Adjudicator E :=
+  { s with now := s.now + dt.1 }
+
 /-- One successful on-chain step. -/
 inductive Step (apps : Apps E) : Adjudicator E → Adjudicator E → Prop
   | mk (caller : Participant) (op : Op E) (s s' : Adjudicator E)

@@ -67,12 +67,17 @@ intake_derivation:
 # Tier values are FULL model ids (not CLI aliases like `sonnet`): the claim-time
 # context-fit gate sizes each worker against omp's catalog entry for it
 # (context_fit_gate.omp_route: a Claude backend's model is `anthropic/<id>`).
+# `gpu5090` is the omp pool `pool/5090`: the local model on the 5090, which omp
+# promotes to Sonnet when a task outgrows its context window. The supervisor
+# (armada-laconic .scratch/supervise/supervisor.py, ROUTE_BY_MODEL) reads the tier
+# that `routing.default` names and routes this repo's pebbles to the 5090.
 worker_model:
   tiers:
     default: "anthropic/claude-sonnet-5"
     frontier: "anthropic/claude-opus-5"
+    gpu5090: "pool/5090"
   routing:
-    default: default
+    default: gpu5090
 
 # The ONE LLM transport this deployment reaches a model through (exo-698c / ADR
 # docs/decisions/2026-07-16-llm-transport-seam.md). Config-selected, fail-loud: a

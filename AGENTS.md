@@ -25,3 +25,7 @@ that kind of work — it is not optional.**
 
 When you dispatch a subagent into this repo, its task brief MUST point it at the
 doctrine above: a subagent starts blank and will not read it otherwise.
+
+## Repair pass
+
+A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.6, in the order R.6 gives; each operation equation is proved against its Spec statement.
