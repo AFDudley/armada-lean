@@ -1,0 +1,217 @@
+{
+  "id": "derived-aln-904",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proof of ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity has no `omega` call over 13 consumed hypotheses and no `decide` call on a goal over size 300. scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity.\nWhat holds now? Describe the current, observed state. At integrated 63b25c32, scripts/gate-baseline.json decision_findings holds {declaration: ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity, kind: decide_size, size: 331}: a `decide` call on a goal of size 331 (bound 300).\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json` and read decision_ok, decision_new_findings and lint_summary; read scripts/gate-baseline.json field decision_findings. Every Lean command runs through /home/rix/bin/lean-run.\nWhat constraints apply? State them in plain prose. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; when a recorded finding is gone, scripts/update_gate_baseline.py rewrites the baseline in the same branch. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity",
+  "restatement": "The Lean proof of ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity must be rewritten so its `decide` call no longer exceeds the decision-scope size bound of 300 (currently 331) and it has no `omega` call consuming more than 13 hypotheses, as measured by the decisionScope linter. Once fixed, the recorded baseline finding for this declaration in scripts/gate-baseline.json's decision_findings must be removed (since the violation no longer exists), and running scripts/check.sh --json must show decision_ok, decision_new_findings and lint_summary all passing/clean. No spec statement files may change, and a bare `lake clean` must never be run during the fix.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof of ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity has no `decide` call on a goal over size 300 (the current baseline records size 331)."
+    },
+    {
+      "id": "c2",
+      "text": "The proof of ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity has no `omega` call over 13 consumed hypotheses."
+    },
+    {
+      "id": "c3",
+      "text": "scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity."
+    },
+    {
+      "id": "c4",
+      "text": "Running scripts/check.sh --json shows decision_ok, decision_new_findings and lint_summary all indicating success, with every _ok field true against scripts/gate-baseline.json."
+    },
+    {
+      "id": "c5",
+      "text": "No spec statement files change: `git diff integrated -- 'ArmadaLean/Spec*'` is empty."
+    }
+  ],
+  "goal": "Shrink an oversized proof-checking step in one specific theorem so it passes an automated proof-complexity check, without touching any specification files.",
+  "acceptance_criteria": [
+    "Running the project's size-measurement tool against the nonvacuity proof must show that every 'decide' call inside it works on a goal no larger than 300 units, improving on the old recorded size of 331.",
+    "Checking that the specific proof of the nonvacuity theorem never calls the 'omega' tactic with more than 13 hypotheses pulled into its reasoning at once, as measured by the project's own decisionScope linter.",
+    "Checks that the project's baseline gate report file does not contain a decision-findings entry for the specific proof obligation ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity.",
+    "Anyone can run the project's check script with the --json flag and see a machine-readable summary stating that the decision check passed, no new findings were introduced, and the lint summary passed, with every individual '_ok' status flag reading true when compared against the committed baseline file.",
+    "Checking that none of the project's formal specification files were edited as part of this change \u2014 comparing against the 'integrated' baseline should show zero differences in any file under ArmadaLean/Spec."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's size-measurement tool against the nonvacuity proof must show that every 'decide' call inside it works on a goal no larger than 300 units, improving on the old recorded size of 331."
+    },
+    {
+      "id": "c2",
+      "text": "Checking that the specific proof of the nonvacuity theorem never calls the 'omega' tactic with more than 13 hypotheses pulled into its reasoning at once, as measured by the project's own decisionScope linter."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that the project's baseline gate report file does not contain a decision-findings entry for the specific proof obligation ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity."
+    },
+    {
+      "id": "c4",
+      "text": "Anyone can run the project's check script with the --json flag and see a machine-readable summary stating that the decision check passed, no new findings were introduced, and the lint summary passed, with every individual '_ok' status flag reading true when compared against the committed baseline file."
+    },
+    {
+      "id": "c5",
+      "text": "Checking that none of the project's formal specification files were edited as part of this change \u2014 comparing against the 'integrated' baseline should show zero differences in any file under ArmadaLean/Spec."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's size-measurement tool against the nonvacuity proof must show that every 'decide' call inside it works on a goal no larger than 300 units, improving on the old recorded size of 331.",
+      "proves": "Confirms that ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity's proof has been reworked so no decide call exceeds the 300 size threshold.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_decide_size.py",
+        "args": [
+          "ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "max_decide_size",
+          "op": "le",
+          "value": 300
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Checking that the specific proof of the nonvacuity theorem never calls the 'omega' tactic with more than 13 hypotheses pulled into its reasoning at once, as measured by the project's own decisionScope linter.",
+      "proves": "Confirms that ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity's proof contains no omega invocation consuming more than 13 hypotheses.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_omega_hyp_count.py",
+        "args": [
+          "ArmadaLean/Nitro/NonVacuity.lean",
+          "satp_theorem_3_2.nonvacuity"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "max_consumed_hyps",
+          "op": "le",
+          "value": 13
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that the project's baseline gate report file does not contain a decision-findings entry for the specific proof obligation ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity.",
+      "proves": "Confirms that scripts/gate-baseline.json has no decision_findings entry keyed ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity, as required by the clause.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_decision_finding.py",
+        "args": [
+          "scripts/gate-baseline.json",
+          "ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "has_entry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Anyone can run the project's check script with the --json flag and see a machine-readable summary stating that the decision check passed, no new findings were introduced, and the lint summary passed, with every individual '_ok' status flag reading true when compared against the committed baseline file.",
+      "proves": "scripts/check.sh --json reports overall success (decision_ok, decision_new_findings, lint_summary, and all _ok fields) when run against scripts/gate-baseline.json.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_new_findings",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_summary.ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Checking that none of the project's formal specification files were edited as part of this change \u2014 comparing against the 'integrated' baseline should show zero differences in any file under ArmadaLean/Spec.",
+      "proves": "The clause that no spec statement files change relative to the integrated branch.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_unchanged.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_empty",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_decide_size.py",
+    "scripts/check_no_decision_finding.py",
+    "scripts/check_omega_hyp_count.py",
+    "scripts/check_spec_unchanged.py"
+  ]
+}
