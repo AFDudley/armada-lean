@@ -113,18 +113,6 @@ theorem ArmadaLean.Nitro.Spec.turbo_value_is_value.witness : spec_premise% Armad
 theorem ArmadaLean.Nitro.Spec.turbo_order_independent.witness : spec_premise% ArmadaLean.Nitro.Spec.turbo_order_independent := by
   spec_witness ArmadaLean.Nitro.NonVacuity.turbo_order_independent.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.ledger_offload_funds_subchannel`, from `ArmadaLean.Nitro.NonVacuity.ledger_offload_funds_subchannel.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.ledger_offload_funds_subchannel.witness : spec_premise% ArmadaLean.Nitro.Spec.ledger_offload_funds_subchannel := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.ledger_offload_funds_subchannel.nonvacuity
-
-/-- The witness of `ArmadaLean.Nitro.Spec.subchannel_open_value_preserving`, from `ArmadaLean.Nitro.NonVacuity.subchannel_open_value_preserving.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.subchannel_open_value_preserving.witness : spec_premise% ArmadaLean.Nitro.Spec.subchannel_open_value_preserving := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.subchannel_open_value_preserving.nonvacuity
-
-/-- The witness of `ArmadaLean.Nitro.Spec.subchannel_close_value_preserving`, from `ArmadaLean.Nitro.NonVacuity.subchannel_close_value_preserving.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.subchannel_close_value_preserving.witness : spec_premise% ArmadaLean.Nitro.Spec.subchannel_close_value_preserving := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.subchannel_close_value_preserving.nonvacuity
-
 /-- The witness of `ArmadaLean.Nitro.Spec.ledger_topup_reorder_safe`, from `ArmadaLean.Nitro.NonVacuity.ledger_topup_reorder_safe.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.ledger_topup_reorder_safe.witness : spec_premise% ArmadaLean.Nitro.Spec.ledger_topup_reorder_safe := by
   spec_witness ArmadaLean.Nitro.NonVacuity.ledger_topup_reorder_safe.nonvacuity

@@ -1,6 +1,6 @@
 # Nitro theorems: property map
 
-This file maps the 189 prose properties of `armada-laconic/notes/statement-audit-2026-10-25/` to the Lean declarations under `ArmadaLean/Nitro/`. The 63 theorems of `Safety.lean` are proved; the 34 theorems of `Liveness.lean` have proof `sorry`, except the four that read no game definition. The statements are the deliverable.
+This file maps the 189 prose properties of `armada-laconic/notes/statement-audit-2026-10-25/` to the Lean declarations under `ArmadaLean/Nitro/`. The 63 theorems of `Safety.lean` are proved; the 31 theorems of `Liveness.lean` have proof `sorry`, except the four that read no game definition. Three more Liveness.lean theorems (the Nitro 2019 §5.3-§5.4 sub-channel construction) are block comments, not live declarations (operator ruling 2026-10-31, commented out 2026-11-01). The statements are the deliverable.
 
 Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the primary source of every declaration is the latest paper that covers it, SATP (2022), then Nitro (2019), then ForceMove (2018). Each definition was then checked against go-nitro at `64c4ee9a1` (`packages/nitro-protocol/contracts/`, last contract change `9d3a669e5`), fetched by a shallow clone under `.scratch/go-nitro`. Where the code corrects a paper, the code is followed and both are cited. Where the code differs only by encoding, the paper form is kept and the difference is noted.
 
@@ -18,8 +18,8 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
 | `ArmadaLean/Nitro/Lemmas.lean` | the `@[simp]` reading lemmas of balances, allocations, payouts, channel statuses and the operations; the coins-held invariant `Adjudicator.HeldInv` | no source: proof helpers for `Safety.lean` |
 | `ArmadaLean/Nitro/Safety.lean` | 63 theorems, all proved: on-chain safety, conservation, data operations | go-nitro and SATP first |
-| `ArmadaLean/Nitro/Liveness.lean` | 34 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2 | SATP §3; Nitro §4-5 |
-| `ArmadaLean/Nitro/NonVacuity.lean` | one proved witness per theorem with hypotheses (verification.md §5a): 54 for `Safety.lean`, 34 for `Liveness.lean`; the strategies "conclude now" and "wait until the deadline" | no source: acceptance check |
+| `ArmadaLean/Nitro/Liveness.lean` | 31 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2; three more sub-channel theorems are block comments (operator ruling 2026-10-31) | SATP §3; Nitro §4-5 |
+| `ArmadaLean/Nitro/NonVacuity.lean` | one proved witness per theorem with hypotheses (verification.md §5a): 54 for `Safety.lean`, 31 for `Liveness.lean`; the strategies "conclude now" and "wait until the deadline" | no source: acceptance check |
 
 ## Paper vs code: where go-nitro is followed over the latest paper
 
@@ -335,7 +335,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 - theorem: 94
 - total: 189
 
-## Theorems (97)
+## Theorems (94)
 
 | Theorem | Module | Meaning | Property ids | Source |
 |---|---|---|---|---|
@@ -418,9 +418,9 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `turbo_value_is_value` | `Liveness.lean` | The Turbo Value Algorithm computes the value of a network state. | Nitro-18, Nitro-33, Nitro-34, Nitro-35 | Nitro:482-484 |
 | `turbo_order_independent` | `Liveness.lean` | Exhausted transfer sequences give the same balances. | Nitro-36 | Nitro:842-843 |
 | `turbo_value_exists_unique` | `Liveness.lean` | On a DAG the Turbo value exists and is unique over all topological orders. | Nitro-32, Nitro-33, Nitro-36 | Nitro:819 |
-| `ledger_offload_funds_subchannel` | `Liveness.lean` | A ledger channel funds its sub-channel for both participants. | Nitro-37, Nitro-47, docs-0060-07, docs-0080-08 | Nitro:859-865 |
-| `subchannel_open_value_preserving` | `Liveness.lean` | Opening a sub-channel preserves value. | Nitro-49, docs-0060-07 | Nitro:891-922 |
-| `subchannel_close_value_preserving` | `Liveness.lean` | Closing a sub-channel preserves value. | Nitro-49, docs-0080-07 | Nitro:939-957 |
+| `ledger_offload_funds_subchannel` | `Liveness.lean` | out of scope: commented out in `ArmadaLean/Nitro/Liveness.lean` (reason: SATP assumes it as a precondition, SATP:385-388; go-nitro has no objective that funds a sub-channel from a ledger allocation, `protocols/readme.md`; operator ruling 2026-10-31) | Nitro-37, Nitro-47, docs-0060-07, docs-0080-08 | Nitro:859-865 |
+| `subchannel_open_value_preserving` | `Liveness.lean` | out of scope: commented out in `ArmadaLean/Nitro/Liveness.lean` (reason: SATP assumes it as a precondition, SATP:385-388; go-nitro has no objective that funds a sub-channel from a ledger allocation, `protocols/readme.md`; operator ruling 2026-10-31) | Nitro-49, docs-0060-07 | Nitro:891-922 |
+| `subchannel_close_value_preserving` | `Liveness.lean` | out of scope: commented out in `ArmadaLean/Nitro/Liveness.lean` (reason: SATP assumes it as a precondition, SATP:385-388; go-nitro has no objective that funds a sub-channel from a ledger allocation, `protocols/readme.md`; operator ruling 2026-10-31) | Nitro-49, docs-0080-07 | Nitro:939-957 |
 | `ledger_topup_reorder_safe` | `Liveness.lean` | Moving A to the end of an underfunded ledger pays A the same. | Nitro-49, docs-0060-05 | Nitro:959-995 |
 | `ledger_topup_deposit_funds` | `Liveness.lean` | After the top-up deposit every entry is affordable in full. | Nitro-04, Nitro-49, docs-0060-05 | Nitro:989-995 |
 | `ledger_partial_withdrawal` | `Liveness.lean` | A partial withdrawal pays A with no wait and funds the new ledger. | Nitro-49 | Nitro:997-1047 |
@@ -432,9 +432,11 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `satp_end_user_recovers` | `Liveness.lean` | The end-user analogue of Theorem 3.2 for Alice. | SATP-20 | SATP:500-501 |
 | `satp_reclaim_credits_intermediary` | `Liveness.lean` | Two reclaims credit the intermediary with a + b and delete the guarantees. | SATP-15, SATP-20 | SATP:484-485 |
 
-Out of scope (operator ruling 2026-10-31): the three Nitro 2019 §5.3-§5.4 sub-channel theorems
-marked above. SATP assumes their result as a precondition: "we assume as a precondition that all
-ledger channels are fully-funded – each item listed in its outcome" (SATP:385-388). go-nitro has
-no objective that funds a sub-channel from a ledger allocation (`protocols/readme.md`). The
-statements stay for reference. Armada does not depend on them, and no proof work is dispatched on
-them. Their open proofs still count in `scripts/check.sh` until the spec-module check replaces it.
+Out of scope (operator ruling 2026-10-31, commented out 2026-11-01): the three Nitro 2019
+§5.3-§5.4 sub-channel theorems marked above. SATP assumes their result as a precondition: "we
+assume as a precondition that all ledger channels are fully-funded – each item listed in its
+outcome" (SATP:385-388). go-nitro has no objective that funds a sub-channel from a ledger
+allocation (`protocols/readme.md`). Armada does not depend on them. Their statements and open
+proofs are block comments in `ArmadaLean/Nitro/Liveness.lean`, not live declarations.
+`scripts/check.sh` no longer counts them. Restore only if Armada funds sub-channels by the
+Nitro 2019 §5.3-§5.4 construction.

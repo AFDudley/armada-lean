@@ -22,8 +22,7 @@ from the checked environment on each run.
 - nonvacuity_ok: every spec entry with a hypothesis has its witness
   `N.Spec.x.witness : spec_premise% N.Spec.x`, with allowed axioms. A witness
   proved by `sorry` is open required work (`witness_open`).
-- sorry: the spec theorems whose axioms include `sorryAx`, except the ones marked
-  "Out of scope (operator ruling …)" (`out_of_scope_open`).
+- sorry: the spec theorems whose axioms include `sorryAx`.
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
 """
 from __future__ import annotations
@@ -64,8 +63,6 @@ def main() -> int:
     members: list[dict] = []
     helpers: list[dict] = []
     sorry: list[str] = []
-    oos: list[str] = []
-    oos_open: list[str] = []
     witness_open: list[str] = []
     every_state: list[str] = []
     vacuous: list[str] = []
@@ -87,11 +84,8 @@ def main() -> int:
         member_specs = set()
         for t in members:
             name = t["name"]
-            out = spec_lib.is_out_of_scope(t["doc"])
-            if out:
-                oos.append(name)
             if "sorryAx" in t["axioms"]:
-                (oos_open if out else sorry).append(name)
+                sorry.append(name)
             for a in bad_axioms(t["axioms"]):
                 fails["axioms"].append(f"{name} depends on the axiom {a}, which asserts a property")
             spec = t["spec"]
@@ -120,7 +114,7 @@ def main() -> int:
                     for a in bad_axioms(w["axioms"]):
                         fails["nonvacuity"].append(f"{w['name']} depends on the axiom {a}, "
                                                    "which asserts a property")
-                    if "sorryAx" in w["axioms"] and not out:
+                    if "sorryAx" in w["axioms"]:
                         witness_open.append(name)
         for d in report["spec_defs"]:
             if d not in member_specs:
@@ -194,8 +188,6 @@ def main() -> int:
     for n in sorted(sorry):
         say(json_mode, f"SORRY {n}")
     say(json_mode, f"SORRY_COUNT {len(sorry)}")
-    for n in sorted(oos):
-        say(json_mode, f"OUT_OF_SCOPE {n}" + (" (open)" if n in oos_open else ""))
     for n in sorted(witness_open):
         say(json_mode, f"WITNESS_OPEN {n}")
     runtime = round(time.monotonic() - t0, 1)
@@ -218,8 +210,6 @@ def main() -> int:
                 n == theorem or n.endswith("." + theorem) for n in sorry),
             "spec_count": len(members),
             "helper_count": len(helpers),
-            "out_of_scope": sorted(oos),
-            "out_of_scope_open": sorted(oos_open),
             "witness_open": sorted(witness_open),
             "every_state": sorted(every_state),
             "vacuous_defs": vacuous,

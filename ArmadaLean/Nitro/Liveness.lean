@@ -7080,6 +7080,14 @@ theorem turbo_value_exists_unique (s : DAGOutcomeNetwork E) (n : Address E) :
     (order2.filter (fun x => !(s.allocationOf x).isEmpty)) (hnd2.filter _) hmem' hext1
     hvalid1 hvalid2 s.balances n
 
+/- Out of scope (operator ruling 2026-10-31): a Nitro 2019 §5.3-§5.4 sub-channel
+    construction. SATP assumes this result as a precondition: "In this paper, we
+    assume as a precondition that all ledger channels are fully-funded – each item
+    listed in its outcome" (SATP:385-388). go-nitro has no objective that funds a
+    sub-channel from a ledger allocation (`protocols/readme.md`). Armada does not
+    depend on this theorem. Restore only if Armada funds sub-channels by the Nitro
+    2019 §5.3-§5.4 construction.
+
 /-- Nitro-37, Nitro-47, docs-0060-07, docs-0080-08. Nitro:859-865: "χ is funded with 6 coins by
     L for both A and B ... Once it is on-chain, the transfer operation
     T(L, χ, 6) is all that is required to make χ directly funded. From the
@@ -7100,6 +7108,15 @@ theorem ledger_offload_funds_subchannel (apps : Apps E) (Ts : Threats E apps) (v
     (hχsent : ∀ p, ∀ t ∈ (v p).sent, t.state.channel = w.χ → t.state.isFinal = false) :
     FundedFor apps (Ts.T w.A) w.χ w.c (v w.A) ∧ FundedFor apps (Ts.T w.B) w.χ w.c (v w.B) := by
   sorry
+-/
+
+/- Out of scope (operator ruling 2026-10-31): a Nitro 2019 §5.3-§5.4 sub-channel
+    construction. SATP assumes this result as a precondition: "In this paper, we
+    assume as a precondition that all ledger channels are fully-funded – each item
+    listed in its outcome" (SATP:385-388). go-nitro has no objective that funds a
+    sub-channel from a ledger allocation (`protocols/readme.md`). Armada does not
+    depend on this theorem. Restore only if Armada funds sub-channels by the Nitro
+    2019 §5.3-§5.4 construction.
 
 /-- Nitro-49 (Nitro:891-922, §5.4.1 Opening a Sub-channel), docs-0060-07. From
     `⟦L : x⟧, [L ↦ (A : a, B : b)]_{A,B}` and `[χ ↦ (A : a', B : b')]_{A,B}`
@@ -7130,6 +7147,15 @@ theorem subchannel_open_value_preserving (apps : Apps E) (Ts : Threats E apps) (
     (hother : ∀ p, p = A ∨ p = B → (v p).chain = (v' p).chain) :
     SameValue apps (Ts.T A) dA (v A) (v' A) ∧ SameValue apps (Ts.T B) dB (v B) (v' B) := by
   sorry
+-/
+
+/- Out of scope (operator ruling 2026-10-31): a Nitro 2019 §5.3-§5.4 sub-channel
+    construction. SATP assumes this result as a precondition: "In this paper, we
+    assume as a precondition that all ledger channels are fully-funded – each item
+    listed in its outcome" (SATP:385-388). go-nitro has no objective that funds a
+    sub-channel from a ledger allocation (`protocols/readme.md`). Armada does not
+    depend on this theorem. Restore only if Armada funds sub-channels by the Nitro
+    2019 §5.3-§5.4 construction.
 
 /-- Nitro-49 (Nitro:939-957, §5.4.2 Closing a Sub-channel), docs-0080-07. From
     `[L ↦ (A : a, B : b, χ : c)]_{A,B}` and the concluded
@@ -7155,6 +7181,7 @@ theorem subchannel_close_value_preserving (apps : Apps E) (Ts : Threats E apps) 
     SameValue apps (Ts.T w.A) w.dA (v w.A) (v' w.A) ∧
       SameValue apps (Ts.T w.B) w.dB (v w.B) (v' w.B) := by
   sorry
+-/
 
 /-- Nitro-49 (Nitro:959-995, §5.4.3 Topping Up a Ledger Channel), docs-0060-05.
     Nitro:982-985: moving `A`'s entry to the end with the larger total

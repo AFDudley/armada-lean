@@ -6,8 +6,6 @@ Nothing here is a stored list of names, counts or signatures. The rules are:
 - `citations`: the source-citation forms of `armada-laconic/docs/lean/writing-lean.md`
   §11. A `theorem` whose doc comment has one is a spec theorem (operator decision
   2026-10-31, decision 1). Every other `theorem` is a helper.
-- `is_out_of_scope`: the marker "Out of scope (operator ruling YYYY-MM-DD)" in the
-  doc comment (decision 4).
 - `every_state_reason`: the line "Every state: REASON" in a spec definition's doc
   comment (decision 2).
 - `run_report`: the computed facts of `scripts/spec_report.lean`.
@@ -33,7 +31,6 @@ _PROPERTY_ID = re.compile(
 )
 CITATION_FORMS = (_PAPER, _CONTRACT, _RULING, _PROPERTY_ID)
 
-_OUT_OF_SCOPE = re.compile(r"Out of scope \(operator ruling \d{4}-\d{2}-\d{2}\)")
 _EVERY_STATE = re.compile(r"^\s*Every state:\s*(\S.*?)\s*$", re.MULTILINE)
 _THEOREM_KEYWORD = re.compile(r"\btheorem\s")
 
@@ -45,10 +42,6 @@ if not os.path.exists(LAKE):
 def citations(doc: str) -> list[str]:
     """The source citations in a doc comment, in the §11 forms."""
     return sorted({m.group(0) for pat in CITATION_FORMS for m in pat.finditer(doc)})
-
-
-def is_out_of_scope(doc: str) -> bool:
-    return bool(_OUT_OF_SCOPE.search(doc))
 
 
 def every_state_reason(doc: str) -> str | None:

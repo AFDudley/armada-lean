@@ -44,10 +44,13 @@ these forms, are helpers by this rule. Examples: `transact_value_conserved`,
 `mitigated_attack_unprofitable`. To make one of them a spec theorem, add a §11 citation to its
 doc comment and run `scripts/convert_spec.py`. That is a statement decision for the operator.
 
-**Out of scope (decision 4).** A spec theorem whose doc comment contains "Out of scope
-(operator ruling YYYY-MM-DD)" stays in the tree and keeps its spec definition. The report
-lists it in `out_of_scope`. Its open proof is in `out_of_scope_open`, not in `sorry`. Its
-open witness is not in `witness_open`.
+**Out of scope (decision 4, removed 2026-11-01).** The check once read the marker "Out of
+scope (operator ruling YYYY-MM-DD)" in a spec theorem's doc comment, kept its open proof out of
+`sorry`, and reported it in `out_of_scope`/`out_of_scope_open`. The three theorems that carried
+the marker (`ledger_offload_funds_subchannel`, `subchannel_open_value_preserving`,
+`subchannel_close_value_preserving`) are block comments now, not live declarations, so the
+marker has no reader. The mechanism, the `is_out_of_scope` rule and the two JSON fields are
+removed.
 
 ## 3. Statement protection by type
 
@@ -175,7 +178,7 @@ that the open pebble specs read keep their names:
 | Field | Old meaning (`check.sh`) | New meaning |
 |---|---|---|
 | `build_ok` | `lake build` exits 0 | The same. The build now also runs `#check_spec_bindings`. |
-| `sorry` | theorems with a literal `sorry` in their body | spec theorems whose axioms include `sorryAx`, without the out-of-scope ones |
+| `sorry` | theorems with a literal `sorry` in their body | spec theorems whose axioms include `sorryAx` |
 | `sorry_count` | length of `sorry` | the same |
 | `theorem_under_test` | the argument, echoed | the same |
 | `theorem_in_sorry` | the argument (or a name that ends in `.ARG`) is in `sorry` | the same |
@@ -184,8 +187,8 @@ that the open pebble specs read keep their names:
 | `nonvacuity_ok` | `NonVacuity.lean` has no `sorry` | every spec entry with a hypothesis has a witness of its premise, with axioms that pass §6 |
 | `reach_ok` | baseline theorems over a state name `Reachable*` or have a TSV row | every spec entry over a state type has a `ReachableState` binder or an "Every state:" line |
 
-New fields: `spec_count`, `helper_count`, `out_of_scope`, `out_of_scope_open`,
-`witness_open`, `every_state`, `vacuous_defs`, `failures`, `runtime_seconds`.
+New fields: `spec_count`, `helper_count`, `witness_open`, `every_state`, `vacuous_defs`,
+`failures`, `runtime_seconds`.
 
 A pebble that reads `theorem_in_sorry` reads the same answer for a spec theorem. A helper is
 not in `sorry` any more: an open helper shows in `sorry` through the spec theorems that use it.
