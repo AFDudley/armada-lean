@@ -1,0 +1,260 @@
+{
+  "id": "derived-aln-b3e",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proofs of ArmadaLean.Nitro.conclude_can_happen, ArmadaLean.Nitro.conclude_needs_all, ArmadaLean.Nitro.conclude_requires, ArmadaLean.Nitro.conclude_moves_no_value do not unfold Adjudicator.apply or case on Op; they rewrite with Adjudicator.apply_conclude_equation (ArmadaLean/Nitro/OpEquations.lean). The type-doctrine linter reports no layerDiscipline finding for any of these declarations. Statements do not change.\nWhat holds now? Describe the current, observed state. At integrated 4a9e9981, `lake env lean scripts/type_lint.lean` prints a layerDiscipline finding (linter layerDiscipline, with baseOps) for each of ArmadaLean.Nitro.conclude_can_happen, ArmadaLean.Nitro.conclude_needs_all, ArmadaLean.Nitro.conclude_requires, ArmadaLean.Nitro.conclude_moves_no_value. The trunk has 35 Nitro layerDiscipline hits in total.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and then `lake env lean scripts/type_lint.lean`; read the JSON lines whose linter field is layerDiscipline and their declaration field. Then run `scripts/check.sh --json`.\nWhat constraints apply? State them in plain prose. Every Lean command runs through /home/rix/bin/lean-run. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true, lint_ok included, against scripts/gate-baseline.json. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Safety.lean and the other modules that hold the proofs of ArmadaLean.Nitro.conclude_can_happen, ArmadaLean.Nitro.conclude_needs_all, ArmadaLean.Nitro.conclude_requires, ArmadaLean.Nitro.conclude_moves_no_value",
+  "restatement": "The proofs of four Lean declarations (ArmadaLean.Nitro.conclude_can_happen, conclude_needs_all, conclude_requires, conclude_moves_no_value) must be rewritten to use the Adjudicator.apply_conclude_equation rewrite rule instead of unfolding Adjudicator.apply or casing on Op, without changing their statements, so that the type-doctrine linter no longer reports a layerDiscipline finding for any of these four declarations, while keeping the overall gate (scripts/check.sh --json) passing and leaving all Spec files unchanged.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proofs of ArmadaLean.Nitro.conclude_can_happen, conclude_needs_all, conclude_requires, and conclude_moves_no_value must not unfold Adjudicator.apply or case on Op; they must rewrite with Adjudicator.apply_conclude_equation (ArmadaLean/Nitro/OpEquations.lean)."
+    },
+    {
+      "id": "c2",
+      "text": "After the fix, `lake env lean scripts/type_lint.lean` must print no layerDiscipline finding (linter layerDiscipline, with baseOps) for any of the four named declarations."
+    },
+    {
+      "id": "c3",
+      "text": "The statements of the four proofs must not change."
+    },
+    {
+      "id": "c4",
+      "text": "`git diff integrated -- 'ArmadaLean/Spec*'` must be empty (no spec statement changes)."
+    },
+    {
+      "id": "c5",
+      "text": "`scripts/check.sh --json` must keep every _ok field true, including lint_ok, against scripts/gate-baseline.json."
+    },
+    {
+      "id": "c6",
+      "text": "A bare `lake clean` must never be run as part of the fix."
+    }
+  ],
+  "goal": "Fix four proofs in the Nitro Lean module so an automated linter stops flagging them for not following the project's required proof style, without changing what those proofs claim to show or breaking any other checks.",
+  "acceptance_criteria": [
+    "Checks that the written-out proofs for the four named lemmas (conclude_can_happen, conclude_needs_all, conclude_requires, conclude_moves_no_value) in the Nitro source avoid manually unfolding Adjudicator.apply or case-splitting on Op, and instead rewrite using the shared apply_conclude_equation lemma.",
+    "Runs the project's lean type-lint check and confirms that it reports zero layerDiscipline findings tied to baseOps for the four declarations named in the fix, showing the issue has been resolved.",
+    "Anyone can verify that the exact wording of the four proofs' statements is still the same text as before this change set was made.",
+    "After a task is finished, the Spec files under ArmadaLean/Spec should look exactly the same as they did on the integrated branch \u2014 nobody is allowed to sneak in changes to the formal spec statements.",
+    "Running the project's check script in JSON mode should report that every quality gate, including linting, is passing, with no field reporting false.",
+    "A check confirms that the changes made to fix the issue never contain a bare, standalone 'lake clean' command (with no extra flags) anywhere in the repository's tracked files or commit history for this fix."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Checks that the written-out proofs for the four named lemmas (conclude_can_happen, conclude_needs_all, conclude_requires, conclude_moves_no_value) in the Nitro source avoid manually unfolding Adjudicator.apply or case-splitting on Op, and instead rewrite using the shared apply_conclude_equation lemma."
+    },
+    {
+      "id": "c2",
+      "text": "Runs the project's lean type-lint check and confirms that it reports zero layerDiscipline findings tied to baseOps for the four declarations named in the fix, showing the issue has been resolved."
+    },
+    {
+      "id": "c3",
+      "text": "Anyone can verify that the exact wording of the four proofs' statements is still the same text as before this change set was made."
+    },
+    {
+      "id": "c4",
+      "text": "After a task is finished, the Spec files under ArmadaLean/Spec should look exactly the same as they did on the integrated branch \u2014 nobody is allowed to sneak in changes to the formal spec statements."
+    },
+    {
+      "id": "c5",
+      "text": "Running the project's check script in JSON mode should report that every quality gate, including linting, is passing, with no field reporting false."
+    },
+    {
+      "id": "c6",
+      "text": "A check confirms that the changes made to fix the issue never contain a bare, standalone 'lake clean' command (with no extra flags) anywhere in the repository's tracked files or commit history for this fix."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Checks that the written-out proofs for the four named lemmas (conclude_can_happen, conclude_needs_all, conclude_requires, conclude_moves_no_value) in the Nitro source avoid manually unfolding Adjudicator.apply or case-splitting on Op, and instead rewrite using the shared apply_conclude_equation lemma.",
+      "proves": "Confirms that these four proofs rely on the single Adjudicator.apply_conclude_equation rewrite rather than duplicating logic by unfolding apply or pattern-matching on Op, as the clause requires.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_conclude_proofs.py",
+        "args": [
+          "ArmadaLean/Nitro/OpEquations.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_use_equation",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "any_unfold_or_cases",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 60,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Runs the project's lean type-lint check and confirms that it reports zero layerDiscipline findings tied to baseOps for the four declarations named in the fix, showing the issue has been resolved.",
+      "proves": "The fix removes all layerDiscipline linter findings (with baseOps) for the four named declarations when the type_lint script is run.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_type_lint_check.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "layerDiscipline_findings_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 2,
+      "timeout_seconds": 120,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Anyone can verify that the exact wording of the four proofs' statements is still the same text as before this change set was made.",
+      "proves": "Confirms the clause that the statements of the four proofs must not change by comparing their current wording against the originally recorded wording and failing if even one character differs.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_proof_statements.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "statements_unchanged",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 30,
+      "clause_id": "c3"
+    },
+    {
+      "description": "After a task is finished, the Spec files under ArmadaLean/Spec should look exactly the same as they did on the integrated branch \u2014 nobody is allowed to sneak in changes to the formal spec statements.",
+      "proves": "No modifications were made to any ArmadaLean/Spec* files relative to the integrated branch.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_unchanged.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_empty",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Running the project's check script in JSON mode should report that every quality gate, including linting, is passing, with no field reporting false.",
+      "proves": "scripts/check.sh --json reports all *_ok fields (including lint_ok) as true, consistent with the committed gate baseline",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_and_report.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok_true",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c5"
+    },
+    {
+      "description": "A check confirms that the changes made to fix the issue never contain a bare, standalone 'lake clean' command (with no extra flags) anywhere in the repository's tracked files or commit history for this fix.",
+      "proves": "The fix does not run a bare 'lake clean' command as part of its process, as required by the project's rules.",
+      "restatement_clause_id": "c6",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_found",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c6"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_conclude_proofs.py",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_proof_statements.py",
+    "scripts/check_spec_unchanged.py",
+    "scripts/run_check_and_report.py",
+    "scripts/run_type_lint_check.py"
+  ]
+}
