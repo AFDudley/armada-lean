@@ -15,10 +15,16 @@
   Both statements still fail (`finalizable_or_two_enabled_false`,
   `single_enabled_is_finalizable_false`).
 
-  The channel `c0` has the participants `[q0, p0]`, so `q0` moves at even
-  turns and the honest `p0` at odd turns (`n = 2`). At `net1`, `p0` sent `s1`
-  (turn 1, outcome `O1 = pay 5 5`) and received `r0` (turn 0, signed by `q0`).
-  `p0` holds the support `[r0, s1]` of `s1`.
+  The channel `c0` is a ledger channel with the participants `[q0, p0]`, so
+  `q0` moves at even turns and the honest `p0` at odd turns (`n = 2`). The
+  play starts after full funding: `p0` deposits its share 5 (its own
+  `deposit` call), then `q0` deposits its share 5, so `c0` holds 10, the
+  whole of `O1` (`net1_funded`). At `net1`, `p0` sent `s1` (turn 1, outcome
+  `O1 = pay 5 5`) and received `r0` (turn 0, signed by `q0`). `p0` holds the
+  support `[r0, s1]` of `s1`. The funding changes only the balances: a
+  transfer or a reclaim of `c0` needs a final status and keeps the
+  finalized outcome (`status_cases`, `StE`, `SafeA`, `KX.noFin`), so no step
+  of the gift play depends on it.
   * `O1` is enabled (`enabled_O1`): the adversary challenges with `[r0, s1]`.
     `p0` cannot answer, because an answer needs a state of `q0` at turn 2.
   * No outcome but `O1` is enabled (`prevents_other`): every other outcome
@@ -114,12 +120,10 @@ theorem ansQ_ne (Ω : Outcome Nat) : ansQ Ω ≠ Ω := by
     intro h
     exact hne 5 4 (by rw [← h]; rfl)
 
-/-- A virtual channel: no transfer and no reclaim writes its status. `q0`
-    moves at even turns, `p0` at odd turns. -/
+/-- A ledger channel, so that both parties can deposit into it. `q0` moves
+    at even turns, `p0` at odd turns. -/
 def c0 : FixedPart :=
-  { participants := [q0, p0], nonce := 0, appDef := ⟨0⟩, challengeDuration := 6, kind := .virtual }
-
-theorem c0_not_ledger : c0.kind ≠ .ledger := by decide
+  { participants := [q0, p0], nonce := 0, appDef := ⟨0⟩, challengeDuration := 6, kind := .ledger }
 
 theorem c0_n : c0.n = 2 := rfl
 
@@ -191,20 +195,53 @@ theorem mkRound {apps : Apps Nat} {m : HonestMove Nat} {n n' : NetworkState Nat 
     T0.Round apps m n n' :=
   ⟨hseq, by rw [hnow]; exact Nat.add_lt_add_left (show 1 < T0.ε by decide) _⟩
 
-def net1 : NetworkState Nat p0 := ⟨Adjudicator.genesis, [r0], [s1]⟩
+/-! ## The funded start
+
+`p0` deposits its share 5 (its own `deposit` call, the fourth step of
+`Nitro.participantWith`), then `q0` deposits its share 5. `c0` then holds 10,
+the whole of `O1` (`net1_funded`). -/
+
+/-- The deposit of `p0`: 5 into `c0`, which holds 0. -/
+def depP : Op Nat := .deposit (.channel c0) 0 5
+/-- The deposit of `q0`: 5 into `c0`, which holds 5. -/
+def depQ : Op Nat := .deposit (.channel c0) 5 5
+
+/-- The chain after `p0`'s deposit. -/
+def s5 : Adjudicator Nat :=
+  { Adjudicator.genesis with balances := Adjudicator.genesis.balances.add (.channel c0) 5, held := 5 }
+/-- The chain after both deposits: `c0` holds 10. -/
+def sF : Adjudicator Nat := { s5 with balances := s5.balances.add (.channel c0) 5, held := 10 }
+
+theorem depP_apply : Adjudicator.genesis.apply appsS p0 depP = some s5 := rfl
+theorem depQ_apply : s5.apply appsS q0 depQ = some sF := rfl
+
+def net1 : NetworkState Nat p0 := ⟨sF, [r0], [s1]⟩
+
+/-- `c0` holds 10 coins at `net1`: both shares of `O1`. -/
+theorem net1_funded : net1.chain.DirectlyFundedWith c0 10 := by
+  show 10 ≤ sF.balances.get c0.address
+  decide
 
 theorem unforged_r0 (n : NetworkState Nat p0) : n.Unforged r0 :=
   ⟨fun h => absurd (List.mem_singleton.1 h) p0_ne_q0, fun v hv => by simp [r0, st, State.voucher?] at hv⟩
 
 theorem send_feasible :
-    (HonestMove.send (st 1 O1)).Feasible (⟨Adjudicator.genesis, [r0], []⟩ : NetworkState Nat p0) :=
+    (HonestMove.send (st 1 O1)).Feasible (⟨sF, [r0], []⟩ : NetworkState Nat p0) :=
   (HonestMove.Feasible_send _ _).mpr
     ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩
 
 theorem net1_reachable : (Nitro.participant appsS T0).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
-  refine .tail (.tail .refl ?_) (Or.inl ⟨.send (st 1 O1), send_feasible, rfl⟩)
-  exact Or.inr (Or.inr (Or.inl ⟨.deliver r0, unforged_r0 _, fun op h => (by cases h), rfl⟩))
+  have h1 : (⟨Adjudicator.genesis, [], []⟩ : NetworkState Nat p0).applyAdv appsS (.land depP) =
+      ⟨s5, [], []⟩ := NetworkState.applyAdv_land_some appsS depP_apply
+  have h2 : (⟨s5, [], []⟩ : NetworkState Nat p0).applyAdv appsS (.chain q0 depQ) = ⟨sF, [], []⟩ :=
+    NetworkState.applyAdv_chain_some appsS depQ_apply
+  refine .tail (b := ⟨sF, [r0], []⟩) ?_ (Or.inl ⟨.send (st 1 O1), send_feasible, rfl⟩)
+  refine .tail (b := ⟨sF, [], []⟩) ?_
+    (Or.inr (Or.inr (Or.inl ⟨.deliver r0, unforged_r0 _, fun op h => (by cases h), rfl⟩)))
+  refine .tail (b := ⟨s5, [], []⟩) ?_ (Or.inr (Or.inr (Or.inl ⟨.chain q0 depQ,
+    ⟨by decide, fun ss hss => by cases hss⟩, fun op h => (by cases h), h2.symm⟩)))
+  exact .tail .refl (Or.inr (Or.inr (Or.inr ⟨.channel c0, 0, 5, h1.symm⟩)))
 
 theorem supports_r0s1 : (appsS c0.appDef).supports c0 [r0, s1] (st 1 O1) = true := by decide
 
@@ -287,8 +324,9 @@ theorem conclusion_p0 {ss : SignedState Nat} (h : ConclusionProof c0 ss) : p0 �
   obtain ⟨hch, -, hall⟩ := h
   exact hall p0 (by rw [hch]; decide)
 
-/-- One successful operation on `c0`: the status it leaves. A transfer or
-    a reclaim of the virtual `c0` reverts. -/
+/-- One successful operation on `c0`: the status it leaves. A transfer or a
+    reclaim of the ledger `c0` pays out from a final status, and keeps its
+    finalized outcome (`ChannelStatus.withOutcome`). -/
 theorem status_cases {s s' : Adjudicator Nat} {caller : Participant} {op : Op Nat}
     (h : s.apply appsS caller op = some s') :
     s'.statusOf c0 = s.statusOf c0 ∨
@@ -300,32 +338,16 @@ theorem status_cases {s s' : Adjudicator Nat} {caller : Participant} {op : Op Na
     (∃ P cand, op = .checkpoint c0 P cand ∧ (appsS c0.appDef).supports c0 P cand = true ∧
       (s.statusOf c0).IsOpen s.now ∧ (s.statusOf c0).turnNumRecord < cand.turnNum ∧
       s'.statusOf c0 = .open cand.turnNum) ∨
-    (∃ ss, op = .conclude c0 ss ∧ ConclusionProof c0 ss) := by
-  by_cases ht : Op.targets op c0
-  · cases op with
-    | deposit a e x => simp [Op.targets] at ht
-    | tick dt => simp [Op.targets] at ht
-    | transfer a b =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨-, -, -, -, -, -, -, -, -, -, hk, -⟩ := Adjudicator.transfer_some h
-      exact absurd hk c0_not_ledger
-    | reclaim l v =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hk, -⟩ := Adjudicator.reclaim_some h
-      exact absurd hk c0_not_ledger
-    | challenge c' P cand =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨⟨-, hsup, hcc, hmode⟩, rfl⟩ := Adjudicator.challenge_some h
-      exact Or.inr (Or.inl ⟨P, cand, rfl, hsup, hcc, hmode, by simp [c0]⟩)
-    | checkpoint c' P cand =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨⟨hopen, hsup, -, hlt⟩, rfl⟩ := Adjudicator.checkpoint_some h
-      exact Or.inr (Or.inr (Or.inl ⟨P, cand, rfl, hsup, hopen, hlt, by simp⟩))
-    | conclude c' ss =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨⟨-, hcp⟩, -⟩ := Adjudicator.conclude_some h
-      exact Or.inr (Or.inr (Or.inr ⟨ss, rfl, hcp⟩))
-  · exact Or.inl (statusOf_apply_of_not_targets h ht)
+    (∃ ss, op = .conclude c0 ss ∧ ConclusionProof c0 ss) ∨
+    (∃ o0 o', (s.statusOf c0).finalOutcome s.now = some o0 ∧
+      s'.statusOf c0 = (s.statusOf c0).withOutcome o') := by
+  rcases TakeOut.status_cases (c := c0) h with heq | ⟨P, cand, rfl, hsup, hcc, hmode, hst⟩ |
+      ⟨P, cand, rfl, hsup, -, hopen, hlt, hst⟩ | ⟨ss, rfl, hcp, -⟩ | hpay
+  · exact Or.inl heq
+  · exact Or.inr (Or.inl ⟨P, cand, rfl, hsup, hcc, hmode, hst⟩)
+  · exact Or.inr (Or.inr (Or.inl ⟨P, cand, rfl, hsup, hopen, hlt, hst⟩))
+  · exact Or.inr (Or.inr (Or.inr (Or.inl ⟨ss, rfl, hcp⟩)))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr hpay)))
 
 theorem holds_mono {n n' : NetworkState Nat p0} {ss : SignedState Nat}
     (hs : n.sent = n'.sent) (hr : ∀ r ∈ n.received, r ∈ n'.received) (h : n.Holds ss) :
@@ -363,36 +385,51 @@ theorem low_turn {P : SupportProof Nat} {cand : State Nat}
     have : m1.state.turnNum = 0 := by rw [h0]; rfl
     omega
 
-/-- The challenge `ch1` stands against every operation whose `q0`-signed
-    states are `r0`'s state. -/
+/-- The status of the play that finalizes `O1`: the challenge `ch1`, or
+    `c0` finalized with `O1` after a payout. -/
+def StE (x : ChannelStatus Nat) : Prop :=
+  x = .challenged 1 ch1 ∨ ∃ o, x = .finalized 1 O1 o
+
+theorem StE.withOutcome {x : ChannelStatus Nat} (h : StE x) (o : Outcome Nat) :
+    StE (x.withOutcome o) := by
+  rcases h with rfl | ⟨o', rfl⟩
+  · exact Or.inr ⟨o, rfl⟩
+  · exact Or.inr ⟨o, rfl⟩
+
+/-- The challenge `ch1` stands, or `c0` is finalized with `O1`, against every
+    operation whose `q0`-signed states are `r0`'s state. -/
 theorem stay {s s' : Adjudicator Nat} {caller : Participant} {op : Op Nat}
-    (hs : s.statusOf c0 = .challenged 1 ch1) (h : s.apply appsS caller op = some s')
+    (hs : StE (s.statusOf c0)) (h : s.apply appsS caller op = some s')
     (hq : ∀ ss ∈ op.proofStates, q0 ∈ ss.signers → ss.state = st 0 O1) :
-    s'.statusOf c0 = .challenged 1 ch1 := by
+    StE (s'.statusOf c0) := by
   rcases status_cases h with heq | ⟨P, cand, rfl, hsup, -, hmode, -⟩ |
-      ⟨P, cand, rfl, hsup, -, hlt, -⟩ | ⟨ss, rfl, hcp⟩
-  · rw [heq, hs]
+      ⟨P, cand, rfl, hsup, hopen, hlt, -⟩ | ⟨ss, rfl, hcp⟩ | ⟨o0, o', -, hst⟩
+  · rw [heq]; exact hs
   · have hlow := low_turn hsup hq
-    rw [Adjudicator.mode_eq, hs] at hmode
-    rcases hmode with ⟨hm, -⟩ | ⟨-, hr⟩
-    · simp only [ChannelStatus.mode] at hm
-      split at hm <;> cases hm
-    · simp only [ChannelStatus.turnNumRecord_challenged] at hr
+    rw [Adjudicator.mode_eq] at hmode
+    rcases hs with hs | ⟨o, hs⟩ <;> rw [hs] at hmode
+    · rcases hmode with ⟨hm, -⟩ | ⟨-, hr⟩
+      · simp only [ChannelStatus.mode] at hm
+        split at hm <;> cases hm
+      · simp only [ChannelStatus.turnNumRecord_challenged] at hr
+        omega
+    · rcases hmode with ⟨hm, -⟩ | ⟨hm, -⟩ <;> cases hm
+  · rcases hs with hs | ⟨o, hs⟩ <;> rw [hs] at hlt hopen
+    · have hlow := low_turn hsup hq
+      simp only [ChannelStatus.turnNumRecord_challenged] at hlt
       omega
-  · have hlow := low_turn hsup hq
-    rw [hs] at hlt
-    simp only [ChannelStatus.turnNumRecord_challenged] at hlt
-    omega
+    · exact absurd hopen (by simp [ChannelStatus.IsOpen, ChannelStatus.mode])
   · obtain ⟨hq0, hfin⟩ := conclusion_q0 hcp
     have h0 := hq ss (List.mem_singleton_self ss) hq0
     rw [h0] at hfin
     cases hfin
+  · rw [hst]; exact hs.withOutcome o'
 
 /-- The invariant of the play that finalizes `O1`. -/
 structure InvE (n : NetworkState Nat p0) : Prop where
   recvQ : ∀ r ∈ n.received, q0 ∈ r.signers → r.state = st 0 O1
   recvU : ∀ r ∈ n.received, n.Unforged r
-  status : n.chain.statusOf c0 = .challenged 1 ch1
+  status : StE (n.chain.statusOf c0)
 
 theorem InvE.applyHonest {n : NetworkState Nat p0} (hI : InvE n) (m : HonestMove Nat) :
     InvE (n.applyHonest m) := by
@@ -459,10 +496,10 @@ theorem roundE_exists {n : NetworkState Nat p0} (hI : InvE n) {m : HonestMove Na
 /-- The adversary's challenge of the first round. -/
 def opE : Op Nat := .challenge c0 [r0, s1] (st 1 O1)
 
-def sChE : Adjudicator Nat := Adjudicator.genesis.setStatus c0 (.challenged 1 ch1)
+def sChE : Adjudicator Nat := sF.setStatus c0 (.challenged 1 ch1)
 
-theorem opE_apply : Adjudicator.genesis.apply appsS q0 opE = some sChE := by
-  show Adjudicator.genesis.challenge appsS q0 c0 [r0, s1] (st 1 O1) = some sChE
+theorem opE_apply : sF.apply appsS q0 opE = some sChE := by
+  show sF.challenge appsS q0 c0 [r0, s1] (st 1 O1) = some sChE
   unfold Adjudicator.challenge
   rw [if_pos (by decide)]
   rfl
@@ -477,7 +514,7 @@ theorem roundE_first {m : HonestMove Nat} (hfeas : m.Feasible net1) :
     rw [NetworkState.applyAdv_chain_some appsS opE_apply]; rfl
   have hI1 : InvE n1 := by
     rw [hn1]
-    refine ⟨fun x hx hxq => ?_, fun x hx => ?_, by decide⟩
+    refine ⟨fun x hx hxq => ?_, fun x hx => ?_, Or.inl rfl⟩
     · simp only [List.cons_append, List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hx
       rcases hx with rfl | rfl | rfl
       · rfl
@@ -537,10 +574,12 @@ theorem enabled_O1 : Enabled appsS T0 c0 O1 net1 := by
       exact Nat.succ_le_succ (le_trans hle hnow1)
   obtain ⟨n1, n2, hr, hround, hI, hle⟩ := hrun 5
   apply hprev n1 n2 hr hround
-  simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hI.status,
-    ChannelStatus.finalizedWith_challenged]
-  rw [if_pos (show ch1.deadline ≤ n2.chain.now from hle)]
-  rfl
+  simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel]
+  rcases hI.status with hs | ⟨o, hs⟩ <;> rw [hs]
+  · simp only [ChannelStatus.finalizedWith_challenged]
+    rw [if_pos (show ch1.deadline ≤ n2.chain.now from hle)]
+    rfl
+  · rfl
 
 /-! ## No outcome is finalizable
 
@@ -568,9 +607,12 @@ structure InvA (A : Outcome Nat) (n : NetworkState Nat p0) : Prop where
   recvU : ∀ r ∈ n.received, n.Unforged r
   sent1 : ∃ s ∈ n.sent, s.state = st 1 O1
 
-/-- The statuses from which no outcome in `G` is finalized. -/
+/-- The statuses from which no outcome in `G` is finalized: open, a
+    challenge with an outcome outside `G`, or finalized outside `G` (a payout
+    after an expired challenge keeps the finalized outcome). -/
 def SafeA (G : Outcome Nat → Prop) (x : ChannelStatus Nat) : Prop :=
-  (∃ t, x = .open t) ∨ (∃ t ch, x = .challenged t ch ∧ ¬ G ch.state.outcome)
+  (∃ t, x = .open t) ∨ (∃ t ch, x = .challenged t ch ∧ ¬ G ch.state.outcome) ∨
+    (∃ t f o, x = .finalized t f o ∧ ¬ G f)
 
 /-- A running challenge with an outcome in `G` at an odd turn `t`, where `p0`
     signed a non-final state `y` of `c0` at turn `t`, and `A` is a valid move
@@ -585,13 +627,15 @@ theorem safeA_not_finalized {G : Outcome Nat → Prop} {Ω : Outcome Nat}
     ¬ n.Finalized c0 Ω := by
   intro hf
   simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel] at hf
-  rcases h with ⟨t, ht⟩ | ⟨t, ch, ht, hne⟩
+  rcases h with ⟨t, ht⟩ | ⟨t, ch, ht, hne⟩ | ⟨t, f, o, ht, hne⟩
   · rw [ht] at hf; simp at hf
   · rw [ht] at hf
     simp only [ChannelStatus.finalizedWith_challenged] at hf
     split at hf
     · exact hne (Option.some.inj hf ▸ hG)
     · cases hf
+  · rw [ht, ChannelStatus.finalizedWith_finalized] at hf
+    exact hne (Option.some.inj hf ▸ hG)
 
 theorem held_QOK {A : Outcome Nat} {n : NetworkState Nat p0} (hI : InvA A n)
     {ss : SignedState Nat} (h : n.Holds ss) (hq : q0 ∈ ss.signers) : QOK A ss.state := by
@@ -693,7 +737,7 @@ theorem landA {G : Outcome Nat → Prop} {A : Outcome Nat} (hA : Adv G A)
       · exact (hH x hx).unforged hI.recvU
       · exact hI.recvU x hx
     rcases status_cases happ with heq | ⟨P, cand, rfl, hsup, hcc, -, hst⟩ |
-        ⟨P, cand, rfl, -, -, -, hst⟩ | ⟨ss, rfl, hcp⟩
+        ⟨P, cand, rfl, -, -, -, hst⟩ | ⟨ss, rfl, hcp⟩ | ⟨o0, o', hfo, hst⟩
     · rcases hS with hS | ⟨t, ch, y, hs, hd, hΩ, ho, hy, hyc, hyt, hyf, hyv⟩
       · exact Or.inl (by rw [heq]; exact hS)
       · exact Or.inr ⟨t, ch, y, by rw [heq]; exact hs, by rw [hnow]; exact hd, hΩ, ho, hy, hyc, hyt,
@@ -703,12 +747,24 @@ theorem landA {G : Outcome Nat → Prop} {A : Outcome Nat} (hA : Adv G A)
         refine Or.inr ⟨cand.turnNum, _, y, hst, ?_, hΩ, ho, hy, hyc, hyt, hyf, hyv⟩
         show s'.now < m.chain.now + 6
         rw [hnow]; exact Nat.lt_add_of_pos_right (by decide)
-      · exact Or.inl (Or.inr ⟨_, _, hst, hΩ⟩)
+      · exact Or.inl (Or.inr (Or.inl ⟨_, _, hst, hΩ⟩))
     · exact Or.inl (Or.inl ⟨_, hst⟩)
     · obtain ⟨hq0, hfin⟩ := conclusion_q0 hcp
       rcases held_QOK hI (hH ss (List.mem_singleton_self ss)) hq0 with h0 | ⟨-, hf⟩
       · rw [h0] at hfin; cases hfin
       · rw [hf] at hfin; cases hfin
+    · -- a payout: the status was final, and keeps its finalized outcome
+      left
+      rw [hst]
+      rcases hS with (⟨t, hs⟩ | ⟨t, ch, hs, hne⟩ | ⟨t, f, o, hs, hne⟩) |
+          ⟨t, ch, y, hs, hd, -⟩
+      · rw [hs, ChannelStatus.finalOutcome_open] at hfo; cases hfo
+      · rw [hs, ChannelStatus.withOutcome_challenged]
+        exact Or.inr (Or.inr ⟨_, _, _, rfl, hne⟩)
+      · rw [hs, ChannelStatus.withOutcome_finalized]
+        exact Or.inr (Or.inr ⟨_, _, _, rfl, hne⟩)
+      · rw [hs, ChannelStatus.finalOutcome_challenged, if_neg (not_le.mpr hd)] at hfo
+        cases hfo
 
 /-- The end of the round: the adversary answers an answerable challenge, then
     one tick of 1. -/
@@ -752,8 +808,8 @@ theorem closeA {G : Outcome Nat → Prop} {A : Outcome Nat} (hA : Adv G A)
         · exact hI.recvU x hx
     have hSa : SafeA G (ma.chain.statusOf c0) := by
       rw [hma]
-      exact Or.inr ⟨y.state.turnNum + 1, ⟨st (y.state.turnNum + 1) (A), m.chain.now + 6⟩,
-        by simp, hA.notG⟩
+      exact Or.inr (Or.inl ⟨y.state.turnNum + 1, ⟨st (y.state.turnNum + 1) (A), m.chain.now + 6⟩,
+        by simp, hA.notG⟩)
     obtain ⟨m', hseq, hI', hS', hnow, hsent⟩ := htick ma hIa hSa
     have hfe : T0.feasible m (.chain q0 (opAns A y.state)) := by
       refine ⟨by decide, fun ss hss => ?_⟩
@@ -950,7 +1006,7 @@ theorem no_conclusion {n : NetworkState Nat p0} (hS : SentOK n) {ss : SignedStat
 structure InvX (X : Outcome Nat) (n : NetworkState Nat p0) : Prop where
   recvU : ∀ r ∈ n.received, n.Unforged r
   sentOK : SentOK n
-  noFin : ∀ t f o, n.chain.statusOf c0 ≠ .finalized t f o
+  noFin : ∀ t f o, n.chain.statusOf c0 = .finalized t f o → f ≠ X
   timing : ∀ t ch, n.chain.statusOf c0 = .challenged t ch → ch.state.outcome = X →
     XInfo n t ch ∧ n.chain.now + 2 ≤ ch.deadline ∧
       ((¬ ∃ s ∈ n.sent, s.state = ansP t) → n.chain.now + 4 ≤ ch.deadline)
@@ -963,7 +1019,7 @@ structure KX (X : Outcome Nat) (n0 : NetworkState Nat p0) (R : Nat) (n : Network
   sent : n.sent = n0.sent
   recv : ∀ r ∈ n0.received, r ∈ n.received
   now0 : n0.chain.now ≤ n.chain.now
-  noFin : ∀ t f o, n.chain.statusOf c0 ≠ .finalized t f o
+  noFin : ∀ t f o, n.chain.statusOf c0 = .finalized t f o → f ≠ X
   chX : ∀ t ch, n.chain.statusOf c0 = .challenged t ch → ch.state.outcome = X →
     XInfo n t ch ∧ (n.chain.statusOf c0 = n0.chain.statusOf c0 ∨ n0.chain.now + 6 ≤ ch.deadline)
   left : ∀ t0 ch0, n0.chain.statusOf c0 = .challenged t0 ch0 → ch0.state.outcome = X →
@@ -990,9 +1046,10 @@ theorem apply_now_le {s s' : Adjudicator Nat} {caller : Participant} {op : Op Na
   · exact le_of_eq (Adjudicator.apply_now_eq_of_not_tick (fun dt h => ht ⟨dt, h⟩) h).symm
 
 /-- One successful operation with unforged proof states keeps `KX`, inside
-    a round whose clock stays below `n0`'s clock plus 2. -/
+    a round whose clock stays below `n0`'s clock plus 2. A payout needs a
+    final status, and no challenge with `X` expires inside the round. -/
 theorem stepK {X : Outcome Nat} (hX : X ≠ O1) {n0 n : NetworkState Nat p0} {R : Nat}
-    (hI0 : InvX X n0) (hK : KX X n0 R n)
+    (hI0 : InvX X n0) (hK : KX X n0 R n) (hnow : n.chain.now < n0.chain.now + 2)
     {caller : Participant} {op : Op Nat} {s' : Adjudicator Nat}
     (h : n.chain.apply appsS caller op = some s') (hU : ∀ ss ∈ op.proofStates, n.Unforged ss)
     (hs'now : n.chain.now ≤ s'.now) :
@@ -1007,8 +1064,16 @@ theorem stepK {X : Outcome Nat} (hX : X ≠ O1) {n0 n : NetworkState Nat p0} {R 
     rcases List.mem_append.1 hr with hr | hr
     · exact (hU r hr).of_sent rfl
     · exact (hK.recvU r hr).of_sent rfl
+  -- a challenge with `X` at `n` has not expired
+  have hliveX : ∀ t ch, n.chain.statusOf c0 = .challenged t ch → ch.state.outcome = X →
+      n.chain.now < ch.deadline := by
+    intro t ch hc hx
+    rcases (hK.chX t ch hc hx).2 with h0 | h6
+    · rw [h0] at hc
+      exact lt_of_lt_of_le hnow (hI0.timing t ch hc hx).2.1
+    · exact lt_of_lt_of_le hnow (le_trans (Nat.add_le_add_left (by decide) _) h6)
   rcases status_cases h with heq | ⟨P, cand, rfl, hsup, hcc, hmode, hst⟩ |
-      ⟨P, cand, rfl, -, -, hlt, hst⟩ | ⟨ss, rfl, hcp⟩
+      ⟨P, cand, rfl, -, -, hlt, hst⟩ | ⟨ss, rfl, hcp⟩ | ⟨o0, o', hfo, hst⟩
   · refine ⟨hRecU, hK.sent, fun r hr => hrec r (hK.recv r hr), le_trans hK.now0 hs'now,
       fun t f o => by rw [heq]; exact hK.noFin t f o, fun t ch hc hx => ?_, fun t0 ch0 h0 hx => ?_,
       by rw [heq]; exact hK.recR⟩
@@ -1051,11 +1116,44 @@ theorem stepK {X : Outcome Nat} (hX : X ≠ O1) {n0 n : NetworkState Nat p0} {R 
       · exact lt_trans hlt0 hlt
     · rw [hst]; exact le_trans hK.recR (le_of_lt hlt)
   · exact (no_conclusion hSn (hU ss (List.mem_singleton_self ss)) hcp).elim
+  · -- a payout: the status was final; the turn record and the finalized
+    -- outcome stay
+    have hrec' : (s'.statusOf c0).turnNumRecord = (n.chain.statusOf c0).turnNumRecord := by
+      rw [hst]; cases n.chain.statusOf c0 <;> rfl
+    have hfin' : ∀ t f o, s'.statusOf c0 = .finalized t f o → f ≠ X := by
+      intro t f o hf
+      rw [hst] at hf
+      cases hs : n.chain.statusOf c0 with
+      | «open» r =>
+        rw [hs, ChannelStatus.finalOutcome_open] at hfo; cases hfo
+      | challenged r ch =>
+        rw [hs, ChannelStatus.withOutcome_challenged] at hf
+        obtain ⟨-, rfl, -⟩ := ChannelStatus.finalized.inj hf
+        intro hx
+        have hlive := hliveX r ch hs hx
+        rw [hs, ChannelStatus.finalOutcome_challenged, if_neg (not_le.mpr hlive)] at hfo
+        cases hfo
+      | finalized r f' o'' =>
+        rw [hs, ChannelStatus.withOutcome_finalized] at hf
+        obtain ⟨-, hff, -⟩ := ChannelStatus.finalized.inj hf
+        rw [← hff]; exact hK.noFin r f' o'' hs
+    refine ⟨hRecU, hK.sent, fun r hr => hrec r (hK.recv r hr), le_trans hK.now0 hs'now, hfin',
+      fun t ch hc _ => ?_, fun t0 ch0 h0 hx => ?_, by rw [hrec']; exact hK.recR⟩
+    · rw [hst] at hc
+      cases hs : n.chain.statusOf c0 <;> rw [hs] at hc <;> cases hc
+    · right
+      rw [hrec']
+      rcases hK.left t0 ch0 h0 hx with hs0 | hlt0
+      · have hlive := hliveX t0 ch0 (hs0.trans h0) hx
+        rw [hs0, h0, ChannelStatus.finalOutcome_challenged, if_neg (not_le.mpr hlive)] at hfo
+        cases hfo
+      · exact hlt0
 
-/-- `KX` as a step invariant of a sub-round of pure adversary play. -/
+/-- `KX` as a step invariant of a sub-round of pure adversary play that ends
+    before `n0`'s clock plus 2. -/
 theorem KX.stepInv {X : Outcome Nat} (hX : X ≠ O1) {n0 : NetworkState Nat p0} {R : Nat}
-    (hI0 : InvX X n0) :
-    T0.StepInvariant appsS (fun _ => True) (KX X n0 R) (fun _ _ => False) where
+    (hI0 : InvX X n0) {Eend : Time} (hE : Eend < n0.chain.now + 2) :
+    T0.StepInvariant appsS (fun n => n.chain.now ≤ Eend) (KX X n0 R) (fun _ _ => False) where
   land := fun _ h _ => h.elim
   deliver := fun {n ss} _ hfe hK => by
     rw [NetworkState.applyAdv_deliver]
@@ -1076,12 +1174,12 @@ theorem KX.stepInv {X : Outcome Nat} (hX : X ≠ O1) {n0 : NetworkState Nat p0} 
       exact hK.chX t ch hc hx
     · rw [Adjudicator.tick_statusOf]; exact hK.left t0 ch0 h0 hx
     · rw [Adjudicator.tick_statusOf]; exact hK.recR
-  chain := fun {n caller op} _ hfe hK => by
+  chain := fun {n caller op} hg hfe hK => by
     cases happ : n.chain.apply appsS caller op with
     | none => rw [NetworkState.applyAdv_chain_none appsS happ]; exact hK
     | some s' =>
       rw [NetworkState.applyAdv_chain_some appsS happ]
-      exact stepK hX hI0 hK happ hfe.2 (apply_now_le happ)
+      exact stepK hX hI0 hK (lt_of_le_of_lt hg hE) happ hfe.2 (apply_now_le happ)
 
 open Classical in
 /-- `p0`'s move against `X`: answer a challenge with the outcome `X`, first by
@@ -1135,7 +1233,8 @@ theorem σX_cases {X : Outcome Nat} {n : NetworkState Nat p0} (hI : InvX X n) :
   cases hs : n.chain.statusOf c0 with
   | «open» t =>
     exact Or.inl ⟨hwait (by unfold idealX; rw [hs]), fun t ch h => by cases h⟩
-  | finalized t f o => exact absurd hs (hI.noFin t f o)
+  | finalized t f o =>
+    exact Or.inl ⟨hwait (by unfold idealX; rw [hs]), fun t ch h => by cases h⟩
   | challenged t ch =>
     by_cases hx : ch.state.outcome = X
     · have hinfo := (hI.timing t ch hs hx).1
@@ -1172,7 +1271,9 @@ theorem notFinX {X : Outcome Nat} {n0 n : NetworkState Nat p0} {R : Nat} (hI0 : 
   simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel] at hf
   cases hs : n.chain.statusOf c0 with
   | «open» t => rw [hs] at hf; simp at hf
-  | finalized t f o => exact hK.noFin t f o hs
+  | finalized t f o =>
+    rw [hs, ChannelStatus.finalizedWith_finalized] at hf
+    exact hK.noFin t f o hs (Option.some.inj hf)
   | challenged t ch =>
     rw [hs] at hf
     simp only [ChannelStatus.finalizedWith_challenged] at hf
@@ -1191,9 +1292,9 @@ theorem bound4 {a b : Nat} (h : a < b + 2) : a + 2 ≤ b + 4 := by omega
 
 /-- `KX` over a sub-round of pure adversary play. -/
 theorem KX.nil {X : Outcome Nat} (hX : X ≠ O1) {n0 n n' : NetworkState Nat p0} {R : Nat}
-    {t : Time} (hI0 : InvX X n0) (hseq : T0.RoundSeq appsS t [] n n') (hK : KX X n0 R n) :
-    KX X n0 R n' :=
-  Threat.RoundSeq.nil_invariant hseq (KX.stepInv hX hI0).anyGuard hK
+    {t : Time} (hI0 : InvX X n0) (hseq : T0.RoundSeq appsS t [] n n') (hK : KX X n0 R n)
+    (hE : n'.chain.now < n0.chain.now + 2) : KX X n0 R n' :=
+  Threat.RoundSeq.nil_invariant hseq (KX.stepInv hX hI0 hE) hK
 
 theorem KX.lower {X : Outcome Nat} {n0 n : NetworkState Nat p0} {R R' : Nat}
     (hK : KX X n0 R n) (hR : R' ≤ (n.chain.statusOf c0).turnNumRecord) : KX X n0 R' n :=
@@ -1273,7 +1374,7 @@ theorem roundX {X : Outcome Nat} (hX : X ≠ O1) {n0 n' : NetworkState Nat p0} (
       ⟨t0, ch0, x, hs0, hx0, hsa, hx, hxs, hxq, hσ⟩
   · -- wait: a sub-round of pure adversary play
     rw [hσ] at hround ⊢
-    have hK := KX.nil hX hI0 hround.1 hK0
+    have hK := KX.nil hX hI0 hround.1 hK0 hbound
     refine ⟨notFinX hI0 hK hbound, hnext hK _ (fun s hs => .inl hs) rfl ⟨by
       simp only [NetworkState.applyHonest, Adjudicator.tick_statusOf], by
       simp only [NetworkState.applyHonest, Adjudicator.tick_now]; rfl⟩ ?_⟩
@@ -1282,7 +1383,7 @@ theorem roundX {X : Outcome Nat} (hX : X ≠ O1) {n0 n' : NetworkState Nat p0} (
     exact absurd hx (hnx t ch hc)
   · -- send `ansP t0`
     rw [hσ] at hround ⊢
-    have hK := KX.nil hX hI0 hround.1 hK0
+    have hK := KX.nil hX hI0 hround.1 hK0 hbound
     refine ⟨notFinX hI0 hK hbound, hnext hK _ ?_ rfl ⟨rfl, rfl⟩ ?_⟩
     · intro s hs
       rw [NetworkState.applyHonest_send] at hs
@@ -1300,9 +1401,9 @@ theorem roundX {X : Outcome Nat} (hX : X ≠ O1) {n0 n' : NetworkState Nat p0} (
     rw [hσ] at hround ⊢
     rw [NetworkState.applyHonest_chain]
     obtain ⟨n1, hA, hB⟩ := Threat.Round.single hround
-    have hK1 := KX.nil hX hI0 hA hK0
     have hnow1 : n1.chain.now ≤ n'.chain.now :=
       le_trans (NetworkState.applyAdv_now_le appsS n1 _) hB.now_le
+    have hK1 := KX.nil hX hI0 hA hK0 (lt_of_le_of_lt hnow1 hbound)
     have hinfo0 := (hI0.timing _ _ hs0 hx0)
     -- the land of the checkpoint
     have hKL : KX X n0 (t0 + 1) (n1.applyAdv appsS (.land (.checkpoint c0 [x, ⟨ansP t0, [p0]⟩] (ansP t0)))) := by
@@ -1319,7 +1420,8 @@ theorem roundX {X : Outcome Nat} (hX : X ≠ O1) {n0 n' : NetworkState Nat p0} (
           (lt_of_lt_of_le (lt_of_le_of_lt hnow1 hbound) hinfo0.2.1) hxs hxq
           ⟨hinfo0.1.1, hinfo0.1.2.1, hinfo0.1.2.2.2.1, hinfo0.1.2.2.2.2.1, hinfo0.1.2.2.2.2.2.1⟩
         rw [NetworkState.applyAdv_land_some appsS happ]
-        exact (stepK hX hI0 hK1 happ hU (le_of_eq rfl)).lower (by simp)
+        exact (stepK hX hI0 hK1 (lt_of_le_of_lt hnow1 hbound) happ hU (le_of_eq rfl)).lower
+          (by simp)
       · have hK1' := hK1.lower hlt
         cases happ : n1.chain.apply appsS p0 (.checkpoint c0 [x, ⟨ansP t0, [p0]⟩] (ansP t0)) with
         | none =>
@@ -1327,8 +1429,8 @@ theorem roundX {X : Outcome Nat} (hX : X ≠ O1) {n0 n' : NetworkState Nat p0} (
           exact hK1'
         | some s' =>
           rw [NetworkState.applyAdv_land_some appsS happ]
-          exact stepK hX hI0 hK1' happ hU (apply_now_le happ)
-    have hK := KX.nil hX hI0 hB hKL
+          exact stepK hX hI0 hK1' (lt_of_le_of_lt hnow1 hbound) happ hU (apply_now_le happ)
+    have hK := KX.nil hX hI0 hB hKL hbound
     refine ⟨notFinX hI0 hK hbound, ?_⟩
     have := hnext hK (HonestMove.chain (.checkpoint c0 [x, ⟨ansP t0, [p0]⟩] (ansP t0)))
       (fun s hs => .inl (by rwa [NetworkState.applyHonest_chain] at hs))
@@ -1344,8 +1446,8 @@ theorem prevents_other (X : Outcome Nat) (hX : X ≠ O1) :
     Prevents appsS T0 (fun n => n.Finalized c0 X) net1 := by
   have hI1 : InvX X net1 := by
     refine ⟨fun x hx => ?_, fun s hs _ => ?_,
-      fun t f o h => (by simp [net1, Adjudicator.genesis, Adjudicator.statusOf] at h),
-      fun t ch h => (by simp [net1, Adjudicator.genesis, Adjudicator.statusOf] at h)⟩
+      fun t f o h => (by simp [net1, sF, s5, Adjudicator.genesis, Adjudicator.statusOf] at h),
+      fun t ch h => (by simp [net1, sF, s5, Adjudicator.genesis, Adjudicator.statusOf] at h)⟩
     · rw [List.mem_singleton.1 hx]; exact unforged_r0 _
     · rw [List.mem_singleton.1 hs]; exact ⟨rfl, rfl, rfl⟩
   have hrun : ∀ {n1}, Run appsS T0 (σX X) net1 n1 → InvX X n1 := by
