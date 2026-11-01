@@ -25,6 +25,7 @@
 import Lean.Meta.Basic
 import Lean.DocString
 import Lean.Util.FoldConsts
+import Lean.Structure
 import Batteries.Tactic.Lint.Basic
 
 open Lean Meta Batteries.Tactic.Lint
@@ -75,12 +76,24 @@ def allDeclNames (env : Environment) : Array Name :=
   env.constants.map₁.fold (init := cur) fun r k _ => r.push k
 
 /-- The `def`/`theorem` declarations in scope, excluding auto-generated
-    and private names. -/
+    and private names, and excluding structure projection functions
+    (`Lean.Environment.isProjectionFn`). A projection is not itself a
+    premise-bearing declaration: its hypotheses are the structure's own
+    fields, generated once per field by the structure command, not a
+    condition an author repeated across declarations (rule 1 is about
+    repeated AUTHORED conditions). Without this exclusion, a structure
+    with two or more fields shows up as a `repeatedPremise` group of its
+    own projections (measured: two such groups on `draft/round-combinator`
+    `8611a8f`, `Bounds.unforgeableDeliver`/`StepInvariant.deliver` and
+    `StepInvariant.land`/`CondStepInvariant.condMono`). `isAutoDecl` does
+    not catch a projection (`Batteries.Tactic.Lint.Misc`'s own linters
+    check `isProjectionFn` separately, for the same reason). -/
 def scopedDeclNames (env : Environment) : Array Name := Id.run do
   let mut out := #[]
   for n in allDeclNames env do
     if !inScope env n then continue
     if env.isAutoDecl n then continue
+    if env.isProjectionFn n then continue
     match env.find? n with
     | some (.defnInfo _) | some (.thmInfo _) => out := out.push n
     | _ => continue
@@ -138,14 +151,36 @@ def stateCarrier? (e : Expr) : Option Expr :=
   | .app (.app (.app (.const n _) _) _) e => if n == `ReachableState.state then some e else none
   | _ => none
 
+/-- `e` with every `ReachableState.state e'` subterm replaced by
+    `stripStateCarrier e'`, applied everywhere in `e`, not only at `e`'s
+    own head. Must run BEFORE `collectOrderedFVars`/`abstract`: a raw
+    `ReachableState.state net` carries extra implicit arguments (the
+    reachability witness), and `collectOrderedFVars` walks into them, so
+    two premises that print identically (`HoldsVirtualSetup net …` versus
+    `HoldsVirtualSetup (ReachableState.state net) …`) collected different
+    numbers of leading free variables and so got different `bvar` indices
+    after `abstract` (observed: `B8 B7` against `B5 B4`, same printed
+    conjunct, different `repeatedPremise` keys). Stripping first means
+    `collectOrderedFVars` sees only `net` itself in both forms. -/
+partial def stripStateCarrier (e : Expr) : Expr :=
+  match stateCarrier? e with
+  | some inner => stripStateCarrier inner
+  | none =>
+    match e with
+    | .app f a => .app (stripStateCarrier f) (stripStateCarrier a)
+    | .lam n t b bi => .lam n (stripStateCarrier t) (stripStateCarrier b) bi
+    | .forallE n t b bi => .forallE n (stripStateCarrier t) (stripStateCarrier b) bi
+    | .letE n t v b nd => .letE n (stripStateCarrier t) (stripStateCarrier v) (stripStateCarrier b) nd
+    | .mdata m e => .mdata m (stripStateCarrier e)
+    | .proj n i e => .proj n i (stripStateCarrier e)
+    | _ => e
+
 /-- A structural key for `e`, stable under consistent renaming of bound
     variables (`bvar` indices only; no fvar should remain once `e` has
-    been abstracted by `collectOrderedFVars`), and under a `ReachableState`
-    or `Subtype` carrier projection (`stateCarrier?`). -/
+    been abstracted by `collectOrderedFVars`). Assumes `e` has already
+    gone through `stripStateCarrier` (`normalizedKey` below): there is no
+    `ReachableState.state` case left to match here. -/
 partial def exprKey (e : Expr) : String :=
-  match stateCarrier? e with
-  | some inner => exprKey inner
-  | none =>
   match e with
   | .bvar i => s!"B{i}"
   | .fvar fvarId => s!"F{fvarId.name}"
@@ -161,10 +196,15 @@ partial def exprKey (e : Expr) : String :=
   | .mdata _ e => exprKey e
   | .proj n i e => s!"π{n}.{i}{exprKey e}"
 
-/-- `e`'s normalized shape key: abstract every free variable it mentions,
-    in order of first occurrence, so binder names (and their order in
-    the enclosing declaration) do not matter. -/
+/-- `e`'s normalized shape key: strip the `ReachableState` carrier
+    (`stripStateCarrier`), then abstract every free variable the result
+    mentions, in order of first occurrence, so binder names (and their
+    order in the enclosing declaration) do not matter either. The strip
+    runs first so the free-variable count `abstract` indexes against is
+    the same in both of a premise's binder forms (see
+    `stripStateCarrier`'s doc comment). -/
 def normalizedKey (e : Expr) : String :=
+  let e := stripStateCarrier e
   let ordered := collectOrderedFVars e
   exprKey (e.abstract (ordered.map Expr.fvar))
 
@@ -241,6 +281,52 @@ def aliasCandidate (binders : Array FVarId) (e : Expr) : MetaM (Option (Name × 
   | some r => return some r
   | none => side rhs lhs
 
+/-- `e`'s head is already the typed result rule 1 asks for, so `e` is
+    not itself a premise rule 1 can act on. Unfolds the head constant's
+    `def` chain (bounded by the chain itself; every chain observed ends
+    at a structure, `Subtype`, or a non-`def` constant) and stops at the
+    first `ArmadaLean` structure or `Subtype` head found. The structure
+    match is scoped to `ArmadaLean`: `And`, `Exists` and `Iff` are also
+    Lean `structure`s (one constructor each), and an `ArmadaLean` `def`
+    normally unfolds through one of them (`∧`, `∃`) before reaching its
+    own content; matching ANY structure there would misclassify every
+    conjunction-shaped `Prop`, not only the domain types rule 1 makes.
+    `Subtype` itself is core (not `ArmadaLean`-prefixed) and still
+    counts: it is the refined-type carrier every `TimedChannel`-style
+    type coerces through (`typed-library.md` §3 rule 2). -/
+partial def unfoldsToTypedCarrier (env : Environment) (e : Expr) : MetaM Bool := do
+  let .const n _ := e.getAppFn | return false
+  if n == ``Subtype then return true
+  if (`ArmadaLean).isPrefixOf n && isStructure env n then return true
+  let some (.defnInfo _) := env.find? n | return false
+  let some e' ← Meta.unfoldDefinition? e | return false
+  unfoldsToTypedCarrier env (← Meta.whnfR e')
+
+/-- `e`, a hypothesis conjunct, is excluded from every premise-shape
+    linter (`repeatedPremise`, `premiseVariant`, `looseHypothesis`,
+    `aliasHypothesis`) for one of two reasons:
+    - **`e`'s head is a local variable** (`Inv net`, `Cond n op`): the
+      head is the declaration's OWN parameter, not a named declaration
+      rule 1 could replace. Rule 1 converts a condition on a value into
+      a type; it cannot act on the abstraction's own predicate
+      parameter, which has no fixed meaning to give a type to.
+    - **`e`'s head names a structure, or a `def` under `ArmadaLean` that
+      unfolds to a structure or a `Subtype`** (`unfoldsToTypedCarrier`):
+      `e` already IS the typed value rule 1 asks for (`SatpEnds r alice
+      bob P`, with `SatpEnds` a structure made to satisfy rule 1 on some
+      earlier repeated condition). Counting it as a NEW `repeatedPremise`
+      group would flag the intended result of the rule as a fresh
+      violation of the rule. The `ArmadaLean` scope matches `inScope`:
+      a head outside `ArmadaLean` (a Mathlib/core predicate) is not a
+      type this doctrine governs. -/
+def premiseAlreadyTyped (env : Environment) (e : Expr) : MetaM Bool := do
+  match e.getAppFn with
+  | .fvar _ => return true
+  | .const n _ =>
+    if !(`ArmadaLean).isPrefixOf n then return false
+    unfoldsToTypedCarrier env e
+  | _ => return false
+
 /-- Analyze one in-scope declaration: its data/hypothesis binders, and
     every normalized hypothesis conjunct. `none` only when `n`'s type is
     not a `∀`-telescope of ordinary binders (none observed in scope). -/
@@ -263,6 +349,7 @@ def analyzeDecl (env : Environment) (n : Name) : MetaM DeclInfo := do
       let parts := splitAnd ldecl.type
       for i in [0:parts.size] do
         let e := parts[i]!
+        if ← premiseAlreadyTyped env e then continue
         let key := normalizedKey e
         let pretty := toString (← ppExpr e)
         let refs ← fieldRefsM e
