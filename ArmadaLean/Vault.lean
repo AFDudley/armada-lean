@@ -1,3 +1,5 @@
+import Mathlib.Tactic.Says
+
 /-
   ArmadaLean.Vault — share-conversion model of ArmadaYieldVault.sol and the
   first-depositor inflation attack (OPEN critical issue #365).
@@ -69,7 +71,7 @@ Honesty check for the empty-vault special case: the first deposit mints one
 share per asset. This documents exactly where the vulnerability enters — the
 `supply == 0` branch at ArmadaYieldVault.sol:492-515 is what lets the first
 depositor set the exchange rate (and then distort it via a donation). -/
-theorem c2s_empty_vault : c2s 0 0 assets = assets := by simp [c2s]
+theorem c2s_empty_vault : c2s 0 0 assets = assets := by (simp? [c2s] says simp only [c2s, ↓reduceIte])
 
 /--
 The victim gets nothing. After the attacker deposits 1 (receiving 1 share)
