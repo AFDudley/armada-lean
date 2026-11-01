@@ -1,0 +1,235 @@
+{
+  "id": "derived-aln-d0e",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proofs of ArmadaLean.Nitro.challenge_can_happen, ArmadaLean.Nitro.challenge_requires, ArmadaLean.Nitro.challenge_fails_when_finalized do not unfold Adjudicator.apply or case on Op; they rewrite with Adjudicator.apply_challenge_equation (ArmadaLean/Nitro/OpEquations.lean). The type-doctrine linter reports no layerDiscipline finding for any of these declarations. Statements do not change.\nWhat holds now? Describe the current, observed state. At integrated 4a9e9981, `lake env lean scripts/type_lint.lean` prints a layerDiscipline finding (linter layerDiscipline, with baseOps) for each of ArmadaLean.Nitro.challenge_can_happen, ArmadaLean.Nitro.challenge_requires, ArmadaLean.Nitro.challenge_fails_when_finalized. The trunk has 35 Nitro layerDiscipline hits in total.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and then `lake env lean scripts/type_lint.lean`; read the JSON lines whose linter field is layerDiscipline and their declaration field. Then run `scripts/check.sh --json`.\nWhat constraints apply? State them in plain prose. Every Lean command runs through /home/rix/bin/lean-run. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true, lint_ok included, against scripts/gate-baseline.json. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Safety.lean and the other modules that hold the proofs of ArmadaLean.Nitro.challenge_can_happen, ArmadaLean.Nitro.challenge_requires, ArmadaLean.Nitro.challenge_fails_when_finalized",
+  "restatement": "In the ArmadaLean Nitro proof development, the three declarations ArmadaLean.Nitro.challenge_can_happen, ArmadaLean.Nitro.challenge_requires, and ArmadaLean.Nitro.challenge_fails_when_finalized must be proved in a way that respects the project's layering discipline: instead of unfolding Adjudicator.apply or casing on Op directly, they must rewrite using Adjudicator.apply_challenge_equation from ArmadaLean/Nitro/OpEquations.lean, following the repair-pass steps R.1-R.6 from armada-laconic docs/process.md. After this change, running `lake env lean scripts/type_lint.lean` must no longer report a layerDiscipline finding (with baseOps) for any of these three declarations, while the Spec statements themselves must remain byte-for-byte unchanged, and the full gate check (scripts/check.sh --json) must keep every _ok field (including lint_ok) true against scripts/gate-baseline.json. All Lean commands must be run through /home/rix/bin/lean-run, and a bare `lake clean` must never be invoked during the fix.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proofs of ArmadaLean.Nitro.challenge_can_happen, ArmadaLean.Nitro.challenge_requires, and ArmadaLean.Nitro.challenge_fails_when_finalized must rewrite with Adjudicator.apply_challenge_equation (ArmadaLean/Nitro/OpEquations.lean) rather than unfolding Adjudicator.apply or casing on Op."
+    },
+    {
+      "id": "c2",
+      "text": "Running `lake env lean scripts/type_lint.lean` must print no layerDiscipline finding (linter layerDiscipline, with baseOps) for any of the three named declarations."
+    },
+    {
+      "id": "c3",
+      "text": "The Spec statements must not change: `git diff integrated -- 'ArmadaLean/Spec*'` must be empty."
+    },
+    {
+      "id": "c4",
+      "text": "`scripts/check.sh --json` must keep every _ok field true, including lint_ok, against scripts/gate-baseline.json."
+    },
+    {
+      "id": "c5",
+      "text": "A bare `lake clean` must never be run as part of the fix, and all Lean commands must run through /home/rix/bin/lean-run."
+    }
+  ],
+  "goal": "Make three specific mathematical proofs in the Nitro module follow the project's required proof-writing style (using a provided equation instead of unfolding internals directly), so that an automated style checker stops flagging them, without altering any of the formal specification statements or breaking any other automated checks.",
+  "acceptance_criteria": [
+    "Anyone can look at the proofs of challenge_can_happen, challenge_requires, and challenge_fails_when_finalized in the Nitro source and confirm each one reaches its conclusion by rewriting with the apply_challenge_equation lemma, instead of manually unfolding Adjudicator.apply or pattern-matching on the Op type.",
+    "When the project's linter is run against the Lean source, it should report zero layerDiscipline problems for the three specific declarations the task is concerned with.",
+    "Checks that none of the formal Spec files were edited compared to the integrated baseline, by running a script that reports whether that diff is empty.",
+    "When you run the project's check script with the --json flag, it should report that every quality check passed \u2014 including the lint check \u2014 matching what the saved baseline expects.",
+    "Checks that nowhere in the repository does a script, workflow, or log file invoke a bare 'lake clean' command, and that any Lean command is run through the required /home/rix/bin/lean-run wrapper."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Anyone can look at the proofs of challenge_can_happen, challenge_requires, and challenge_fails_when_finalized in the Nitro source and confirm each one reaches its conclusion by rewriting with the apply_challenge_equation lemma, instead of manually unfolding Adjudicator.apply or pattern-matching on the Op type."
+    },
+    {
+      "id": "c2",
+      "text": "When the project's linter is run against the Lean source, it should report zero layerDiscipline problems for the three specific declarations the task is concerned with."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that none of the formal Spec files were edited compared to the integrated baseline, by running a script that reports whether that diff is empty."
+    },
+    {
+      "id": "c4",
+      "text": "When you run the project's check script with the --json flag, it should report that every quality check passed \u2014 including the lint check \u2014 matching what the saved baseline expects."
+    },
+    {
+      "id": "c5",
+      "text": "Checks that nowhere in the repository does a script, workflow, or log file invoke a bare 'lake clean' command, and that any Lean command is run through the required /home/rix/bin/lean-run wrapper."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Anyone can look at the proofs of challenge_can_happen, challenge_requires, and challenge_fails_when_finalized in the Nitro source and confirm each one reaches its conclusion by rewriting with the apply_challenge_equation lemma, instead of manually unfolding Adjudicator.apply or pattern-matching on the Op type.",
+      "proves": "The three challenge-related proofs are built on top of the apply_challenge_equation abstraction rather than re-deriving behavior by unfolding Adjudicator.apply or casing on Op.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_challenge_proofs_use_equation.py",
+        "args": [
+          "ArmadaLean/Nitro.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_use_equation",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "any_unfold_apply_or_case_op",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 60,
+      "clause_id": "c1"
+    },
+    {
+      "description": "When the project's linter is run against the Lean source, it should report zero layerDiscipline problems for the three specific declarations the task is concerned with.",
+      "proves": "Confirms that running lake env lean scripts/type_lint.lean produces no layerDiscipline finding for any of the three named declarations.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_type_lint_check.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "layerDiscipline_finding_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that none of the formal Spec files were edited compared to the integrated baseline, by running a script that reports whether that diff is empty.",
+      "proves": "The Spec statements under ArmadaLean/Spec* remain unchanged relative to the integrated branch.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_unchanged.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_empty",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c3"
+    },
+    {
+      "description": "When you run the project's check script with the --json flag, it should report that every quality check passed \u2014 including the lint check \u2014 matching what the saved baseline expects.",
+      "proves": "The check script reports all _ok fields (including lint_ok) as true, consistent with scripts/gate-baseline.json.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_json.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Checks that nowhere in the repository does a script, workflow, or log file invoke a bare 'lake clean' command, and that any Lean command is run through the required /home/rix/bin/lean-run wrapper.",
+      "proves": "Confirms the fix never ran lake clean directly and that all Lean invocations go through the required lean-run wrapper, as the clause requires.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_lean_run_usage.py",
+        "args": [
+          "."
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "non_lean_run_lean_invocations",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_challenge_proofs_use_equation.py",
+    "scripts/check_lean_run_usage.py",
+    "scripts/check_spec_unchanged.py",
+    "scripts/run_check_json.py",
+    "scripts/run_type_lint_check.py"
+  ]
+}
