@@ -1,0 +1,189 @@
+/-
+  Counterexample to `funding_point_universally_finalizable` (Liveness.lean),
+  Nitro-23 (Nitro:635-636), pebble `aln-cc8`, on the honest network
+  `Nitro.network` (every send satisfies `HonestSend`, `Types/Honest.lean`).
+
+  `HonestSend.noAlternative` forbids two states of one channel at one turn
+  below the funding point. It does not forbid a final state. `AtFundingPoint`
+  bounds the turn number of a sent state, not its `isFinal` flag. So an
+  honest participant can sign a final state below the funding point, at a
+  turn where another participant is the mover.
+
+  The network `nF` starts at genesis and has three honest sends on the
+  two-participant channel `c2 = [p0, q0]` (`c2.n = 2`):
+  * `p0` sends `sA0` (turn 0, outcome `Ωg`, not final).
+  * `q0` sends `sA1` (turn 1, outcome `Ωg`, not final).
+  * `p0` sends `sF1` (turn 1, outcome `Ωb ≠ Ωg`, final).
+  Each send satisfies `HonestSend` (`nF_reach`): `p0` signs one state at
+  turn 0 and one state at turn 1. Every participant holds the turn-0 and
+  turn-1 states with outcome `Ωg`, so `AtFundingPoint` holds for `Ωg`. Every
+  other hypothesis holds, with `vtAll` and the canonical threats `Ts apps1`.
+
+  In `p0`'s game, `q0` is the adversary. Before the first call of `p0`
+  lands, the adversary calls `conclude` with `⟨sF1, [p0, q0]⟩`. This is a
+  conclusion proof (`ConclusionProof`): `sF1` is final and both participants
+  sign it. The `p0` signature is not forged, because `p0` sent `sF1`. The
+  channel then finalizes with `Ωb`, and the outcome of finalization never
+  changes (`UnbeatableIn.finalized_eq_of_steps`). So `Ωg` is not finalizable
+  for `p0` (`not_finalizable`), and `funding_point_universally_finalizable_false`
+  refutes the spec statement `Spec.funding_point_universally_finalizable`.
+
+  The missing rule: an honest participant signs no final state below the
+  funding point, or, more narrowly, no final state whose outcome differs
+  from the setup outcome. ForceMove:1150-1184 (the setup phase) has every
+  setup state carry the agreed outcome. `HonestSend` has no rule on
+  `isFinal`.
+
+  This file is not part of the `ArmadaLean` library. Check it with
+  `lake env lean docs/counterexamples/funding_point_universally_finalizable_conclude.lean`.
+-/
+import ArmadaLean.Spec.Nitro.Liveness
+import ArmadaLean.Nitro.NonVacuity
+
+namespace ArmadaLean.Nitro.Counterexample.FundingPointConclude
+
+open ArmadaLean.Nitro ArmadaLean.Nitro.NonVacuity
+
+/-! ## The states and the network -/
+
+def o2 : Allocation Nat := [alloc d1 1]
+/-- The outcome every participant holds at the funding point. -/
+def Ωg : Outcome Nat := .allocation o1
+/-- The outcome of the final state `p0` signs at turn 1. -/
+def Ωb : Outcome Nat := .allocation o2
+
+theorem Ωb_ne_Ωg : Ωb ≠ Ωg := by decide
+
+def sA0 : State Nat := ⟨c2, 0, Ωg, false, .opaque 0⟩
+def sA1 : State Nat := ⟨c2, 1, Ωg, false, .opaque 0⟩
+/-- `p0`'s final state at turn 1, the turn of `q0`. -/
+def sF1 : State Nat := ⟨c2, 1, Ωb, true, .opaque 0⟩
+
+def n0 : Network Nat := ⟨g0, fun _ => [], fun _ => [], noDeposits⟩
+def nA : Network Nat := n0.applyHonest p0 (.send sA0)
+def nB : Network Nat := nA.applyHonest q0 (.send sA1)
+/-- `p0` sends a final state at turn 1. -/
+def nF : Network Nat := nB.applyHonest p0 (.send sF1)
+
+theorem voucher_gate (n : Network Nat) (st : State Nat) (hst : st.voucher? = none) :
+    ∀ r : Reaction Nat, HonestMove.send st = .react r → ∀ st' ∈ r.sends, n.VoucherSendable st' := by
+  intro r hr st' hst'
+  injection hr with hr; subst hr
+  simp only [List.mem_singleton] at hst'; subst hst'
+  intro v hv; rw [hst] at hv; cases hv
+
+/-- `nF` is reachable on the honest network: each send satisfies `HonestSend`. -/
+theorem nF_reach : (Nitro.network apps1 (Ts apps1)).Reachable nF :=
+  network_reachable_honest
+    (network_reachable_honest
+      (network_reachable_honest (network_reachable_init apps1 (Ts apps1) noDeposits) p0 (.send sA0)
+        (by honest_send) (voucher_gate _ _ rfl))
+      q0 (.send sA1) (by honest_send) (voucher_gate _ _ rfl))
+    p0 (.send sF1) (by honest_send) (voucher_gate _ _ rfl)
+
+theorem nF_views_p0 : nF.views p0 = ⟨g0, [⟨sA1, [q0]⟩], [⟨sF1, [p0]⟩, ⟨sA0, [p0]⟩]⟩ := by
+  simp [nF, nB, nA, n0, Network.views, Network.view, Network.applyHonest, HonestMove.send,
+    State.recipients, sA0, sA1, sF1, c2, p0, q0]
+
+theorem nF_views_q0 : nF.views q0 = ⟨g0, [⟨sF1, [p0]⟩, ⟨sA0, [p0]⟩], [⟨sA1, [q0]⟩]⟩ := by
+  simp [nF, nB, nA, n0, Network.views, Network.view, Network.applyHonest, HonestMove.send,
+    State.recipients, sA0, sA1, sF1, c2, p0, q0]
+
+theorem nF_views_chain (r : Participant) : (nF.views r).chain = g0 := rfl
+
+/-! ## Every hypothesis of the theorem holds -/
+
+theorem atFundingPoint : AtFundingPoint nF.views c2 Ωg := by
+  refine ⟨?_, ?_⟩
+  · intro r hr k hk
+    have hr' : r = p0 ∨ r = q0 := by simpa [c2] using hr
+    have hk' : k = 0 ∨ k = 1 := by
+      have : k < 2 := by simpa [FixedPart.n, c2] using hk
+      omega
+    rcases hk' with rfl | rfl
+    · refine ⟨⟨sA0, [p0]⟩, ?_, rfl, rfl, rfl, rfl, ⟨p0, by decide, by decide⟩⟩
+      rcases hr' with rfl | rfl
+      · rw [nF_views_p0]; exact holds_intro _ _ (by decide) (fun _ h => by cases h)
+      · rw [nF_views_q0]; exact holds_intro _ _ (by decide) (fun _ h => by cases h)
+    · refine ⟨⟨sA1, [q0]⟩, ?_, rfl, rfl, rfl, rfl, ⟨q0, by decide, by decide⟩⟩
+      rcases hr' with rfl | rfl
+      · rw [nF_views_p0]; exact holds_intro _ _ (by decide) (fun _ h => by cases h)
+      · rw [nF_views_q0]; exact holds_intro _ _ (by decide) (fun _ h => by cases h)
+  · intro r hr ss hss _
+    have hr' : r = p0 ∨ r = q0 := by simpa [c2] using hr
+    rcases hr' with rfl | rfl
+    · rw [nF_views_p0] at hss
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hss
+      rcases hss with rfl | rfl <;> decide
+    · rw [nF_views_q0] at hss
+      simp only [List.mem_singleton] at hss; subst hss; decide
+
+/-! ## The adversary concludes with `p0`'s final state -/
+
+/-- `p0`'s adversary: the canonical threat of `NonVacuity.lean`. -/
+abbrev T : Threat Nat p0 := (Ts apps1).T p0
+
+def net0 : NetworkState Nat p0 := ⟨g0, [⟨sA1, [q0]⟩], [⟨sF1, [p0]⟩, ⟨sA0, [p0]⟩]⟩
+
+theorem net0_eq : nF.views p0 = net0 := nF_views_p0
+
+/-- The conclusion proof: `sF1` with the signatures of `p0` and `q0`. -/
+def ssF : SignedState Nat := ⟨sF1, [p0, q0]⟩
+def concludeOp : Op Nat := .conclude c2 ssF
+
+def s1 : Adjudicator Nat := g0.setStatus c2 (.finalized 1 Ωb Ωb)
+
+theorem g0_conclude : g0.apply apps1 q0 concludeOp = some s1 := by
+  simp only [concludeOp, Adjudicator.apply, Adjudicator.conclude]
+  rw [if_pos (by decide)]
+  rfl
+
+/-- The adversary may conclude: the caller is `q0`, and `p0` sent `sF1`. -/
+theorem conclude_feasible : T.feasible net0 (.chain q0 concludeOp) := by
+  refine ⟨by decide, fun ss hss => ?_⟩
+  simp only [concludeOp, Op.proofStates, List.mem_singleton] at hss
+  subst hss
+  exact unforged_intro _ _ (fun _ => ⟨⟨sF1, [p0]⟩, by simp [net0], rfl⟩) (fun _ h => by cases h)
+
+def net1 : NetworkState Nat p0 := net0.applyAdv apps1 (.chain q0 concludeOp)
+
+theorem net1_chain : net1.chain = s1 := by
+  have h : net0.chain.apply apps1 q0 concludeOp = some s1 := g0_conclude
+  simp only [net1, NetworkState.applyAdv_chain_some apps1 h]
+
+theorem net1_finalized : net1.chain.finalizedWith c2.address = some Ωb := by
+  rw [net1_chain]
+  simp [s1, FixedPart.address_eq, ChannelStatus.finalizedWith]
+
+/-- `Ωg` is not finalizable for `p0` at the funding point. -/
+theorem not_finalizable : ¬ Finalizable apps1 T c2 Ωg (nF.views p0) := by
+  rw [net0_eq]
+  intro h
+  have hS : OtherSteps apps1 T net0 net1 :=
+    .tail .refl conclude_feasible (by intro dt h; cases h) (by intro o h; cases h)
+  have hnow : net1.chain.now = net0.chain.now := by rw [net1_chain]; rfl
+  exact Ωb_ne_Ωg (UnbeatableIn.finalized_eq_of_steps h hS hnow net1_finalized)
+
+/-! ## The counterexample -/
+
+/-- Every hypothesis of `funding_point_universally_finalizable` holds for
+    `apps1`, `Ts apps1`, `nF`, `c2`, `Ωg` and `vtAll`, on the honest
+    network, and the conclusion fails: `Ωg` is not finalizable for `p0`. -/
+theorem funding_point_universally_finalizable_false :
+    ¬ Spec.funding_point_universally_finalizable (E := Nat) := by
+  intro h
+  have hU := h apps1 (Ts apps1) nF.views ⟨nF, nF_reach⟩ rfl c2 Ωg vtAll rfl
+    (fun s1 s2 h _ _ => by simpa [vtAll] using h)
+    (fun s1 s2 _ _ _ _ ho _ => by simp [vtAll, ho])
+    (by decide) (fun _ => (by decide : 2 * 1 ≤ 2)) atFundingPoint
+    (fun r => by rw [nF_views_chain]; exact ⟨rfl, rfl⟩)
+  exact not_finalizable (hU p0 (by simp [c2]))
+
+/-- `p0`'s sends satisfy the signing rules: the network is honest. -/
+theorem p0_sent_honest :
+    ∀ s ∈ (nF.views p0).sent, HonestSend (nF.views p0).sent (nF.views p0).HoldsPrefund s.state :=
+  Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable ⟨nF, nF_reach⟩ p0⟩
+
+end ArmadaLean.Nitro.Counterexample.FundingPointConclude
+
+#print axioms ArmadaLean.Nitro.Counterexample.FundingPointConclude.funding_point_universally_finalizable_false
