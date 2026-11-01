@@ -6670,12 +6670,13 @@ theorem Adjudicator.allocationOf_transfer_source {s s' : Adjudicator E} {a : Fix
   rw [h0, hfind] at h2
   cases h2
 
-/-- A topological order of the state after a successful `transfer` to an
-    external destination lists the paying channel, and it is a topological
-    order of the state before the transfer: the edges agree, and every node
-    the earlier state must list is a node of the later state. -/
-theorem Adjudicator.IsTopologicalOrder.of_transfer {s s' : Adjudicator E} {a : FixedPart} {q : E}
-    (h : s.transfer a (.external q) = some s') {order : List (Address E)}
+/-- A topological order of the state after a successful `transfer` lists the
+    paying channel, and it is a topological order of the state before the
+    transfer: the edges agree, and every node the earlier state must list is
+    a node of the later state (a transfer lowers no balance but the paying
+    channel's, which has an allocation). -/
+theorem Adjudicator.IsTopologicalOrder.of_transfer {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (h : s.transfer a b = some s') {order : List (Address E)}
     (hord : s'.IsTopologicalOrder order) :
     a.address ∈ order ∧ s.IsTopologicalOrder order := by
   obtain ⟨hnd, hedge, hmem⟩ := hord
@@ -6732,7 +6733,7 @@ theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T 
   obtain ⟨ha, hord0⟩ := hord.of_transfer h
   have H' := turbo_value_is_value apps T B hT hcap (net.step hstep) hturbo' d _ ⟨order, hord, rfl⟩
   have H := turbo_value_is_value apps T B hT hcap net hturbo d _
-    ⟨order, hord0, (Adjudicator.turboValueAlong_transfer h hord.1 ha (fun h => by cases h)).symm⟩
+    ⟨order, hord0, (Adjudicator.turboValueAlong_transfer h hord ha (fun h => by cases h)).symm⟩
   exact ⟨fun hx => (hx.eq H) ▸ H', fun hx => (hx.eq H') ▸ H⟩
 
 /-- An exhausted DAG state is a fixed point of `transfer`: the call that

@@ -272,7 +272,7 @@ theorem min_add_min_sub_of_le (amt held remaining : Nat) (h : held ≤ remaining
     payment out of what `held` leaves after an earlier entry does not lower that
     entry's own share of `remaining ≥ held`, and the budgets stay ordered. -/
 theorem min_sub_of_le_held_sub (a held remaining y : Nat) (h : held ≤ remaining)
-    (hy : y ≤ held - min a held) :
+    (hy : y + min a held ≤ held) :
     min a (remaining - y) = min a remaining ∧ held - min a held ≤ remaining - min a remaining := by
   omega
 
@@ -342,7 +342,8 @@ theorem payoutValues_absorb_le {o : Allocation E} (hnd : (o.map Entry.dest).Nodu
       rw [hro]
       simp only [payoutValues]
       have hyle : y ≤ held - min e.amount held := hy ▸ Allocation.paidTo_le_held _ _ _
-      obtain ⟨hmineq, hle'⟩ := min_sub_of_le_held_sub e.amount held remaining y hle hyle
+      obtain ⟨hmineq, hle'⟩ := min_sub_of_le_held_sub e.amount held remaining y hle
+        (Nat.add_le_of_le_sub (Nat.min_le_right _ _) hyle)
       rw [hmineq, sub_sub_swap remaining y (min e.amount remaining)]
       have key := ih hndr hb
         (if e.item.isGuarantee then vals else vals.add e.dest (min e.amount remaining)) hle'
@@ -1137,9 +1138,9 @@ theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (hdag : s.IsDAG)
     leaves `turboValueAlong` unchanged at every address except `a` itself
     (`Adjudicator.turboValueAlong_transfer`). Before `a`'s turn the two runs
     differ only by the paid amount moved from `a` to the destination
-    (`turboValues_delta`). At `a`'s turn the real payment is one part of what
-    the algorithm pays (`payoutValues_absorb_le`). After `a`'s turn only `a`'s
-    own reading differs (`turboValues_get_congr_ne`). -/
+    (`payoutValues_delta_step`). At `a`'s turn the real payment is one part of
+    what the algorithm pays (`payoutValues_absorb_le`). After `a`'s turn only
+    `a`'s own reading differs (`payoutValues_get_congr_ne`). -/
 
 /-- `payoutValues` never lowers a reading, so neither does `turboValues`. -/
 theorem Adjudicator.turboValues_get_le (s : Adjudicator E) (L : List (Address E))
@@ -1168,58 +1169,6 @@ theorem payoutValues_get_congr_ne {vals1 vals2 : Balances E} {c : Address E}
       · rw [if_pos hme, if_pos hme, h e.dest (hme ▸ hm)]
       · rw [if_neg hme, if_neg hme]
         exact h m hm
-
-/-- Two runs of the algorithm over a list that does not contain `c`, on states
-    with the same allocations along the list, from starting balances that agree
-    except at `c`, agree except at `c`. -/
-theorem turboValues_get_congr_ne (s1 s2 : Adjudicator E) {c : Address E} :
-    ∀ (L : List (Address E)), c ∉ L → (∀ m ∈ L, s1.allocationOf m = s2.allocationOf m) →
-    ∀ (vals1 vals2 : Balances E), (∀ m, m ≠ c → vals1.get m = vals2.get m) →
-    ∀ m, m ≠ c → (s1.turboValues L vals1).get m = (s2.turboValues L vals2).get m := by
-  intro L
-  induction L with
-  | nil => intro _ _ vals1 vals2 h m hm; exact h m hm
-  | cons k rest ih =>
-    intro hc halloc vals1 vals2 h m hm
-    have hkc : k ≠ c := fun hk => hc (hk ▸ List.mem_cons_self)
-    simp only [Adjudicator.turboValues]
-    rw [h k hkc, halloc k List.mem_cons_self]
-    exact ih (fun hm' => hc (List.mem_cons_of_mem k hm'))
-      (fun m' hm' => halloc m' (List.mem_cons_of_mem k hm')) _ _
-      (fun m' hm' => payoutValues_get_congr_ne h _ _ m' hm') m hm
-
-/-- Two runs of the algorithm over a list that contains neither `a` nor any
-    node with an allocation at `b`, on states with the same allocations along
-    the list, from starting balances that differ only by `x` moved from `a` to
-    `b`, stay that far apart (`payoutValues_delta_step`, node by node). -/
-theorem turboValues_delta (s1 s2 : Adjudicator E) {a b : Address E} (hab : a ≠ b)
-    (hb1 : s1.allocationOf b = []) (hb2 : s2.allocationOf b = []) :
-    ∀ (L : List (Address E)), a ∉ L → (∀ m ∈ L, s1.allocationOf m = s2.allocationOf m) →
-    ∀ (vals1 vals2 : Balances E) (x : Coins), x ≤ vals1.get a →
-      (∀ m, m ≠ a → m ≠ b → vals1.get m = vals2.get m) →
-      vals2.get a = vals1.get a - x → vals2.get b = vals1.get b + x →
-      (∀ m, m ≠ a → m ≠ b → (s1.turboValues L vals1).get m = (s2.turboValues L vals2).get m) ∧
-      x ≤ (s1.turboValues L vals1).get a ∧
-      (s2.turboValues L vals2).get a = (s1.turboValues L vals1).get a - x ∧
-      (s2.turboValues L vals2).get b = (s1.turboValues L vals1).get b + x := by
-  intro L
-  induction L with
-  | nil => intro _ _ vals1 vals2 x hxle hagree ha hb; exact ⟨hagree, hxle, ha, hb⟩
-  | cons k rest ih =>
-    intro hka halloc vals1 vals2 x hxle hagree ha hb
-    have hk : k ≠ a := fun h => hka (h ▸ List.mem_cons_self)
-    have hrest : a ∉ rest := fun h => hka (List.mem_cons_of_mem k h)
-    have hallocr : ∀ m ∈ rest, s1.allocationOf m = s2.allocationOf m :=
-      fun m hm => halloc m (List.mem_cons_of_mem k hm)
-    simp only [Adjudicator.turboValues]
-    by_cases hkb : k = b
-    · rw [hkb, hb1, hb2]
-      simp only [payoutValues]
-      exact ih hrest hallocr vals1 vals2 x hxle hagree ha hb
-    · rw [hagree k hk hkb, halloc k List.mem_cons_self]
-      obtain ⟨h1, h2, h3, h4⟩ := payoutValues_delta_step a b hab (s2.allocationOf k) vals1 vals2 x
-        hxle hagree ha hb (vals2.get k)
-      exact ih hrest hallocr _ _ x h2 h1 h3 h4
 
 /-- A successful `transfer` changes no allocation but the paying channel's. -/
 theorem Adjudicator.allocationOf_transfer_ne {s s' : Adjudicator E} {a : FixedPart}
@@ -1282,14 +1231,16 @@ theorem Adjudicator.IsDAG.transfer {s s' : Adjudicator E} {a : FixedPart} {b : A
 
 /-- One real `transfer` from `a` to an external destination `q` leaves the
     Turbo Value Algorithm's answer unchanged at every address but `a`, along
-    any duplicate-free order that lists `a`. -/
+    a topological order of the state after the transfer that lists `a`. -/
 theorem Adjudicator.turboValueAlong_transfer {s s' : Adjudicator E} {a : FixedPart} {q : E}
-    (h : s.transfer a (.external q) = some s') {order : List (Address E)} (hnd : order.Nodup)
-    (ha : a.address ∈ order) {n : Address E} (hn : n ≠ a.address) :
+    (h : s.transfer a (.external q) = some s') {order : List (Address E)}
+    (hord : s'.IsTopologicalOrder order) (ha : a.address ∈ order) {n : Address E}
+    (hn : n ≠ a.address) :
     s'.turboValueAlong order n = s.turboValueAlong order n := by
   obtain ⟨o, amt, x, hf, hfind, -, -, hx, hfo, hbal, -, -⟩ := Adjudicator.transfer_effect h
   have hab : (a.address : Address E) ≠ .external q := by
     rw [FixedPart.address_eq]; exact fun h => by cases h
+  have hext : ∀ t : Adjudicator E, t.allocationOf (.external q) = [] := fun _ => rfl
   have hallocA : s.allocationOf a.address = o.dedup := by
     unfold Adjudicator.allocationOf; rw [hf]
   have hallocA' : s'.allocationOf a.address = o.dedup.reduceOwed (.external q) x := by
@@ -1313,16 +1264,57 @@ theorem Adjudicator.turboValueAlong_transfer {s s' : Adjudicator E} {a : FixedPa
     rw [if_neg hab.symm, if_pos rfl, Nat.add_zero] at h1
     exact h1
   have hxle : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
+  -- Before `a`'s turn: the two runs differ only by `x` moved from `a` to `q`
+  -- (`payoutValues_delta_step`, node by node; `q` has no allocation).
+  have hdelta : ∀ L : List (Address E), a.address ∉ L →
+      ∀ (vals1 vals2 : Balances E), x ≤ vals1.get a.address →
+      (∀ m, m ≠ a.address → m ≠ .external q → vals1.get m = vals2.get m) →
+      vals2.get a.address = vals1.get a.address - x →
+      vals2.get (.external q) = vals1.get (.external q) + x →
+      (∀ m, m ≠ a.address → m ≠ .external q →
+        (s.turboValues L vals1).get m = (s'.turboValues L vals2).get m) ∧
+      (s'.turboValues L vals2).get a.address = (s.turboValues L vals1).get a.address - x ∧
+      (s'.turboValues L vals2).get (.external q) =
+        (s.turboValues L vals1).get (.external q) + x := by
+    intro L
+    induction L with
+    | nil => intro _ vals1 vals2 _ hag ha' hb'; exact ⟨hag, ha', hb'⟩
+    | cons k rest ih =>
+      intro hka vals1 vals2 hxle' hag ha' hb'
+      have hk : k ≠ a.address := fun hk => hka (hk ▸ List.mem_cons_self)
+      have hrest : a.address ∉ rest := fun hm => hka (List.mem_cons_of_mem k hm)
+      simp only [Adjudicator.turboValues]
+      by_cases hkq : k = .external q
+      · rw [hkq, hext, hext]
+        simp only [payoutValues]
+        exact ih hrest vals1 vals2 hxle' hag ha' hb'
+      · rw [hag k hk hkq, Adjudicator.allocationOf_transfer_ne h hk]
+        obtain ⟨h1, h2, h3, h4⟩ := payoutValues_delta_step a.address (.external q) hab
+          (s.allocationOf k) vals1 vals2 x hxle' hag ha' hb' (vals2.get k)
+        exact ih hrest _ _ h2 h1 h3 h4
+  -- After `a`'s turn: runs that agree except at `a` stay so.
+  have hpost : ∀ L : List (Address E), a.address ∉ L → ∀ (vals1 vals2 : Balances E),
+      (∀ m, m ≠ a.address → vals1.get m = vals2.get m) →
+      ∀ m, m ≠ a.address → (s'.turboValues L vals1).get m = (s.turboValues L vals2).get m := by
+    intro L
+    induction L with
+    | nil => intro _ vals1 vals2 hv m hm; exact hv m hm
+    | cons k rest ih =>
+      intro hc vals1 vals2 hv m hm
+      have hkc : k ≠ a.address := fun hk => hc (hk ▸ List.mem_cons_self)
+      simp only [Adjudicator.turboValues]
+      rw [hv k hkc, Adjudicator.allocationOf_transfer_ne h hkc]
+      exact ih (fun hm' => hc (List.mem_cons_of_mem k hm')) _ _
+        (fun m' hm' => payoutValues_get_congr_ne hv _ _ m' hm') m hm
   obtain ⟨pre, post, rfl⟩ := List.append_of_mem ha
+  have hnd := hord.1
   rw [List.nodup_append, List.nodup_cons] at hnd
   have hapre : a.address ∉ pre := fun hm => hnd.2.2 _ hm _ List.mem_cons_self rfl
   have hapost : a.address ∉ post := hnd.2.1.1
   unfold Adjudicator.turboValueAlong
   rw [turboValues_append, turboValues_append]
   simp only [Adjudicator.turboValues]
-  obtain ⟨D1, D2, D3, D4⟩ := turboValues_delta s s' hab rfl rfl pre hapre
-    (fun m hm => (Adjudicator.allocationOf_transfer_ne h (ne_of_mem_of_not_mem hm hapre)).symm)
-    s.balances s'.balances x hxle hagree hA hQ
+  obtain ⟨D1, D3, D4⟩ := hdelta pre hapre s.balances s'.balances hxle hagree hA hQ
   have hheld : s.balances.get a.address ≤ (s.turboValues pre s.balances).get a.address :=
     Adjudicator.turboValues_get_le s pre s.balances a.address
   have hxd : x = o.dedup.paidTo (s.balances.get a.address) (.external q) := by
@@ -1334,9 +1326,7 @@ theorem Adjudicator.turboValueAlong_transfer {s s' : Adjudicator E} {a : FixedPa
     (s.turboValues pre s.balances) hheld
   rw [← hxd] at habs
   rw [hallocA', hallocA, D3]
-  refine turboValues_get_congr_ne s' s post hapost
-    (fun m hm => Adjudicator.allocationOf_transfer_ne h (ne_of_mem_of_not_mem hm hapost)) _ _
-    (fun m hm => ?_) n hn
+  refine hpost post hapost _ _ (fun m hm => ?_) n hn
   rw [habs m]
   refine payoutValues_get_congr_ne (fun k hk => ?_) _ _ m hm
   rw [Balances.get_add]
