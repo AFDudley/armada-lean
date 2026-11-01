@@ -170,14 +170,17 @@ def main() -> int:
         say(json_mode, f"  {v}")
     say(json_mode, ("PASS" if lint_result["lint_ok"] else "FAIL") + " lint")
     for f in lint_result.get("lint_regressions", []):
-        say(json_mode, f"  {f} higher than the merge base")
+        say(json_mode, f"  {f} higher than the baseline")
+    for f in lint_result.get("lint_lowered_fields", []):
+        say(json_mode, f"  {f} lower than the baseline (run scripts/update_gate_baseline.py)")
     if "lint_error" in lint_result:
         say(json_mode, f"  {lint_result['lint_error']}")
     say(json_mode, ("PASS" if decision_result["decision_ok"] else "FAIL") + " decisionScope")
     for f in decision_result.get("decision_new_findings", []):
-        say(json_mode, f"  new: {f['file']}:{f['line']} {f['decl']} ({f['kind']})")
+        say(json_mode, f"  new: {f['file']}:{f['line']} {f['declaration']} ({f['kind']})")
     for f in decision_result.get("decision_larger_findings", []):
-        say(json_mode, f"  larger: {f['file']}:{f['line']} {f['decl']} ({f['kind']}) size {f['size']}")
+        say(json_mode,
+            f"  larger: {f['file']}:{f['line']} {f['declaration']} ({f['kind']}) size {f['size']}")
     if "decision_error" in decision_result:
         say(json_mode, f"  {decision_result['decision_error']}")
     say(json_mode, ("PASS" if counterexamples_result["counterexamples_ok"] else "FAIL")
@@ -223,15 +226,15 @@ def main() -> int:
             "failures": {k: v for k, v in fails.items() if v},
             "lint_ok": lint_result["lint_ok"],
             "lint_summary": lint_result.get("lint_summary"),
-            "lint_base_summary": lint_result.get("lint_base_summary"),
-            "lint_merge_base": lint_result.get("lint_merge_base"),
+            "lint_baseline_summary": lint_result.get("lint_baseline_summary"),
             "lint_regressions": lint_result.get("lint_regressions", []),
+            "lint_lowered_fields": lint_result.get("lint_lowered_fields", []),
             "lint_seconds": lint_result.get("lint_seconds"),
             "decision_ok": decision_result["decision_ok"],
             "decision_findings_count": len(decision_result.get("decision_findings", [])),
             "decision_new_findings": decision_result.get("decision_new_findings", []),
             "decision_larger_findings": decision_result.get("decision_larger_findings", []),
-            "decision_merge_base": decision_result.get("decision_merge_base"),
+            "decision_files_scanned": decision_result.get("decision_files_scanned", []),
             "decision_seconds": decision_result.get("decision_seconds"),
             "counterexamples_ok": counterexamples_result["counterexamples_ok"],
             "counterexamples": counterexamples_result.get("counterexamples", []),

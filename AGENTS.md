@@ -60,12 +60,28 @@ leave a bare non-terminal `simp`. Call `omega` on a small context.
 **Acceptance.** Every task meets this before it is done:
 `lean-run scripts/check.sh --json` gives `true` for every `_ok` field,
 and the type-doctrine linter summary (`lint_ok`) and the decisionScope
-findings (`decision_ok`) are no worse than the merge base with
-`integrated` (`docs/lean/type-doctrine.md`, `armada-laconic`).
+findings (`decision_ok`) are no worse than `scripts/gate-baseline.json`
+(`docs/lean/type-doctrine.md`, `armada-laconic`).
 
 **Pre-merge gate-quality check.** Before a merge, run
 `lean-run python3 scripts/gate_extra.py --json` on the branch's own
 worktree. This runs the lint, decisionScope, and counterexample checks
 alone, with no full `spec_check.py` build report needed. The
-decisionScope check scans only the `ArmadaLean/**/*.lean` files the
-branch changed, against the merge base with `integrated`.
+decisionScope check scans only the `ArmadaLean/**/*.lean` files whose
+content differs from `scripts/gate-baseline.json`'s recorded hash.
+
+**The gate baseline.** `scripts/gate-baseline.json` is tracked: the
+type-lint summary counts, every `decisionScope` finding, and the sha256
+of every `ArmadaLean/**/*.lean` file (outside `ArmadaLean/Lint/`), all
+measured on `integrated`. The lint/decisionScope checks compare the
+tree against this FILE, not a live `git merge-base`: exophial's gate
+container ships the judged tree as a single commit with no other ref,
+so it cannot run `git merge-base` against `integrated`. When a task
+lowers a `gate_extra.LINT_REGRESSION_FIELDS` count or fixes a
+`decisionScope` finding, run `lean-run python3
+scripts/update_gate_baseline.py` and commit the updated
+`scripts/gate-baseline.json` in the SAME branch. Never run it to raise
+a count or add a finding without a fix: the gate refuses a raised
+baseline the same way it refuses a raised count, by comparing the tree
+against the committed file — so a raised baseline shows up in the
+branch's own diff for review.
