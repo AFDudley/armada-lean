@@ -1,0 +1,41 @@
+status: completed
+pebble_id: aln-9b7
+summary: >
+  Replaced the sorry proof body of turbo_value_is_value in
+  ArmadaLean/Nitro/Liveness.lean with a real two-field proof: ValueIn's
+  achievability conjunct comes directly from the already-proved
+  turbo_value_achievable, and the upper-bound conjunct comes from the
+  already-proved turbo_value_upper_bound (instantiated at n := .external d,
+  using hturbo.1 : net.state.chain.IsDAG, since IsTurboOutcomeNetwork is
+  IsDAG and TurboScope). The theorem statement is byte-for-byte unchanged.
+  Verified by installing elan/lake into a writable prefix
+  (/pebble/agent-home/.elan, since the shared /root/.elan install is not
+  writable by this worker's uid), running a full `lake build` (886 jobs,
+  0 errors), then `scripts/check.sh` (all PASS, sorry_count dropped from 8
+  to 7, turbo_value_is_value no longer listed) and
+  `scripts/check.sh --json turbo_value_is_value` (build_ok true,
+  theorem_in_sorry false, signatures_ok true — the two fields the spec's
+  acceptance tests assert). Also confirmed the proof uses only the standard
+  axioms (propext, Classical.choice, Quot.sound), type_lint's declaration
+  counts are unchanged from trunk, and `git diff integrated -- 'ArmadaLean/Spec*'`
+  is empty (no spec-surface change).
+cost: "~70k tokens"
+commits:
+  - "fd51fdc"
+verify_transcript:
+  hooks:
+    - name: lake build
+      outcome: passed
+      duration_s: 280
+    - name: scripts/check.sh
+      outcome: passed
+      duration_s: 20
+    - name: scripts/check.sh --json turbo_value_is_value
+      outcome: passed
+      duration_s: 34
+e2e_gate:
+  spec: contracts/specs/derived-aln-9b7.spec.json
+  command: "scripts/check.sh --json turbo_value_is_value"
+  result: passed
+  ran_at_sha: "fd51fdc"
+  mocks_in_path: false
