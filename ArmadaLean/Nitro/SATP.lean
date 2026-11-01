@@ -232,24 +232,29 @@ theorem satpVirtualRules_supportWindow : (satpVirtualRules : Rules E).SupportWin
               · exact h'
             have hre : q ∈ re.signers → ∃ ss ∈ [s, ch, re], q ∈ ss.signers ∧ ss.state.channel = c ∧
                 ss.state.turnNum ≤ re.state.turnNum ∧ re.state.turnNum < ss.state.turnNum + c.n :=
-              fun hqre => ⟨re, by simp, hqre, hrec, le_refl _, by omega⟩
+              fun hqre => ⟨re, by simp, hqre, hrec, le_refl _, Nat.lt_add_of_pos_right hn⟩
             have hchw : q ∈ ch.signers → 2 ≤ c.n → ∃ ss ∈ [s, ch, re], q ∈ ss.signers ∧
                 ss.state.channel = c ∧ ss.state.turnNum ≤ re.state.turnNum ∧
                 re.state.turnNum < ss.state.turnNum + c.n :=
-              fun hqc h2 => ⟨ch, by simp, hqc, hchc, by omega, by omega⟩
+              fun hqc h2 => ⟨ch, by simp, hqc, hchc, by rw [hch2, hre3]; decide, by
+                rw [hch2, hre3]; exact Nat.lt_of_lt_of_le (by decide) (Nat.add_le_add_left h2 2)⟩
             rcases hab with ⟨hta, ha⟩ | ⟨htb, hb⟩
             · rcases hq' with hqa | hqb
               · subst hqa
                 by_cases h2 : 2 ≤ c.n
                 · exact hchw ha h2
-                · exact hre (by rw [hab1 (by omega)]; exact hA' hta)
+                · exact hre (by
+                    rw [hab1 (Nat.le_antisymm (Nat.le_of_lt_succ (Nat.lt_of_not_le h2)) hn)]
+                    exact hA' hta)
               · subst hqb; exact hre (hA' hta)
             · rcases hq' with hqa | hqb
               · subst hqa; exact hre (hB' htb)
               · subst hqb
                 by_cases h2 : 2 ≤ c.n
                 · exact hchw hb h2
-                · exact hre (by rw [← hab1 (by omega)]; exact hB' htb)
+                · exact hre (by
+                    rw [← hab1 (Nat.le_antisymm (Nat.le_of_lt_succ (Nat.lt_of_not_le h2)) hn)]
+                    exact hB' htb)
         · cases hv
 
 /-- SATP:408-409: the pre-fund outcome `{A : A(a0), B : A(b0)}`, paid to the
