@@ -1,6 +1,9 @@
 """The gate-quality checks beyond the spec check: the type-doctrine linter
 count, the `decisionScope` bound, and the counterexample build. Design
-record: this module's own doc comments. Used by `spec_check.py`.
+record: this module's own doc comments. Used by `spec_check.py`. Run
+standalone with `python3 scripts/gate_extra.py --json` (see `main`, at
+the end of this file): a worker checks its own branch before a merge,
+with no `spec_check.py` build report needed.
 
 Each check compares the working tree against the merge base with the
 trunk branch (`merge_base`), not against a stored threshold: a merge must
@@ -9,22 +12,34 @@ finding, past what the trunk already carries. On the trunk branch itself
 the merge base IS `HEAD` (the trunk's own ancestor search for itself), so
 both checks compare the tree with itself and always pass there.
 
+The `decisionScope` check scans only the `ArmadaLean/**/*.lean` files the
+branch changed, not the whole 78-file source tree: `git diff --name-only`
+between `HEAD` and the merge base. A full-tree scan re-elaborated all 78
+files on every gate run, 235s on an idle host and up to 1,328s under
+load, against the gate's 1,800s timeout. A diff-scoped scan costs the
+size of the diff instead. If the branch changed no Lean file, the check
+passes with no scan; on the trunk itself the diff against its own merge
+base (itself) is empty, so the check always passes there too. The merge
+base is scanned on the SAME file list, for a like-for-like comparison.
+
 The merge-base measurement runs in a throwaway `git worktree` under
 `.scratch/check/`, with `.lake/packages` symlinked from the real
 checkout (never copied, `worker.md`'s own setup rule) and its OWN
 `.lake/build` (a different source tree cannot share build artifacts with
 the one already built in the real checkout). The worktree is removed
 after each measurement; the measured JSON is cached by merge-base commit
-under `.scratch/check/base_cache/`, so a second `check.sh` run against an
-unchanged merge base skips the rebuild entirely.
+and scanned-file list under `.scratch/check/base_cache/`, so a second
+`check.sh` run against an unchanged merge base and file set skips the
+rebuild entirely.
 """
 from __future__ import annotations
 
+import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -54,6 +69,12 @@ LINT_REGRESSION_FIELDS = (
 DECISION_MAX_OMEGA_HYPS = 13
 DECISION_MAX_DECIDE_SIZE = 300
 
+# The host rule (`AGENTS.md` "Lean work: standing rules"): at most 4 Lean
+# processes run at once. The decisionScope scan runs each changed file
+# through its own `lake env lean` process, in a `ThreadPoolExecutor`
+# capped at this count.
+DECISION_SCOPE_MAX_WORKERS = 4
+
 _OMEGA_RE = re.compile(r"omega call in (\S+) \(line (\d+)\) consumes (\d+) hypotheses")
 _DECIDE_SIZE_RE = re.compile(r"decide call in (\S+) \(line (\d+)\): goal size (\d+)")
 _DECIDE_FVAR_RE = re.compile(
@@ -82,10 +103,19 @@ def merge_base_sha(root: Path) -> str:
     return out.stdout.strip()
 
 
-def _cache_path(root: Path, sha: str, name: str) -> Path:
+def _cache_path(root: Path, sha: str, name: str, files: list[Path] | None = None) -> Path:
+    """The cache file for a merge-base measurement. `files`, when given,
+    makes the key include the scanned file list (the decisionScope
+    check): two branches sharing a merge base but changing different
+    files must not reuse each other's cached findings."""
     d = root / ".scratch" / "check" / "base_cache"
     d.mkdir(parents=True, exist_ok=True)
-    return d / f"{sha}-{name}.json"
+    suffix = ""
+    if files is not None:
+        digest = hashlib.sha1(
+            "\n".join(str(f) for f in sorted(files)).encode()).hexdigest()[:12]
+        suffix = f"-{digest}"
+    return d / f"{sha}-{name}{suffix}.json"
 
 
 class _BaseWorktree:
@@ -177,15 +207,25 @@ def check_lint(root: Path) -> dict:
 # 2. The decision-procedure bounds check
 
 
-def _decision_scope_files(root: Path) -> list[Path]:
-    """Every `ArmadaLean` source file except `ArmadaLean/Lint/`: the
-    linter module cannot import itself (`ArmadaLean.Lint.DecisionScope`
-    prepended as an extra import to its own source would be a self-
-    import cycle)."""
-    return sorted(
-        p.relative_to(root) for p in (root / "ArmadaLean").rglob("*.lean")
-        if "Lint" not in p.relative_to(root).parts
-    )
+def _decision_scope_files(root: Path, base: str, head: str) -> list[Path]:
+    """The `ArmadaLean` source files the branch changed, relative to
+    `base`: `git diff --name-only base head`, filtered to
+    `ArmadaLean/**/*.lean` outside `ArmadaLean/Lint/` (the linter module
+    cannot import itself; `ArmadaLean.Lint.DecisionScope` prepended as an
+    extra import to its own source would be a self-import cycle). On the
+    trunk branch `base == head`, so the diff is skipped and this returns
+    an empty list."""
+    if base == head:
+        return []
+    proc = _run(["git", "diff", "--name-only", base, head, "--", "ArmadaLean"], root)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git diff {base} {head} failed:\n{proc.stderr}")
+    files = []
+    for line in proc.stdout.splitlines():
+        p = Path(line)
+        if p.suffix == ".lean" and "Lint" not in p.parts:
+            files.append(p)
+    return sorted(files)
 
 
 def _parse_decision_findings(relpath: str, text: str) -> list[dict]:
@@ -230,18 +270,23 @@ def _scan_decision_file(root: Path, relpath: Path, tmp_root: Path) -> list[dict]
     return _parse_decision_findings(str(relpath), proc.stdout + proc.stderr)
 
 
-def run_decision_scope(root: Path) -> list[dict]:
-    """Every `decisionScope` finding over the whole `ArmadaLean` source
-    tree, at the committed bounds (`maxOmegaHyps = 13`,
-    `maxDecideSize = 300`)."""
+def run_decision_scope(root: Path, files: list[Path]) -> list[dict]:
+    """Every `decisionScope` finding over `files`, at the committed
+    bounds (`maxOmegaHyps = 13`, `maxDecideSize = 300`). An empty
+    `files` list skips the build and returns no findings: the branch
+    changed no `ArmadaLean` source file, so there is nothing to scan.
+    `DECISION_SCOPE_MAX_WORKERS` caps the concurrent `lake env lean`
+    processes at the host's 4-process Lean limit (`AGENTS.md`)."""
+    if not files:
+        return []
     _lake_build(root)
     _lake_build(root, "ArmadaLean.Lint.DecisionScope")
     tmp_root = root / ".scratch" / "check" / "decision_scope_src"
     if tmp_root.exists():
         shutil.rmtree(tmp_root)
-    files = _decision_scope_files(root)
     findings: list[dict] = []
-    with ThreadPoolExecutor(max_workers=min(16, os.cpu_count() or 4)) as ex:
+    workers = min(DECISION_SCOPE_MAX_WORKERS, len(files))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(_scan_decision_file, root, f, tmp_root): f for f in files}
         for fut in as_completed(futures):
             findings.extend(fut.result())
@@ -254,20 +299,31 @@ def check_decision_scope(root: Path) -> dict:
     grown in size, versus the merge base with the trunk branch. The
     trunk is not required to be clean: `NonVacuity.lean:2660` is a known
     trunk finding (a `decide` of size 21,601), so this compares against
-    the base instead of requiring zero findings."""
+    the base instead of requiring zero findings.
+
+    The scan is scoped to the `ArmadaLean` files the branch changed
+    (`_decision_scope_files`): the whole-tree scan this replaced took
+    235-1,328s against the gate's 1,800s timeout. The SAME file list is
+    scanned on the merge base, for a like-for-like comparison; a file
+    the diff names but the base lacks (newly added on the branch) is
+    dropped from the base scan, since the base has no finding for it."""
     t0 = time.monotonic()
     sha = head_sha(root)
     base = merge_base_sha(root)
-    tree_findings = run_decision_scope(root)
+    files = _decision_scope_files(root, base, sha)
+    tree_findings = run_decision_scope(root, files)
     if base == sha:
         base_findings = tree_findings
+    elif not files:
+        base_findings = []
     else:
-        cache = _cache_path(root, base, "decision")
+        cache = _cache_path(root, base, "decision", files)
         if cache.exists():
             base_findings = json.loads(cache.read_text(encoding="utf-8"))
         else:
             with _BaseWorktree(root, base) as wt:
-                base_findings = run_decision_scope(wt)
+                base_files = [f for f in files if (wt / f).exists()]
+                base_findings = run_decision_scope(wt, base_files)
             cache.write_text(json.dumps(base_findings), encoding="utf-8")
 
     def key(f: dict) -> tuple:
@@ -293,6 +349,7 @@ def check_decision_scope(root: Path) -> dict:
         "decision_new_findings": new_findings,
         "decision_larger_findings": larger_findings,
         "decision_merge_base": base,
+        "decision_files_scanned": [str(f) for f in files],
         "decision_seconds": round(time.monotonic() - t0, 1),
     }
 
@@ -327,3 +384,65 @@ def check_counterexamples(root: Path) -> dict:
         "counterexamples": results,
         "counterexamples_seconds": round(time.monotonic() - t0, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# 4. Standalone entry point
+
+
+def main(argv: list[str]) -> int:
+    """Run the three gate-quality checks against the current directory
+    and report. `--json` prints one JSON line to stdout and exit 0 means
+    every `_ok` field is `true`; without it, a short PASS/FAIL line per
+    check goes to stdout. A worker runs `python3 scripts/gate_extra.py
+    --json` on its own branch to check `lint_ok` and `decision_ok`
+    against the merge base before a merge, with no `spec_check.py` build
+    report needed."""
+    root = Path.cwd()
+    json_mode = bool(argv) and argv[0] == "--json"
+
+    try:
+        lint_result = check_lint(root)
+    except RuntimeError as e:
+        lint_result = {"lint_ok": False, "lint_error": str(e)}
+    try:
+        decision_result = check_decision_scope(root)
+    except RuntimeError as e:
+        decision_result = {"decision_ok": False, "decision_error": str(e)}
+    try:
+        counterexamples_result = check_counterexamples(root)
+    except RuntimeError as e:
+        counterexamples_result = {"counterexamples_ok": False, "counterexamples_error": str(e)}
+
+    passed = (lint_result["lint_ok"] and decision_result["decision_ok"]
+              and counterexamples_result["counterexamples_ok"])
+
+    if json_mode:
+        print(json.dumps({
+            "lint_ok": lint_result["lint_ok"],
+            "lint_regressions": lint_result.get("lint_regressions", []),
+            "lint_error": lint_result.get("lint_error"),
+            "decision_ok": decision_result["decision_ok"],
+            "decision_new_findings": decision_result.get("decision_new_findings", []),
+            "decision_larger_findings": decision_result.get("decision_larger_findings", []),
+            "decision_files_scanned": decision_result.get("decision_files_scanned", []),
+            "decision_error": decision_result.get("decision_error"),
+            "counterexamples_ok": counterexamples_result["counterexamples_ok"],
+            "counterexamples_error": counterexamples_result.get("counterexamples_error"),
+        }))
+    else:
+        for name, result, ok_field, err_field in (
+            ("lint", lint_result, "lint_ok", "lint_error"),
+            ("decisionScope", decision_result, "decision_ok", "decision_error"),
+            ("counterexamples", counterexamples_result, "counterexamples_ok",
+             "counterexamples_error"),
+        ):
+            print(("PASS " if result[ok_field] else "FAIL ") + name)
+            if result.get(err_field):
+                print(f"  {result[err_field]}")
+
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

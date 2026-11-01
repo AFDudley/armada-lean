@@ -62,3 +62,10 @@ leave a bare non-terminal `simp`. Call `omega` on a small context.
 and the type-doctrine linter summary (`lint_ok`) and the decisionScope
 findings (`decision_ok`) are no worse than the merge base with
 `integrated` (`docs/lean/type-doctrine.md`, `armada-laconic`).
+
+**Pre-merge gate-quality check.** Before a merge, run
+`lean-run python3 scripts/gate_extra.py --json` on the branch's own
+worktree. This runs the lint, decisionScope, and counterexample checks
+alone, with no full `spec_check.py` build report needed. The
+decisionScope check scans only the `ArmadaLean/**/*.lean` files the
+branch changed, against the merge base with `integrated`.
