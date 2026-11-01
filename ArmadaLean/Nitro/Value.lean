@@ -18,6 +18,7 @@ import Mathlib.Logic.Relation
 import Mathlib.Data.Set.Finite.Basic
 import Mathlib.Order.WellFoundedSet
 import ArmadaLean.Nitro.Strategy
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -87,14 +88,14 @@ theorem payoutValues_get_add_le (vals : Balances E) (d : Address E) (x : Coins) 
   · subst h
     rw [if_pos rfl]
     exact Nat.le_add_right _ _
-  · simp [h]
+  · (simp? [h] says simp only [h, ↓reduceIte, Std.le_refl])
 
 /-- `payoutValues` never lowers any address's recorded value: every update
     it makes is an addition. -/
 theorem payoutValues_le (o : Allocation E) (vals : Balances E) (remaining : Coins) (n : Address E) :
     vals.get n ≤ (payoutValues vals remaining o).get n := by
   induction o generalizing vals remaining with
-  | nil => simp [payoutValues]
+  | nil => (simp? [payoutValues] says simp only [payoutValues, Std.le_refl])
   | cons e rest ih =>
     simp only [payoutValues]
     refine le_trans ?_ (ih _ _)
@@ -114,7 +115,7 @@ theorem payoutValues_congr {vals1 vals2 : Balances E} (h : ∀ m, vals1.get m = 
     intro m
     split
     · exact h m
-    · simp [Balances.get_add, h]
+    · (simp? [Balances.get_add, h] says simp only [Balances.get_add, h])
 
 /-- Processing an allocation that never mentions `d` as a destination
     leaves `d`'s recorded value unchanged. -/
@@ -122,7 +123,7 @@ theorem payoutValues_get_of_not_mem {o : Allocation E} {d : Address E}
     (hd : d ∉ o.map Entry.dest) (vals : Balances E) (remaining : Coins) :
     (payoutValues vals remaining o).get d = vals.get d := by
   induction o generalizing vals remaining with
-  | nil => simp [payoutValues]
+  | nil => (simp? [payoutValues] says simp only [payoutValues])
   | cons e rest ih =>
     simp only [List.map_cons, List.mem_cons, not_or] at hd
     simp only [payoutValues]
@@ -152,7 +153,7 @@ theorem payoutValues_absorb {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
         (remaining - Allocation.paidTo remaining o b)
         (Allocation.reduceOwed o b (Allocation.paidTo remaining o b))).get n := by
   induction o generalizing vals remaining with
-  | nil => simp at hb
+  | nil => (simp? at hb says simp only [Allocation.find_nil, reduceCtorEq] at hb)
   | cons e rest ih =>
     rw [Allocation.find_cons] at hb
     have hnde : e.dest ∉ rest.map Entry.dest := (List.nodup_cons.1 hnd).1
@@ -163,21 +164,21 @@ theorem payoutValues_absorb {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
       rw [if_pos rfl] at hb
       have hee : e = (⟨e.dest, .alloc amt⟩ : Entry E) := by injection hb
       have heitem : e.item = Item.alloc amt := by rw [hee]
-      have heamt : e.amount = amt := by simp [Entry.amount, heitem]
+      have heamt : e.amount = amt := by (simp? [Entry.amount, heitem] says simp only [Entry.amount, heitem, Item.amount_alloc])
       have hx : Allocation.paidTo remaining (e :: rest) e.dest = min amt remaining := by
         rw [Allocation.paidTo_eq_get, hdeq]
         conv_lhs => rw [hee]
-        simp [Allocation.payout_cons, Balances.get_cons]
+        (simp? [Allocation.payout_cons, Balances.get_cons] says simp only [Allocation.payout_cons, Entry.amount_mk, Item.amount_alloc, Balances.get_cons, ↓reduceIte])
       rw [hx]
       have hro : Allocation.reduceOwed (e :: rest) e.dest (min amt remaining) =
           ({ e with item := .alloc (amt - min amt remaining) } : Entry E) :: rest := by
         rw [Allocation.reduceOwed_cons, if_pos rfl]
-        simp [Entry.amount, heitem]
+        (simp? [Entry.amount, heitem] says simp only [Entry.amount, heitem, Item.amount_alloc])
       rw [hro]
       simp only [payoutValues]
-      have hcond1 : ¬ e.item.isGuarantee = true := by rw [heitem]; simp [Item.isGuarantee]
+      have hcond1 : ¬ e.item.isGuarantee = true := by rw [heitem]; (simp? [Item.isGuarantee] says simp only [Item.isGuarantee, Bool.false_eq_true, not_false_eq_true])
       have hcond2 : ¬ ({ e with item := .alloc (amt - min amt remaining) } : Entry E).item.isGuarantee = true := by
-        simp [Item.isGuarantee]
+        (simp? [Item.isGuarantee] says simp only [Item.isGuarantee, Bool.false_eq_true, not_false_eq_true])
       have hmodamt : ({ e with item := .alloc (amt - min amt remaining) } : Entry E).amount
           = amt - min amt remaining := rfl
       rw [if_neg hcond1, if_neg hcond2, heamt, hmodamt]
@@ -188,8 +189,8 @@ theorem payoutValues_absorb {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
       apply payoutValues_congr
       intro m
       by_cases hm : m = e.dest
-      · simp [hm, Balances.get_add]
-      · simp [hm, Balances.get_add]
+      · (simp? [hm, Balances.get_add] says simp only [hm, Balances.get_add, ↓reduceIte, add_zero, Nat.add_left_cancel_iff])
+      · (simp? [hm, Balances.get_add] says simp only [Balances.get_add, hm, ↓reduceIte])
     · rw [if_neg he] at hb
       have hx : Allocation.paidTo remaining (e :: rest) b =
           Allocation.paidTo (remaining - min e.amount remaining) rest b := by
@@ -223,14 +224,14 @@ theorem payoutValues_absorb {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
                   (min e.amount remaining)).get m := by
         intro m
         by_cases hg : e.item.isGuarantee = true
-        · simp [hg]
+        · (simp? [hg] says simp only [hg, ↓reduceIte, Balances.get_add])
         · by_cases hmb : m = b
           · by_cases hme : m = e.dest
             · exact absurd (hme.symm.trans hmb) he
-            · simp_all [Balances.get_add]
+            · (simp_all? [Balances.get_add] says simp_all only [forall_const, List.map_cons, List.nodup_cons, not_false_eq_true, and_self, List.mem_map, not_exists, not_and, Bool.not_eq_true, Bool.false_eq_true, ↓reduceIte, Balances.get_add, Nat.add_left_cancel_iff])
           · by_cases hme : m = e.dest
-            · simp_all [Balances.get_add]
-            · simp_all [Balances.get_add]
+            · (simp_all? [Balances.get_add] says simp_all only [forall_const, List.map_cons, List.nodup_cons, not_false_eq_true, and_self, List.mem_map, not_exists, not_and, Bool.not_eq_true, Bool.false_eq_true, ↓reduceIte, Balances.get_add, Nat.add_left_cancel_iff])
+            · (simp_all? [Balances.get_add] says simp_all only [forall_const, List.map_cons, List.nodup_cons, not_false_eq_true, and_self, List.mem_map, not_exists, not_and, Bool.not_eq_true, Bool.false_eq_true, ↓reduceIte, Balances.get_add])
       calc (payoutValues (if e.item.isGuarantee then vals else vals.add e.dest (min e.amount remaining))
                 (remaining - min e.amount remaining) rest).get n
           = (payoutValues
@@ -451,7 +452,7 @@ theorem exists_topo_list {α : Type} [DecidableEq α] (Edge : α → α → Prop
   | _ n ih =>
     intro W hlen hW
     rcases W with _ | ⟨w, ws⟩
-    · exact ⟨[], List.nodup_nil, by simp, by simp⟩
+    · exact ⟨[], List.nodup_nil, by (simp? says simp only [List.not_mem_nil, implies_true]), by (simp? says simp only [List.not_mem_nil, List.length_nil, not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq, false_and, and_self, exists_const, imp_false, IsEmpty.forall_iff, implies_true])⟩
     · obtain ⟨a, ha, hamin⟩ := exists_source (Relation.TransGen Edge) hdag
         {x | x ∈ (w :: ws)} (List.finite_toSet _) ⟨w, List.mem_cons_self⟩
       have hanp : ∀ b ∈ w :: ws, ¬ Edge b a := fun b hb hba =>
@@ -500,13 +501,13 @@ theorem exists_topo_list {α : Type} [DecidableEq α] (Edge : α → α → Prop
           · subst hxa
             have hyW' : y ∈ order' := (hmem' y).mpr ((hmemW y).mpr ⟨hy, hya⟩)
             obtain ⟨j, hj⟩ := List.getElem?_of_mem hyW'
-            exact ⟨0, j + 1, List.getElem?_cons_zero, by simpa using hj, by omega⟩
+            exact ⟨0, j + 1, List.getElem?_cons_zero, by (simpa? using hj says simpa only [List.getElem?_cons_succ] using hj), by omega⟩
           · have hxW' : x ∈ order' := (hmem' x).mpr ((hmemW x).mpr ⟨hx, hxa⟩)
             have hyW' : y ∈ order' := (hmem' y).mpr ((hmemW y).mpr ⟨hy, hya⟩)
             have hxpp : x ∈ pre ++ post := (hmemW x).mpr ⟨hx, hxa⟩
             have hypp : y ∈ pre ++ post := (hmemW y).mpr ⟨hy, hya⟩
             obtain ⟨i, j, hi, hj, hij⟩ := hedge' x y hxpp hypp hxy
-            exact ⟨i + 1, j + 1, by simpa using hi, by simpa using hj, by omega⟩
+            exact ⟨i + 1, j + 1, by (simpa? using hi says simpa only [List.getElem?_cons_succ] using hi), by (simpa? using hj says simpa only [List.getElem?_cons_succ] using hj), by omega⟩
 
 -- Piece 3: concrete finite node list covering every node that MUST appear
 -- in a topological order of `s`.
@@ -524,7 +525,7 @@ theorem channel_active_mem_status (s : Adjudicator E) (c : FixedPart)
     exact absurd (by unfold Adjudicator.statusOf; rw [hlk]; rfl) h
   | some st =>
     have hmem : (c, st) ∈ s.status := List.lookup_eq_some_iff.mp hlk |>.elim
-      (fun l1 h' => h'.elim (fun l2 ⟨heq, _⟩ => heq ▸ by simp))
+      (fun l1 h' => h'.elim (fun l2 ⟨heq, _⟩ => heq ▸ by (simp? says simp only [List.mem_append, List.mem_cons, true_or, or_true])))
     exact ⟨st, hmem, by unfold Adjudicator.statusOf; rw [hlk]; rfl⟩
 
 theorem active_mem_requiredNodes (s : Adjudicator E) (n : Address E)
@@ -534,14 +535,14 @@ theorem active_mem_requiredNodes (s : Adjudicator E) (n : Address E)
   · refine List.mem_append.mpr (Or.inl (List.mem_append.mpr (Or.inl ?_)))
     unfold Balances.get at h
     cases hlk : s.balances.lookup n with
-    | none => simp [hlk] at h
+    | none => (simp? [hlk] at h says simp only [hlk, Option.getD_none, ne_eq, not_true_eq_false] at h)
     | some v =>
       have hmem : (n, v) ∈ s.balances := List.lookup_eq_some_iff.mp hlk |>.elim
-        (fun l1 h' => h'.elim (fun l2 ⟨heq, _⟩ => heq ▸ by simp))
+        (fun l1 h' => h'.elim (fun l2 ⟨heq, _⟩ => heq ▸ by (simp? says simp only [List.mem_append, List.mem_cons, true_or, or_true])))
       exact List.mem_map.mpr ⟨(n, v), hmem, rfl⟩
   · obtain ⟨c, hceq⟩ : ∃ c : FixedPart, n = c.address := by
       cases n with
-      | external d => simp [Adjudicator.allocationOf, Adjudicator.finalOutcome] at h
+      | external d => (simp? [Adjudicator.allocationOf, Adjudicator.finalOutcome] at h says simp only [Adjudicator.allocationOf, Adjudicator.finalOutcome, ne_eq, not_true_eq_false] at h)
       | channel c => exact ⟨c, rfl⟩
     subst hceq
     obtain ⟨st, hmemstatus, -⟩ := channel_active_mem_status s c h
@@ -555,7 +556,7 @@ theorem edge_mem_requiredNodes (s : Adjudicator E) (n d : Address E) (h : s.Edge
   refine ⟨active_mem_requiredNodes s n (Or.inr hnactive), ?_⟩
   obtain ⟨c, hceq⟩ : ∃ c : FixedPart, n = c.address := by
     cases n with
-    | external dd => simp [Adjudicator.allocationOf, Adjudicator.finalOutcome] at hnactive
+    | external dd => (simp? [Adjudicator.allocationOf, Adjudicator.finalOutcome] at hnactive says simp only [Adjudicator.allocationOf, Adjudicator.finalOutcome, ne_eq, not_true_eq_false] at hnactive)
     | channel c => exact ⟨c, rfl⟩
   subst hceq
   obtain ⟨st, hmemstatus, -⟩ := channel_active_mem_status s c hnactive
@@ -593,8 +594,8 @@ theorem payoutValues_get_ne (vals : Balances E) (remaining : Coins) (alloc : All
     unfold payoutValues
     rw [ih _ _ hrest]
     by_cases hg : e.item.isGuarantee
-    · simp [hg]
-    · simp [hg, Balances.get_add, Ne.symm hne]
+    · (simp? [hg] says simp only [hg, ↓reduceIte])
+    · (simp? [hg, Balances.get_add, Ne.symm hne] says simp only [hg, Bool.false_eq_true, ↓reduceIte, Balances.get_add, Ne.symm hne])
 
 -- Index utilities: an explicit split gives a direct index witness, and
 -- Nodup makes that witness the unique one `hvalid`-style existentials
@@ -603,7 +604,7 @@ theorem getElem?_append_cons_right {α : Type} (l1 : List α) (x : α) (l2 : Lis
     (l1 ++ x :: l2)[l1.length]? = some x := by
   induction l1 with
   | nil => rfl
-  | cons h t ih => simp
+  | cons h t ih => (simp? says simp only [List.cons_append, List.length_cons, List.length_append, add_lt_add_iff_right, lt_add_iff_pos_right, add_pos_iff, zero_lt_one, or_true, getElem?_pos, List.getElem_cons_succ, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero])
 
 theorem not_edge_of_before_split {α : Type} [DecidableEq α] (Edge : α → α → Prop)
     (l : List α) (hnd : l.Nodup)
@@ -621,7 +622,7 @@ theorem not_edge_of_before_split {α : Type} [DecidableEq α] (Edge : α → α 
     have hraw := getElem?_append_cons_right (pre1 ++ p :: pre2) a post
     rw [List.append_assoc, List.cons_append] at hraw
     rw [heq, show pre1.length + 1 + pre2.length = (pre1 ++ p :: pre2).length from by
-      simp [List.length_append, List.length_cons]; omega]
+      (simp? [List.length_append, List.length_cons] says simp only [List.length_append, List.length_cons]); omega]
     exact hraw
   have hilt : i < l.length := (List.getElem?_eq_some_iff.mp hi).1
   have hjlt : j < l.length := (List.getElem?_eq_some_iff.mp hj).1
@@ -662,8 +663,8 @@ theorem payoutValues_get_eq (vals : Balances E) (r : Coins) (alloc : Allocation 
         Balances.get_add, Balances.get_add]
       simp only [Balances.get_nil]
       split_ifs with hqe
-      · subst hqe; rw [Nat.add_assoc]; simp
-      · simp
+      · subst hqe; rw [Nat.add_assoc]; (simp? says simp only [zero_add, Nat.add_left_cancel_iff])
+      · (simp? says simp only [zero_add, Nat.add_left_cancel_iff])
 
 theorem payoutValues_comm (vals : Balances E) (r1 : Coins) (alloc1 : Allocation E)
     (r2 : Coins) (alloc2 : Allocation E) (q : Address E) :
@@ -699,10 +700,10 @@ theorem turboValues_filter_activeAlloc (s : Adjudicator E) (order : List (Addres
   | cons x rest ih =>
     by_cases hx : (s.allocationOf x).isEmpty
     · have hxnil : s.allocationOf x = [] := List.isEmpty_iff.mp hx
-      rw [List.filter_cons_of_neg (by simp [hx])]
+      rw [List.filter_cons_of_neg (by (simp? [hx] says simp only [hx, Bool.not_true, Bool.false_eq_true, not_false_eq_true]))]
       simp only [Adjudicator.turboValues, hxnil, payoutValues]
       exact ih vals
-    · rw [List.filter_cons_of_pos (by simp [hx])]
+    · rw [List.filter_cons_of_pos (by (simp? [hx] says simp only [hx, Bool.not_false]))]
       simp only [Adjudicator.turboValues]
       exact ih _
 
@@ -787,7 +788,7 @@ theorem before_remove_mid {α : Type} {l pre post : List α} {a m d : α} (heq :
       exact List.getElem?_cons_succ
   refine ⟨if im < pre.length then im else im - 1, if id < pre.length then id else id - 1,
     (key im hima) ▸ him, (key id hida) ▸ hid, ?_⟩
-  by_cases h1 : im < pre.length <;> by_cases h2 : id < pre.length <;> simp [h1, h2] <;> omega
+  by_cases h1 : im < pre.length <;> by_cases h2 : id < pre.length <;> (simp? [h1, h2] says simp only [h1, ↓reduceIte, h2]) <;> omega
 
 -- Piece 4g: the main order-independence theorem. Any two Nodup lists with
 -- the same elements, each respecting `s.Edge`'s before-order, give the same
@@ -810,7 +811,7 @@ theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
     · have hL2nil : L2 = [] := by
         cases L2 with
         | nil => rfl
-        | cons y ys => exact absurd ((hmem y).mpr List.mem_cons_self) (by simp)
+        | cons y ys => exact absurd ((hmem y).mpr List.mem_cons_self) (by (simp? says simp only [List.not_mem_nil, not_false_eq_true]))
       rw [hL2nil]
     · obtain ⟨a, ha, hamin⟩ := exists_source (Relation.TransGen s.Edge) hdag
         {x | x ∈ (w :: ws)} (List.finite_toSet _) ⟨w, List.mem_cons_self⟩
@@ -857,12 +858,12 @@ theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
         intro p hp
         obtain ⟨prepre, postpre, hpeq, -⟩ := List.eq_append_cons_of_mem hp
         refine not_edge_of_before_split s.Edge (w :: ws) hnd1 hvalid1 prepre postpre post1 a p ?_
-        rw [heq1, hpeq]; simp [List.append_assoc]
+        rw [heq1, hpeq]; (simp? [List.append_assoc] says simp only [List.append_assoc, List.cons_append])
       have hnoout2 : ∀ p ∈ pre2, ¬ s.Edge a p := by
         intro p hp
         obtain ⟨prepre, postpre, hpeq, -⟩ := List.eq_append_cons_of_mem hp
         refine not_edge_of_before_split s.Edge L2 hnd2 hvalid2 prepre postpre post2 a p ?_
-        rw [heq2, hpeq]; simp [List.append_assoc]
+        rw [heq2, hpeq]; (simp? [List.append_assoc] says simp only [List.append_assoc, List.cons_append])
       have hext1 : ∀ x, x = a ∨ x ∈ pre1 ∨ x ∈ post1 → x.isExternal = false := by
         intro x hx
         apply hext
@@ -917,7 +918,7 @@ theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
         exact before_remove_mid heq2 hnd2 hi hj hij ((hmemW2 m).mp hm).2 ((hmemW2 d).mp hd).2
       have hlt : (pre1 ++ post1).length < n := by
         have h1 : (pre1 ++ a :: post1).length = (pre1 ++ post1).length + 1 := by
-          simp [List.length_append, List.length_cons]; omega
+          (simp? [List.length_append, List.length_cons] says simp only [List.length_append, List.length_cons]); omega
         have h2 : (w :: ws).length = n := hlen
         rw [heq1] at h2
         omega
@@ -953,9 +954,9 @@ theorem before_filter {α : Type} [DecidableEq α] {l : List α} (hnd : l.Nodup)
     simp only [List.filter_append, List.filter_cons_of_pos hPm, List.filter_cons_of_pos hPd]
     have hlen2 : (X.filter P).length + 1 + (Y.filter P).length =
         (X.filter P ++ m :: Y.filter P).length := by
-      simp [List.length_append, List.length_cons]; omega
+      (simp? [List.length_append, List.length_cons] says simp only [List.length_append, List.length_cons]); omega
     rw [hlen2]
-    simp
+    (simp? says simp only [List.length_append, List.length_cons, add_lt_add_iff_left, add_lt_add_iff_right, lt_add_iff_pos_right, add_pos_iff, List.length_filter_pos_iff, zero_lt_one, or_true, getElem?_pos, le_add_iff_nonneg_right, zero_le, List.getElem_append_right, add_tsub_cancel_left, List.getElem_cons_succ, Std.le_refl, Nat.sub_self, List.getElem_cons_zero])
 
 /-- A transfer sequence is maximal when no further transfer moves coins.
     Nitro:840-842: "we have done every possible transfer on these
@@ -1006,7 +1007,7 @@ theorem payoutValues_get_eq_add_paidTo (vals : Balances E) (remaining : Coins) (
         (if (o.find d).elim false (fun e => !e.item.isGuarantee) then o.paidTo remaining d
           else 0) := by
   induction o generalizing vals remaining with
-  | nil => simp [payoutValues]
+  | nil => (simp? [payoutValues] says simp only [payoutValues, Allocation.find_nil, Option.elim_none, Bool.false_eq_true, ↓reduceIte, add_zero])
   | cons e rest ih =>
     have hned : e.dest ∉ rest.map Entry.dest := (List.nodup_cons.1 hnd).1
     have hndr : (rest.map Entry.dest).Nodup := (List.nodup_cons.1 hnd).2
@@ -1022,10 +1023,10 @@ theorem payoutValues_get_eq_add_paidTo (vals : Balances E) (remaining : Coins) (
       simp only [payoutValues]
       by_cases hg : e.item.isGuarantee
       · rw [if_pos hg, payoutValues_get_ne _ _ rest d hne']
-        simp [hg]
+        (simp? [hg] says simp only [Option.elim_some, hg, Bool.not_true, Bool.false_eq_true, ↓reduceIte, add_zero])
       · rw [if_neg hg, payoutValues_get_ne _ _ rest d hne', Balances.get_add, if_pos hde.symm]
         rw [hde]
-        simp [hg]
+        (simp? [hg] says simp only [Option.elim_some, hg, Bool.not_false, ↓reduceIte, Nat.add_left_cancel_iff])
     · rw [if_neg hde]
       have hpaid : Allocation.paidTo remaining (e :: rest) d =
           Allocation.paidTo (remaining - min e.amount remaining) rest d := by
@@ -1072,7 +1073,7 @@ theorem takeWhile_append_eq_of_forall_true_of_false {α : Type} (p : α → Bool
     (pre post : List α) (a : α) (hpre : ∀ x ∈ pre, p x = true) (ha : p a = false) :
     (pre ++ a :: post).takeWhile p = pre := by
   induction pre with
-  | nil => simp [ha]
+  | nil => (simp? [ha] says simp only [List.nil_append, ha, Bool.false_eq_true, not_false_eq_true, List.takeWhile_cons_of_neg])
   | cons x xs ih =>
     have hx : p x = true := hpre x List.mem_cons_self
     simp only [List.cons_append, List.takeWhile_cons, hx, if_true]
@@ -1084,7 +1085,7 @@ theorem allocationOf_eq_nil_of_isExternal (s : Adjudicator E) {c : Address E}
     (hc : c.isExternal = true) : s.allocationOf c = [] := by
   cases c with
   | external a => rfl
-  | channel cc => simp [Address.isExternal] at hc
+  | channel cc => (simp? [Address.isExternal] at hc says simp only [Address.isExternal, Bool.false_eq_true] at hc)
 
 /-- Every node's own allocation has Nodup destinations: it is always the
     `.dedup` of a finalized outcome, or empty. -/
@@ -1092,7 +1093,7 @@ theorem allocationOf_nodup (s : Adjudicator E) (c : Address E) :
     ((s.allocationOf c).map Entry.dest).Nodup := by
   unfold Adjudicator.allocationOf
   cases s.finalOutcome c with
-  | none => simp
+  | none => (simp? says simp only [List.map_nil, List.nodup_nil])
   | some outcome =>
     cases outcome with
     | allocation o => exact Allocation.dedup_nodup o
@@ -1112,9 +1113,9 @@ theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (hdag : s.IsDAG)
   obtain ⟨pre, post, heq, hcpre⟩ := List.eq_append_cons_of_mem hc
   have htw : order.takeWhile (fun x => decide (x ≠ c)) = pre := by
     rw [heq]
-    refine takeWhile_append_eq_of_forall_true_of_false _ pre post c (fun x hx => ?_) (by simp)
+    refine takeWhile_append_eq_of_forall_true_of_false _ pre post c (fun x hx => ?_) (by (simp? says simp only [ne_eq, not_true_eq_false, decide_false]))
     have hxc : x ≠ c := fun h => hcpre (h ▸ hx)
-    simpa using hxc
+    (simpa? using hxc says simpa only [ne_eq, decide_not, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not] using hxc)
   rw [htw, heq, turboValues_append]
   simp only [Adjudicator.turboValues]
   have hnoself : ∀ e ∈ s.allocationOf c, e.dest ≠ c := fun e he hcontra =>
@@ -1349,10 +1350,10 @@ theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
             (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
   intro suf
   induction suf with
-  | nil => intro pre _; simp [Adjudicator.turboValues]
+  | nil => intro pre _; (simp? [Adjudicator.turboValues] says simp only [Adjudicator.turboValues, List.filter_nil, List.map_nil, List.sum_nil, add_zero])
   | cons c rest ih =>
     intro pre heq
-    have heq' : order = (pre ++ [c]) ++ rest := by rw [heq]; simp
+    have heq' : order = (pre ++ [c]) ++ rest := by rw [heq]; (simp? says simp only [List.append_assoc, List.cons_append, List.nil_append])
     have hstep : s.turboValues (pre ++ [c]) s.balances =
         payoutValues (s.turboValues pre s.balances) ((s.turboValues pre s.balances).get c)
           (s.allocationOf c) := by
@@ -1369,10 +1370,10 @@ theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
         List.map_cons, List.sum_cons]
       have hallocne : s.allocationOf c ≠ [] := by
         intro hempty
-        simp [Adjudicator.CreditsTo, hempty, Allocation.find] at hP
+        (simp? [Adjudicator.CreditsTo, hempty, Allocation.find] at hP says simp only [Adjudicator.CreditsTo, Allocation.find, hempty, List.find?_nil, Option.elim_none, Bool.false_eq_true] at hP)
       have hcext : c.isExternal = false := by
         by_contra hb
-        exact hallocne (allocationOf_eq_nil_of_isExternal s (by simpa using hb))
+        exact hallocne (allocationOf_eq_nil_of_isExternal s (by (simpa? using hb says simpa only [Bool.not_eq_false] using hb)))
       have hstab : (s.turboValues pre s.balances).get c = s.turboValueAlong order c := by
         unfold Adjudicator.turboValueAlong
         have htw : order.takeWhile (fun x => decide (x ≠ c)) = pre := by
@@ -1381,9 +1382,9 @@ theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
           have hcnotpre : c ∉ pre := fun hcp => hnd.2.2 c hcp c List.mem_cons_self rfl
           rw [heq]
           refine takeWhile_append_eq_of_forall_true_of_false _ pre rest c
-            (fun x hx => ?_) (by simp)
+            (fun x hx => ?_) (by (simp? says simp only [ne_eq, not_true_eq_false, decide_false]))
           have hxc : x ≠ c := fun h => hcnotpre (h ▸ hx)
-          simpa using hxc
+          (simpa? using hxc says simpa only [ne_eq, decide_not, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not] using hxc)
         rw [turboValues_get_eq_takeWhile s hdag order hord s.balances c hcmem hcext, htw]
       rw [Adjudicator.CreditsTo] at hP
       rw [hP, if_pos rfl] at hA
@@ -1392,7 +1393,7 @@ theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
     · rw [List.filter_cons_of_neg (p := fun x => s.CreditsTo x d) (a := c) hP]
       have hPfalse : s.CreditsTo c d = false := Bool.eq_false_iff.mpr hP
       rw [Adjudicator.CreditsTo] at hPfalse
-      rw [hPfalse, if_neg (by simp)] at hA
+      rw [hPfalse, if_neg (by (simp? says simp only [Bool.false_eq_true, not_false_eq_true]))] at hA
       rw [hA, Nat.add_zero]
 
 /-- Nitro:818-835 step 4's value at `d`, decomposed into the starting
@@ -1407,8 +1408,8 @@ theorem turboValueAlong_eq_add_credits (s : Adjudicator E) (hdag : s.IsDAG)
       s.balances.get d +
         ((order.filter (s.CreditsTo · d)).map
           (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
-  have h := turboValueAlong_eq_add_credits_aux s hdag order hord d order [] (by simp)
-  simpa [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h
+  have h := turboValueAlong_eq_add_credits_aux s hdag order hord d order [] (by (simp? says simp only [List.nil_append]))
+  (simpa? [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h says simpa only [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h)
 
 
 /-! ### A deposit and the Turbo Value Algorithm
