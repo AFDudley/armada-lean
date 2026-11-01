@@ -8,6 +8,7 @@
 -/
 import ArmadaLean.Nitro.SATP
 import ArmadaLean.Nitro.Lemmas
+import ArmadaLean.Nitro.OpEquations
 import ArmadaLean.Types.Reachable
 import ArmadaLean.SpecTools
 import ArmadaLean.Nitro.Reachable
@@ -95,7 +96,10 @@ theorem deposit_can_happen (apps : Apps E) (caller : Participant) (s : Adjudicat
     (hk : c.kind = .ledger) (x : Coins) :
     s.apply apps caller (.deposit c.address (s.balances.get c.address) x) =
       some { s with balances := s.balances.add c.address x, held := s.held + x } := by
-  (simp? [Adjudicator.deposit, hk] says simp only [FixedPart.address_eq, Adjudicator.apply_deposit, Adjudicator.deposit, hk, and_self, ↓reduceIte])
+  have hpre : s.DepositPre c.address (s.balances.get c.address) :=
+    ⟨rfl, by (simp? [Address.fundable, hk] says simp only [Address.fundable, FixedPart.address_eq, hk, decide_true]), rfl⟩
+  rw [Adjudicator.apply_deposit_equation, dif_pos hpre]
+  rfl
 
 /-- docs-0060-02. go-nitro MultiAssetHolder.sol:51 `require(held ==
     expectedHeld, 'held != expectedHeld')`: a deposit whose observation is
@@ -135,22 +139,29 @@ theorem deposit_respects_funding_order (apps : Apps E) (s : ReachableState (Nitr
     o.paidTo (s'.balances.get c.address) e.dest = e.amount ∧
     (∀ j f, k < j → o[j]? = some f → o.paidTo (s'.balances.get c.address) f.dest = 0) := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
-  simp only [Adjudicator.apply_deposit] at h
-  obtain ⟨-, he0, hb, -, -, -⟩ := Adjudicator.deposit_some h
-  have hs' : s'.balances.get c.address = o.aheadOf k + e.amount := by
-    rw [hb]; (simp? at he0 ⊢ says simp only [FixedPart.address_eq, Balances.get_add, ↓reduceIte, Nat.add_right_cancel_iff] at he0 ⊢); rw [he0]
-  have hk := Allocation.total_take_succ he
-  unfold Allocation.aheadOf at he0 hs' ⊢
-  refine ⟨he0, hs', fun j f hj hf => ?_, ?_, fun j f hj hf => ?_⟩
-  · have h1 := Allocation.total_take_succ hf
-    have h2 := Allocation.total_take_mono o (show j + 1 ≤ k by omega)
-    rw [he0, hs', Allocation.paidTo_of_getElem? hdedup hf, Allocation.paidTo_of_getElem? hdedup hf]
-    (grind? says grind only [= min_def, #1b03, #946b, #360f, #6f2e, #8a6f])
-  · rw [hs', Allocation.paidTo_of_getElem? hdedup he]
-    (grind? says grind only [= min_def, #e527])
-  · have h2 := Allocation.total_take_mono o (show k + 1 ≤ j by omega)
-    rw [hs', Allocation.paidTo_of_getElem? hdedup hf]
-    (grind? says grind only [= min_def, #946b, #8a6f])
+  rw [Adjudicator.apply_deposit_equation] at h
+  by_cases hpre : s.DepositPre c.address (o.aheadOf k)
+  · rw [dif_pos hpre] at h
+    simp only [Option.some.injEq] at h
+    have he0 : s.balances.get c.address = o.aheadOf k := hpre.2.2
+    have hb : s'.balances = s.balances.add c.address e.amount := by
+      rw [← h]; (simp? [Adjudicator.depositEffect] says simp only [Adjudicator.depositEffect, FixedPart.address_eq])
+    have hs' : s'.balances.get c.address = o.aheadOf k + e.amount := by
+      rw [hb]; (simp? at he0 ⊢ says simp only [FixedPart.address_eq, Balances.get_add, ↓reduceIte, Nat.add_right_cancel_iff] at he0 ⊢); rw [he0]
+    have hk := Allocation.total_take_succ he
+    unfold Allocation.aheadOf at he0 hs' ⊢
+    refine ⟨he0, hs', fun j f hj hf => ?_, ?_, fun j f hj hf => ?_⟩
+    · have h1 := Allocation.total_take_succ hf
+      have h2 := Allocation.total_take_mono o (show j + 1 ≤ k by omega)
+      rw [he0, hs', Allocation.paidTo_of_getElem? hdedup hf, Allocation.paidTo_of_getElem? hdedup hf]
+      (grind? says grind only [= min_def, #1b03, #946b, #360f, #6f2e, #8a6f])
+    · rw [hs', Allocation.paidTo_of_getElem? hdedup he]
+      (grind? says grind only [= min_def, #e527])
+    · have h2 := Allocation.total_take_mono o (show k + 1 ≤ j by omega)
+      rw [hs', Allocation.paidTo_of_getElem? hdedup hf]
+      (grind? says grind only [= min_def, #946b, #8a6f])
+  · rw [dif_neg hpre] at h
+    exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- ForceMove-C01, docs-0060-02. Deposits made in the order of the
     pre-funding outcome, each with `expectedHeld` equal to the allocations
@@ -169,36 +180,41 @@ theorem deposits_in_order_succeed (apps : Apps E) (s : Adjudicator E) (c : Fixed
   have hlen : ops.length = o.length := by (simp? [ops] says simp only [List.length_map, List.length_range, ops])
   have hops : ∀ k, k < o.length → ops[k]? = some (op k) := by
     intro k hk; (simp? [ops, hk] says simp only [List.length_map, List.length_range, hk, getElem?_pos, List.getElem_map, List.getElem_range, ops])
+  have hpreK : ∀ k, (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k →
+      (Adjudicator.applyAll apps (ops.take k) s).DepositPre c.address (o.aheadOf k) :=
+    fun k hb => ⟨rfl, by (simp? [Address.fundable, hck] says simp only [Address.fundable, FixedPart.address_eq, hck, decide_true]), hb⟩
+  have hstep : ∀ k, k < o.length →
+      (hb : (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k) →
+      Adjudicator.applyAll apps (ops.take (k + 1)) s =
+        (Adjudicator.applyAll apps (ops.take k) s).depositEffect (o.aheadOf k)
+          ⟨c.address, hpreK k hb⟩ (o.amountAt k) := by
+    intro k hk hb
+    rw [List.take_add_one, hops k hk, Option.toList_some, Adjudicator.applyAll_append,
+      Adjudicator.applyAll_singleton_of_some
+        (show (Adjudicator.applyAll apps (ops.take k) s).apply apps (op k).1 (op k).2 =
+            some ((Adjudicator.applyAll apps (ops.take k) s).depositEffect (o.aheadOf k)
+              ⟨c.address, hpreK k hb⟩ (o.amountAt k)) by
+          rw [Adjudicator.apply_deposit_equation, dif_pos (hpreK k hb)])]
   have hone : ∀ k, k < o.length →
       (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k →
-      (Adjudicator.applyAll apps (ops.take k) s).apply apps (op k).1 (op k).2 =
-          some (Adjudicator.applyAll apps (ops.take (k + 1)) s) ∧
-        (Adjudicator.applyAll apps (ops.take (k + 1)) s).balances.get c.address =
-          o.aheadOf (k + 1) := by
+      (Adjudicator.applyAll apps (ops.take (k + 1)) s).balances.get c.address = o.aheadOf (k + 1) := by
     intro k hk hb
     obtain ⟨e, he⟩ : ∃ e, o[k]? = some e := ⟨o[k], List.getElem?_eq_getElem hk⟩
-    have hdep := deposit_can_happen apps (op k).1 (Adjudicator.applyAll apps (ops.take k) s) c hck
-      (o.amountAt k)
-    rw [hb] at hdep
-    have happ : (Adjudicator.applyAll apps (ops.take k) s).apply apps (op k).1 (op k).2 =
-        some { Adjudicator.applyAll apps (ops.take k) s with
-          balances := (Adjudicator.applyAll apps (ops.take k) s).balances.add c.address (o.amountAt k),
-          held := (Adjudicator.applyAll apps (ops.take k) s).held + o.amountAt k } := hdep
-    rw [List.take_add_one, hops k hk, Option.toList_some, Adjudicator.applyAll_append,
-      Adjudicator.applyAll_singleton_of_some happ]
-    refine ⟨happ, ?_⟩
-    simp only [Balances.get_add, if_true, hb, Allocation.aheadOf, Allocation.total_take_succ he,
-      Allocation.amountAt, he, Option.map_some, Option.getD_some]
+    rw [hstep k hk hb]
+    simp only [Adjudicator.depositEffect, Balances.get_add, if_true, hb, Allocation.aheadOf,
+      Allocation.total_take_succ he, Allocation.amountAt, he, Option.map_some, Option.getD_some]
   have hall : ∀ k, k ≤ o.length →
       (Adjudicator.applyAll apps (ops.take k) s).balances.get c.address = o.aheadOf k := by
     intro k
     induction k with
     | zero => intro _; (simpa? [Allocation.aheadOf, Adjudicator.applyAll] using h0 says simpa only [List.take_zero, Adjudicator.applyAll, FixedPart.address_eq, Allocation.aheadOf, Allocation.total_nil] using h0)
-    | succ k ih => intro hk; exact (hone k (by omega) (ih (by omega))).2
-  refine ⟨fun k hk => ⟨hall k hk.le, (hone k hk (hall k hk.le)).1⟩, ?_⟩
-  have := hall o.length le_rfl
-  rw [List.take_of_length_le hlen.le] at this
-  rw [this, Allocation.aheadOf, List.take_length]
+    | succ k ih => intro hk; exact hone k (by omega) (ih (by omega))
+  refine ⟨fun k hk => ⟨hall k hk.le, ?_⟩, ?_⟩
+  · rw [hstep k hk (hall k hk.le), Adjudicator.apply_deposit_equation,
+      dif_pos (hpreK k (hall k hk.le))]
+  · have := hall o.length le_rfl
+    rw [List.take_of_length_le hlen.le] at this
+    rw [this, Allocation.aheadOf, List.take_length]
 
 /-- docs-0060-01, Nitro-04. go-nitro MultiAssetHolder.sol:43 "Deposit to
     external destination": a deposit to an external destination fails. -/
