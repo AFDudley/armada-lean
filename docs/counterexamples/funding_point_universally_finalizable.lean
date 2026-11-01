@@ -477,15 +477,14 @@ theorem funding_point_universally_finalizable_false :
         (_hr : (Nitro.networkUnrestricted apps Ts).Reachable n) (_hvn : v = n.views) (c : FixedPart)
         (Ω : Outcome Nat) (vt : State Nat → State Nat → Bool)
         (_hc : apps c.appDef = forceMoveRules vt) (_hsetup : SetupPhaseKeepsOutcome vt c)
-        (_hvt : SetupPhaseAccepted vt c) (_hn : 0 < c.n)
-        (_hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (_h : AtFundingPoint v c Ω)
+        (_hvt : SetupPhaseAccepted vt c) (_hn : 0 < c.n) (_h : AtFundingPoint v c Ω)
         (_hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0),
         UniversallyFinalizable apps Ts v c Ω := by
   intro h
   have hU := h apps1 (Ts apps1) nE.views nE nE_reach rfl c2 Ωg vtAll rfl
     (fun s1 s2 h _ _ => by simpa [vtAll] using h)
     (fun s1 s2 _ _ _ _ ho _ => by simp [vtAll, ho])
-    (by decide) (fun _ => (by decide : 2 * 1 ≤ 2)) atFundingPoint
+    (by decide) atFundingPoint
     (fun r => by rw [nE_views_chain]; exact ⟨rfl, rfl⟩)
   exact not_finalizable (hU q0 (by simp [c2]))
 

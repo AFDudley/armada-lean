@@ -13167,14 +13167,15 @@ theorem funding_strategy {apps : Apps E} {vt : State E → State E → Bool} {c 
     every setup state of `c` with the setup outcome (operator rulings 2026-10-31 and
     2026-11-01; labbook/2026-10-31-funding-point-alternative-moves.md):
     `HonestSend.setupOutcome`, which `Nitro.participant_sent_honest` gives for
-    every view. The strategy is `funding_strategy`; `hdur` is not needed,
-    because no candidate or conclusion proof of `c` carries another outcome. -/
+    every view. The strategy is `funding_strategy`. Operator ruling 2026-11-01: no
+    timing premise; every candidate and conclusion proof carries Ω
+    (`HonestSend.setupOutcome`). -/
 theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Nitro.ReachableNetwork apps Ts)
     (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
     (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
     (hvt : SetupPhaseAccepted vt c)
-    (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
+    (hn : 0 < c.n) (h : AtFundingPoint v c Ω)
     (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) :
     ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p) := by
   intro p hp

@@ -1371,10 +1371,10 @@ theorem funding_point_universally_finalizable.nonvacuity : ∃ (v : Views Nat) (
     (vt : State Nat → State Nat → Bool),
     (Nitro.network apps1 (Ts apps1)).Reachable n ∧ v = n.views ∧
     apps1 c.appDef = forceMoveRules vt ∧ SetupPhaseKeepsOutcome vt c ∧
-    SetupPhaseAccepted vt c ∧ 0 < c.n ∧ (∀ p, 2 * ((Ts apps1).T p).ε ≤ c.challengeDuration) ∧
+    SetupPhaseAccepted vt c ∧ 0 < c.n ∧
     AtFundingPoint v c Ω ∧ (∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0) := by
   refine ⟨nFP.views, nFP, c1, .allocation o1, vtAll, nFP_reach, rfl, rfl, ?_, ?_, by decide,
-    fun _ => (by decide : 2 * 1 ≤ 2), ⟨?_, ?_⟩, fun r => ?_⟩
+    ⟨?_, ?_⟩, fun r => ?_⟩
   · intro s1 s2 h _ _; simpa [vtAll] using h
   · intro s1 s2 _ _ _ _ ho _; simp [vtAll, ho]
   · intro r hr k hk

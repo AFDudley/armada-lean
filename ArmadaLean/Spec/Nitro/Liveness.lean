@@ -271,15 +271,17 @@ def Spec.single_enabled_is_finalizable : Prop :=
     setup phase keeps the outcome (ForceMove:1092-1125, ForceMove:1150-1184),
     and the game library accepts its transitions. An honest participant makes no
     alternative setup moves (operator rulings 2026-10-31 and 2026-11-01;
-    labbook/2026-10-31-funding-point-alternative-moves.md): `HonestSend.noAlternative`,
-    which `Nitro.participant_sent_honest` gives for every view. -/
+    labbook/2026-10-31-funding-point-alternative-moves.md): `HonestSend.setupOutcome`,
+    which `Nitro.participant_sent_honest` gives for every view. Operator ruling
+    2026-11-01: no timing premise; every candidate and conclusion proof carries Ω
+    (`HonestSend.setupOutcome`). -/
 def Spec.funding_point_universally_finalizable : Prop :=
   ∀ (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Nitro.ReachableNetwork apps Ts)
     (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
     (hc : apps c.appDef = forceMoveRules vt) (hsetup : SetupPhaseKeepsOutcome vt c)
     (hvt : SetupPhaseAccepted vt c)
-    (hn : 0 < c.n) (hdur : ∀ p, 2 * (Ts.T p).ε ≤ c.challengeDuration) (h : AtFundingPoint v c Ω)
+    (hn : 0 < c.n) (h : AtFundingPoint v c Ω)
     (hchain : ∀ p, (v p).chain.mode c = .open ∧ (v p).chain.statusOf c = .open 0),
     Claim <|
     ∀ p ∈ c.participants, Finalizable apps (Ts.T p) c Ω (v p)
