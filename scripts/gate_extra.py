@@ -96,7 +96,42 @@ def head_sha(root: Path) -> str:
 
 def merge_base_sha(root: Path) -> str:
     """The commit `git merge-base HEAD` and the trunk branch share. A
-    read-only query: it does not move the trunk branch or run exophial."""
+    read-only query: it does not move the trunk branch or run exophial.
+
+    exophial's commit-boundary gate container ships the judged tree as
+    a single orphan commit (`.exophial/gate/Dockerfile`: `git init -q
+    -b gate-tree`, one commit, built only so `pre-commit` has a repo to
+    work in) and passes neither the host git history nor the host
+    environment into the container
+    (exophial `completion.run_gate_container`'s own documented
+    constraint, D49.5: "never a bind mount, never the calling
+    process's own environment"). `TRUNK` never resolves there. No
+    declared exophial input channel carries a real base into this
+    container today: `gate.env` is not a config key this code path
+    reads, and the one stdin channel that exists
+    (`gate_inputs_stdin`/`/gate-inputs`) is wired to the pytest-
+    coverage testmon hook alone and stays empty on a Lean-only repo
+    with no testmon record (checked in exophial's installed package,
+    2026-11-01).
+
+    This function raises a specific, diagnostic error when `TRUNK`
+    does not resolve, rather than falling back to a computed
+    pseudo-base (e.g. the checkout's own first commit): in the gate
+    container that pseudo-base would equal `HEAD`, and every check
+    that compares the tree to a `HEAD`-equal base passes trivially —
+    the silent pass this function must never produce. The caller
+    (`check_lint`/`check_decision_scope`) surfaces this as a failed
+    check, never a silent one."""
+    verify = _run(["git", "rev-parse", "--verify", f"{TRUNK}^{{commit}}"], root)
+    if verify.returncode != 0:
+        raise RuntimeError(
+            f"{TRUNK} does not resolve in {root}: this checkout carries no "
+            "comparison base. If this is exophial's commit-boundary gate "
+            "container, that is expected (a single-commit, ref-less judged "
+            "tree, by design -- D49.5); the lint/decisionScope checks need "
+            "a real base to compare against and cannot run there today. "
+            "This is a loud failure, not a silent pass."
+        )
     out = _run(["git", "merge-base", "HEAD", TRUNK], root)
     if out.returncode != 0:
         raise RuntimeError(f"git merge-base HEAD {TRUNK} failed:\n{out.stderr}")
