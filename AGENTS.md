@@ -26,6 +26,64 @@ that kind of work — it is not optional.**
 When you dispatch a subagent into this repo, its task brief MUST point it at the
 doctrine above: a subagent starts blank and will not read it otherwise.
 
-## Repair pass
+## Lean work: standing rules
 
+Every exophial-dispatched worker that edits Lean code in this repo
+follows these rules.
+
+**Setup.** Create a branch and a worktree from `integrated`. Put the
+worktree under `.scratch/` in this repo. Symlink `.lake/packages` from
+the main checkout. Never copy `.lake/build`.
+
+**Lean commands.** Run every Lean command through
+`/home/rix/bin/lean-run`. Run at most 4 `lean-run` commands at once. Use
+absolute paths only. Put scratch files under `<worktree>/.scratch/`.
+
+**Never run a bare `lake clean`.** Every worktree in this repo symlinks
+the same `.lake/packages` directory. A bare `lake clean` run from one
+worktree deletes the shared Mathlib build every other worktree depends
+on (it happened on 2026-11-01: a several-GB build dropped to 166M). To
+measure a clean build, delete only `<your worktree>/.lake/build`. If the
+shared Mathlib build is missing, restore it with `lake exe cache get`
+from the main checkout, never a source rebuild.
+
+**Forbidden.** No `exophial` or `pb` command. No push. No change to
+`integrated` by hand.
+
+**Lean style.** The layer rule: a proof does not unfold a base
+operation. Record each search: change `simp?` to `simp only`. Do not
+leave a bare non-terminal `simp`. Call `omega` on a small context.
+`native_decide` is forbidden.
+
+**Commits.** Commit once per step, with a message.
+
+**Acceptance.** Every task meets this before it is done:
+`lean-run scripts/check.sh --json` gives `true` for every `_ok` field,
+and the type-doctrine linter summary (`lint_ok`) and the decisionScope
+findings (`decision_ok`) are no worse than `scripts/gate-baseline.json`
+(`docs/lean/type-doctrine.md`, `armada-laconic`).
+
+**Pre-merge gate-quality check.** Before a merge, run
+`lean-run python3 scripts/gate_extra.py --json` on the branch's own
+worktree. This runs the lint, decisionScope, and counterexample checks
+alone, with no full `spec_check.py` build report needed. The
+decisionScope check scans only the `ArmadaLean/**/*.lean` files whose
+content differs from `scripts/gate-baseline.json`'s recorded hash.
+
+**The gate baseline.** `scripts/gate-baseline.json` is tracked: the
+type-lint summary counts, every `decisionScope` finding, and the sha256
+of every `ArmadaLean/**/*.lean` file (outside `ArmadaLean/Lint/`), all
+measured on `integrated`. The lint/decisionScope checks compare the
+tree against this FILE, not a live `git merge-base`: exophial's gate
+container ships the judged tree as a single commit with no other ref,
+so it cannot run `git merge-base` against `integrated`. When a task
+lowers a `gate_extra.LINT_REGRESSION_FIELDS` count or fixes a
+`decisionScope` finding, run `lean-run python3
+scripts/update_gate_baseline.py` and commit the updated
+`scripts/gate-baseline.json` in the SAME branch. Never run it to raise
+a count or add a finding without a fix: the gate refuses a raised
+baseline the same way it refuses a raised count, by comparing the tree
+against the committed file — so a raised baseline shows up in the
+branch's own diff for review.
+## Repair pass
 A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.6, in the order R.6 gives; each operation equation is proved against its Spec statement.

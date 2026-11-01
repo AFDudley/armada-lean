@@ -5216,19 +5216,6 @@ theorem turbo_redistribution_unbeatable (apps : Apps E) {p : Participant} (T : T
   exact turbo_replay_unbeatable apps T hT d x ops hops net.chain net (Adjudicator.Ahead.refl _)
     hgoal
 
-/-- Nitro-31. Nitro:787-789: "Withdrawals can only occur from participant
-    addresses and are the only way funds can leave these addresses, so cannot
-    affect values elsewhere." go-nitro has no withdrawal: a payout is the
-    transfer of a finalized entry to an external destination. A payout to
-    another destination `q` leaves the value at `d` unchanged. -/
-theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
-    (d q : E) (hq : q ≠ d)
-    (a : FixedPart) (s' : Adjudicator E) (h : net.state.chain.transfer a (.external q) = some s')
-    (x : Coins) :
-    Value apps T d net.state x ↔ Value apps T d { net.state with chain := s' } x := by
-  sorry
-
 /-- Under the consensus app, a channel's status never moves while its
     participant `p` has sent nothing: a successful `challenge`, `checkpoint`
     or `conclude` on `c` needs a state signed by every one of `c`'s
@@ -6626,6 +6613,128 @@ theorem IsDAG_applyAll_iff (apps : Apps E) {ops : List (Participant × Op E)} (h
   · intro h
     refine ⟨fun n hn => h.irrefl n ?_⟩
     exact Relation.TransGen.mono (fun x y hxy => (Edge_applyAll_iff apps hops s x y).mp hxy) n n hn
+
+/-- An entry of `o.reduceOwed d x` is an entry of `o`, or an entry of `o`
+    with the same destination and an `alloc` item. -/
+theorem Allocation.mem_reduceOwed {o : Allocation E} {d : Address E} {x : Coins} {e : Entry E}
+    (he : e ∈ o.reduceOwed d x) :
+    e ∈ o ∨ ∃ e₀ ∈ o, e.dest = e₀.dest ∧ ∃ k, e.item = .alloc k := by
+  induction o with
+  | nil => exact absurd he List.not_mem_nil
+  | cons f rest ih =>
+    rw [Allocation.reduceOwed_cons] at he
+    by_cases hf : f.dest = d
+    · rw [if_pos hf] at he
+      rcases List.mem_cons.mp he with rfl | hr
+      · exact .inr ⟨f, List.mem_cons_self, rfl, _, rfl⟩
+      · exact .inl (List.mem_cons_of_mem f hr)
+    · rw [if_neg hf] at he
+      rcases List.mem_cons.mp he with rfl | hr
+      · exact .inl List.mem_cons_self
+      · rcases ih hr with h1 | ⟨e₀, he₀, hd, hk⟩
+        · exact .inl (List.mem_cons_of_mem f h1)
+        · exact .inr ⟨e₀, List.mem_cons_of_mem f he₀, hd, hk⟩
+
+/-- A successful `transfer` keeps a state in Turbo scope: it keeps every
+    destination list and writes only `alloc` items. -/
+theorem Adjudicator.TurboScope.transfer {s s' : Adjudicator E} {a : FixedPart} {b : Address E}
+    (hs : s.TurboScope) (h : s.transfer a b = some s') : s'.TurboScope := by
+  refine ⟨fun c hc => hs.1 c fun h0 => hc ?_, fun n e he => ?_⟩
+  · have hd := Adjudicator.allocationOf_dest_transfer h (.channel c)
+    rw [h0, List.map_nil] at hd
+    exact List.map_eq_nil_iff.mp hd
+  · by_cases hn : n = a.address
+    · obtain ⟨x, hx⟩ := Adjudicator.allocationOf_transfer_self h
+      rw [hn, hx] at he
+      rcases Allocation.mem_reduceOwed he with he' | ⟨e₀, he₀, hd, k, hk⟩
+      · exact hs.2 _ e he'
+      · exact ⟨by rw [hk]; rfl, fun c hc => (hs.2 _ e₀ he₀).2 c (hd.symm.trans hc)⟩
+    · rw [Adjudicator.allocationOf_transfer_ne h hn] at he
+      exact hs.2 n e he
+
+/-- A successful `transfer` keeps a Turbo outcome network. -/
+theorem Adjudicator.IsTurboOutcomeNetwork.transfer {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (hs : s.IsTurboOutcomeNetwork) (h : s.transfer a b = some s') :
+    s'.IsTurboOutcomeNetwork :=
+  ⟨hs.1.transfer h, hs.2.transfer h⟩
+
+/-- The paying channel of a successful `transfer` has a nonempty allocation. -/
+theorem Adjudicator.allocationOf_transfer_source {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (h : s.transfer a b = some s') : s.allocationOf a.address ≠ [] := by
+  obtain ⟨o, _, _, hf, hfind, -, -, -, -, -, -, -⟩ := Adjudicator.transfer_effect h
+  intro h0
+  unfold Adjudicator.allocationOf at h0
+  rw [hf] at h0
+  change o.dedup = [] at h0
+  have h2 := Allocation.find_dedup o b
+  rw [h0, hfind] at h2
+  cases h2
+
+/-- A topological order of the state after a successful `transfer` lists the
+    paying channel, and it is a topological order of the state before the
+    transfer: the edges agree, and every node the earlier state must list is
+    a node of the later state (a transfer lowers no balance but the paying
+    channel's, which has an allocation). -/
+theorem Adjudicator.IsTopologicalOrder.of_transfer {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (h : s.transfer a b = some s') {order : List (Address E)}
+    (hord : s'.IsTopologicalOrder order) :
+    a.address ∈ order ∧ s.IsTopologicalOrder order := by
+  obtain ⟨hnd, hedge, hmem⟩ := hord
+  have hne : ∀ m, s.allocationOf m ≠ [] → s'.allocationOf m ≠ [] := by
+    intro m hm h0
+    have hd := Adjudicator.allocationOf_dest_transfer h m
+    rw [h0, List.map_nil] at hd
+    exact hm (List.map_eq_nil_iff.mp hd.symm)
+  have ha : a.address ∈ order := hmem _ (.inr (hne _ (Adjudicator.allocationOf_transfer_source h)))
+  refine ⟨ha, hnd, fun n m hnm => hedge n m ((Adjudicator.Edge_transfer_iff h n m).mpr hnm),
+    fun n hn => ?_⟩
+  rcases hn with hb | hn
+  · by_cases hna : n = a.address
+    · rw [hna]; exact ha
+    · obtain ⟨_, _, _, -, -, -, -, -, -, hbal, -, -⟩ := Adjudicator.transfer_effect h
+      have h1 := hbal n
+      rw [if_neg hna, Nat.add_zero] at h1
+      refine hmem n (.inl fun h0 => hb ?_)
+      rw [h0] at h1
+      exact (Nat.eq_zero_of_add_eq_zero h1.symm).1
+  · exact hmem n (.inr (hne n hn))
+
+/-- A value is unique: it is the maximum of what `p` can obtain. -/
+theorem ValueIn.eq {apps : Apps E} {p : Participant} {T : Threat E p}
+    {allowed : HonestMove E → Prop} {d : E} {net : NetworkState E p} {x y : Coins}
+    (hx : ValueIn apps T allowed d net x) (hy : ValueIn apps T allowed d net y) : x = y :=
+  Nat.le_antisymm (hy.2 x hx.1) (hx.2 y hy.1)
+
+/-- Nitro-31. Nitro:787-789: "Withdrawals can only occur from participant
+    addresses and are the only way funds can leave these addresses, so cannot
+    affect values elsewhere." go-nitro has no withdrawal: a payout is the
+    transfer of a finalized entry to an external destination `q`. Operator
+    ruling 2026-11-01: the claim has the scope of its own paragraph, the
+    transfer-only game (Nitro:779-781) on a Turbo outcome network
+    (Nitro:790-795). There the value at `d` is the Turbo value
+    (`turbo_value_is_value`, on both chains: the payout is `p`'s own landed
+    call, so the state after it is reachable), and the payout leaves the
+    Turbo value at every external destination unchanged
+    (`Adjudicator.turboValueAlong_transfer`). -/
+theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T : Threat E p)
+    (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
+    (net : Nitro.ReachableParticipant apps T)
+    (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d q : E)
+    (a : FixedPart) (s' : Adjudicator E) (h : net.state.chain.transfer a (.external q) = some s')
+    (x : Coins) :
+    ValueIn apps T HonestMove.IsTransfer d net.state x ↔
+      ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' } x := by
+  have hstep : (Nitro.participant apps T).step net.state { net.state with chain := s' } := by
+    refine Or.inr (Or.inl ⟨.transfer a (.external q), (fun _ hss => by cases hss), ?_⟩)
+    rw [NetworkState.applyAdv_land_some apps (by rw [Adjudicator.apply_transfer]; exact h)]
+    rfl
+  have hturbo' : s'.IsTurboOutcomeNetwork := hturbo.transfer h
+  obtain ⟨order, hord⟩ := exists_valid_topo_order s' hturbo'.1
+  obtain ⟨ha, hord0⟩ := hord.of_transfer h
+  have H' := turbo_value_is_value apps T B hT hcap (net.step hstep) hturbo' d _ ⟨order, hord, rfl⟩
+  have H := turbo_value_is_value apps T B hT hcap net hturbo d _
+    ⟨order, hord0, (Adjudicator.turboValueAlong_transfer h hord ha (fun h => by cases h)).symm⟩
+  exact ⟨fun hx => (hx.eq H) ▸ H', fun hx => (hx.eq H') ▸ H⟩
 
 /-- An exhausted DAG state is a fixed point of `transfer`: the call that
     "succeeds" moves zero coins, so the state (read through `finalOutcome`
