@@ -1207,11 +1207,11 @@ theorem channel_finalizability_cases.nonvacuity : ∃ (v : Views Nat) (n : Netwo
 /-- `finalizable_or_two_enabled`. -/
 theorem finalizable_or_two_enabled.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    (apps0 (c : FixedPart).appDef).NoUnilateralSupport ∧ p0 ∈ (c : FixedPart).participants ∧
+    (apps0 (c : FixedPart).appDef).SupportWindow ∧ p0 ∈ (c : FixedPart).participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
       candidate.channel = (c : FixedPart)) :=
-  ⟨netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach, consensusRules_noUnilateralSupport, by decide,
+  ⟨netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach, consensusRules_supportWindow, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
       by decide, rfl⟩⟩
 
@@ -1219,14 +1219,14 @@ theorem finalizable_or_two_enabled.nonvacuity : ∃ (net : NetworkState Nat p0) 
     is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `netC_reach`. -/
 theorem single_enabled_is_finalizable.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    (apps0 (c : FixedPart).appDef).NoUnilateralSupport ∧ p0 ∈ (c : FixedPart).participants ∧
+    (apps0 (c : FixedPart).appDef).SupportWindow ∧ p0 ∈ (c : FixedPart).participants ∧
     (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true) ∧
     Enabled apps0 (canon p0) (c : FixedPart) Ω net ∧
     (∀ Ω', Enabled apps0 (canon p0) (c : FixedPart) Ω' net → Ω' = Ω) :=
   ⟨⟨sCon, [ssF], [ssF]⟩, ⟨c1, by decide⟩, .allocation o1, canon_ok _ _, netC_reach,
-    consensusRules_noUnilateralSupport, by decide,
+    consensusRules_supportWindow, by decide,
     (fun t h _ => by
       rw [List.mem_singleton] at h; subst h
       exact ⟨[ssF], fun ss h' => by

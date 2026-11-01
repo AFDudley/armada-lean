@@ -12,19 +12,22 @@
     challenge never reaches its deadline (`prevents`).
   At the initial network state, `p0` has no finalizable outcome and no
   enabled outcome. `finalizable_or_two_enabled_false` refutes the statement
-  that drops the `happ : (apps c.appDef).NoUnilateralSupport` hypothesis.
+  with no app premise.
 
-  The paper's claim rests on a premise the model does not state: a channel
-  cannot stall forever. Nitro:644-645 (footnote 4): "If a channel does not
-  end with a conclusion proof, it ends with an expired on-chain challenge".
-  ForceMove:1379-1381: each response increases the turn number, and "this
-  prevents the game from stalling indefinitely". Here, the supply of
-  supported higher-turn states is unbounded for both sides.
+  `appsAll` is a compliant app: the adjudicator accepts it. It is not a
+  ForceMove app, and it must fail Nitro-24. Operator ruling 2026-11-01: an
+  app that lets old signatures support a higher turn must explicitly fail
+  `finalizable_or_two_enabled` and `single_enabled_is_finalizable`. The
+  statements take `happ : (apps c.appDef).SupportWindow`, ForceMove's support
+  shape (ForceMove:744-778, 1340-1354, 1379-1381). `appsAll_not_supportWindow`
+  shows that `appsAll` fails that premise: the empty proof supports every
+  candidate, so no participant's signature is required.
 
-  Operator ruling 2026-10-30: the fix adds `happ` to `finalizable_or_two_enabled`.
-  `appsAll_not_noUnilateralSupport` shows why `appsAll` does not refute the
-  patched theorem: `appsAll` fails `happ`'s hypothesis. An empty proof
-  supports every candidate, so no participant's signature is required.
+  Nitro:644-645 (footnote 4): "If a channel does not end with a conclusion
+  proof, it ends with an expired on-chain challenge". ForceMove:1379-1381:
+  each response increases the turn number, and "this prevents the game from
+  stalling indefinitely". Here, the supply of supported higher-turn states
+  is unbounded for both sides.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/finalizable_or_two_enabled.lean`.
@@ -516,14 +519,13 @@ theorem finalizable_or_two_enabled_false :
   · exact not_finalizable Ω hΩ
   · exact hE (prevents Ω1)
 
-/-- `appsAll` does not carry `Rules.NoUnilateralSupport`: the empty proof
-    supports `stAt 0` (`appsAll`'s rule accepts every proof unconditionally),
-    but no participant signed the empty proof. Operator ruling 2026-10-30:
-    the patched `finalizable_or_two_enabled` needs this hypothesis, and
-    `appsAll` does not supply it, so the counterexample above does not
-    refute the patched theorem. -/
-theorem appsAll_not_noUnilateralSupport :
-    ¬ (appsAll (⟨0⟩ : AppId) : Rules Unit).NoUnilateralSupport := by
+/-- `appsAll` fails `Rules.SupportWindow`: the empty proof supports `stAt 0`
+    (`appsAll`'s rule accepts every proof), but no participant signed a state
+    of the empty proof. So `appsAll` does not meet the premise `happ` of
+    `finalizable_or_two_enabled`, and it must fail the claim
+    (`finalizable_or_two_enabled_false`). -/
+theorem appsAll_not_supportWindow :
+    ¬ (appsAll (⟨0⟩ : AppId) : Rules Unit).SupportWindow := by
   intro h
   obtain ⟨ss, hss, -⟩ := h c0 [] (stAt 0) rfl p0 (by simp [c0])
   exact List.not_mem_nil hss

@@ -3379,13 +3379,15 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
     of the following statements is true at a given point in time: 1. p has at
     least one finalizable outcome. 2. p has at least two enabled outcomes."
     The channel is past its setup: `p` holds a supported state of it. Operator
-    ruling 2026-10-30: the app must carry `Rules.NoUnilateralSupport`; the
-    counterexample `docs/counterexamples/finalizable_or_two_enabled.lean`
-    shows the claim fails for an app that does not. -/
+    ruling 2026-11-01: the app must carry `Rules.SupportWindow`, ForceMove's
+    support shape (ForceMove:744-778, 1340-1354, 1379-1381; Nitro:633 "for a
+    ForceMove channel"); an app that lets old signatures support a higher turn
+    must fail the claim (`docs/counterexamples/finalizable_or_two_enabled.lean`,
+    `docs/counterexamples/finalizable_or_two_enabled_happ.lean`). -/
 theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
     (c : TimedChannel T.ε)
-    (happ : (apps (c : FixedPart).appDef).NoUnilateralSupport)
+    (happ : (apps (c : FixedPart).appDef).SupportWindow)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
@@ -3397,12 +3399,15 @@ theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat
 
 /-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
     that outcome must be finalizable for them." `p` holds a support for every
-    state of `c` it signed. Operator ruling 2026-10-30: the app must carry
-    `Rules.NoUnilateralSupport`. -/
+    state of `c` it signed. Operator ruling 2026-11-01: the app must carry
+    `Rules.SupportWindow`, ForceMove's support shape (ForceMove:744-778,
+    1340-1354, 1379-1381; Nitro:633 "for a ForceMove channel"); an app that
+    lets old signatures support a higher turn must fail the claim
+    (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`). -/
 theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
     (c : TimedChannel T.ε)
-    (happ : (apps (c : FixedPart).appDef).NoUnilateralSupport)
+    (happ : (apps (c : FixedPart).appDef).SupportWindow)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧

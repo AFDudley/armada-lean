@@ -228,13 +228,16 @@ def consensusRules : Rules E where
     | [ss] => decide (ss.state = candidate) && decide (ss.state.channel = c) && decide ss.ByAll
     | _ => false
 
-/-- An app evaluated for the Liveness theorems: every supported state's proof
-    carries a signature of every participant. ForceMove:1379-1381: each response
-    increases the turn number, so the game cannot stall; Nitro:631-658 states the
-    determinacy result for ForceMove channels. Operator ruling 2026-10-30. -/
-def Rules.NoUnilateralSupport (r : Rules E) : Prop :=
+/-- ForceMove support shape (ForceMove:744-778, 1340-1354, 1379-1381; Nitro:633
+    "for a ForceMove channel"; go-nitro StrictTurnTaking.sol, Consensus.sol):
+    a supported candidate carries, for every participant, a signature on a
+    state of the channel within the last `n` turns up to the candidate.
+    Operator ruling 2026-11-01. -/
+def Rules.SupportWindow (r : Rules E) : Prop :=
   ∀ c proof candidate, r.supports c proof candidate = true →
-    ∀ q ∈ c.participants, ∃ ss ∈ proof, q ∈ ss.signers
+    ∀ q ∈ c.participants, ∃ ss ∈ proof, q ∈ ss.signers ∧
+      ss.state.channel = c ∧ ss.state.turnNum ≤ candidate.turnNum ∧
+      candidate.turnNum < ss.state.turnNum + c.n
 
 /-- A conclusion proof. go-nitro ForceMove.sol `_conclude`: `isFinal` and
     unanimous signatures, with no call to the application. SATP:286-289:

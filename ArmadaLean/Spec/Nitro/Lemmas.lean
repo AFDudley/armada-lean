@@ -71,20 +71,22 @@ namespace ChannelStatus
 
 end ChannelStatus
 
-/-- SATP:262-266: the one signed state of a supported candidate is signed by
-    every participant. Operator ruling 2026-10-30. -/
-def Spec.consensusRules_noUnilateralSupport : Prop :=
+/-- SATP:262-266, go-nitro Consensus.sol: the one signed state of a
+    supported candidate is the candidate, signed by every participant, so
+    it meets `Rules.SupportWindow`. Operator ruling 2026-11-01. -/
+def Spec.consensusRules_supportWindow : Prop :=
     Claim <|
-    (consensusRules : Rules E).NoUnilateralSupport
+    (consensusRules : Rules E).SupportWindow
 
-/-- ForceMove:1379-1381: each of the `n` moves of a support run increases
-    the turn number by one, so the `n` movers are one full cycle of
-    `c.participants`; every participant signs its own move. Operator ruling
-    2026-10-30. -/
-def Spec.forceMoveRules_noUnilateralSupport : Prop :=
+/-- ForceMove:1340-1354, 1379-1381, go-nitro StrictTurnTaking.sol: each of
+    the `n` moves of a support run increases the turn number by one, so the
+    `n` movers are one full cycle of `c.participants`, at the `n` turns up to
+    the candidate; every participant signs its own move. Operator ruling
+    2026-11-01. -/
+def Spec.forceMoveRules_supportWindow : Prop :=
   ∀ (vt : State E → State E → Bool),
     Claim <|
-    (forceMoveRules vt : Rules E).NoUnilateralSupport
+    (forceMoveRules vt : Rules E).SupportWindow
 
 namespace Adjudicator
 

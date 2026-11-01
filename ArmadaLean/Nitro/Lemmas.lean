@@ -1762,21 +1762,24 @@ theorem validRun_of_getElem? {vt : State E → State E → Bool} {l : SupportPro
       simp only [validRun, Bool.and_eq_true]
       exact ⟨h 0 a b rfl rfl, ih fun i m1 m2 h1 h2 => h (i + 1) m1 m2 h1 h2⟩
 
-/-- SATP:262-266: the one signed state of a supported candidate is signed by
-    every participant. Operator ruling 2026-10-30. -/
-theorem consensusRules_noUnilateralSupport :
-    (consensusRules : Rules E).NoUnilateralSupport := by
+/-- SATP:262-266, go-nitro Consensus.sol: the one signed state of a
+    supported candidate is the candidate, signed by every participant, so
+    it meets `Rules.SupportWindow`. Operator ruling 2026-11-01. -/
+theorem consensusRules_supportWindow :
+    (consensusRules : Rules E).SupportWindow := by
   intro c proof candidate hcon q hq
   match proof, hcon with
   | [ss], hcon =>
     simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hcon
-    obtain ⟨⟨-, hchan⟩, hall⟩ := hcon
-    exact ⟨ss, List.mem_singleton_self ss, hall q (by rw [hchan]; exact hq)⟩
+    obtain ⟨⟨hst, hchan⟩, hall⟩ := hcon
+    have hn : 0 < c.n := List.length_pos_of_mem hq
+    refine ⟨ss, List.mem_singleton_self ss, hall q (by rw [hchan]; exact hq), hchan,
+      by rw [hst], by rw [hst]; omega⟩
   | [], hcon => (simp? [consensusRules] at hcon says simp only [consensusRules, Bool.false_eq_true] at hcon)
   | _ :: _ :: _, hcon => (simp? [consensusRules] at hcon says simp only [consensusRules, Bool.false_eq_true] at hcon)
 
 /-- `(t0 + i) % n` covers every residue `k < n` as `i` ranges over `0, …,
-    n - 1`: the modular-arithmetic fact `forceMoveRules_noUnilateralSupport`
+    n - 1`: the modular-arithmetic fact `forceMoveRules_supportWindow`
     needs. -/
 theorem turn_mod_exists (n t0 k : Nat) (hn : 0 < n) (hk : k < n) :
     ∃ i, i < n ∧ (t0 + i) % n = k := by
@@ -1793,12 +1796,13 @@ theorem turn_mod_exists (n t0 k : Nat) (hn : 0 < n) (hk : k < n) :
     rw [heq]
     exact Nat.mul_add_mod_of_lt hk
 
-/-- ForceMove:1379-1381: each of the `n` moves of a support run increases
-    the turn number by one, so the `n` movers are one full cycle of
-    `c.participants`; every participant signs its own move. Operator ruling
-    2026-10-30. -/
-theorem forceMoveRules_noUnilateralSupport (vt : State E → State E → Bool) :
-    (forceMoveRules vt : Rules E).NoUnilateralSupport := by
+/-- ForceMove:1340-1354, 1379-1381, go-nitro StrictTurnTaking.sol: each of
+    the `n` moves of a support run increases the turn number by one, so the
+    `n` movers are one full cycle of `c.participants`, at the `n` turns up to
+    the candidate; every participant signs its own move. Operator ruling
+    2026-11-01. -/
+theorem forceMoveRules_supportWindow (vt : State E → State E → Bool) :
+    (forceMoveRules vt : Rules E).SupportWindow := by
   intro c proof candidate h q hq
   simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
     Option.all_eq_true] at h
@@ -1853,7 +1857,17 @@ theorem forceMoveRules_noUnilateralSupport (vt : State E → State E → Bool) :
     rw [hmover] at hmv1
     injection hmv1 with hmv1
     subst hmv1
-    exact ⟨m, List.mem_of_getElem? hmget, hmv2⟩
+    have hlastturn : candidate.turnNum = m0.state.turnNum + (c.n - 1) := by
+      obtain ⟨ml, hml, hmls⟩ : ∃ ml, (m0 :: rest).getLast? = some ml ∧ ml.state = candidate := by
+        cases hl : (m0 :: rest).getLast? with
+        | none => simp at hl
+        | some ml => rw [hl] at hlast; exact ⟨ml, rfl, Option.some.inj hlast⟩
+      rw [List.getLast?_eq_getElem?] at hml
+      obtain ⟨m', hm'get, -, hm'turn, -⟩ := hind ((m0 :: rest).length - 1) (by omega)
+      rw [hml] at hm'get
+      obtain rfl := Option.some.inj hm'get
+      rw [← hmls, hm'turn, hlenn]
+    exact ⟨m, List.mem_of_getElem? hmget, hmv2, hmchan, by omega, by omega⟩
 
 /-- `L` lists each element once. Changing `f` at `a` alone, by `y`, changes
     the sum of `f` over `L` by `y` exactly when `a` is in `L`. Used by
