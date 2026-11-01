@@ -6199,6 +6199,244 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
           (Adjudicator.Ahead.applyAll_sublist apps (List.Sublist.refl _) hall hag))
         (le_trans (dueTotal_applyAll_le apps hall _ n) hdt)
 
+/-- The Turbo Value Algorithm, run as transfers. Paying every node of a node
+    list, in list order, to each destination of its own allocation gives
+    every external destination the algorithm's value along that list
+    (`Adjudicator.turboValues`). Turbo scope makes each payout a legal
+    transfer (a ledger source, a fundable destination, no guarantee), and
+    the DAG excludes a channel that pays itself. -/
+theorem TurboOutcomeNetwork.transfers_reach_turboValues (s : TurboOutcomeNetwork E)
+    (apps : Apps E) (q : Participant) (order : List (Address E))
+    (hord : s.chain.IsTopologicalOrder order) :
+    ∃ ops, OnlyTransfers ops ∧ ∀ d : E,
+      (Adjudicator.applyAll apps ops s.chain).balances.get (.external d) =
+        s.chain.turboValueAlong order (.external d) := by
+  obtain ⟨⟨s, hdag⟩, hscope⟩ := s
+  -- `chainPay` never raises what an allocation owes.
+  have hle : ∀ (ds : List (Address E)) (og : Allocation E) (hg : Coins) (m : Address E),
+      (Allocation.chainPay ds og hg).1.owed m ≤ og.owed m := by
+    intro ds
+    induction ds with
+    | nil => intro og hg m; exact le_rfl
+    | cons e ds ih =>
+      intro og hg m
+      rw [Allocation.chainPay_cons]
+      split
+      · refine le_trans (ih _ _ m) ?_
+        rw [Allocation.owed_reduceOwed]
+        split_ifs with h
+        · rw [h]
+          exact Nat.sub_le _ _
+        · exact le_rfl
+      · exact ih _ _ m
+  -- What an allocation owes `m` is what it still owes after paying its own
+  -- destinations, plus its payment to `m`.
+  have hsplit : ∀ (og : Allocation E), (og.map Entry.dest).Nodup → ∀ (hg : Coins) (m : Address E),
+      og.owed m = (Allocation.chainPay (og.map Entry.dest) og hg).1.owed m +
+        if (og.find m).elim false (fun e => !e.item.isGuarantee) then og.paidTo hg m else 0 := by
+    intro og hnd hg m
+    cases hf : og.find m with
+    | none =>
+      have hm : m ∉ og.map Entry.dest := Allocation.find_eq_none.mp hf
+      simp [Allocation.owed, Allocation.chainPay_find_unchanged _ og hg m hm, hf]
+    | some e =>
+      obtain ⟨de, item⟩ := e
+      have hde : de = m := Allocation.find_dest hf
+      subst hde
+      cases item with
+      | alloc amt =>
+        have h := Allocation.chainPay_owed_eq og hnd hg de amt hf
+        have h1 := hle (og.map Entry.dest) og hg de
+        have hg' : ((some (⟨de, .alloc amt⟩ : Entry E)).elim false
+            (fun e => !e.item.isGuarantee)) = true := rfl
+        rw [if_pos hg']
+        unfold Coins at *
+        omega
+      | guarantee x ps =>
+        have hg' : ¬ (((some (⟨de, .guarantee x ps⟩ : Entry E)).elim false
+            (fun e => !e.item.isGuarantee)) = true) := by simp [Item.isGuarantee]
+        rw [if_neg hg', Nat.add_zero, Allocation.chainPay_owed_of_find_guarantee _ og hg de x ps hf]
+  -- Transfers from `c` to each destination of `ds`, in order, move what
+  -- `chainPay` computes.
+  have hrun : ∀ (c : FixedPart) (ds : List (Address E)) (o : Allocation E) (u : Adjudicator E),
+      (∀ b ∈ ds, c.kind = .ledger ∧ b.fundable = true ∧ b ≠ c.address) →
+      u.finalOutcome c.address = some (.allocation o) →
+      (∀ c' : FixedPart, c' ≠ c →
+        (Adjudicator.applyAll apps (ds.map fun b => (q, Op.transfer c b)) u).finalOutcome
+          c'.address = u.finalOutcome c'.address) ∧
+      (∀ m, m ≠ c.address →
+        (Adjudicator.applyAll apps (ds.map fun b => (q, Op.transfer c b)) u).balances.get m +
+          (Allocation.chainPay ds o (u.balances.get c.address)).1.owed m =
+        u.balances.get m + o.owed m) := by
+    intro c ds
+    induction ds with
+    | nil => intro o u _ _; exact ⟨fun _ _ => rfl, fun _ _ => rfl⟩
+    | cons b ds ih =>
+      intro o u hds hfo
+      obtain ⟨hk, hfund, hbc⟩ := hds b List.mem_cons_self
+      have hds' : ∀ b' ∈ ds, c.kind = .ledger ∧ b'.fundable = true ∧ b' ≠ c.address :=
+        fun b' hb' => hds b' (List.mem_cons_of_mem _ hb')
+      simp only [List.map_cons, Adjudicator.applyAll, Adjudicator.apply_transfer]
+      rw [Allocation.chainPay_cons]
+      cases hfind : o.find b with
+      | none =>
+        have ht : u.transfer c b = none := by
+          rw [Adjudicator.transfer, if_pos ⟨hk, hfund⟩, hfo]
+          simp [hfind]
+        simp only [ht, Option.getD_none]
+        exact ih o u hds' hfo
+      | some e =>
+        obtain ⟨eb, item⟩ := e
+        cases item with
+        | guarantee y ps =>
+          have ht : u.transfer c b = none := by
+            rw [Adjudicator.transfer, if_pos ⟨hk, hfund⟩, hfo]
+            simp [hfind]
+          simp only [ht, Option.getD_none]
+          exact ih o u hds' hfo
+        | alloc amt =>
+          cases ht : u.transfer c b with
+          | none =>
+            exfalso
+            rw [Adjudicator.transfer, if_pos ⟨hk, hfund⟩, hfo] at ht
+            simp [hfind] at ht
+          | some u1 =>
+            simp only [Option.getD_some]
+            obtain ⟨o', amt', x, hf', -, -, -, hx, hfoeff, hbal, -, -⟩ :=
+              Adjudicator.transfer_effect ht
+            rw [hfo] at hf'
+            have hoo : o' = o := by
+              injection hf' with h
+              injection h with h
+              exact h.symm
+            subst hoo
+            have hfo1 : u1.finalOutcome c.address = some (.allocation (o'.reduceOwed b x)) := by
+              have h := hfoeff c
+              rw [if_pos rfl] at h
+              exact h
+            have hc1 : u1.balances.get c.address = u.balances.get c.address - x := by
+              have h := hbal c.address
+              rw [if_pos rfl, if_neg (Ne.symm hbc)] at h
+              unfold Coins at *
+              omega
+            obtain ⟨ih1, ih2⟩ := ih (o'.reduceOwed b x) u1 hds' hfo1
+            refine ⟨fun c' hc' => (ih1 c' hc').trans ?_, fun m hm => ?_⟩
+            · have h := hfoeff c'
+              rw [if_neg hc'] at h
+              exact h
+            · have h2 := ih2 m hm
+              have hbm := hbal m
+              rw [if_neg hm] at hbm
+              have hxo : x ≤ o'.owed b := hx ▸ Allocation.paidTo_le_owed _ _ _
+              rw [hc1] at h2
+              rw [← hx]
+              rw [Allocation.owed_reduceOwed] at h2
+              by_cases hmb : m = b
+              · subst hmb
+                rw [if_pos rfl] at h2 hbm
+                unfold Coins at *
+                omega
+              · rw [if_neg hmb] at h2 hbm
+                unfold Coins at *
+                omega
+  -- The whole node list, by induction: an unprocessed node, or an external
+  -- one, holds the algorithm's running value; an unprocessed channel keeps
+  -- its outcome.
+  have hmain : ∀ (L : List (Address E)), L.Nodup → ∀ (u : Adjudicator E) (V : Balances E),
+      (∀ c : FixedPart, (c.address : Address E) ∈ L →
+        u.finalOutcome c.address = s.finalOutcome c.address) →
+      (∀ m, (m ∈ L ∨ m.isExternal = true) → u.balances.get m = V.get m) →
+      ∃ ops, OnlyTransfers ops ∧ ∀ d : E,
+        (Adjudicator.applyAll apps ops u).balances.get (.external d) =
+          (s.turboValues L V).get (.external d) := by
+    intro L
+    induction L with
+    | nil =>
+      intro _ u V _ hV
+      exact ⟨[], fun _ h => absurd h List.not_mem_nil, fun d => hV _ (Or.inr rfl)⟩
+    | cons n rest ih =>
+      intro hnd u V hfo hV
+      obtain ⟨hnr, hndr⟩ := List.nodup_cons.mp hnd
+      by_cases hnil : s.allocationOf n = []
+      · obtain ⟨ops, hops, hres⟩ := ih hndr u V
+          (fun c hc => hfo c (List.mem_cons_of_mem _ hc))
+          (fun m hm => hV m (hm.imp_left (List.mem_cons_of_mem _)))
+        refine ⟨ops, hops, fun d => ?_⟩
+        rw [hres d]
+        simp only [Adjudicator.turboValues, hnil, payoutValues]
+      · obtain ⟨c, rfl⟩ : ∃ c : FixedPart, n = c.address := by
+          cases n with
+          | external e => exact absurd (allocationOf_eq_nil_of_isExternal s rfl) hnil
+          | channel c => exact ⟨c, rfl⟩
+        obtain ⟨o, hfo_s, halloc⟩ : ∃ o, s.finalOutcome c.address = some (.allocation o) ∧
+            s.allocationOf c.address = o.dedup := by
+          unfold Adjudicator.allocationOf at hnil ⊢
+          cases hf : s.finalOutcome c.address with
+          | none => rw [hf] at hnil; exact absurd rfl hnil
+          | some out => obtain ⟨o⟩ := out; exact ⟨o, rfl, rfl⟩
+        have hk : c.kind = .ledger := hscope.1 c hnil
+        have hdsok : ∀ b ∈ o.dedup.map Entry.dest,
+            c.kind = .ledger ∧ b.fundable = true ∧ b ≠ c.address := by
+          intro b hb
+          obtain ⟨e, he, rfl⟩ := List.mem_map.mp hb
+          rw [← halloc] at he
+          obtain ⟨-, hled⟩ := hscope.2 c.address e he
+          refine ⟨hk, ?_, ?_⟩
+          · cases hed : e.dest with
+            | external _ => rfl
+            | channel c' => simp [Address.fundable, hled c' hed]
+          · intro hcyc
+            have hedge : s.Edge c.address c.address :=
+              ⟨Address.isExternal_channel c, e, he, hcyc⟩
+            exact hdag.irrefl _ (Relation.TransGen.single hedge)
+        have hu_c : u.finalOutcome c.address = some (.allocation o) :=
+          (hfo c List.mem_cons_self).trans hfo_s
+        obtain ⟨hr1, hr2⟩ := hrun c (o.dedup.map Entry.dest) o u hdsok hu_c
+        have hfo1 : ∀ c' : FixedPart, (c'.address : Address E) ∈ rest →
+            (Adjudicator.applyAll apps ((o.dedup.map Entry.dest).map fun b => (q, Op.transfer c b))
+              u).finalOutcome c'.address = s.finalOutcome c'.address := by
+          intro c' hc'
+          have hne : c' ≠ c := fun h => hnr (h ▸ hc')
+          rw [hr1 c' hne]
+          exact hfo c' (List.mem_cons_of_mem _ hc')
+        have hV1 : ∀ m, (m ∈ rest ∨ m.isExternal = true) →
+            (Adjudicator.applyAll apps ((o.dedup.map Entry.dest).map fun b => (q, Op.transfer c b))
+              u).balances.get m =
+            (payoutValues V (V.get c.address) (s.allocationOf c.address)).get m := by
+          intro m hm
+          have hmc : m ≠ c.address := by
+            rintro rfl
+            rcases hm with h | h
+            · exact hnr h
+            · exact absurd h (by simp)
+          have h2 := hr2 m hmc
+          have hVm := hV m (hm.imp_left (List.mem_cons_of_mem _))
+          have hVc := hV c.address (Or.inl List.mem_cons_self)
+          have howm : (Allocation.chainPay (o.dedup.map Entry.dest) o
+              (u.balances.get c.address)).1.owed m =
+              (Allocation.chainPay (o.dedup.map Entry.dest) o.dedup
+                (u.balances.get c.address)).1.owed m := by
+            rw [← (Allocation.chainPay_dedup _ o _).1, Allocation.owed_dedup]
+          rw [howm, hVc, hVm, ← Allocation.owed_dedup o m] at h2
+          have hsp := hsplit o.dedup (Allocation.dedup_nodup o) (V.get c.address) m
+          rw [payoutValues_get_eq_add_paidTo _ _ _ (allocationOf_nodup s c.address), halloc]
+          generalize (if (o.dedup.find m).elim false (fun e => !e.item.isGuarantee) then
+            o.dedup.paidTo (V.get c.address) m else 0) = g at hsp ⊢
+          unfold Coins at *
+          omega
+        obtain ⟨ops, hops, hres⟩ := ih hndr _ _ hfo1 hV1
+        refine ⟨((o.dedup.map Entry.dest).map fun b => (q, Op.transfer c b)) ++ ops, ?_,
+          fun d => ?_⟩
+        · intro e he
+          rcases List.mem_append.mp he with he | he
+          · obtain ⟨b, -, rfl⟩ := List.mem_map.mp he
+            exact ⟨c, b, rfl⟩
+          · exact hops e he
+        · rw [Adjudicator.applyAll_append, hres d]
+          rfl
+  obtain ⟨ops, hops, hres⟩ := hmain order hord.1 s s.balances (fun _ _ => rfl) (fun _ _ => rfl)
+  exact ⟨ops, hops, hres⟩
+
 /-- Nitro-33, Nitro-35, Nitro-18. Nitro:837-839: "It is also not hard to construct a
     strategy for a node to obtain the value allocated by the algorithm, if
     necessary by actually implementing the algorithm up until that node." In
@@ -6209,7 +6447,10 @@ theorem turbo_value_achievable (apps : Apps E) {p : Participant} (T : Threat E p
     (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d : E) (v : Coins)
     (hv : net.state.chain.TurboValue (.external d) v) :
     CanObtainIn apps T HonestMove.IsTransfer (.external d) v net.state := by
-  sorry
+  obtain ⟨order, hord, rfl⟩ := hv
+  obtain ⟨ops, hops, hres⟩ :=
+    TurboOutcomeNetwork.transfers_reach_turboValues ⟨⟨_, hturbo.1⟩, hturbo.2⟩ apps p order hord
+  exact turbo_redistribution_unbeatable apps T B hT hcap net hturbo.1 ops hops d _ (hres d).ge
 
 /-- Nitro-18, Nitro-33, Nitro-34, Nitro-35. Nitro:482-484 with Nitro:835-839: on a Turbo DAG
     the value at `d` in the transfer-only game is the algorithm's value of
