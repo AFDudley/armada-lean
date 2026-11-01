@@ -81,7 +81,7 @@ changed after 2026-10-27 names the change in its row.
 | 13 | `consensus_enabled_outcomes` | proved | `p`'s strategy answers every challenge below `ss` with `ss` within `2 * ε`; only `Ω1`, `Ω2` can finalize. |
 | 14 | `turbo_redistribution_unbeatable` | unknown | Believed true (priority payouts are monotone). |
 | 15 | `deposit_bounds_value` | proved | Operator ruling 2026-11-01: the transfer-only game on a Turbo outcome network (Nitro:779-781, 790-795). Both values are the Turbo value along one order; a deposit of `y` raises it by 0 to `y` (`Adjudicator.turboValueAlong_deposit`). |
-| 16 | `payout_to_other_affects_only_owner` | proved | Restated in the transfer-only game on a Turbo outcome network (operator ruling 2026-11-01). The value is the Turbo value on both chains (`turbo_value_is_value`), and a payout keeps the Turbo value at every external address (`Adjudicator.turboValueAlong_transfer`). |
+| 16 | `payout_preserves_value` | proved | Restated in the transfer-only game on a Turbo outcome network (operator ruling 2026-11-01). The value is the Turbo value on both chains (`turbo_value_is_value`), and a payout keeps the Turbo value at every external address (`Adjudicator.turboValueAlong_transfer`). |
 | 17 | `participant_can_prevent_cycles` | proved | `p` never signs; under consensus no channel of `p` can leave Open. |
 | 18 | `turbo_value_upper_bound` | unknown | Believed true. |
 | 19 | `turbo_value_achievable` | unknown | Believed true. |
@@ -481,20 +481,20 @@ theorem deposit_bounds_value(apps : Apps E) {p : Participant} (T : Threat E p) (
 
 Restated (operator ruling 2026-11-01) in the paper's scope, the transfer-only game on a Turbo outcome network. `A : Assumptions` is replaced by `hT : T.TransfersOnly` and `hturbo : net.state.chain.IsTurboOutcomeNetwork`; `Value` becomes `ValueIn apps T HonestMove.IsTransfer`. The full game is out of scope: a search of small networks found plays, with the same calls in both chains, where the chain with the deposit leads by more than `y` part-way.
 
-#### `payout_to_other_affects_only_owner`
+#### `payout_preserves_value`
 
 D-E. `q` and `d` are external destinations; `hq : q ≠ d`.
 
 Old (`aa52443`):
 
 ```lean
-theorem payout_to_other_affects_only_owner(apps : Apps) {p : Participant} (T : Threat p) (A : Assumptions apps p T) (net : NetworkState p) (q : Participant) (hq : q ≠ p) (a : FixedPart) (s' : Adjudicator) (h : net.chain.transfer a (.participant q) = some s') (x : Coins) : Value apps T net x ↔ Value apps T { net with chain := s' } x
+theorem payout_preserves_value(apps : Apps) {p : Participant} (T : Threat p) (A : Assumptions apps p T) (net : NetworkState p) (q : Participant) (hq : q ≠ p) (a : FixedPart) (s' : Adjudicator) (h : net.chain.transfer a (.participant q) = some s') (x : Coins) : Value apps T net x ↔ Value apps T { net with chain := s' } x
 ```
 
 New:
 
 ```lean
-theorem payout_to_other_affects_only_owner(apps : Apps E) {p : Participant} (T : Threat E p) (A : Assumptions apps p T) (net : NetworkState E p) (d q : E) (hq : q ≠ d) (a : FixedPart) (s' : Adjudicator E) (h : net.chain.transfer a (.external q) = some s') (x : Coins) : Value apps T d net x ↔ Value apps T d { net with chain := s' } x
+theorem payout_preserves_value(apps : Apps E) {p : Participant} (T : Threat E p) (A : Assumptions apps p T) (net : NetworkState E p) (d q : E) (hq : q ≠ d) (a : FixedPart) (s' : Adjudicator E) (h : net.chain.transfer a (.external q) = some s') (x : Coins) : Value apps T d net x ↔ Value apps T d { net with chain := s' } x
 ```
 
 Operator ruling 2026-11-01: the claim has the scope of its paragraph, the transfer-only
@@ -504,7 +504,7 @@ does not use `hq`, so `hq` is removed: a payout keeps the value at every externa
 destination, including `q`.
 
 ```lean
-theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T : Threat E p) (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers) (net : Nitro.ReachableParticipant apps T) (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d q : E) (a : FixedPart) (s' : Adjudicator E) (h : net.state.chain.transfer a (.external q) = some s') (x : Coins) : ValueIn apps T HonestMove.IsTransfer d net.state x ↔ ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' } x
+theorem payout_preserves_value (apps : Apps E) {p : Participant} (T : Threat E p) (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers) (net : Nitro.ReachableParticipant apps T) (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d q : E) (a : FixedPart) (s' : Adjudicator E) (h : net.state.chain.transfer a (.external q) = some s') (x : Coins) : ValueIn apps T HonestMove.IsTransfer d net.state x ↔ ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' } x
 ```
 
 #### `participant_can_prevent_cycles`

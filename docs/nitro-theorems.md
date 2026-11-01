@@ -220,7 +220,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | Nitro-28 | theorem transfer_effects, reduceOwed_owed, transfer_can_happen (go-nitro pays the whole affordable amount; x is not a parameter) |
 | Nitro-29 | theorem transfer_fails_otherwise, transfer_zero_moves_nothing |
 | Nitro-30 | theorem turbo_redistribution_unbeatable |
-| Nitro-31 | theorem deposit_bounds_value, payout_to_other_affects_only_owner (definitions Threat.TransfersOnly, Threat.CapableTransfers, HonestMove.IsTransfer) |
+| Nitro-31 | theorem deposit_bounds_value, payout_preserves_value (definitions Threat.TransfersOnly, Threat.CapableTransfers, HonestMove.IsTransfer) |
 | Nitro-32 | definition Acyclic, Adjudicator.IsDAG; theorem participant_can_prevent_cycles, turbo_value_exists_unique |
 | Nitro-33 | definition Adjudicator.TurboValue, Adjudicator.turboValueAlong |
 | Nitro-34 | theorem turbo_value_upper_bound |
@@ -411,7 +411,7 @@ Disposition forms: `theorem NAME`, `definition NAME`, `assumption field NAME`, `
 | `consensus_enabled_outcomes` | `Liveness.lean` | During a consensus transition only the old and new outcomes are enabled. | Nitro-49, SATP-08, docs-0020-01 | Nitro:660-688 |
 | `turbo_redistribution_unbeatable` | `Liveness.lean` | In Turbo any transfer strategy that works is unbeatable. | Nitro-16, Nitro-30 | Nitro:775-777 |
 | `deposit_bounds_value` | `Liveness.lean` | A deposit of y changes a value by between 0 and y. | Nitro-31 | Nitro:785-787 |
-| `payout_to_other_affects_only_owner` | `Liveness.lean` | In the transfer-only game on a Turbo outcome network, a payout to an external destination leaves the value at every external destination unchanged. | Nitro-31 | Nitro:787-789 |
+| `payout_preserves_value` | `Liveness.lean` | In the transfer-only game on a Turbo outcome network, a payout to an external destination leaves the value at every external destination unchanged. | Nitro-31 | Nitro:787-789 |
 | `participant_can_prevent_cycles` | `Liveness.lean` | A participant can keep the outcome network acyclic. | Nitro-32 | Nitro:792-794 |
 | `turbo_value_upper_bound` | `Liveness.lean` | On a DAG no strategy obtains more than the Turbo value. | Nitro-32, Nitro-33, Nitro-34 | Nitro:836-837 |
 | `turbo_value_achievable` | `Liveness.lean` | On a DAG the Turbo value is obtainable. | Nitro-18, Nitro-33, Nitro-35 | Nitro:837-839 |

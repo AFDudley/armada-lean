@@ -85,9 +85,9 @@ theorem ArmadaLean.Nitro.Spec.turbo_redistribution_unbeatable.witness : spec_pre
 theorem ArmadaLean.Nitro.Spec.deposit_bounds_value.witness : spec_premise% ArmadaLean.Nitro.Spec.deposit_bounds_value := by
   spec_witness ArmadaLean.Nitro.NonVacuity.deposit_bounds_value.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.payout_to_other_affects_only_owner`, from `ArmadaLean.Nitro.NonVacuity.payout_to_other_affects_only_owner.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.payout_to_other_affects_only_owner.witness : spec_premise% ArmadaLean.Nitro.Spec.payout_to_other_affects_only_owner := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.payout_to_other_affects_only_owner.nonvacuity
+/-- The witness of `ArmadaLean.Nitro.Spec.payout_preserves_value`, from `ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity`. -/
+theorem ArmadaLean.Nitro.Spec.payout_preserves_value.witness : spec_premise% ArmadaLean.Nitro.Spec.payout_preserves_value := by
+  spec_witness ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity
 
 /-- The witness of `ArmadaLean.Nitro.Spec.consensus_channel_stays_open`: open. -/
 theorem ArmadaLean.Nitro.Spec.consensus_channel_stays_open.witness : spec_premise% ArmadaLean.Nitro.Spec.consensus_channel_stays_open := by

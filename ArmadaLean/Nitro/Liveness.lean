@@ -6721,8 +6721,10 @@ theorem ValueIn.eq {apps : Apps E} {p : Participant} {T : Threat E p}
     (`turbo_value_is_value`, on both chains: the payout is `p`'s own landed
     call, so the state after it is reachable), and the payout leaves the
     Turbo value at every external destination unchanged
-    (`Adjudicator.turboValueAlong_transfer`). -/
-theorem payout_to_other_affects_only_owner (apps : Apps E) {p : Participant} (T : Threat E p)
+    (`Adjudicator.turboValueAlong_transfer`). Renamed from
+    `payout_to_other_affects_only_owner` (operator ruling 2026-11-01): the
+    statement covers every destination. -/
+theorem payout_preserves_value (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
     (net : Nitro.ReachableParticipant apps T)
     (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d q : E)

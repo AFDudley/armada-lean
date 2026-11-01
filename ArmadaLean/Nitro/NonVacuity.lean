@@ -1442,7 +1442,7 @@ theorem deposit_bounds_value.nonvacuity : ∃ (net : NetworkState Nat p0) (c : F
       (g0_turbo _),
     turboValueAlong_valueIn apps0 _ (turboT_only _) ⟨s', [], []⟩ ht' 0 ⟨o', ho', rfl⟩⟩
 
-/-- `payout_to_other_affects_only_owner`. `sP` is `c1` concluded with outcome `[alloc d1 0]`:
+/-- `payout_preserves_value`. `sP` is `c1` concluded with outcome `[alloc d1 0]`:
     reached by `p0` sending the final state `stP`, then honestly concluding with it (`Holds`
     needs `p0`'s own signature in `net.sent`, so the send comes first; `Adjudicator.lean:249-254`'s
     `conclude` does not read `caller`, so no deposit is needed for an all-zero outcome). Both
@@ -1514,7 +1514,7 @@ theorem sP_turboScope : sP.TurboScope := by
 
 theorem sP_turboOutcomeNetwork : sP.IsTurboOutcomeNetwork := ⟨sP_dag, sP_turboScope⟩
 
-theorem payout_to_other_affects_only_owner.nonvacuity : ∃ (net : NetworkState Nat p0) (_d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
+theorem payout_preserves_value.nonvacuity : ∃ (net : NetworkState Nat p0) (_d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
     Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
     (Nitro.participant apps0 (turboT p0)).Reachable net ∧
     net.chain.IsTurboOutcomeNetwork ∧ net.chain.transfer a (.external q) = some s' :=

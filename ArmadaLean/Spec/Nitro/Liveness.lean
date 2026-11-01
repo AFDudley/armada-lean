@@ -447,7 +447,7 @@ def Spec.deposit_bounds_value : Prop :=
     ruling 2026-11-01: the claim has the scope of its own paragraph, the
     transfer-only game (Nitro:779-781) on a Turbo outcome network
     (Nitro:790-795). A payout leaves the value at `d` unchanged. -/
-def Spec.payout_to_other_affects_only_owner : Prop :=
+def Spec.payout_preserves_value : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
     (net : Nitro.ReachableParticipant apps T)
