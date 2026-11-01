@@ -1,0 +1,253 @@
+{
+  "id": "derived-aln-185",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proof of ArmadaLean.Nitro.NonVacuity.netE_reach has no `omega` call over 13 consumed hypotheses and no `decide` call on a goal over size 300. scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.NonVacuity.netE_reach.\nWhat holds now? Describe the current, observed state. At integrated 63b25c32, scripts/gate-baseline.json decision_findings holds {declaration: ArmadaLean.Nitro.NonVacuity.netE_reach, kind: decide_size, size: 355}: a `decide` call on a goal of size 355 (bound 300).\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json` and read decision_ok, decision_new_findings and lint_summary; read scripts/gate-baseline.json field decision_findings. Every Lean command runs through /home/rix/bin/lean-run.\nWhat constraints apply? State them in plain prose. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; when a recorded finding is gone, scripts/update_gate_baseline.py rewrites the baseline in the same branch. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean.Nitro.NonVacuity.netE_reach",
+  "restatement": "The proof of ArmadaLean.Nitro.NonVacuity.netE_reach must be rewritten so that it no longer contains a `decide` call on an oversized goal (current baseline records size 355 against a bound of 300) and no `omega` call that consumes more than 13 hypotheses. After the fix, the gate baseline file scripts/gate-baseline.json must no longer list a decision_findings entry for ArmadaLean.Nitro.NonVacuity.netE_reach (or if it is rewritten, it must be rewritten via scripts/update_gate_baseline.py on the same branch, not hand-edited). Running scripts/check.sh --json must show decision_ok, decision_new_findings and lint_summary all consistent with there being no live finding for this declaration, and every _ok field must remain true against the (possibly updated) baseline. No spec files under ArmadaLean/Spec* may be touched (git diff integrated -- 'ArmadaLean/Spec*' must be empty), and `lake clean` must never be invoked bare during the fix.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof of ArmadaLean.Nitro.NonVacuity.netE_reach must have no `decide` call on a goal whose size (Expr.sizeWithoutSharing) exceeds 300 (current recorded size: 355)."
+    },
+    {
+      "id": "c2",
+      "text": "The proof of ArmadaLean.Nitro.NonVacuity.netE_reach must have no `omega` call that consumes more than 13 hypotheses."
+    },
+    {
+      "id": "c3",
+      "text": "scripts/gate-baseline.json field decision_findings must have no entry for declaration ArmadaLean.Nitro.NonVacuity.netE_reach (or if an entry remains, it must have been written by scripts/update_gate_baseline.py on the same branch)."
+    },
+    {
+      "id": "c4",
+      "text": "Running `scripts/check.sh --json` must keep every _ok field (including decision_ok) true against scripts/gate-baseline.json, with decision_new_findings and lint_summary reflecting no live finding for this declaration."
+    },
+    {
+      "id": "c5",
+      "text": "No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` must be empty."
+    },
+    {
+      "id": "c6",
+      "text": "A bare `lake clean` must never be run during the fix."
+    }
+  ],
+  "goal": "Make sure a particular mathematical proof in the codebase no longer relies on a brute-force check that is too large and risky, and make sure the automated tracking file correctly reflects that the issue is resolved, without touching any specification files or wiping the build cache.",
+  "acceptance_criteria": [
+    "Builds the proof file for ArmadaLean.Nitro.NonVacuity.netE_reach with the decision-scope linter's diagnostic dump turned on, collects the size numbers it prints for every `decide` call in that proof, and checks that none of them exceeds 300.",
+    "When the proof of netE_reach is checked with the decisionScope linter set to flag any omega call that uses more than 13 hypotheses, no warning should be reported for that proof.",
+    "Checks that the project's recorded gate-baseline file does not contain a lingering decision-findings entry for the ArmadaLean.Nitro.NonVacuity.netE_reach declaration, unless that entry was properly written by the official update_gate_baseline.py tool on the current branch (verified by a matching marker).",
+    "Running the project's check script in JSON mode shows that every check still passes (all *_ok fields including decision_ok are true) and that there are no new live findings reported for this declaration in the decision scope linter summary.",
+    "Confirms that none of the formal specification files under ArmadaLean/Spec were touched by this change \u2014 anyone can check this by comparing the submitted code against the integrated baseline and seeing zero differences in those files.",
+    "Check that the history of commands run while fixing this issue never contains a plain, bare 'lake clean' invocation (one without any extra arguments limiting its scope)."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Builds the proof file for ArmadaLean.Nitro.NonVacuity.netE_reach with the decision-scope linter's diagnostic dump turned on, collects the size numbers it prints for every `decide` call in that proof, and checks that none of them exceeds 300."
+    },
+    {
+      "id": "c2",
+      "text": "When the proof of netE_reach is checked with the decisionScope linter set to flag any omega call that uses more than 13 hypotheses, no warning should be reported for that proof."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that the project's recorded gate-baseline file does not contain a lingering decision-findings entry for the ArmadaLean.Nitro.NonVacuity.netE_reach declaration, unless that entry was properly written by the official update_gate_baseline.py tool on the current branch (verified by a matching marker)."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script in JSON mode shows that every check still passes (all *_ok fields including decision_ok are true) and that there are no new live findings reported for this declaration in the decision scope linter summary."
+    },
+    {
+      "id": "c5",
+      "text": "Confirms that none of the formal specification files under ArmadaLean/Spec were touched by this change \u2014 anyone can check this by comparing the submitted code against the integrated baseline and seeing zero differences in those files."
+    },
+    {
+      "id": "c6",
+      "text": "Check that the history of commands run while fixing this issue never contains a plain, bare 'lake clean' invocation (one without any extra arguments limiting its scope)."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Builds the proof file for ArmadaLean.Nitro.NonVacuity.netE_reach with the decision-scope linter's diagnostic dump turned on, collects the size numbers it prints for every `decide` call in that proof, and checks that none of them exceeds 300.",
+      "proves": "Confirms the netE_reach proof contains no `decide` call on a goal larger than 300 (Expr.sizeWithoutSharing), i.e. the oversized 355 decide has been removed or shrunk.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_decide_sizes.py",
+        "args": [
+          "ArmadaLean/Nitro/NonVacuity.lean",
+          "netE_reach"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "max_decide_size",
+          "op": "le",
+          "value": 300
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "When the proof of netE_reach is checked with the decisionScope linter set to flag any omega call that uses more than 13 hypotheses, no warning should be reported for that proof.",
+      "proves": "Confirms that every omega call inside the netE_reach proof consumes at most 13 hypotheses, satisfying the clause's limit.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_netE_reach_omega_hyps.py",
+        "args": [
+          "ArmadaLean/Nitro/NonVacuity.lean",
+          "netE_reach",
+          "13"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "omega_hyps_exceeded_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that the project's recorded gate-baseline file does not contain a lingering decision-findings entry for the ArmadaLean.Nitro.NonVacuity.netE_reach declaration, unless that entry was properly written by the official update_gate_baseline.py tool on the current branch (verified by a matching marker).",
+      "proves": "Confirms the clause that scripts/gate-baseline.json's decision_findings has no stray or manually-added entry for ArmadaLean.Nitro.NonVacuity.netE_reach \u2014 any surviving entry must be legitimately produced by the update script on the same branch.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_gate_baseline_entry.py",
+        "args": [
+          "ArmadaLean.Nitro.NonVacuity.netE_reach"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "entry_present_and_unauthorized",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script in JSON mode shows that every check still passes (all *_ok fields including decision_ok are true) and that there are no new live findings reported for this declaration in the decision scope linter summary.",
+      "proves": "Confirms that scripts/check.sh --json still reports a fully-passing gate against the baseline, with no new decisionScope findings introduced for this declaration.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_new_findings",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_summary",
+          "op": "eq",
+          "value": "no live finding"
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Confirms that none of the formal specification files under ArmadaLean/Spec were touched by this change \u2014 anyone can check this by comparing the submitted code against the integrated baseline and seeing zero differences in those files.",
+      "proves": "The clause that no spec statement changes were made: `git diff integrated -- 'ArmadaLean/Spec*'` must be empty.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_unchanged.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_length",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c5"
+    },
+    {
+      "description": "Check that the history of commands run while fixing this issue never contains a plain, bare 'lake clean' invocation (one without any extra arguments limiting its scope).",
+      "proves": "The fix was completed without ever running a bare 'lake clean' command, satisfying the restriction on wiping build artifacts wholesale.",
+      "restatement_clause_id": "c6",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "command_log.txt"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_found",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c6"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_decide_sizes.py",
+    "scripts/check_gate_baseline_entry.py",
+    "scripts/check_netE_reach_omega_hyps.py",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_spec_unchanged.py"
+  ]
+}
