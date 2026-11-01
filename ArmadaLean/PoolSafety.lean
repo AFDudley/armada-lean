@@ -5,6 +5,7 @@ import ArmadaLean.Pool
 import ArmadaLean.PoolMachine
 import ArmadaLean.Types.Reachable
 import ArmadaLean.SpecTools
+import Mathlib.Tactic.Says
 
 /-! ### The core invariant: tokens held equal the value of unspent notes -/
 
@@ -15,7 +16,7 @@ def HeldInvariant (s : PoolState) : Prop :=
 
 theorem genesis_invariant (r : FeeRatio) : HeldInvariant (genesis r) := by
   intro t
-  simp [genesis, listSum]
+  (simp? [genesis, listSum] says simp only [genesis, List.map_nil, listSum])
 
 /-- The value projection of a `List.ofFn`-built list of notes, all sharing one `token`
     and one key-derivation `mk`, is exactly the underlying value function. Bridges the
@@ -61,7 +62,7 @@ theorem transact_balance {N M : Nat} {w : TransactWitness N M} {pub : TransactPu
     | some v =>
       simp only [UnshieldRefines] at hOutputs
       rw [hOutputs, List.map_append, listSum_append, withdrawn]
-      simp [listSum]
+      (simp? [listSum] says simp only [List.map_cons, List.map_nil, listSum, Nat.add_zero, Nat.add_left_cancel_iff])
   unfold transactAllOutputs at hvals
   rw [value_ofFn_eq] at hvals
   unfold transactSpentPositions
@@ -249,7 +250,7 @@ theorem markSpent_subset {spent spent' : NullifierSet} {ns : List Term}
   | cons n ns ih =>
     unfold markSpent at h
     by_cases hmem : n ∈ spent
-    · rw [if_pos hmem] at h; exact absurd h (by simp)
+    · rw [if_pos hmem] at h; exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
     · rw [if_neg hmem] at h
       intro m hm
       exact ih h m (List.mem_cons_of_mem n hm)
@@ -268,7 +269,7 @@ theorem markSpent_superset {spent spent' : NullifierSet} {ns : List Term}
   | cons n ns ih =>
     unfold markSpent at h
     by_cases hmem : n ∈ spent
-    · rw [if_pos hmem] at h; exact absurd h (by simp)
+    · rw [if_pos hmem] at h; exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
     · rw [if_neg hmem] at h
       intro m hm
       rcases ih h m hm with hcase | hcase
@@ -386,7 +387,7 @@ theorem spend_live_exact {s : PoolState} {token : Token}
           live := fun t => if t = token
               then withTreePositionsFrom treeNumber startPos newNotes ++ rest else s.live t } :
         PoolState).live token = withTreePositionsFrom treeNumber startPos newNotes ++ rest :=
-  ⟨removeAll_perm hRemove, by simp⟩
+  ⟨removeAll_perm hRemove, by (simp? says simp only [↓reduceIte])⟩
 
 /--
 **An unshield pays exactly one recipient exactly the spent value minus the value of the
@@ -420,7 +421,7 @@ theorem transact_unshield_exact {s : PoolState} (caller : Term) {N M : Nat}
   rw [hU] at hbal
   simp only [withdrawn] at hbal
   refine ⟨_, Step.transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent'
-    records openings hRoot hRemove hNullify hRecords, by simp [hU], by simp [hU, withdrawn], ?_⟩
+    records openings hRoot hRemove hNullify hRecords, by (simp? [hU] says simp only [hU, Option.map_some, Option.toList_some]), by (simp? [hU, withdrawn] says simp only [↓reduceIte, withdrawn, hU]), ?_⟩
   omega
 
 /--
@@ -451,12 +452,12 @@ theorem shield_creates_exactly {s : PoolState} (token : Token) (x : Nat) (npk : 
       (∀ t, t ≠ token → s'.live t = s.live t ∧ s'.held t = s.held t ∧
         s'.treasuryFees t = s.treasuryFees t) := by
   refine ⟨_, Step.shield token x npk hValue hSpendable, insertTree s.trees 1,
-    insertStart s.trees 1, ?_, ?_, by simp, by simp, by simp, fee_conservation s.feeRatio x,
-    fun t ht => ⟨by simp [ht], by simp [ht], by simp [ht]⟩⟩
-  · simp [PoolState.leavesAt', insertStart_eq]
+    insertStart s.trees 1, ?_, ?_, by (simp? says simp only [↓reduceIte]), by (simp? says simp only [↓reduceIte, Nat.add_left_cancel_iff]), by (simp? says simp only [↓reduceIte, Nat.add_left_cancel_iff]), fee_conservation s.feeRatio x,
+    fun t ht => ⟨by (simp? [ht] says simp only [ht, ↓reduceIte]), by (simp? [ht] says simp only [ht, ↓reduceIte]), by (simp? [ht] says simp only [ht, ↓reduceIte])⟩⟩
+  · (simp? [PoolState.leavesAt', insertStart_eq] says simp only [PoolState.leavesAt', insertStart_eq, Nat.lt_irrefl, not_false_eq_true, getElem?_neg])
   · show (leavesAt (insertLeaves s.trees [_]) (insertTree s.trees 1))[insertStart s.trees 1]? = _
     rw [insertLeaves_leavesAt, if_pos (by rfl), insertStart_eq]
-    simp
+    (simp? says simp only [List.length_append, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero])
 
 /-! ### A transact names only a root the pool actually produced -/
 
@@ -526,7 +527,7 @@ theorem pool_preimageOf_consistent (s : ReachableState Pool.machine)
     : RegistryConsistent s.state.preimageOf := by
   obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
-  | genesis r => intro c pre hc; simp [genesis] at hc
+  | genesis r => intro c pre hc; (simp? [genesis] at hc says simp only [genesis, reduceCtorEq] at hc)
   | step _ hstep ih =>
     cases hstep with
     | shield token x npk hValue hSpendable =>
@@ -566,13 +567,13 @@ theorem ofFn_pairwise_ne {N : Nat} (f : Fin N → Nat)
   rw [List.pairwise_iff_getElem] at h
   intro i j hij
   rcases Nat.lt_or_gt_of_ne (fun heq => hij (Fin.ext heq)) with hlt | hlt
-  · have hh := h i.1 j.1 (by simp) (by simp) hlt
+  · have hh := h i.1 j.1 (by (simp? says simp only [List.length_ofFn, Fin.is_lt])) (by (simp? says simp only [List.length_ofFn, Fin.is_lt])) hlt
     simp only [List.getElem_ofFn] at hh
-    simpa using hh
-  · have hh := h j.1 i.1 (by simp) (by simp) hlt
+    (simpa? using hh says simpa only [ne_eq, Fin.eta] using hh)
+  · have hh := h j.1 i.1 (by (simp? says simp only [List.length_ofFn, Fin.is_lt])) (by (simp? says simp only [List.length_ofFn, Fin.is_lt])) hlt
     simp only [List.getElem_ofFn] at hh
     intro heq
-    exact hh (by simpa using heq.symm)
+    exact hh (by (simpa? using heq.symm says simpa only [Fin.eta] using heq.symm))
 
 /-- `VerifyAccepts pub` holds iff some Groth16 proof over `pub`'s public inputs makes
     `PrivacyPool.verify` return `true` (PrivacyPool.sol:506-552), when `testingMode` is
@@ -790,7 +791,7 @@ theorem unshield_can_happen (s : ReachableState Pool.machine)
       leavesIndices := leavesIndices, npkOut := fun _ => recipient, valueOut := fun _ => value }
   have hBalance' : listSum (List.ofFn valueIn) = listSum (List.ofFn w.valueOut) := by
     show listSum (List.ofFn valueIn) = listSum (List.ofFn (fun _ : Fin 1 => value))
-    simp [List.ofFn_succ, List.ofFn_zero, listSum, hBalance]
+    (simp? [List.ofFn_succ, List.ofFn_zero, listSum, hBalance] says simp only [hBalance, List.ofFn_succ, List.ofFn_zero, listSum, Nat.add_zero])
   have hConstrained : Constrained w pub :=
     { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := fun _ => hRangeOut,
@@ -812,11 +813,11 @@ theorem unshield_can_happen (s : ReachableState Pool.machine)
   have hUnshieldRefines : UnshieldRefines w bp.unshield ([] : List CommitmentPreimage) := by
     rw [hU]
     show transactAllOutputs w = [] ++ [⟨recipient, w.token, value⟩]
-    simp [transactAllOutputs, List.ofFn_succ, List.ofFn_zero, w]
+    (simp? [transactAllOutputs, List.ofFn_succ, List.ofFn_zero, w] says simp only [transactAllOutputs, List.ofFn_succ, List.ofFn_zero, List.nil_append, w])
   refine ⟨_, Step.transact caller w pub bp hN (by decide) hConstrained rfl hAdapt
     [] hUnshieldRefines rest spent' (transactOutputRecords w pub) []
     hRoot hLive hNullify (List.Sublist.refl _), ?_⟩
-  simp [hU, w]
+  (simp? [hU, w] says simp only [hU, Option.map_some, Option.toList_some, w])
 
 /-- **Can happen: an owned transact succeeds.** Wires an owned witness, built as
     `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one, into
@@ -935,12 +936,12 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
   | shield token x npk hValue hSpendable =>
     exact insertLeaves_leavesAt_capacity s.trees
       [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
-      (by simp; unfold TreeDepth; omega) hOldCap
+      (by (simp? says simp only [List.length_cons, List.length_nil, Nat.zero_add]); unfold TreeDepth; omega) hOldCap
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
     have hlen : newNotes.length ≤ 4 := Nat.le_trans (unshieldRefines_length_le hOutputs) hM
     exact insertLeaves_leavesAt_capacity s.trees
-      (newNotes.map hashCommitment) tn (by simp; unfold TreeDepth; omega) hOldCap
+      (newNotes.map hashCommitment) tn (by (simp? says simp only [List.length_map]); unfold TreeDepth; omega) hOldCap
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
     have hlen : (ownedNewNotes w).length ≤ 4 := by
@@ -948,7 +949,7 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
       simp only [List.length_ofFn]
       omega
     exact insertLeaves_leavesAt_capacity s.trees
-      ((ownedNewNotes w).map hashCommitment) tn (by simp; unfold TreeDepth; omega) hOldCap
+      ((ownedNewNotes w).map hashCommitment) tn (by (simp? says simp only [List.length_map]); unfold TreeDepth; omega) hOldCap
 
 /-- **No tree's leaf list ever exceeds its own capacity.** Every reachable state's
     `leavesAt' tn` has at most `2 ^ TreeDepth` entries, for every tree `tn` — no
@@ -988,7 +989,7 @@ theorem leaf_has_merkle_witness (s : ReachableState Pool.machine) (tn : Nat)
   have hilt : i < 2 ^ TreeDepth := Nat.lt_of_lt_of_le hi hcap
   refine ⟨treePath_correct_of_getElem? TreeDepth (s.leavesAt' tn) i hilt hleaf, ?_⟩
   rcases reachable_rootAt_matches_leavesAt h tn with hnil | hmem
-  · rw [hnil] at hleaf; simp at hleaf
+  · rw [hnil] at hleaf; (simp? at hleaf says simp only [List.length_nil, Nat.not_lt_zero, not_false_eq_true, getElem?_neg, reduceCtorEq] at hleaf)
   · exact hmem
 
 /-! ### A leaf, once inserted, never moves
@@ -1756,7 +1757,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords =>
     intro t tn pos pre hmem
-    have hlenEq : (newNotes.map hashCommitment).length = newNotes.length := by simp
+    have hlenEq : (newNotes.map hashCommitment).length = newNotes.length := by (simp? says simp only [List.length_map])
     by_cases ht : t = w.token
     · subst ht
       simp only at hmem
@@ -1794,7 +1795,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
   | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
       openings hRoot hRemove hNullify =>
     intro t tn pos pre hmem
-    have hlenEq : ((ownedNewNotes w).map hashCommitment).length = (ownedNewNotes w).length := by simp
+    have hlenEq : ((ownedNewNotes w).map hashCommitment).length = (ownedNewNotes w).length := by (simp? says simp only [List.length_map])
     by_cases ht : t = w.token
     · subst ht
       simp only at hmem
@@ -1837,7 +1838,7 @@ theorem reachable_live_leaf_matches {s : PoolState} (h : Reachable s) :
     ∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t →
       (s.leavesAt' tn).getD pos emptyLeaf = hashCommitment pre := by
   induction h with
-  | genesis r => intro t tn pos pre hmem; simp [genesis] at hmem
+  | genesis r => intro t tn pos pre hmem; (simp? [genesis] at hmem says simp only [genesis, List.not_mem_nil] at hmem)
   | step hs hstep ih =>
     exact step_live_leaf_matches hstep ih (reachable_live_spent_invariant hs).1
 
@@ -1869,7 +1870,7 @@ def LiveValuesSpendable (s : PoolState) : Prop :=
 theorem genesis_live_values_spendable (r : FeeRatio) :
     LiveValuesSpendable (genesis r) := by
   intro t p hp
-  simp [genesis] at hp
+  (simp? [genesis] at hp says simp only [genesis, List.not_mem_nil] at hp)
 
 theorem step_preserves_live_values_spendable {s s' : PoolState} (ih : LiveValuesSpendable s)
     (hstep : Step s s') : LiveValuesSpendable s' := by
@@ -2149,7 +2150,7 @@ theorem step_preserves_live_token {s s' : PoolState}
 theorem reachable_live_token {s : PoolState} (h : Reachable s) :
     ∀ t p, p ∈ s.live t → p.2.token = t := by
   induction h with
-  | genesis r => intro t p hp; simp [genesis] at hp
+  | genesis r => intro t p hp; (simp? [genesis] at hp says simp only [genesis, List.not_mem_nil] at hp)
   | step _ hstep ih => exact step_preserves_live_token ih hstep
 
 /-! ### An owned merge (theorem 3 of the channel design) -/
@@ -2190,7 +2191,7 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
   have hLenLt : ∀ i, pos i < (s.leavesAt' bp.treeNumber).length := fun i =>
     (reachable_live_spent_invariant hs).1 token bp.treeNumber (pos i) (pre i) (hLive i)
   have hleavesNe : s.leavesAt' bp.treeNumber ≠ [] := by
-    intro hnil; rw [hnil] at hLenLt; simpa using hLenLt hi0
+    intro hnil; rw [hnil] at hLenLt; (simpa? using hLenLt hi0 says simpa only [List.length_nil, Nat.not_lt_zero] using hLenLt hi0)
   have hRootMem : treeRoot TreeDepth (s.leavesAt' bp.treeNumber) ∈ s.rootsAt' bp.treeNumber :=
     (reachable_rootAt_matches_leavesAt hs bp.treeNumber).resolve_left hleavesNe
   have hCap : (s.leavesAt' bp.treeNumber).length ≤ 2 ^ TreeDepth :=
@@ -2241,7 +2242,7 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
         have hBalanceEq : listSum (List.ofFn fun i => (pre i).value) =
             listSum (List.ofFn fun _ : Fin 1 =>
               listSum (List.ofFn fun i => (pre i).value)) := by
-          simp [listSum]
+          (simp? [listSum] says simp only [List.ofFn_succ, List.ofFn_zero, listSum, Nat.add_zero])
         exact congrArg (· % p) hBalanceEq }
   have hwantedEq : (List.ofFn fun i => ((bp.treeNumber, pos i), pre i) :
       List ((Nat × Nat) × CommitmentPreimage)) = ownedSpentPositions bp.treeNumber pub w := by
@@ -2325,7 +2326,7 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
         [(⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage)] := by
       show (List.ofFn fun _ : Fin 1 =>
           (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage)) = _
-      simp
+      (simp? says simp only [List.ofFn_succ, List.ofFn_zero])
     rw [hone]
     unfold withTreePositionsFrom withPositionsFrom
-    simp
+    (simp? says simp only [List.length_cons, List.length_nil, Nat.zero_add, List.map_cons, List.mem_cons, List.mem_map, Prod.mk.injEq, true_and, Prod.exists, exists_eq_right_right, exists_eq_right, true_or])
