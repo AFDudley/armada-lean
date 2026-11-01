@@ -38,6 +38,7 @@
   `HonestMove.Feasible` reads `HonestSend`.
 -/
 import ArmadaLean.Nitro.Lemmas
+import Mathlib.Tactic.Says
 
 namespace ArmadaLean.Nitro
 
@@ -62,8 +63,8 @@ private theorem entry_guaranteesExternal_iff (e : Entry E) :
       e.GuaranteesExternalB = true := by
   unfold Entry.GuaranteesExternalB
   cases h : e.item with
-  | alloc a => simp
-  | guarantee x ps => simp [List.all_eq_true]
+  | alloc a => (simp? says simp only [reduceCtorEq, IsEmpty.forall_iff, implies_true])
+  | guarantee x ps => (simp? [List.all_eq_true] says simp only [Item.guarantee.injEq, and_imp, forall_apply_eq_imp_iff, forall_eq', List.all_eq_true])
 
 instance (o : Allocation E) : Decidable o.GuaranteesExternal :=
   decidable_of_iff (∀ e ∈ o, e.GuaranteesExternalB = true)
