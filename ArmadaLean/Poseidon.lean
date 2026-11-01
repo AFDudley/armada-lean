@@ -1,3 +1,5 @@
+import Mathlib.Tactic.Says
+
 /-
   ArmadaLean.Poseidon — Poseidon and Keccak modeled symbolically (Dolev-Yao style).
 
@@ -92,8 +94,8 @@ def Term.decEq : (a b : Term) → Decidable (a = b)
 
 def Term.decEqList : (l1 l2 : List Term) → Decidable (l1 = l2)
   | [], [] => isTrue rfl
-  | [], _ :: _ => isFalse (fun he => absurd he (by simp))
-  | _ :: _, [] => isFalse (fun he => absurd he (by simp))
+  | [], _ :: _ => isFalse (fun he => absurd he (by (simp? says simp only [List.nil_eq, reduceCtorEq, not_false_eq_true])))
+  | _ :: _, [] => isFalse (fun he => absurd he (by (simp? says simp only [reduceCtorEq, not_false_eq_true])))
   | a :: as, b :: bs =>
     match Term.decEq a b with
     | isFalse h => isFalse (fun he => h (List.cons.inj he).1)
