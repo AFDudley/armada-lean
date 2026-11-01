@@ -28,21 +28,81 @@ theorem apply_deposit_equation (apps : Apps E) (caller : Participant) (a : Addre
     s.apply apps caller (.deposit a expectedHeld x) =
       if h : s.DepositPre a expectedHeld then some (s.depositEffect expectedHeld ⟨a, h⟩ x)
       else none := by
-  sorry
+  by_cases h : s.DepositPre a expectedHeld
+  · rw [dif_pos h]
+    have ⟨h1, h2, h3⟩ := h
+    cases a with
+    | external e => simp [Address.isExternal] at h1
+    | channel c =>
+      simp only [Address.fundable, decide_eq_true_eq] at h2
+      simp [apply, deposit, depositEffect, h2, h3]
+  · rw [dif_neg h]
+    cases a with
+    | external e => rfl
+    | channel c =>
+      simp only [apply, deposit]
+      rw [if_neg]
+      rintro ⟨h2, h3⟩
+      exact h ⟨rfl, by simp [Address.fundable, h2], h3⟩
 
 /-- The `transfer` equation. go-nitro MultiAssetHolder.sol:75-110 `transfer`. -/
 theorem apply_transfer_equation (apps : Apps E) (caller : Participant) (a : FixedPart)
     (b : Address E) (s : Adjudicator E) :
     s.apply apps caller (.transfer a b) =
       if h : s.TransferPre a b then some (s.transferEffect b ⟨a, h⟩) else none := by
-  sorry
+  by_cases h : s.TransferPre a b
+  · rw [dif_pos h]
+    have ⟨hk, hb, hs⟩ := h
+    obtain ⟨o, hso⟩ := Option.isSome_iff_exists.1 hs
+    have hget : (s.transferSource? a b).get hs = o := by simp [hso]
+    simp only [apply, transfer, transferEffect, if_pos (And.intro hk hb), hget]
+    unfold transferSource? at hso
+    split at hso
+    · split at hso
+      · cases hso
+        simp
+      · simp at hso
+    · simp at hso
+  · rw [dif_neg h]
+    simp only [apply, transfer]
+    split_ifs with hk
+    · unfold TransferPre transferSource? at h
+      split
+      · split
+        · simp_all
+        · rfl
+      · rfl
+    · rfl
 
 /-- The `reclaim` equation. go-nitro MultiAssetHolder.sol:234-256 `reclaim`. -/
 theorem apply_reclaim_equation (apps : Apps E) (caller : Participant) (l v : FixedPart)
     (s : Adjudicator E) :
     s.apply apps caller (.reclaim l v) =
       if h : s.ReclaimPre l v then some (s.reclaimEffect v ⟨l, h⟩) else none := by
-  sorry
+  by_cases h : s.ReclaimPre l v
+  · rw [dif_pos h]
+    have ⟨hk, hv, hs⟩ := h
+    obtain ⟨r, hso⟩ := Option.isSome_iff_exists.1 hs
+    have hget : (s.reclaimSource? l v).get hs = r := by simp [hso]
+    simp only [apply, reclaim, reclaimEffect, if_pos (And.intro hk hv), hget]
+    unfold reclaimSource? at hso
+    split at hso
+    · split at hso
+      · split_ifs at hso with hc
+        cases hso
+        rw [if_pos hc]
+      · simp at hso
+    · simp at hso
+  · rw [dif_neg h]
+    simp only [apply, reclaim]
+    split_ifs with hk
+    · unfold ReclaimPre reclaimSource? at h
+      split
+      · split
+        · split_ifs <;> simp_all
+        · rfl
+      · rfl
+    · rfl
 
 /-- The `challenge` equation. go-nitro ForceMove.sol:39-81 `challenge`. -/
 theorem apply_challenge_equation (apps : Apps E) (caller : Participant) (c : FixedPart)
@@ -51,7 +111,11 @@ theorem apply_challenge_equation (apps : Apps E) (caller : Participant) (c : Fix
       if h : s.ChallengePre apps caller c proof candidate then
         some (s.challengeEffect apps caller c proof ⟨candidate, h⟩)
       else none := by
-  sorry
+  by_cases h : s.ChallengePre apps caller c proof candidate
+  · rw [dif_pos h]
+    exact if_pos h
+  · rw [dif_neg h]
+    exact if_neg h
 
 /-- The `checkpoint` equation. go-nitro ForceMove.sol:90-119 `checkpoint`. -/
 theorem apply_checkpoint_equation (apps : Apps E) (caller : Participant) (c : FixedPart)
@@ -60,7 +124,11 @@ theorem apply_checkpoint_equation (apps : Apps E) (caller : Participant) (c : Fi
       if h : s.CheckpointPre apps c proof candidate then
         some (s.checkpointEffect apps c proof ⟨candidate, h⟩)
       else none := by
-  sorry
+  by_cases h : s.CheckpointPre apps c proof candidate
+  · rw [dif_pos h]
+    exact if_pos h
+  · rw [dif_neg h]
+    exact if_neg h
 
 /-- The `conclude` equation. go-nitro ForceMove.sol:127-132 `conclude` and
     ForceMove.sol:140-170 `_conclude`. -/
@@ -68,7 +136,11 @@ theorem apply_conclude_equation (apps : Apps E) (caller : Participant) (c : Fixe
     (ss : SignedState E) (s : Adjudicator E) :
     s.apply apps caller (.conclude c ss) =
       if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none := by
-  sorry
+  by_cases h : s.ConcludePre c ss
+  · rw [dif_pos h]
+    exact if_pos h
+  · rw [dif_neg h]
+    exact if_neg h
 
 /-- The `tick` equation. go-nitro StatusManager.sol:17-30 `_mode` reads `block.timestamp`;
     the clock always moves. -/
