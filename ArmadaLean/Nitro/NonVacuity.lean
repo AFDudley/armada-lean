@@ -1442,7 +1442,9 @@ theorem deposit_bounds_value.nonvacuity : ∃ (net : NetworkState Nat p0) (c : F
 /-- `payout_to_other_affects_only_owner`. `sP` is `c1` concluded with outcome `[alloc d1 0]`:
     reached by `p0` sending the final state `stP`, then honestly concluding with it (`Holds`
     needs `p0`'s own signature in `net.sent`, so the send comes first; `Adjudicator.lean:249-254`'s
-    `conclude` does not read `caller`, so no deposit is needed for an all-zero outcome). -/
+    `conclude` does not read `caller`, so no deposit is needed for an all-zero outcome). Both
+    steps are `p0`'s own, so `sP` is reachable under every threat. Its only allocation names
+    the external `d1`, so `sP` has no edge and is a Turbo outcome network. -/
 def stP : State Nat := ⟨c1, 0, .allocation [alloc d1 0], true, .opaque 0⟩
 def ssP : SignedState Nat := ⟨stP, [p0]⟩
 def sP : Adjudicator Nat :=
@@ -1450,20 +1452,69 @@ def sP : Adjudicator Nat :=
 
 theorem g0_concludeP : g0.apply apps0 p0 (.conclude c1 ssP) = some sP := rfl
 
-theorem sP_reach : (Nitro.participant apps0 (canon p0)).Reachable
+theorem sP_reach (T : Threat Nat p0) : (Nitro.participant apps0 T).Reachable
     (⟨sP, [ssP], [ssP]⟩ : NetworkState Nat p0) :=
   participant_reachable_land
-    (participant_reachable_honest (participant_reachable_init apps0 (canon p0)) (.send stP)
+    (participant_reachable_honest (participant_reachable_init apps0 T) (.send stP)
       (by honest_send))
     (.conclude c1 ssP)
     (fun ss h => by
       simp only [Op.proofStates, List.mem_singleton] at h; subst h
       exact holds_intro _ _ (by decide) (fun _ h => by cases h))
 
+/-- `sP`'s only allocation is `c1`'s `[alloc d1 0]`. -/
+theorem sP_allocationOf (n : Address Nat) :
+    sP.allocationOf n = if n = c1.address then [alloc d1 0] else [] := by
+  cases n with
+  | external e =>
+    rw [if_neg (fun h => by cases h)]
+    rfl
+  | channel c =>
+    by_cases hc : c = c1
+    · subst hc
+      rw [if_pos (FixedPart.address_eq c1).symm]
+      rfl
+    · rw [if_neg (fun h => hc (by cases h; rfl))]
+      simp [sP, Adjudicator.allocationOf, Adjudicator.finalOutcome, Adjudicator.statusOf,
+        Adjudicator.setStatus, g0, Adjudicator.genesis, List.lookup_cons, beq_false_of_ne hc]
+
+/-- `sP` has no edge: its one entry names an external destination. -/
+theorem sP_dag : sP.IsDAG := by
+  refine ⟨fun a h => ?_⟩
+  obtain ⟨b, ⟨hext, e, he, hed⟩, -⟩ := Relation.TransGen.head'_iff.1 h
+  rw [sP_allocationOf] at he
+  split at he
+  · rw [List.mem_singleton] at he
+    subst he
+    rw [← hed] at hext
+    exact absurd hext (by decide)
+  · exact absurd he List.not_mem_nil
+
+/-- `sP` is in Turbo scope: its source `c1` is a ledger channel, and its one
+    entry is an `alloc` to an external destination. -/
+theorem sP_turboScope : sP.TurboScope := by
+  refine ⟨fun c hc => ?_, fun n e he => ?_⟩
+  · rw [sP_allocationOf] at hc
+    split at hc
+    · rename_i h
+      cases h
+      rfl
+    · exact absurd rfl hc
+  · rw [sP_allocationOf] at he
+    split at he
+    · rw [List.mem_singleton] at he
+      subst he
+      exact ⟨rfl, fun c hc => by cases hc⟩
+    · exact absurd he List.not_mem_nil
+
+theorem sP_turboOutcomeNetwork : sP.IsTurboOutcomeNetwork := ⟨sP_dag, sP_turboScope⟩
+
 theorem payout_to_other_affects_only_owner.nonvacuity : ∃ (net : NetworkState Nat p0) (d q : Nat) (a : FixedPart) (s' : Adjudicator Nat),
-    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
-    q ≠ d ∧ net.chain.transfer a (.external q) = some s' :=
-  ⟨⟨sP, [ssP], [ssP]⟩, 0, 1, c1, _, canon_ok _ _, sP_reach, by decide, rfl⟩
+    Bounds apps0 p0 (turboT p0) ∧ (turboT p0).TransfersOnly ∧ (turboT p0).CapableTransfers ∧
+    (Nitro.participant apps0 (turboT p0)).Reachable net ∧
+    net.chain.IsTurboOutcomeNetwork ∧ net.chain.transfer a (.external q) = some s' :=
+  ⟨⟨sP, [ssP], [ssP]⟩, 0, 1, c1, _, turboT_bounds _ _, turboT_only _, turboT_capable _,
+    sP_reach _, sP_turboOutcomeNetwork, rfl⟩
 
 /-- `participant_can_prevent_cycles`. `net` is the genesis state itself. -/
 theorem participant_can_prevent_cycles.nonvacuity : ∃ net : NetworkState Nat p0,

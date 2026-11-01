@@ -247,6 +247,113 @@ theorem payoutValues_absorb {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
               (Allocation.reduceOwed rest b (Allocation.paidTo (remaining - min e.amount remaining) rest b))).get n :=
             payoutValues_congr hbridge _ _ n
 
+/-- Two raises commute at every reading. -/
+theorem Balances.get_add_add_comm (v : Balances E) (a b : Address E) (x y : Coins) (m : Address E) :
+    ((v.add a x).add b y).get m = ((v.add b y).add a x).get m := by
+  simp only [Balances.get_add]
+  by_cases hma : m = a <;> by_cases hmb : m = b
+  · have hba : b = a := hmb.symm.trans hma
+    rw [if_pos hmb, if_pos hba, if_pos hma, if_pos hba.symm, hba]
+    exact Nat.add_right_comm _ _ _
+  · rw [if_neg hmb, if_pos hma, if_pos hma, if_neg (fun h => hmb (hma.trans h))]
+  · rw [if_pos hmb, if_neg (fun h => hma (hmb.trans h)), if_neg hma, if_pos hmb]
+  · rw [if_neg hmb, if_neg hma, if_neg hma, if_neg hmb]
+
+/-- The `Nat` identity of `payoutValues_absorb_le` at the paid entry: a first
+    payment `min amt held` out of a budget `held ≤ remaining`, then the entry's
+    own turn, pay what the entry's turn alone pays, and leave the same rest. -/
+theorem min_add_min_sub_of_le (amt held remaining : Nat) (h : held ≤ remaining) :
+    min amt held + min (amt - min amt held) (remaining - min amt held) = min amt remaining ∧
+      remaining - min amt held - min (amt - min amt held) (remaining - min amt held) =
+        remaining - min amt remaining := by
+  omega
+
+/-- The `Nat` identity of `payoutValues_absorb_le` before the paid entry: a
+    payment out of what `held` leaves after an earlier entry does not lower that
+    entry's own share of `remaining ≥ held`, and the budgets stay ordered. -/
+theorem min_sub_of_le_held_sub (a held remaining y : Nat) (h : held ≤ remaining)
+    (hy : y ≤ held - min a held) :
+    min a (remaining - y) = min a remaining ∧ held - min a held ≤ remaining - min a remaining := by
+  omega
+
+/-- `payoutValues_absorb` with the payment read from a budget `held ≤ remaining`.
+    A real `transfer` pays what the channel's holding affords (`paidTo held`); the
+    algorithm pays out the channel's value `remaining`, which is at least the
+    holding. Paying the smaller amount for real and lowering what the allocation
+    still owes leaves the algorithm's answer at every address unchanged. -/
+theorem payoutValues_absorb_le {o : Allocation E} (hnd : (o.map Entry.dest).Nodup)
+    {b : Address E} {amt : Coins} (hb : o.find b = some ⟨b, .alloc amt⟩)
+    (vals : Balances E) {held remaining : Coins} (hle : held ≤ remaining) (n : Address E) :
+    (payoutValues vals remaining o).get n =
+      (payoutValues (vals.add b (Allocation.paidTo held o b))
+        (remaining - Allocation.paidTo held o b)
+        (Allocation.reduceOwed o b (Allocation.paidTo held o b))).get n := by
+  induction o generalizing vals held remaining with
+  | nil => simp at hb
+  | cons e rest ih =>
+    rw [Allocation.find_cons] at hb
+    have hndr : (rest.map Entry.dest).Nodup := (List.nodup_cons.1 hnd).2
+    have hdeq := Allocation.dedup_eq_self_of_nodup hnd
+    by_cases he : e.dest = b
+    · subst he
+      rw [if_pos rfl] at hb
+      have hee : e = (⟨e.dest, .alloc amt⟩ : Entry E) := by injection hb
+      have heitem : e.item = Item.alloc amt := by rw [hee]
+      have heamt : e.amount = amt := by simp [Entry.amount, heitem]
+      have hx : Allocation.paidTo held (e :: rest) e.dest = min amt held := by
+        rw [Allocation.paidTo_eq_get, hdeq]
+        conv_lhs => rw [hee]
+        simp [Allocation.payout_cons, Balances.get_cons]
+      rw [hx]
+      have hro : Allocation.reduceOwed (e :: rest) e.dest (min amt held) =
+          ({ e with item := .alloc (amt - min amt held) } : Entry E) :: rest := by
+        rw [Allocation.reduceOwed_cons, if_pos rfl]
+        simp [Entry.amount, heitem]
+      rw [hro]
+      simp only [payoutValues]
+      have hcond1 : ¬ e.item.isGuarantee = true := by rw [heitem]; simp [Item.isGuarantee]
+      have hcond2 :
+          ¬ ({ e with item := .alloc (amt - min amt held) } : Entry E).item.isGuarantee = true := by
+        simp [Item.isGuarantee]
+      have hmodamt : ({ e with item := .alloc (amt - min amt held) } : Entry E).amount
+          = amt - min amt held := rfl
+      rw [if_neg hcond1, if_neg hcond2, heamt, hmodamt]
+      obtain ⟨hsum, hrem⟩ := min_add_min_sub_of_le amt held remaining hle
+      rw [hrem]
+      apply payoutValues_congr
+      intro m
+      by_cases hm : m = e.dest
+      · rw [hm]
+        simp only [Balances.get_add, if_true]
+        rw [Nat.add_assoc, hsum]
+      · simp only [Balances.get_add, hm, if_false]
+    · rw [if_neg he] at hb
+      have hx : Allocation.paidTo held (e :: rest) b =
+          Allocation.paidTo (held - min e.amount held) rest b := by
+        conv_lhs => rw [Allocation.paidTo_eq_get, hdeq, Allocation.payout_cons, Balances.get_cons,
+          if_neg (Ne.symm he)]
+        rw [Allocation.paidTo_eq_get, Allocation.dedup_eq_self_of_nodup hndr]
+      rw [hx]
+      obtain ⟨y, hy⟩ : ∃ y, y = Allocation.paidTo (held - min e.amount held) rest b := ⟨_, rfl⟩
+      rw [← hy]
+      have hro : Allocation.reduceOwed (e :: rest) b y = e :: Allocation.reduceOwed rest b y := by
+        rw [Allocation.reduceOwed_cons, if_neg he]
+      rw [hro]
+      simp only [payoutValues]
+      have hyle : y ≤ held - min e.amount held := hy ▸ Allocation.paidTo_le_held _ _ _
+      obtain ⟨hmineq, hle'⟩ := min_sub_of_le_held_sub e.amount held remaining y hle hyle
+      rw [hmineq, sub_sub_swap remaining y (min e.amount remaining)]
+      have key := ih hndr hb
+        (if e.item.isGuarantee then vals else vals.add e.dest (min e.amount remaining)) hle'
+      rw [← hy] at key
+      rw [key]
+      apply payoutValues_congr
+      intro m
+      by_cases hg : e.item.isGuarantee = true
+      · simp only [hg, if_true]
+      · simp only [hg, Bool.false_eq_true, if_false]
+        exact Balances.get_add_add_comm vals e.dest b _ _ m
+
 /-- While `payoutValues` processes an allocation that names neither `a` nor
     `b`, starting balances that differ only by moving `x` from `a` to `b`
     (Nitro:765-772 `T(A,B,x)`, before `A`'s own turn in the algorithm) stay
@@ -1022,6 +1129,220 @@ theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (hdag : s.IsDAG)
   rw [turboValues_get_ne s post c hnopost]
   exact payoutValues_get_ne (s.turboValues pre vals) ((s.turboValues pre vals).get c)
     (s.allocationOf c) c hnoself
+
+/-! ### One real `transfer` and the Turbo Value Algorithm
+
+    A successful `transfer` from a channel `a` to an external destination
+    leaves `turboValueAlong` unchanged at every address except `a` itself
+    (`Adjudicator.turboValueAlong_transfer`). Before `a`'s turn the two runs
+    differ only by the paid amount moved from `a` to the destination
+    (`turboValues_delta`). At `a`'s turn the real payment is one part of what
+    the algorithm pays (`payoutValues_absorb_le`). After `a`'s turn only `a`'s
+    own reading differs (`turboValues_get_congr_ne`). -/
+
+/-- `payoutValues` never lowers a reading, so neither does `turboValues`. -/
+theorem Adjudicator.turboValues_get_le (s : Adjudicator E) (L : List (Address E))
+    (vals : Balances E) (n : Address E) : vals.get n ≤ (s.turboValues L vals).get n := by
+  induction L generalizing vals with
+  | nil => exact le_refl _
+  | cons m rest ih => exact le_trans (payoutValues_le _ _ _ n) (ih _)
+
+/-- Starting balances that agree except at `c` give `payoutValues` results that
+    agree except at `c`. -/
+theorem payoutValues_get_congr_ne {vals1 vals2 : Balances E} {c : Address E}
+    (h : ∀ m, m ≠ c → vals1.get m = vals2.get m) (remaining : Coins) (o : Allocation E)
+    (n : Address E) (hn : n ≠ c) :
+    (payoutValues vals1 remaining o).get n = (payoutValues vals2 remaining o).get n := by
+  induction o generalizing vals1 vals2 remaining with
+  | nil => exact h n hn
+  | cons e rest ih =>
+    simp only [payoutValues]
+    apply ih
+    intro m hm
+    by_cases hg : e.item.isGuarantee = true
+    · rw [if_pos hg, if_pos hg]
+      exact h m hm
+    · rw [if_neg hg, if_neg hg, Balances.get_add, Balances.get_add]
+      by_cases hme : m = e.dest
+      · rw [if_pos hme, if_pos hme, h e.dest (hme ▸ hm)]
+      · rw [if_neg hme, if_neg hme]
+        exact h m hm
+
+/-- Two runs of the algorithm over a list that does not contain `c`, on states
+    with the same allocations along the list, from starting balances that agree
+    except at `c`, agree except at `c`. -/
+theorem turboValues_get_congr_ne (s1 s2 : Adjudicator E) {c : Address E} :
+    ∀ (L : List (Address E)), c ∉ L → (∀ m ∈ L, s1.allocationOf m = s2.allocationOf m) →
+    ∀ (vals1 vals2 : Balances E), (∀ m, m ≠ c → vals1.get m = vals2.get m) →
+    ∀ m, m ≠ c → (s1.turboValues L vals1).get m = (s2.turboValues L vals2).get m := by
+  intro L
+  induction L with
+  | nil => intro _ _ vals1 vals2 h m hm; exact h m hm
+  | cons k rest ih =>
+    intro hc halloc vals1 vals2 h m hm
+    have hkc : k ≠ c := fun hk => hc (hk ▸ List.mem_cons_self)
+    simp only [Adjudicator.turboValues]
+    rw [h k hkc, halloc k List.mem_cons_self]
+    exact ih (fun hm' => hc (List.mem_cons_of_mem k hm'))
+      (fun m' hm' => halloc m' (List.mem_cons_of_mem k hm')) _ _
+      (fun m' hm' => payoutValues_get_congr_ne h _ _ m' hm') m hm
+
+/-- Two runs of the algorithm over a list that contains neither `a` nor any
+    node with an allocation at `b`, on states with the same allocations along
+    the list, from starting balances that differ only by `x` moved from `a` to
+    `b`, stay that far apart (`payoutValues_delta_step`, node by node). -/
+theorem turboValues_delta (s1 s2 : Adjudicator E) {a b : Address E} (hab : a ≠ b)
+    (hb1 : s1.allocationOf b = []) (hb2 : s2.allocationOf b = []) :
+    ∀ (L : List (Address E)), a ∉ L → (∀ m ∈ L, s1.allocationOf m = s2.allocationOf m) →
+    ∀ (vals1 vals2 : Balances E) (x : Coins), x ≤ vals1.get a →
+      (∀ m, m ≠ a → m ≠ b → vals1.get m = vals2.get m) →
+      vals2.get a = vals1.get a - x → vals2.get b = vals1.get b + x →
+      (∀ m, m ≠ a → m ≠ b → (s1.turboValues L vals1).get m = (s2.turboValues L vals2).get m) ∧
+      x ≤ (s1.turboValues L vals1).get a ∧
+      (s2.turboValues L vals2).get a = (s1.turboValues L vals1).get a - x ∧
+      (s2.turboValues L vals2).get b = (s1.turboValues L vals1).get b + x := by
+  intro L
+  induction L with
+  | nil => intro _ _ vals1 vals2 x hxle hagree ha hb; exact ⟨hagree, hxle, ha, hb⟩
+  | cons k rest ih =>
+    intro hka halloc vals1 vals2 x hxle hagree ha hb
+    have hk : k ≠ a := fun h => hka (h ▸ List.mem_cons_self)
+    have hrest : a ∉ rest := fun h => hka (List.mem_cons_of_mem k h)
+    have hallocr : ∀ m ∈ rest, s1.allocationOf m = s2.allocationOf m :=
+      fun m hm => halloc m (List.mem_cons_of_mem k hm)
+    simp only [Adjudicator.turboValues]
+    by_cases hkb : k = b
+    · rw [hkb, hb1, hb2]
+      simp only [payoutValues]
+      exact ih hrest hallocr vals1 vals2 x hxle hagree ha hb
+    · rw [hagree k hk hkb, halloc k List.mem_cons_self]
+      obtain ⟨h1, h2, h3, h4⟩ := payoutValues_delta_step a b hab (s2.allocationOf k) vals1 vals2 x
+        hxle hagree ha hb (vals2.get k)
+      exact ih hrest hallocr _ _ x h2 h1 h3 h4
+
+/-- A successful `transfer` changes no allocation but the paying channel's. -/
+theorem Adjudicator.allocationOf_transfer_ne {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (h : s.transfer a b = some s') {m : Address E} (hm : m ≠ a.address) :
+    s'.allocationOf m = s.allocationOf m := by
+  obtain ⟨_, _, _, -, -, -, -, -, hfo, -, -⟩ := Adjudicator.transfer_effect h
+  cases m with
+  | external e => rfl
+  | channel c =>
+    have hca : c ≠ a := fun hc => hm (by rw [hc, FixedPart.address_eq])
+    have h1 := hfo c
+    rw [if_neg hca, FixedPart.address_eq] at h1
+    unfold Adjudicator.allocationOf
+    rw [h1]
+
+/-- A successful `transfer` lowers one entry of the paying channel's
+    allocation (`Allocation.reduceOwed`). -/
+theorem Adjudicator.allocationOf_transfer_self {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (h : s.transfer a b = some s') :
+    ∃ x, s'.allocationOf a.address = (s.allocationOf a.address).reduceOwed b x := by
+  obtain ⟨o, -, x, hf, -, -, -, -, hfo, -, -⟩ := Adjudicator.transfer_effect h
+  have h1 := hfo a
+  rw [if_pos rfl] at h1
+  refine ⟨x, ?_⟩
+  unfold Adjudicator.allocationOf
+  rw [h1, hf]
+  exact Allocation.dedup_reduceOwed o b x
+
+/-- A successful `transfer` keeps the destination list of every allocation. -/
+theorem Adjudicator.allocationOf_dest_transfer {s s' : Adjudicator E} {a : FixedPart}
+    {b : Address E} (h : s.transfer a b = some s') (m : Address E) :
+    (s'.allocationOf m).map Entry.dest = (s.allocationOf m).map Entry.dest := by
+  by_cases hm : m = a.address
+  · obtain ⟨x, hx⟩ := Adjudicator.allocationOf_transfer_self h
+    rw [hm, hx, Allocation.reduceOwed_map_dest]
+  · rw [Adjudicator.allocationOf_transfer_ne h hm]
+
+/-- A successful `transfer` keeps every edge of the outcome network. -/
+theorem Adjudicator.Edge_transfer_iff {s s' : Adjudicator E} {a : FixedPart} {b : Address E}
+    (h : s.transfer a b = some s') (n m : Address E) : s'.Edge n m ↔ s.Edge n m := by
+  have hdest := Adjudicator.allocationOf_dest_transfer h n
+  unfold Adjudicator.Edge
+  constructor
+  · rintro ⟨hext, e, he, hed⟩
+    have hmem : m ∈ (s'.allocationOf n).map Entry.dest := List.mem_map.mpr ⟨e, he, hed⟩
+    rw [hdest] at hmem
+    obtain ⟨e', he', hed'⟩ := List.mem_map.mp hmem
+    exact ⟨hext, e', he', hed'⟩
+  · rintro ⟨hext, e, he, hed⟩
+    have hmem : m ∈ (s.allocationOf n).map Entry.dest := List.mem_map.mpr ⟨e, he, hed⟩
+    rw [← hdest] at hmem
+    obtain ⟨e', he', hed'⟩ := List.mem_map.mp hmem
+    exact ⟨hext, e', he', hed'⟩
+
+/-- A successful `transfer` keeps the outcome network a DAG. -/
+theorem Adjudicator.IsDAG.transfer {s s' : Adjudicator E} {a : FixedPart} {b : Address E}
+    (hdag : s.IsDAG) (h : s.transfer a b = some s') : s'.IsDAG :=
+  ⟨fun n hn => hdag.irrefl n
+    (Relation.TransGen.mono (fun x y hxy => (Adjudicator.Edge_transfer_iff h x y).mp hxy) n n hn)⟩
+
+/-- One real `transfer` from `a` to an external destination `q` leaves the
+    Turbo Value Algorithm's answer unchanged at every address but `a`, along
+    any duplicate-free order that lists `a`. -/
+theorem Adjudicator.turboValueAlong_transfer {s s' : Adjudicator E} {a : FixedPart} {q : E}
+    (h : s.transfer a (.external q) = some s') {order : List (Address E)} (hnd : order.Nodup)
+    (ha : a.address ∈ order) {n : Address E} (hn : n ≠ a.address) :
+    s'.turboValueAlong order n = s.turboValueAlong order n := by
+  obtain ⟨o, amt, x, hf, hfind, -, -, hx, hfo, hbal, -, -⟩ := Adjudicator.transfer_effect h
+  have hab : (a.address : Address E) ≠ .external q := by
+    rw [FixedPart.address_eq]; exact fun h => by cases h
+  have hallocA : s.allocationOf a.address = o.dedup := by
+    unfold Adjudicator.allocationOf; rw [hf]
+  have hallocA' : s'.allocationOf a.address = o.dedup.reduceOwed (.external q) x := by
+    have h1 := hfo a
+    rw [if_pos rfl] at h1
+    unfold Adjudicator.allocationOf
+    rw [h1]
+    exact Allocation.dedup_reduceOwed o _ x
+  have hagree : ∀ m, m ≠ a.address → m ≠ .external q →
+      s.balances.get m = s'.balances.get m := by
+    intro m hma hmq
+    have h1 := hbal m
+    rw [if_neg hma, if_neg hmq] at h1
+    exact h1.symm
+  have hA : s'.balances.get a.address = s.balances.get a.address - x := by
+    have h1 := hbal a.address
+    rw [if_pos rfl, if_neg hab, Nat.add_zero] at h1
+    rw [← h1, Nat.add_sub_cancel]
+  have hQ : s'.balances.get (.external q) = s.balances.get (.external q) + x := by
+    have h1 := hbal (.external q)
+    rw [if_neg hab.symm, if_pos rfl, Nat.add_zero] at h1
+    exact h1
+  have hxle : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
+  obtain ⟨pre, post, rfl⟩ := List.append_of_mem ha
+  rw [List.nodup_append, List.nodup_cons] at hnd
+  have hapre : a.address ∉ pre := fun hm => hnd.2.2 _ hm _ List.mem_cons_self rfl
+  have hapost : a.address ∉ post := hnd.2.1.1
+  unfold Adjudicator.turboValueAlong
+  rw [turboValues_append, turboValues_append]
+  simp only [Adjudicator.turboValues]
+  obtain ⟨D1, D2, D3, D4⟩ := turboValues_delta s s' hab rfl rfl pre hapre
+    (fun m hm => (Adjudicator.allocationOf_transfer_ne h (ne_of_mem_of_not_mem hm hapre)).symm)
+    s.balances s'.balances x hxle hagree hA hQ
+  have hheld : s.balances.get a.address ≤ (s.turboValues pre s.balances).get a.address :=
+    Adjudicator.turboValues_get_le s pre s.balances a.address
+  have hxd : x = o.dedup.paidTo (s.balances.get a.address) (.external q) := by
+    rw [hx, Allocation.paidTo_eq_get, Allocation.paidTo_eq_get,
+      Allocation.dedup_eq_self_of_nodup (Allocation.dedup_nodup o)]
+  have hfindd : o.dedup.find (.external q) = some ⟨.external q, .alloc amt⟩ := by
+    rw [Allocation.find_dedup]; exact hfind
+  have habs := payoutValues_absorb_le (Allocation.dedup_nodup o) hfindd
+    (s.turboValues pre s.balances) hheld
+  rw [← hxd] at habs
+  rw [hallocA', hallocA, D3]
+  refine turboValues_get_congr_ne s' s post hapost
+    (fun m hm => Adjudicator.allocationOf_transfer_ne h (ne_of_mem_of_not_mem hm hapost)) _ _
+    (fun m hm => ?_) n hn
+  rw [habs m]
+  refine payoutValues_get_congr_ne (fun k hk => ?_) _ _ m hm
+  rw [Balances.get_add]
+  by_cases hkq : k = .external q
+  · rw [if_pos hkq, hkq, D4]
+  · rw [if_neg hkq]
+    exact (D1 k hk hkq).symm
 
 /-- Whether `c`'s own allocation owes `d` through a non-guarantee entry
     (same guard `payoutValues_get_eq_add_paidTo` reads). -/

@@ -438,16 +438,20 @@ def Spec.deposit_bounds_value : Prop :=
 /-- Nitro-31. Nitro:787-789: "Withdrawals can only occur from participant
     addresses and are the only way funds can leave these addresses, so cannot
     affect values elsewhere." go-nitro has no withdrawal: a payout is the
-    transfer of a finalized entry to an external destination. A payout to
-    another destination `q` leaves the value at `d` unchanged. -/
+    transfer of a finalized entry to an external destination `q`. Operator
+    ruling 2026-11-01: the claim has the scope of its own paragraph, the
+    transfer-only game (Nitro:779-781) on a Turbo outcome network
+    (Nitro:790-795). A payout leaves the value at `d` unchanged. -/
 def Spec.payout_to_other_affects_only_owner : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
-    (d q : E) (hq : q ≠ d)
+    (B : Bounds apps p T) (hT : T.TransfersOnly) (hcap : T.CapableTransfers)
+    (net : Nitro.ReachableParticipant apps T)
+    (hturbo : net.state.chain.IsTurboOutcomeNetwork) (d q : E)
     (a : FixedPart) (s' : Adjudicator E) (h : net.state.chain.transfer a (.external q) = some s')
     (x : Coins),
     Claim <|
-    Value apps T d net.state x ↔ Value apps T d { net.state with chain := s' } x
+    ValueIn apps T HonestMove.IsTransfer d net.state x ↔
+      ValueIn apps T HonestMove.IsTransfer d { net.state with chain := s' } x
 
 /-- Under the consensus app, a channel's status never moves while its
     participant `p` has sent nothing: a successful `challenge`, `checkpoint`
