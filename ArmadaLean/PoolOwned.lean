@@ -65,6 +65,7 @@
   equality does).
 -/
 import ArmadaLean.TransactOwned
+import Mathlib.Tactic.Says
 
 /-- The data committed into a Merkle leaf (`PoolTypes.sol:79-83`, `struct
     CommitmentPreimage`). `npk` is a term (a note public key); `token` is a symbolic
@@ -180,7 +181,7 @@ theorem owned_no_double_spend {spent spent' : NullifierSet} {ns : List Term}
     unfold markSpent at h
     by_cases hn : n ∈ spent
     · rw [if_pos hn] at h
-      exact absurd h (by simp)
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
     · rw [if_neg hn] at h
       obtain ⟨hpw, hfresh⟩ := ih h
       refine ⟨List.pairwise_cons.mpr ⟨?_, hpw⟩, ?_⟩
@@ -283,7 +284,7 @@ theorem preimageOf_consistent {K : Nat} (commitments : Fin K → Term)
     (hvalid : ∀ i, hashCommitment (publicOutputs i) = commitments i) :
     RegistryConsistent (recordPreimages commitments publicOutputs (fun _ => none)) :=
   recordPreimages_preserves_consistency commitments publicOutputs hvalid
-    (fun _ _ h => by simp at h)
+    (fun _ _ h => by (simp? at h says simp only [reduceCtorEq] at h))
 
 /-! ### The published opening of a contract-owned note
 
