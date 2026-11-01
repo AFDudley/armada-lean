@@ -27,6 +27,7 @@
   contract. The model has one chain, no gas and no ciphertexts, so it omits them.
 -/
 import ArmadaLean.Poseidon
+import Mathlib.Tactic.Says
 
 /-- An unshield: the pool pays `value` of the transaction's token to `recipient`, an
     address term. The 2021 Railgun whitepaper lists "Withdrawal amount" and "An
@@ -77,10 +78,10 @@ theorem unshieldTerm_inj {a b : Option Unshield} (h : unshieldTerm a = unshieldT
   | none => cases b <;> simp_all [unshieldTerm, Term.keccak]
   | some u =>
     cases b with
-    | none => simp_all [unshieldTerm, Term.keccak]
+    | none => (simp_all? [unshieldTerm, Term.keccak] says simp_all only [unshieldTerm, Term.keccak, Term.hash.injEq, reduceCtorEq, and_false])
     | some v =>
       cases u; cases v
-      simp_all [unshieldTerm, Term.keccak]
+      (simp_all? [unshieldTerm, Term.keccak] says simp_all only [unshieldTerm, Term.keccak, Term.hash.injEq, List.cons.injEq, Term.val.injEq, and_true, true_and])
 
 /-- **Two different bound-parameter records never give the same hash.** By
     construction of the symbolic hash (`Term.hash.inj`), not by assumption.
