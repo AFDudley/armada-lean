@@ -507,8 +507,22 @@ def poolCitation (doc : String) : Bool :=
 
 /-- `layerDiscipline`: every spec-level declaration (its doc comment
     cites a source) whose proof term names one of its layer's base
-    operations (`ConstantInfo.value?.getUsedConstants`, the statement
-    itself is not scanned). -/
+    operations, EXCLUDING a base operation that the declaration's own
+    TYPE (its statement) already names
+    (`ConstantInfo.value?.getUsedConstants` minus
+    `ConstantInfo.type.getUsedConstants`). A base operation the
+    statement itself names is not a layer violation: for a theorem whose
+    conclusion is an equation about a base operation (for example
+    `s.apply apps caller (.deposit …) = X`), every Lean4 proof of that
+    conclusion embeds the base operation as a subterm of the compiled
+    proof term, whatever the proof technique (`rw`, `simp`, `Eq.trans`,
+    even a bare `rfl`, confirmed by `.pebbles/handoffs/aln-17c.yaml`'s
+    11 scratch proofs). Flagging such a theorem would punish the layer
+    rule it already follows: the proof only re-proves what the
+    STATEMENT, not the proof's own reasoning, already names. Only a base
+    operation that occurs in the proof and NOT in the statement is a
+    genuine violation (an unfold or a case split the proof chose, not
+    one the conclusion forced). -/
 def layerFindings (env : Environment) (names : Array Name) : MetaM (Array (Name × Bool × Array Name)) := do
   let mut out := #[]
   for n in names do
@@ -519,8 +533,9 @@ def layerFindings (env : Environment) (names : Array Name) : MetaM (Array (Name 
     let info ← getConstInfo n
     let some val := info.value? (allowOpaque := true) | continue
     let used := val.getUsedConstantsAsSet
+    let inStatement := info.type.getUsedConstantsAsSet
     let baseOps := if isNitro then nitroBaseOps else poolBaseOps
-    let hit := baseOps.filter used.contains
+    let hit := baseOps.filter fun op => used.contains op && !inStatement.contains op
     if !hit.isEmpty then
       out := out.push (n, isNitro, hit)
   return out
