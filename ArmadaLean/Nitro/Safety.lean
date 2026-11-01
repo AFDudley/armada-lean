@@ -781,8 +781,16 @@ theorem checkpoint_requires (apps : Apps E) (s : Adjudicator E) (c : FixedPart) 
     (candidate : State E) (s' : Adjudicator E) (h : s.checkpoint apps c proof candidate = some s') :
     s.mode c ≠ .finalized ∧ (apps c.appDef).supports c proof candidate = true ∧
     candidate.channel = c ∧ (s.statusOf c).turnNumRecord < candidate.turnNum := by
-  obtain ⟨⟨ho, hs, hc, ht⟩, -⟩ := Adjudicator.checkpoint_some h
-  exact ⟨ho, hs, hc, ht⟩
+  classical
+  have heq : s.checkpoint apps c proof candidate =
+      (if hp : s.CheckpointPre apps c proof candidate then
+        some (s.checkpointEffect apps c proof ⟨candidate, hp⟩) else none) :=
+    Adjudicator.apply_checkpoint_equation apps ⟨0⟩ c proof candidate s
+  have hpre : s.CheckpointPre apps c proof candidate := by
+    by_contra hcon
+    rw [heq, dif_neg hcon] at h
+    exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+  exact hpre
 
 omit [DecidableEq E] in
 /-- ForceMove-A18, ForceMove-B04, ForceMove-A21, docs-0070-10. go-nitro
@@ -796,9 +804,14 @@ theorem checkpoint_can_happen (apps : Apps E) (s : Adjudicator E) (c : FixedPart
     (ht : (s.statusOf c).turnNumRecord < candidate.turnNum) :
     s.checkpoint apps c proof candidate = some (s.setStatus c (.open candidate.turnNum)) ∧
     (s.setStatus c (.open candidate.turnNum)).mode c = .open := by
+  have hpre : s.CheckpointPre apps c proof candidate := ⟨hm, hs, hc, ht⟩
+  classical
+  have heq : s.checkpoint apps c proof candidate =
+      (if hp : s.CheckpointPre apps c proof candidate then
+        some (s.checkpointEffect apps c proof ⟨candidate, hp⟩) else none) :=
+    Adjudicator.apply_checkpoint_equation apps ⟨0⟩ c proof candidate s
   refine ⟨?_, by rw [Adjudicator.mode_eq]; (simp? says simp only [Adjudicator.statusOf_setStatus, ↓reduceIte, Adjudicator.setStatus_now, ChannelStatus.mode_open])⟩
-  simp only [Adjudicator.checkpoint]
-  rw [if_pos ⟨hm, hs, hc, ht⟩]
+  rw [heq, dif_pos hpre]; rfl
 
 /-- ForceMove-B02, ForceMove-A21, docs-0070-03, docs-0040-03. go-nitro
     `_requireNonDecreasedTurnNumber` and `_requireIncreasedTurnNumber`
