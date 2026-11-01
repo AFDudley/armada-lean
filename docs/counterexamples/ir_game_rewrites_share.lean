@@ -6,20 +6,23 @@
 
   The app is a real ForceMove app: `forceMoveRules vtAll`, whose game
   library accepts every transition (`vtAll`). It meets `Rules.SupportWindow`
-  (`forceMoveRules_supportWindow`), the premise `happ` of the operator
-  ruling of 2026-11-01. It still refutes both Nitro-24 statements
-  (`finalizable_or_two_enabled_false`, `single_enabled_is_finalizable_false`).
+  (`forceMoveRules_supportWindow`). It refutes both Nitro-24 statements in
+  their form before the `AppIR` premise (`Old_finalizable_or_two_enabled`,
+  `Old_single_enabled_is_finalizable`: `finalizable_or_two_enabled_false`,
+  `single_enabled_is_finalizable_false`).
 
-  What fails is IR in the sense of the labbook §2 (operator, 2026-10-30): "from
-  any state, an online honest participant can enforce at least what its
-  holdings give it" (ForceMove:410-416, 125-130). An open game is acceptable;
-  this app fails because `p` can never take its own assets out: each outcome
-  that pays `p` is overridden. The violating step is exact: the opponent's
-  valid move can cut `p`'s share, so `p` must answer every challenge and can
-  never let one expire. This is not §5 "unbound griefing": that case re-posts
-  a stale outcome at a higher turn, a support-rule failure that
-  `SupportWindow` now excludes. Here every move of the opponent is a valid
-  game move, signed at its own turn.
+  The app is not IR in the sense of the labbook §2 (operator, 2026-10-30):
+  "from any state, an online honest participant can enforce at least what
+  its holdings give it" (ForceMove:410-416, 125-130). `appsB_not_IR` proves
+  `¬ AppIR appsB ⟨0⟩ destB` (`AppIR`, `ArmadaLean/Types/App.lean`). So the
+  app fails the premise `hir` that the operator ruling of 2026-11-01 added to
+  both statements, and this file does not refute the current statements.
+  The violating step is exact: the opponent's valid move can cut `p`'s
+  share, so `p` must answer every challenge and can never let one expire
+  (`vtAll_not_noTake`: `vtAll` fails `NoTakeFromNonMover`). This is not §5
+  "unbound griefing": that case re-posts a stale outcome at a higher turn, a
+  support-rule failure that `SupportWindow` excludes. Here every move of the
+  opponent is a valid game move, signed at its own turn.
 
   The channel `c0` has the participants `[q0, p0]`, so `q0` moves at even
   turns and the honest `p0` at odd turns (`n = 2`). At `net1`, `p0` sent `s1`
@@ -37,13 +40,6 @@
     final state to exit (ForceMove:887-888): a final state keeps the outcome
     of the state before it, and that state is the adversary's.
   So `p0` has no finalizable outcome and exactly one enabled outcome.
-
-  The last section drafts IR as a predicate (`AppIR`, no statement takes it)
-  and proves it for ForceMove apps whose game library takes nothing from a
-  non-mover (`forceMove_IR`, `NoTakeFromNonMover`) and for the consensus app
-  (`consensus_IR`). `appsB_not_IR`: `p0` holds a support that pays it 5 and
-  cannot finalize any outcome that pays it 5. `vtAll_not_noTake`: `q0`'s
-  valid move cuts `p0`'s payment.
 
   The construction does not use the round clock: every round it builds
   advances the clock by 1, and `ε = 2`.
@@ -1218,9 +1214,39 @@ theorem prevents_other (X : Outcome Bool) (hX : X ≠ O1) :
     | round _ hr ih => exact (roundX hX ih hr).2
   exact ⟨σX X, σX_feasible X, fun n1 n2 hr hround => (roundX hX (hrun hr) hround).1⟩
 
-/-! ## The two statements fail -/
+/-! ## The two statements fail, in their form before `AppIR` -/
 
-theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Bool) := by
+/-- `Spec.finalizable_or_two_enabled` before the operator ruling of
+    2026-11-01 added the premise `hir : AppIR apps c.appDef dest`. -/
+def Old_finalizable_or_two_enabled : Prop :=
+  ∀ (apps : Apps Bool) {p : Participant} (T : Threat Bool p)
+    (_A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε)
+    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
+      candidate.channel = (c : FixedPart)),
+    (∃ Ω, Finalizable apps T (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps T (c : FixedPart) Ω1 net.state ∧
+      Enabled apps T (c : FixedPart) Ω2 net.state)
+
+/-- `Spec.single_enabled_is_finalizable` before the operator ruling of
+    2026-11-01 added the premise `hir : AppIR apps c.appDef dest`. -/
+def Old_single_enabled_is_finalizable : Prop :=
+  ∀ (apps : Apps Bool) {p : Participant} (T : Threat Bool p)
+    (_A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε)
+    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
+      ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
+    (Ω : Outcome Bool) (_hΩ : Enabled apps T (c : FixedPart) Ω net.state)
+    (_huniq : ∀ Ω', Enabled apps T (c : FixedPart) Ω' net.state → Ω' = Ω),
+    Finalizable apps T (c : FixedPart) Ω net.state
+
+theorem finalizable_or_two_enabled_false : ¬ Old_finalizable_or_two_enabled := by
   intro h
   rcases h appsB T0 A0 ⟨net1, net1_reachable⟩ tc0 appsB_supportWindow (by decide)
       ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
@@ -1230,7 +1256,7 @@ theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E
     · exact hE2 (prevents_other Ω2 (fun h2 => hne (h1.trans h2.symm)))
     · exact hE1 (prevents_other Ω1 h1)
 
-theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Bool) := by
+theorem single_enabled_is_finalizable_false : ¬ Old_single_enabled_is_finalizable := by
   intro h
   refine not_finalizable O1 (h appsB T0 A0 ⟨net1, net1_reachable⟩ tc0 appsB_supportWindow
     (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
@@ -1242,907 +1268,18 @@ theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finaliza
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 
-/-! ## IR at every state (draft; no statement takes it)
+/-! ## The game is not IR
 
-armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2 (operator,
-2026-10-30): "IR at every state: from any state, an online honest participant
-can enforce at least what its holdings give it" (ForceMove:410-416,
-125-130); "holdings: the signed states and vouchers a participant holds".
-Assets leave a channel only through a finalized outcome of that channel
-(`transfer_requires_finalized`), so "`p` takes its assets out" is "`p` can
-finalize an outcome of `c` that pays `p` at least its share" (`CanTakeOut`).
-The game itself need not end.
+`AppIR`, `HoldsShare` and `NoTakeFromNonMover` are the library's
+(`ArmadaLean/Types/App.lean`). -/
 
-`AppIR` asks this from every reachable state where `p` holds a share
-(`HoldsShare`). The channel must be open at a turn record no higher than the
-held candidate: a reachable history can contain a stretch where `p` waited
-and let a challenge it should have answered run or expire, and no app can
-undo that.
-
-Results, all proved in this section:
-* `forceMove_IR`: a ForceMove app is IR when its game library takes nothing
-  from a participant that does not move (`NoTakeFromNonMover`).
-* `consensus_IR`: the consensus app is IR.
-* `appsB_not_IR`, `vtAll_not_noTake`: the trivial game is not IR, and its
-  library fails `NoTakeFromNonMover`.
-The strategy (`TakeOut.takeout`): challenge an open channel with a held
-support, answer a challenge below the held turn `Th` with the own support at
-`Th`, and wait for a challenge at `Th` or above to end. Every support at a
-turn from `Th` on pays `p` at least its share (`forceMove_pay`,
-`consensus_pay`), and the window bounds every turn record by `Th + n`
-(`Ctx.turn_lt`), so the rank `rk` falls in every round. -/
-
-namespace TakeOut
-
-section
-
-variable {E : Type} [DecidableEq E]
-
-/-- The amount that an outcome pays the external destination `d`. -/
-def share (Ω : Outcome E) (d : E) : Coins := Ω.entries.owed (.external d)
-
-/-- Every state of `proof` that `p` signed is a state in `sent`. -/
-def SignedIn (sent : List (SignedState E)) (p : Participant) (proof : SupportProof E) : Prop :=
-  ∀ ss ∈ proof, p ∈ ss.signers → ∃ s ∈ sent, s.state = ss.state
-
-/-- The facts of the take-out strategy: `p` signed `sent0` only, every state
-    of `c` in it is at most at turn `Th`, and every support of `c` at a turn
-    from `Th` on, and every conclusion proof, pays `d` at least `x`. -/
-structure Ctx (apps : Apps E) (p : Participant) (c : FixedPart) (d : E) (x Th : Nat)
-    (sent0 : List (SignedState E)) : Prop where
-  hp : p ∈ c.participants
-  sw : (apps c.appDef).SupportWindow
-  sentTurn : ∀ s ∈ sent0, s.state.channel = c → s.state.turnNum ≤ Th
-  pay : ∀ proof cand, SignedIn sent0 p proof → (apps c.appDef).supports c proof cand = true →
-    cand.channel = c → Th ≤ cand.turnNum → x ≤ share cand.outcome d
-  payConc : ∀ ss, ConclusionProof c ss → (∃ s ∈ sent0, s.state = ss.state) →
-    x ≤ share ss.state.outcome d
-
-/-- Every supported candidate is below `Th + c.n`. -/
-theorem Ctx.turn_lt {apps : Apps E} {p : Participant} {c : FixedPart} {d : E} {x Th : Nat}
-    {sent0 : List (SignedState E)} (C : Ctx apps p c d x Th sent0) {proof : SupportProof E}
-    {cand : State E} (hS : SignedIn sent0 p proof) (h : (apps c.appDef).supports c proof cand = true) :
-    cand.turnNum < Th + c.n := by
-  obtain ⟨ss, hss, hps, hch, -, hlt⟩ := C.sw c proof cand h p C.hp
-  obtain ⟨s, hs, hse⟩ := hS ss hss hps
-  have := C.sentTurn s hs (by rw [hse]; exact hch)
-  rw [hse] at this
-  omega
-
-/-- The rank of a status of `c`: it falls at each change of the status. -/
-def rk (M : Nat) : ChannelStatus E → Nat
-  | .open t => 2 * (M - t) + 2
-  | .challenged t _ => 2 * (M - t) + 1
-  | .finalized .. => 0
-
-/-- One successful operation, and the status of `c` it leaves. -/
-theorem status_cases {apps : Apps E} {s s' : Adjudicator E} {caller : Participant} {op : Op E}
-    {c : FixedPart} (h : s.apply apps caller op = some s') :
-    s'.statusOf c = s.statusOf c ∨
-    (∃ P cand, op = .challenge c P cand ∧ (apps c.appDef).supports c P cand = true ∧
-      cand.channel = c ∧
-      ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ cand.turnNum) ∨
-        (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < cand.turnNum)) ∧
-      s'.statusOf c = .challenged cand.turnNum ⟨cand, s.now + c.challengeDuration⟩) ∨
-    (∃ P cand, op = .checkpoint c P cand ∧ (apps c.appDef).supports c P cand = true ∧
-      cand.channel = c ∧ (s.statusOf c).IsOpen s.now ∧
-      (s.statusOf c).turnNumRecord < cand.turnNum ∧ s'.statusOf c = .open cand.turnNum) ∨
-    (∃ ss, op = .conclude c ss ∧ ConclusionProof c ss ∧
-      s'.statusOf c = .finalized ss.state.turnNum ss.state.outcome ss.state.outcome) ∨
-    (∃ o0 o', (s.statusOf c).finalOutcome s.now = some o0 ∧
-      s'.statusOf c = (s.statusOf c).withOutcome o') := by
-  by_cases ht : Op.targets op c
-  · cases op with
-    | deposit a e x => simp [Op.targets] at ht
-    | tick dt => simp [Op.targets] at ht
-    | transfer a b =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨o, amt, x, hf, -, -, -, -, hst, -⟩ := Adjudicator.transfer_some h
-      refine Or.inr (Or.inr (Or.inr (Or.inr ⟨.allocation o, .allocation (o.reduceOwed b x), ?_, ?_⟩)))
-      · simpa only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hf
-      · rw [Adjudicator.statusOf_of_status hst]
-        simp only [Adjudicator.statusOf_setStatus, if_true]
-    | reclaim l v =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨oL, oV, x, left, right, hL, -, -, -, -, -, rfl, -, -⟩ := Adjudicator.reclaim_some h
-      refine Or.inr (Or.inr (Or.inr (Or.inr ⟨.allocation oL,
-        .allocation (((oL.addTo left (oV.amountAt 0)).addTo right (oV.amountAt 1)).remove v.address), ?_, ?_⟩)))
-      · simpa only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] using hL
-      · simp only [Adjudicator.statusOf_setStatus, if_true]
-    | challenge c' P cand =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨⟨-, hsup, hcc, hmode⟩, rfl⟩ := Adjudicator.challenge_some h
-      exact Or.inr (Or.inl ⟨P, cand, rfl, hsup, hcc, hmode, by simp⟩)
-    | checkpoint c' P cand =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨⟨hopen, hsup, hcc, hlt⟩, rfl⟩ := Adjudicator.checkpoint_some h
-      exact Or.inr (Or.inr (Or.inl ⟨P, cand, rfl, hsup, hcc, hopen, hlt, by simp⟩))
-    | conclude c' ss =>
-      simp only [Op.targets] at ht; subst ht
-      obtain ⟨⟨-, hcp⟩, rfl⟩ := Adjudicator.conclude_some h
-      exact Or.inr (Or.inr (Or.inr (Or.inl ⟨ss, rfl, hcp, by simp⟩)))
-  · exact Or.inl (statusOf_apply_of_not_targets h ht)
-
-theorem apply_now_le {apps : Apps E} {s s' : Adjudicator E} {caller : Participant} {op : Op E}
-    (h : s.apply apps caller op = some s') : s.now ≤ s'.now := by
-  by_cases ht : ∃ dt, op = .tick dt
-  · obtain ⟨dt, rfl⟩ := ht
-    simp only [Adjudicator.apply_tick, Option.some.injEq] at h
-    subst h
-    exact Nat.le_add_right _ _
-  · exact le_of_eq (Adjudicator.apply_now_eq_of_not_tick (fun dt h => ht ⟨dt, h⟩) h).symm
-
-/-- The invariant inside a round that starts at `n0`. `R` is a lower bound of
-    the turn record (or the status is finalized); the rank stays below `Kb`, or
-    the status stays `S`. -/
-structure K (apps : Apps E) {p : Participant} (c : FixedPart) (d : E) (x Th : Nat)
-    (sent0 : List (SignedState E)) (proof0 : SupportProof E) (n0 : NetworkState E p)
-    (R Kb : Nat) (S : ChannelStatus E) (n : NetworkState E p) : Prop where
-  recvU : ∀ r ∈ n.received, n.Unforged r
-  sent : n.sent = sent0
-  now0 : n0.chain.now ≤ n.chain.now
-  recv0 : ∀ r ∈ n0.received, r ∈ n.received
-  held0 : ∀ ss ∈ proof0, n.Holds ss
-  openW : ∀ t, n.chain.statusOf c = .open t → t ≤ Th ∨
-    ∃ proof cand, (∀ ss ∈ proof, n.Holds ss) ∧ (apps c.appDef).supports c proof cand = true ∧
-      cand.channel = c ∧ t ≤ cand.turnNum
-  chPay : ∀ t ch, n.chain.statusOf c = .challenged t ch → Th ≤ t → x ≤ share ch.state.outcome d
-  finPay : ∀ t f o, n.chain.statusOf c = .finalized t f o → x ≤ share f d
-  recLt : (n.chain.statusOf c).turnNumRecord < Th + c.n
-  lowK : ∀ t ch, n.chain.statusOf c = .challenged t ch → t < Th →
-    n.chain.statusOf c = n0.chain.statusOf c ∨ n0.chain.now + c.challengeDuration ≤ ch.deadline
-  recR : R ≤ (n.chain.statusOf c).turnNumRecord ∨ ∃ t f o, n.chain.statusOf c = .finalized t f o
-  prog : rk (Th + c.n) (n.chain.statusOf c) < Kb ∨ n.chain.statusOf c = S
-
-omit [DecidableEq E] in
-theorem rk_step {M : Nat} {Kb : Nat} {S st st' : ChannelStatus E} (hpos : 0 < Kb)
-    (hle : rk M S ≤ Kb) (hprev : rk M st < Kb ∨ st = S)
-    (hstep : st' = st ∨ rk M st' < rk M st ∨ rk M st' = 0) : rk M st' < Kb ∨ st' = S := by
-  rcases hstep with rfl | hlt | h0
-  · exact hprev
-  · rcases hprev with h | rfl
-    · exact Or.inl (lt_trans hlt h)
-    · exact Or.inl (lt_of_lt_of_le hlt hle)
-  · exact Or.inl (by rw [h0]; exact hpos)
-
-/-- One successful operation with unforged proof states keeps `K`. `E0`
-    bounds the clock of the round; a low challenge standing at `n0` ends no
-    sooner than `E0`. -/
-theorem K.step {apps : Apps E} {p : Participant} {c : FixedPart} {d : E} {x Th : Nat}
-    {sent0 : List (SignedState E)} {proof0 : SupportProof E} {n0 m : NetworkState E p}
-    {R Kb : Nat} {S : ChannelStatus E} (C : Ctx apps p c d x Th sent0)
-    (hK : K apps c d x Th sent0 proof0 n0 R Kb S m) {E0 : Time}
-    (hE0 : E0 ≤ n0.chain.now + c.challengeDuration) (hnow : m.chain.now < E0)
-    (hlow0 : ∀ t ch, n0.chain.statusOf c = .challenged t ch → t < Th → E0 ≤ ch.deadline)
-    (hpos : 0 < Kb) (hle : rk (Th + c.n) S ≤ Kb)
-    {caller : Participant} {op : Op E} {s' : Adjudicator E}
-    (h : m.chain.apply apps caller op = some s') (hU : ∀ ss ∈ op.proofStates, m.Unforged ss) :
-    K apps c d x Th sent0 proof0 n0 R Kb S
-      { m with chain := s', received := op.proofStates ++ m.received } := by
-  have hS : SignedIn sent0 p op.proofStates := fun ss hss hps => by
-    obtain ⟨s, hs, hse⟩ := (hU ss hss).1 hps
-    exact ⟨s, by rw [← hK.sent]; exact hs, hse⟩
-  have hrec : ∀ r ∈ m.received, r ∈ op.proofStates ++ m.received :=
-    fun r hr => List.mem_append_right _ hr
-  have hheld : ∀ {ss}, m.Holds ss →
-      ({ m with chain := s', received := op.proofStates ++ m.received } : NetworkState E p).Holds ss :=
-    fun h => NetworkState.Holds.mono (net := m) rfl hrec h
-  have hnow' := apply_now_le h
-  -- a low challenge at `m` has not expired
-  have hlive : ∀ t ch, m.chain.statusOf c = .challenged t ch → t < Th → m.chain.now < ch.deadline := by
-    intro t ch hc ht
-    rcases hK.lowK t ch hc ht with h0 | h6
-    · exact lt_of_lt_of_le hnow (hlow0 t ch (h0 ▸ hc) ht)
-    · exact lt_of_lt_of_le hnow (le_trans hE0 h6)
-  have hM : (m.chain.statusOf c).turnNumRecord < Th + c.n := hK.recLt
-  -- the facts that do not read the status
-  have hRecU : ∀ r ∈ op.proofStates ++ m.received,
-      ({ m with chain := s', received := op.proofStates ++ m.received } : NetworkState E p).Unforged r := by
-    intro r hr
-    rcases List.mem_append.1 hr with hr | hr
-    · exact (hU r hr).of_sent rfl
-    · exact (hK.recvU r hr).of_sent rfl
-  rcases status_cases (c := c) h with heq | ⟨P, cand, rfl, hsup, hcc, hmode, hst⟩ |
-      ⟨P, cand, rfl, hsup, hcc, hopen, hlt, hst⟩ | ⟨ss, rfl, hcp, hst⟩ | ⟨o0, o', hfo, hst⟩
-  · -- the status is unchanged
-    refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss), fun t ht => ?_,
-      fun t ch hc => hK.chPay t ch (heq ▸ hc), fun t f o hc => hK.finPay t f o (heq ▸ hc),
-      by rw [heq]; exact hK.recLt, fun t ch hc ht => by rw [heq] at hc ⊢; exact hK.lowK t ch hc ht,
-      by rw [heq]; exact hK.recR, by rw [heq]; exact hK.prog⟩
-    rcases hK.openW t (heq ▸ ht) with h1 | ⟨pr, cd, hH, hsu, hcc, hle⟩
-    · exact Or.inl h1
-    · exact Or.inr ⟨pr, cd, fun ss hss => hheld (hH ss hss), hsu, hcc, hle⟩
-  · -- a challenge
-    have hge : (m.chain.statusOf c).turnNumRecord ≤ cand.turnNum := by
-      rcases hmode with ⟨-, h⟩ | ⟨-, h⟩
-      · exact h
-      · exact le_of_lt h
-    have hlt' : cand.turnNum < Th + c.n := C.turn_lt hS hsup
-    refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss),
-      fun t ht => (by rw [hst] at ht; cases ht), fun t ch hc hTh => ?_,
-      fun t f o hc => (by rw [hst] at hc; cases hc), by rw [hst]; exact hlt',
-      fun t ch hc _ => ?_, ?_, ?_⟩
-    · rw [hst] at hc
-      obtain ⟨rfl, rfl⟩ := ChannelStatus.challenged.inj hc
-      exact C.pay P cand hS hsup hcc hTh
-    · rw [hst] at hc
-      obtain ⟨rfl, rfl⟩ := ChannelStatus.challenged.inj hc
-      exact Or.inr (Nat.add_le_add_right hK.now0 _)
-    · rw [hst]
-      rcases hK.recR with h1 | h1
-      · exact Or.inl (le_trans h1 hge)
-      · obtain ⟨t, f, o, hf⟩ := h1
-        rw [Adjudicator.mode_eq, hf] at hmode
-        rcases hmode with ⟨hm, -⟩ | ⟨hm, -⟩ <;> cases hm
-    · refine rk_step hpos hle hK.prog (Or.inr (Or.inl ?_))
-      rw [hst]
-      rw [Adjudicator.mode_eq] at hmode
-      cases hs : m.chain.statusOf c with
-      | «open» r =>
-        rw [hs] at hmode hM
-        rcases hmode with ⟨-, hr⟩ | ⟨hm, -⟩
-        · simp only [ChannelStatus.turnNumRecord_open] at hr
-          simp only [rk]; omega
-        · cases hm
-      | challenged r ch' =>
-        rw [hs] at hmode hM
-        rcases hmode with ⟨hm, -⟩ | ⟨-, hr⟩
-        · simp only [ChannelStatus.mode] at hm; split at hm <;> cases hm
-        · simp only [ChannelStatus.turnNumRecord_challenged] at hr hM
-          simp only [rk]; omega
-      | finalized r f o =>
-        rw [hs] at hmode
-        rcases hmode with ⟨hm, -⟩ | ⟨hm, -⟩ <;> cases hm
-  · -- a checkpoint
-    have hlt' : cand.turnNum < Th + c.n := C.turn_lt hS hsup
-    have hnotfin : ∀ t f o, m.chain.statusOf c ≠ .finalized t f o := fun t f o hf => by
-      rw [hf] at hopen
-      exact hopen (by simp [ChannelStatus.mode])
-    refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss),
-      fun t ht => ?_, fun t ch hc => (by rw [hst] at hc; cases hc),
-      fun t f o hc => (by rw [hst] at hc; cases hc), by rw [hst]; exact hlt',
-      fun t ch hc => (by rw [hst] at hc; cases hc), ?_, ?_⟩
-    · rw [hst] at ht
-      obtain rfl := ChannelStatus.open.inj ht
-      exact Or.inr ⟨P, cand, fun ss hss => holds_of_mem_received (List.mem_append_left _ hss), hsup,
-        hcc, le_refl _⟩
-    · rw [hst]
-      rcases hK.recR with h1 | ⟨t, f, o, hf⟩
-      · exact Or.inl (le_trans h1 (le_of_lt hlt))
-      · exact absurd hf (hnotfin t f o)
-    · refine rk_step hpos hle hK.prog (Or.inr (Or.inl ?_))
-      rw [hst]
-      cases hs : m.chain.statusOf c with
-      | «open» r =>
-        rw [hs] at hlt hM
-        simp only [ChannelStatus.turnNumRecord_open] at hlt hM
-        simp only [rk]; omega
-      | challenged r ch' =>
-        rw [hs] at hlt hM
-        simp only [ChannelStatus.turnNumRecord_challenged] at hlt hM
-        simp only [rk]; omega
-      | finalized r f o => exact absurd hs (hnotfin r f o)
-  · -- a conclusion
-    have hpss : ∃ s ∈ sent0, s.state = ss.state :=
-      hS ss (List.mem_singleton_self ss) (hcp.2.2 p (by rw [hcp.1]; exact C.hp))
-    have hlt' : ss.state.turnNum < Th + c.n := by
-      obtain ⟨s, hs, hse⟩ := hpss
-      have := C.sentTurn s hs (by rw [hse]; exact hcp.1)
-      rw [hse] at this
-      have := List.length_pos_of_mem C.hp
-      unfold FixedPart.n; omega
-    refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss),
-      fun t ht => (by rw [hst] at ht; cases ht), fun t ch hc => (by rw [hst] at hc; cases hc),
-      fun t f o hc => ?_, by rw [hst]; exact hlt', fun t ch hc => (by rw [hst] at hc; cases hc),
-      Or.inr ⟨_, _, _, hst⟩, rk_step hpos hle hK.prog (Or.inr (Or.inr (by rw [hst]; rfl)))⟩
-    rw [hst] at hc
-    obtain ⟨-, rfl, -⟩ := ChannelStatus.finalized.inj hc
-    exact C.payConc ss hcp hpss
-  · -- a payout: the status was already final
-    cases hs : m.chain.statusOf c with
-    | «open» r => rw [hs] at hfo; simp [ChannelStatus.finalOutcome] at hfo
-    | challenged r ch' =>
-      rw [hs] at hfo hst hM
-      have hexp : ch'.deadline ≤ m.chain.now := by
-        simp only [ChannelStatus.finalOutcome] at hfo
-        split at hfo
-        · assumption
-        · cases hfo
-      have hr : Th ≤ r := by
-        by_contra hlow
-        exact absurd hexp (not_le.mpr (hlive r ch' hs (by omega)))
-      have hpay := hK.chPay r ch' hs hr
-      simp only [ChannelStatus.withOutcome_challenged] at hst
-      refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss),
-        fun t ht => (by rw [hst] at ht; cases ht), fun t ch hc => (by rw [hst] at hc; cases hc),
-        fun t f o hc => ?_, by rw [hst]; exact hM, fun t ch hc => (by rw [hst] at hc; cases hc),
-        Or.inr ⟨_, _, _, hst⟩, rk_step hpos hle hK.prog (Or.inr (Or.inr (by rw [hst]; rfl)))⟩
-      rw [hst] at hc
-      obtain ⟨-, rfl, -⟩ := ChannelStatus.finalized.inj hc
-      exact hpay
-    | finalized r f o =>
-      rw [hs] at hst hM
-      have hpay := hK.finPay r f o hs
-      simp only [ChannelStatus.withOutcome_finalized] at hst
-      refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss),
-        fun t ht => (by rw [hst] at ht; cases ht), fun t ch hc => (by rw [hst] at hc; cases hc),
-        fun t f' o'' hc => ?_, by rw [hst]; exact hM, fun t ch hc => (by rw [hst] at hc; cases hc),
-        Or.inr ⟨_, _, _, hst⟩, rk_step hpos hle hK.prog (Or.inr (Or.inr (by rw [hst]; rfl)))⟩
-      rw [hst] at hc
-      obtain ⟨-, rfl, -⟩ := ChannelStatus.finalized.inj hc
-      exact hpay
-
-/-- `K` as a step invariant of a sub-round of pure adversary play that ends
-    no later than `Eend < E0`. -/
-theorem K.stepInv {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedPart} {d : E}
-    {x Th : Nat} {sent0 : List (SignedState E)} {proof0 : SupportProof E} {n0 : NetworkState E p}
-    {R Kb : Nat} {S : ChannelStatus E} (C : Ctx apps p c d x Th sent0) (B : Bounds apps p T)
-    {E0 Eend : Time} (hE0 : E0 ≤ n0.chain.now + c.challengeDuration) (hEend : Eend < E0)
-    (hlow0 : ∀ t ch, n0.chain.statusOf c = .challenged t ch → t < Th → E0 ≤ ch.deadline)
-    (hpos : 0 < Kb) (hle : rk (Th + c.n) S ≤ Kb) :
-    T.StepInvariant apps (fun n => n.chain.now ≤ Eend)
-      (K apps c d x Th sent0 proof0 n0 R Kb S) (fun _ _ => False) where
-  land := fun _ h _ => h.elim
-  deliver := fun {n ss} _ hfe hK => by
-    rw [NetworkState.applyAdv_deliver]
-    have hrec : ∀ r ∈ n.received, r ∈ ss :: n.received := fun r hr => List.mem_cons_of_mem _ hr
-    have hheld : ∀ {x}, n.Holds x → ({ n with received := ss :: n.received } : NetworkState E p).Holds x :=
-      fun h => NetworkState.Holds.mono (net := n) rfl hrec h
-    refine ⟨fun r hr => ?_, hK.sent, hK.now0, fun r hr => hrec r (hK.recv0 r hr),
-      fun x hx => hheld (hK.held0 x hx), fun t ht => ?_, hK.chPay, hK.finPay, hK.recLt, hK.lowK,
-      hK.recR, hK.prog⟩
-    · rcases List.mem_cons.1 hr with rfl | hr
-      · exact (B.unforgeableDeliver n r hfe).of_sent rfl
-      · exact (hK.recvU r hr).of_sent rfl
-    · rcases hK.openW t ht with h1 | ⟨pr, cd, hH, hsu, hcc, hle⟩
-      · exact Or.inl h1
-      · exact Or.inr ⟨pr, cd, fun x hx => hheld (hH x hx), hsu, hcc, hle⟩
-  tick := fun {n dt} _ _ hK => by
-    rw [NetworkState.applyAdv_tick]
-    refine ⟨fun r hr => (hK.recvU r hr).of_sent rfl, hK.sent,
-      le_trans hK.now0 (Nat.le_add_right _ _), hK.recv0,
-      fun x hx => NetworkState.Holds.mono (net := n) rfl (fun _ h => h) (hK.held0 x hx), ?_, ?_, ?_,
-      ?_, ?_, ?_, ?_⟩ <;> simp only [Adjudicator.tick_statusOf]
-    · intro t ht
-      rcases hK.openW t ht with h1 | ⟨pr, cd, hH, hsu, hcc, hle⟩
-      · exact Or.inl h1
-      · exact Or.inr ⟨pr, cd, fun x hx => NetworkState.Holds.mono (net := n) rfl (fun _ h => h) (hH x hx),
-          hsu, hcc, hle⟩
-    · exact hK.chPay
-    · exact hK.finPay
-    · exact hK.recLt
-    · exact hK.lowK
-    · exact hK.recR
-    · exact hK.prog
-  chain := fun {n caller op} hg hfe hK => by
-    cases happ : n.chain.apply apps caller op with
-    | none => rw [NetworkState.applyAdv_chain_none apps happ]; exact hK
-    | some s' =>
-      rw [NetworkState.applyAdv_chain_some apps happ]
-      exact K.step C hK hE0 (lt_of_le_of_lt hg hEend) hlow0 hpos hle happ (B.unforgeable n caller op hfe)
-
-/-- The invariant at the start of each round. -/
-structure TI (apps : Apps E) {p : Participant} (ε : Time) (c : FixedPart) (d : E) (x Th : Nat)
-    (sent0 : List (SignedState E)) (proof0 : SupportProof E) (n : NetworkState E p) : Prop where
-  recvU : ∀ r ∈ n.received, n.Unforged r
-  sent : n.sent = sent0
-  held0 : ∀ ss ∈ proof0, n.Holds ss
-  openW : ∀ t, n.chain.statusOf c = .open t → t ≤ Th ∨
-    ∃ proof cand, (∀ ss ∈ proof, n.Holds ss) ∧ (apps c.appDef).supports c proof cand = true ∧
-      cand.channel = c ∧ t ≤ cand.turnNum
-  chPay : ∀ t ch, n.chain.statusOf c = .challenged t ch → Th ≤ t → x ≤ share ch.state.outcome d
-  finPay : ∀ t f o, n.chain.statusOf c = .finalized t f o → x ≤ share f d
-  recLt : (n.chain.statusOf c).turnNumRecord < Th + c.n
-  chLow : ∀ t ch, n.chain.statusOf c = .challenged t ch → t < Th → n.chain.now + ε ≤ ch.deadline
-
-theorem TI.toK {apps : Apps E} {p : Participant} {ε : Time} {c : FixedPart} {d : E} {x Th : Nat}
-    {sent0 : List (SignedState E)} {proof0 : SupportProof E} {n : NetworkState E p}
-    (hI : TI apps ε c d x Th sent0 proof0 n) :
-    K apps c d x Th sent0 proof0 n (n.chain.statusOf c).turnNumRecord (rk (Th + c.n) (n.chain.statusOf c))
-      (n.chain.statusOf c) n :=
-  ⟨hI.recvU, hI.sent, le_refl _, fun _ h => h, hI.held0, hI.openW, hI.chPay, hI.finPay, hI.recLt,
-    fun _ _ _ _ => Or.inl rfl, Or.inl (le_refl _), Or.inr rfl⟩
-
-theorem K.reS {apps : Apps E} {p : Participant} {c : FixedPart} {d : E} {x Th : Nat}
-    {sent0 : List (SignedState E)} {proof0 : SupportProof E} {n0 n : NetworkState E p}
-    {R R' Kb : Nat} {S S' : ChannelStatus E} (hK : K apps c d x Th sent0 proof0 n0 R Kb S n)
-    (hlt : rk (Th + c.n) (n.chain.statusOf c) < Kb)
-    (hR : R' ≤ (n.chain.statusOf c).turnNumRecord ∨ ∃ t f o, n.chain.statusOf c = .finalized t f o) :
-    K apps c d x Th sent0 proof0 n0 R' Kb S' n :=
-  ⟨hK.recvU, hK.sent, hK.now0, hK.recv0, hK.held0, hK.openW, hK.chPay, hK.finPay, hK.recLt, hK.lowK,
-    hR, Or.inl hlt⟩
-
-/-- The rank of one successful operation with proof states of `sent0`: the
-    status stays, or its rank falls, or it becomes `0`. -/
-theorem rank_step {apps : Apps E} {p : Participant} {c : FixedPart} {d : E} {x Th : Nat}
-    {sent0 : List (SignedState E)} (C : Ctx apps p c d x Th sent0) {s s' : Adjudicator E}
-    {caller : Participant} {op : Op E} (h : s.apply apps caller op = some s')
-    (hS : SignedIn sent0 p op.proofStates) (hM : (s.statusOf c).turnNumRecord < Th + c.n) :
-    s'.statusOf c = s.statusOf c ∨ rk (Th + c.n) (s'.statusOf c) < rk (Th + c.n) (s.statusOf c) ∨
-      rk (Th + c.n) (s'.statusOf c) = 0 := by
-  rcases status_cases (c := c) h with heq | ⟨P, cand, rfl, hsup, -, hmode, hst⟩ |
-      ⟨P, cand, rfl, hsup, -, hopen, hlt, hst⟩ | ⟨ss, rfl, -, hst⟩ | ⟨o0, o', hfo, hst⟩
-  · exact Or.inl heq
-  · right; left
-    have hlt' : cand.turnNum < Th + c.n := C.turn_lt hS hsup
-    rw [hst]
-    rw [Adjudicator.mode_eq] at hmode
-    cases hs : s.statusOf c with
-    | «open» r =>
-      rw [hs] at hmode
-      rcases hmode with ⟨-, hr⟩ | ⟨hm, -⟩
-      · simp only [ChannelStatus.turnNumRecord_open] at hr
-        simp only [rk]; omega
-      · cases hm
-    | challenged r ch' =>
-      rw [hs] at hmode hM
-      rcases hmode with ⟨hm, -⟩ | ⟨-, hr⟩
-      · simp only [ChannelStatus.mode] at hm; split at hm <;> cases hm
-      · simp only [ChannelStatus.turnNumRecord_challenged] at hr hM
-        simp only [rk]; omega
-    | finalized r f o =>
-      rw [hs] at hmode
-      rcases hmode with ⟨hm, -⟩ | ⟨hm, -⟩ <;> cases hm
-  · right; left
-    have hlt' : cand.turnNum < Th + c.n := C.turn_lt hS hsup
-    rw [hst]
-    cases hs : s.statusOf c with
-    | «open» r =>
-      rw [hs] at hlt hM
-      simp only [ChannelStatus.turnNumRecord_open] at hlt hM
-      simp only [rk]; omega
-    | challenged r ch' =>
-      rw [hs] at hlt hM
-      simp only [ChannelStatus.turnNumRecord_challenged] at hlt hM
-      simp only [rk]; omega
-    | finalized r f o =>
-      rw [hs] at hopen
-      exact absurd (by simp [ChannelStatus.mode]) hopen
-  · right; right; rw [hst]; rfl
-  · right; right
-    rw [hst]
-    cases s.statusOf c <;> rfl
-
-/-- The goal: `c` is finalized with an outcome that pays `d` at least `x`. -/
-def Goal {p : Participant} (c : FixedPart) (d : E) (x : Nat) (n : NetworkState E p) : Prop :=
-  ∃ Ω, n.Finalized c Ω ∧ x ≤ share Ω d
-
-theorem two_eps {ε cd : Time} (h : 2 * ε ≤ cd) : ε ≤ cd := by
-  have : ε ≤ 2 * ε := Nat.le_mul_of_pos_left ε (by decide)
-  exact le_trans this h
-
-/-- `K` at the end of a round from `n`, with a rank below `n`'s, gives `TI`. -/
-theorem K.toTI {apps : Apps E} {p : Participant} {ε : Time} {c : FixedPart} {d : E} {x Th : Nat}
-    {sent0 : List (SignedState E)} {proof0 : SupportProof E} {n n1 : NetworkState E p} {R Kb : Nat}
-    {S : ChannelStatus E} (hK : K apps c d x Th sent0 proof0 n R Kb S n1)
-    (hdur : 2 * ε ≤ c.challengeDuration) (hbound : n1.chain.now < n.chain.now + ε)
-    (hne : n1.chain.statusOf c ≠ n.chain.statusOf c) : TI apps ε c d x Th sent0 proof0 n1 := by
-  refine ⟨hK.recvU, hK.sent, hK.held0, hK.openW, hK.chPay, hK.finPay, hK.recLt, fun t ch hc ht => ?_⟩
-  rcases hK.lowK t ch hc ht with h0 | h6
-  · exact absurd h0 hne
-  · have : n1.chain.now + ε ≤ n.chain.now + 2 * ε := by
-      have := Nat.add_le_add_right (le_of_lt hbound) ε
-      rw [Nat.add_assoc, ← Nat.two_mul] at this
-      exact this
-    exact le_trans this (le_trans (Nat.add_le_add_left hdur _) h6)
-
-/-- The round of a challenge by `p`: from a round-start state `n` with `TI`,
-    `p` challenges `c` with a support `P` of `cand` that it holds. If the
-    status is still `n`'s when the call lands, the call succeeds and lowers
-    the rank (`hok`). At the end of the round, the rank is lower and `TI`
-    holds again. -/
-theorem challenge_round {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedPart} {d : E}
-    {x Th : Nat} {sent0 : List (SignedState E)} {proof0 : SupportProof E}
-    (C : Ctx apps p c d x Th sent0) (A : Assumptions apps p T)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) {n n1 : NetworkState E p}
-    (hI : TI apps T.ε c d x Th sent0 proof0 n) {P : SupportProof E} {cand : State E}
-    (hH : ∀ ss ∈ P, n.Holds ss)
-    (hok : ∀ s : Adjudicator E, s.statusOf c = n.chain.statusOf c → s.now < n.chain.now + T.ε →
-      ∃ s', s.apply apps p (.challenge c P cand) = some s' ∧
-        rk (Th + c.n) (s'.statusOf c) < rk (Th + c.n) (n.chain.statusOf c))
-    (hpos : 0 < rk (Th + c.n) (n.chain.statusOf c))
-    (hround : T.Round apps (HonestMove.chain (.challenge c P cand)) n n1) :
-    TI apps T.ε c d x Th sent0 proof0 n1 ∧
-      rk (Th + c.n) (n1.chain.statusOf c) < rk (Th + c.n) (n.chain.statusOf c) := by
-  have hbound : n1.chain.now < n.chain.now + T.ε := hround.2
-  have hE0 : n.chain.now + T.ε ≤ n.chain.now + c.challengeDuration :=
-    Nat.add_le_add_left (two_eps hdur) _
-  obtain ⟨na, hA, hB⟩ := Threat.Round.single hround
-  have hnaend : na.chain.now ≤ n1.chain.now :=
-    le_trans (NetworkState.applyAdv_now_le apps na _) hB.now_le
-  have hnow_a : na.chain.now < n.chain.now + T.ε := lt_of_le_of_lt hnaend hbound
-  have hKa := Threat.RoundSeq.nil_invariant hA
-      (K.stepInv (R := (n.chain.statusOf c).turnNumRecord) C A.toBounds hE0 hnow_a hI.chLow hpos
-        (le_refl _)) hI.toK
-  have hHa : ∀ ss ∈ P, na.Holds ss := fun ss hss =>
-    NetworkState.Holds.mono (by rw [hKa.sent, hI.sent]) hKa.recv0 (hH ss hss)
-  have hUa : ∀ ss ∈ (Op.challenge c P cand).proofStates, na.Unforged ss := fun ss hss =>
-    (hHa ss hss).unforged hKa.recvU
-  have hSa : SignedIn sent0 p (Op.challenge c P cand).proofStates := fun ss hss hps => by
-    obtain ⟨s, hs, hse⟩ := (hUa ss hss).1 hps
-    exact ⟨s, by rw [← hKa.sent]; exact hs, hse⟩
-  -- after the land, the rank is below `n`'s
-  have hKL : K apps c d x Th sent0 proof0 n (n.chain.statusOf c).turnNumRecord
-      (rk (Th + c.n) (n.chain.statusOf c)) (.finalized 0 cand.outcome cand.outcome)
-      (na.applyAdv apps (.land (.challenge c P cand))) := by
-    cases happ : na.chain.apply apps p (.challenge c P cand) with
-    | none =>
-      rw [NetworkState.applyAdv_land_none apps happ]
-      rcases hKa.prog with h | h
-      · exact hKa.reS h hKa.recR
-      · obtain ⟨s', hs', -⟩ := hok na.chain h hnow_a
-        rw [happ] at hs'; cases hs'
-    | some s' =>
-      rw [NetworkState.applyAdv_land_some apps happ]
-      have hK' := K.step C hKa hE0 hnow_a hI.chLow hpos (le_refl _) happ hUa
-      have hlt : rk (Th + c.n) (s'.statusOf c) < rk (Th + c.n) (n.chain.statusOf c) := by
-        rcases hKa.prog with h | h
-        · rcases rank_step C happ hSa hKa.recLt with heq | hlt | h0
-          · rw [heq]; exact h
-          · exact lt_trans hlt h
-          · rw [h0]; exact hpos
-        · obtain ⟨s'', hs'', hlt⟩ := hok na.chain h hnow_a
-          rw [happ] at hs''
-          obtain rfl := Option.some.inj hs''
-          exact hlt
-      exact hK'.reS hlt hK'.recR
-  have hK1 := Threat.RoundSeq.nil_invariant hB
-      (K.stepInv C A.toBounds hE0 hbound hI.chLow hpos (Nat.zero_le _)) hKL
-  have hlt1 : rk (Th + c.n) (n1.chain.statusOf c) < rk (Th + c.n) (n.chain.statusOf c) := by
-    rcases hK1.prog with h | h
-    · exact h
-    · rw [h]; exact hpos
-  exact ⟨hK1.toTI hdur hbound (fun h => by rw [h] at hlt1; exact lt_irrefl _ hlt1), hlt1⟩
-
-theorem le_wait {a b d : Nat} (h : a ≤ b) : d ≤ b + (d - a) := by omega
-
-/-- A successful challenge of `p` from a status `st`: the new status. -/
-theorem challenge_apply {apps : Apps E} {p : Participant} {c : FixedPart} {s : Adjudicator E}
-    {P : SupportProof E} {cand : State E} (hp : p ∈ c.participants)
-    (hsup : (apps c.appDef).supports c P cand = true) (hcc : cand.channel = c)
-    (hmode : (s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ cand.turnNum) ∨
-      (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < cand.turnNum)) :
-    s.apply apps p (.challenge c P cand) =
-      some (s.setStatus c (.challenged cand.turnNum ⟨cand, s.now + c.challengeDuration⟩)) := by
-  show s.challenge apps p c P cand = _
-  unfold Adjudicator.challenge
-  rw [if_pos ⟨hp, hsup, hcc, hmode⟩]
-
-/-- **The take-out strategy.** From a state with `TI`, `p` finalizes `c`
-    with an outcome that pays `d` at least `x`: it challenges an open `c`
-    with a support it holds, answers a challenge below `Th` with its own
-    support at `Th`, and waits for a challenge at `Th` or above to end. Each
-    round lowers the rank or reaches the goal. -/
-theorem takeout {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedPart} {d : E}
-    {x Th : Nat} {sent0 : List (SignedState E)} {proof0 : SupportProof E} {cand0 : State E}
-    (C : Ctx apps p c d x Th sent0) (A : Assumptions apps p T)
-    (hdur : 2 * T.ε ≤ c.challengeDuration)
-    (hsup0 : (apps c.appDef).supports c proof0 cand0 = true) (hch0 : cand0.channel = c)
-    (hturn0 : cand0.turnNum = Th) :
-    ∀ μ (n : NetworkState E p), TI apps T.ε c d x Th sent0 proof0 n →
-      rk (Th + c.n) (n.chain.statusOf c) ≤ μ →
-      UnbeatableIn apps T (fun _ => True) (Goal c d x) n := by
-  have hn : 0 < c.n := List.length_pos_of_mem C.hp
-  intro μ
-  induction μ using Nat.strong_induction_on with
-  | _ μ ih =>
-  intro n hI hμ
-  -- one challenge round, then the induction
-  have hround : ∀ {P : SupportProof E} {cand : State E}, (∀ ss ∈ P, n.Holds ss) →
-      (∀ ss ∈ P, n.Holds ss → True) →
-      (∀ s : Adjudicator E, s.statusOf c = n.chain.statusOf c → s.now < n.chain.now + T.ε →
-        ∃ s', s.apply apps p (.challenge c P cand) = some s' ∧
-          rk (Th + c.n) (s'.statusOf c) < rk (Th + c.n) (n.chain.statusOf c)) →
-      0 < rk (Th + c.n) (n.chain.statusOf c) →
-      UnbeatableIn apps T (fun _ => True) (Goal c d x) n := by
-    intro P cand hH _ hok hpos
-    refine UnbeatableIn.move (.chain (.challenge c P cand)) trivial
-      ((HonestMove.Feasible_chain _ _).2 hH) fun n1 hr => ?_
-    rw [NetworkState.applyHonest_chain]
-    obtain ⟨hI1, hlt⟩ := challenge_round C A hdur hI hH hok hpos hr
-    exact ih _ (lt_of_lt_of_le hlt hμ) n1 hI1 (le_refl _)
-  cases hs : n.chain.statusOf c with
-  | finalized t f o =>
-    apply UnbeatableIn.done
-    refine ⟨f, ?_, hI.finPay t f o hs⟩
-    simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hs,
-      ChannelStatus.finalizedWith_finalized]
-  | «open» t =>
-    have hpos : 0 < rk (Th + c.n) (n.chain.statusOf c) := by rw [hs]; simp only [rk]; omega
-    have hok : ∀ {P : SupportProof E} {cand : State E}, (apps c.appDef).supports c P cand = true →
-        cand.channel = c → t ≤ cand.turnNum →
-        ∀ s : Adjudicator E, s.statusOf c = n.chain.statusOf c → s.now < n.chain.now + T.ε →
-          ∃ s', s.apply apps p (.challenge c P cand) = some s' ∧
-            rk (Th + c.n) (s'.statusOf c) < rk (Th + c.n) (n.chain.statusOf c) := by
-      intro P cand hsup hcc hle s hss _
-      rw [hs] at hss ⊢
-      refine ⟨_, challenge_apply C.hp hsup hcc (Or.inl ⟨by rw [Adjudicator.mode_eq, hss]; rfl,
-        by rw [hss]; exact hle⟩), ?_⟩
-      simp only [Adjudicator.statusOf_setStatus, if_true, rk]
-      omega
-    rcases hI.openW t hs with hle | ⟨P, cand, hH, hsup, hcc, hle⟩
-    · exact hround hI.held0 (fun _ _ _ => trivial) (hok hsup0 hch0 (by rw [hturn0]; exact hle)) hpos
-    · exact hround hH (fun _ _ _ => trivial) (hok hsup hcc hle) hpos
-  | challenged t ch =>
-    have hpos : 0 < rk (Th + c.n) (n.chain.statusOf c) := by rw [hs]; simp only [rk]; omega
-    by_cases hlow : t < Th
-    · -- answer with the own support at `Th`
-      refine hround (cand := cand0) hI.held0 (fun _ _ _ => trivial) (fun s hss hsnow => ?_) hpos
-      rw [hs] at hss ⊢
-      have hdl := hI.chLow t ch hs hlow
-      have hmode : s.mode c = .challenge := by
-        rw [Adjudicator.mode_eq, hss]
-        simp only [ChannelStatus.mode, if_neg (not_le.mpr (lt_of_lt_of_le hsnow hdl))]
-      refine ⟨_, challenge_apply C.hp hsup0 hch0 (Or.inr ⟨hmode, by rw [hss, hturn0]; exact hlow⟩), ?_⟩
-      simp only [Adjudicator.statusOf_setStatus, if_true, rk, hturn0]
-      omega
-    · -- wait for the challenge to end
-      have hpay := hI.chPay t ch hs (by omega)
-      by_cases hexp : ch.deadline ≤ n.chain.now
-      · apply UnbeatableIn.done
-        refine ⟨ch.state.outcome, ?_, hpay⟩
-        simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hs,
-          ChannelStatus.finalizedWith_challenged, if_pos hexp]
-      · refine UnbeatableIn.move (.wait (ch.deadline - n.chain.now)) trivial trivial fun n1 hr => ?_
-        have hbound : n1.chain.now < n.chain.now + T.ε := hr.2
-        have hE0 : n.chain.now + T.ε ≤ n.chain.now + c.challengeDuration :=
-          Nat.add_le_add_left (two_eps hdur) _
-        have hK1 := Threat.RoundSeq.nil_invariant hr.1
-          (K.stepInv (R := t) C A.toBounds hE0 hbound hI.chLow hpos (le_refl _))
-          (by have := hI.toK; rw [hs] at this ⊢; exact this)
-        have hTI : TI apps T.ε c d x Th sent0 proof0
-            (n1.applyHonest (.wait (ch.deadline - n.chain.now))) := by
-          refine ⟨fun r hr => (hK1.recvU r hr).of_sent rfl, hK1.sent,
-            fun ss hss => NetworkState.Holds.mono (net := n1) rfl (fun _ h => h) (hK1.held0 ss hss),
-            ?_, ?_, ?_, ?_, ?_⟩ <;>
-            simp only [NetworkState.applyHonest, Adjudicator.tick_statusOf]
-          · intro t' ht'
-            rcases hK1.openW t' ht' with h1 | ⟨pr, cd, hH, hsu, hcc, hle⟩
-            · exact Or.inl h1
-            · exact Or.inr ⟨pr, cd, fun x hx => NetworkState.Holds.mono (net := n1) rfl (fun _ h => h)
-                (hH x hx), hsu, hcc, hle⟩
-          · exact hK1.chPay
-          · exact hK1.finPay
-          · exact hK1.recLt
-          · intro t' ch' hc' hlt'
-            rcases hK1.recR with h1 | ⟨_, _, _, hf⟩
-            · rw [hc'] at h1
-              simp only [ChannelStatus.turnNumRecord_challenged] at h1
-              omega
-            · rw [hf] at hc'; cases hc'
-        rcases hK1.prog with hlt | heq
-        · exact ih _ (lt_of_lt_of_le (by simpa [NetworkState.applyHonest] using hlt) hμ) _ hTI
-            (le_refl _)
-        · apply UnbeatableIn.done
-          refine ⟨ch.state.outcome, ?_, hpay⟩
-          have hle : n.chain.now ≤ n1.chain.now := hr.1.now_le
-          have hge : ch.deadline ≤ n1.chain.now + (ch.deadline - n.chain.now) := le_wait hle
-          simp only [NetworkState.applyHonest, NetworkState.Finalized, FixedPart.address_eq,
-            Adjudicator.finalizedWith_channel, Adjudicator.tick_statusOf, heq, hs, Adjudicator.tick_now,
-            ChannelStatus.finalizedWith_challenged, if_pos hge]
-
-/-! ## The holdings, and the two apps -/
-
-/-- The facts about the states `p` signed that `HoldsShare` gives: every
-    state of `c` is at most at turn `Th`, and pays `d` at least `x` when it is
-    in the window of `Th` or final. -/
-def SentBelow (sent : List (SignedState E)) (c : FixedPart) (d : E) (x Th : Nat) : Prop :=
-  ∀ s ∈ sent, s.state.channel = c → s.state.turnNum ≤ Th ∧
-    ((Th < s.state.turnNum + c.n ∨ s.state.isFinal = true) → x ≤ share s.state.outcome d)
-
-theorem payConc_of {sent : List (SignedState E)} {c : FixedPart} {d : E} {x Th : Nat}
-    (h : SentBelow sent c d x Th) (ss : SignedState E) (hcp : ConclusionProof c ss)
-    (hs : ∃ s ∈ sent, s.state = ss.state) : x ≤ share ss.state.outcome d := by
-  obtain ⟨s, hs, hse⟩ := hs
-  have := (h s hs (by rw [hse]; exact hcp.1)).2 (Or.inr (by rw [hse]; exact hcp.2.1))
-  rwa [hse] at this
-
-/-- A sufficient condition on a ForceMove game library: no valid transition
-    reduces the payment to a participant that does not move. -/
-def NoTakeFromNonMover (vt : State E → State E → Bool) (dest : Participant → E) : Prop :=
-  ∀ s s', vt s s' = true → ∀ q, s'.mover ≠ some q → share s.outcome (dest q) ≤ share s'.outcome (dest q)
-
-/-- Under `NoTakeFromNonMover`, every ForceMove support of `c` at a turn from
-    `Th` on pays `p` at least `x`: the run holds a move of `p` in the window
-    of `Th`, which pays `p` at least `x`, and no later move of another
-    participant reduces it. -/
-theorem forceMove_pay {vt : State E → State E → Bool} {dest : Participant → E} {p : Participant}
-    (hNT : NoTakeFromNonMover vt dest) {c : FixedPart} (hp : p ∈ c.participants)
-    {sent : List (SignedState E)} {x Th : Nat} (hB : SentBelow sent c (dest p) x Th)
-    {proof : SupportProof E} {cand : State E} (hS : SignedIn sent p proof)
-    (h : (forceMoveRules vt).supports c proof cand = true) (hTh : Th ≤ cand.turnNum) :
-    x ≤ share cand.outcome (dest p) := by
-  obtain ⟨hlen, hstep, ml, hml, hmls⟩ := forceMove_supports_valid_run vt c proof cand h
-  have hkeep := forceMove_conclude_keeps_outcome vt c proof cand h
-  have h' := h
-  simp only [forceMoveRules, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h'
-  obtain ⟨⟨⟨⟨-, hhead⟩, -⟩, hchAll⟩, -⟩ := h'
-  have hn : 0 < c.n := List.length_pos_of_mem hp
-  obtain ⟨m0, hm0⟩ : ∃ m0, proof[0]? = some m0 := by
-    cases proof with
-    | nil => simp at hlen; omega
-    | cons a _ => exact ⟨a, rfl⟩
-  -- the turns of the run
-  have hind : ∀ j, j < proof.length → ∃ m, proof[j]? = some m ∧ m.state.turnNum = m0.state.turnNum + j := by
-    intro j
-    induction j with
-    | zero => intro _; exact ⟨m0, hm0, rfl⟩
-    | succ j ih =>
-      intro hj
-      obtain ⟨m, hm, ht⟩ := ih (by omega)
-      obtain ⟨m', hm'⟩ : ∃ m', proof[j + 1]? = some m' := ⟨_, List.getElem?_eq_getElem hj⟩
-      obtain ⟨-, ht', -, -⟩ := hstep j m m' hm hm'
-      exact ⟨m', hm', by omega⟩
-  -- a state of `p` in the window pays `p` at least `x`
-  have hpstate : ∀ (j : Nat) (m : SignedState E), proof[j]? = some m → p ∈ m.signers →
-      x ≤ share m.state.outcome (dest p) := by
-    intro j m hm hpm
-    obtain ⟨s, hs, hse⟩ := hS m (List.mem_of_getElem? hm) hpm
-    have hc : s.state.channel = c := by rw [hse]; exact hchAll m (List.mem_of_getElem? hm)
-    obtain ⟨hle, hpay⟩ := hB s hs hc
-    rw [← hse]
-    refine hpay (Or.inl ?_)
-    have hj : j < proof.length := (List.getElem?_eq_some_iff.mp hm).1
-    obtain ⟨m', hm', ht'⟩ := hind j hj
-    obtain rfl := Option.some.inj (hm.symm.trans hm')
-    obtain ⟨ml', hml', htl⟩ := hind (proof.length - 1) (by omega)
-    rw [List.getLast?_eq_getElem?] at hml
-    obtain rfl := Option.some.inj (hml.symm.trans hml')
-    rw [hse, ht']
-    rw [← hmls, htl] at hTh
-    omega
-  -- the mover of `p`'s turn in the run
-  obtain ⟨k, hk, hkp⟩ := List.mem_iff_getElem?.mp hp |> fun ⟨k, hk⟩ =>
-    (⟨k, (List.getElem?_eq_some_iff.mp hk).1, hk⟩ : ∃ k, k < c.n ∧ c.participants[k]? = some p)
-  obtain ⟨i, hi, hik⟩ := turn_mod_exists c.n m0.state.turnNum k hn hk
-  obtain ⟨mi, hmi, hti⟩ := hind i (by omega)
-  have hmimv : mi.ByMover := by
-    cases i with
-    | zero =>
-      rw [hm0] at hmi; obtain rfl := Option.some.inj hmi
-      simp only [List.head?_eq_getElem?, hm0, Option.all_some] at hhead
-      exact (SignedState.byMover_iff _).1 hhead
-    | succ i =>
-      obtain ⟨mprev, hmprev⟩ : ∃ mp, proof[i]? = some mp := ⟨_, List.getElem?_eq_getElem (by omega)⟩
-      exact (hstep i mprev mi hmprev hmi).2.2.1
-  have hmip : p ∈ mi.signers := by
-    obtain ⟨w, hw, hwm⟩ := hmimv
-    have hc : mi.state.channel = c := hchAll mi (List.mem_of_getElem? hmi)
-    have : mi.state.mover = some p := by
-      unfold State.mover; rw [hc, hti, hik]; exact hkp
-    rw [this] at hw; obtain rfl := Option.some.inj hw; exact hwm
-  -- forward along the run
-  have hfwd : ∀ j, i + j < proof.length → ∃ m, proof[i + j]? = some m ∧
-      x ≤ share m.state.outcome (dest p) := by
-    intro j
-    induction j with
-    | zero => intro _; exact ⟨mi, hmi, hpstate i mi hmi hmip⟩
-    | succ j ih =>
-      intro hj
-      obtain ⟨m, hm, hx⟩ := ih (by omega)
-      obtain ⟨m', hm'⟩ : ∃ m', proof[i + j + 1]? = some m' := ⟨_, List.getElem?_eq_getElem hj⟩
-      refine ⟨m', hm', ?_⟩
-      obtain ⟨-, -, hmv', hvt⟩ := hstep (i + j) m m' hm hm'
-      have hfin := (hkeep (i + j) m m' hm hm').1
-      cases hf : m'.state.isFinal with
-      | true => rw [hfin hf]; exact hx
-      | false =>
-        by_cases hmov : m'.state.mover = some p
-        · obtain ⟨w, hw, hwm⟩ := hmv'
-          rw [hmov] at hw; obtain rfl := Option.some.inj hw
-          exact hpstate (i + j + 1) m' hm' hwm
-        · exact le_trans hx (hNT _ _ (hvt hf) p hmov)
-  obtain ⟨m, hm, hx⟩ := hfwd (proof.length - 1 - i) (by omega)
-  have : i + (proof.length - 1 - i) = proof.length - 1 := by omega
-  rw [this, ← List.getLast?_eq_getElem?, hml] at hm
-  obtain rfl := Option.some.inj hm
-  rw [← hmls]; exact hx
-
-/-- Every consensus support of `c` at a turn from `Th` on pays `p` at least
-    `x`: its one state is the candidate, and `p` signed it. -/
-theorem consensus_pay {p : Participant} {c : FixedPart} (hp : p ∈ c.participants) {d : E}
-    {sent : List (SignedState E)} {x Th : Nat} (hB : SentBelow sent c d x Th)
-    {proof : SupportProof E} {cand : State E} (hS : SignedIn sent p proof)
-    (h : (consensusRules : Rules E).supports c proof cand = true) (hTh : Th ≤ cand.turnNum) :
-    x ≤ share cand.outcome d := by
-  match proof, h, hS with
-  | [ss], h, hS =>
-    simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at h
-    obtain ⟨⟨hst, hch⟩, hall⟩ := h
-    obtain ⟨s, hs, hse⟩ := hS ss (List.mem_singleton_self ss) (hall p (by rw [hch]; exact hp))
-    obtain ⟨hle, hpay⟩ := hB s hs (by rw [hse]; exact hch)
-    have hn : 0 < c.n := List.length_pos_of_mem hp
-    rw [← hst, ← hse]
-    refine hpay (Or.inl ?_)
-    rw [hse, hst]; omega
-  | [], h, _ => simp [consensusRules] at h
-  | _ :: _ :: _, h, _ => simp [consensusRules] at h
-
-/-- What `p`'s holdings give it at the destination `d`: at least `x`, the
-    payment of a supported candidate of `c` that `p` holds. Every state of `c`
-    that `p` signed is at most at the candidate's turn, and pays `d` at least
-    `x` when it is in the candidate's window or final (`SentBelow`): the later
-    and alternative moves of `p` are part of what its holdings give it. The
-    channel is open, at a turn record no higher than the candidate's: `p` was
-    online, so no challenge it should have answered is running. -/
-def HoldsShare {p : Participant} (apps : Apps E) (net : NetworkState E p) (c : FixedPart) (d : E)
-    (x : Coins) : Prop :=
-  ∃ proof cand, (∀ ss ∈ proof, net.Holds ss) ∧ (apps c.appDef).supports c proof cand = true ∧
-    cand.channel = c ∧ x ≤ share cand.outcome d ∧ SentBelow net.sent c d x cand.turnNum ∧
-    ∃ t, net.chain.statusOf c = .open t ∧ t ≤ cand.turnNum
-
-/-- `p` can take out `x` at `d`: it has an unbeatable strategy that finalizes
-    `c` with an outcome that pays `d` at least `x`. -/
-def CanTakeOut {p : Participant} (apps : Apps E) (T : Threat E p) (c : FixedPart) (d : E)
-    (x : Coins) (net : NetworkState E p) : Prop :=
-  Unbeatable apps T (Goal c d x) net
-
-/-- IR at every state of the app `a`, for the destination map `dest`: from
-    every reachable state, `p` can take out what its holdings give it. -/
-def AppIR (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop :=
-  ∀ {p : Participant} (T : Threat E p), Assumptions apps p T →
-    ∀ (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε) (x : Coins),
-      (c : FixedPart).appDef = a → p ∈ (c : FixedPart).participants →
-      HoldsShare apps net.state c (dest p) x → CanTakeOut apps T c (dest p) x net.state
-
-/-- An app whose supports from the held turn on pay `p` at least `x` lets `p`
-    take out `x` (`takeout`). -/
-theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε)
-    {d : E} {x : Coins} (hp : p ∈ (c : FixedPart).participants)
-    (hsw : (apps (c : FixedPart).appDef).SupportWindow)
-    (hpay : ∀ Th proof cand, SentBelow net.state.sent c d x Th → SignedIn net.state.sent p proof →
-      (apps (c : FixedPart).appDef).supports c proof cand = true → Th ≤ cand.turnNum →
-      x ≤ share cand.outcome d)
-    (hH : HoldsShare apps net.state c d x) : CanTakeOut apps T c d x net.state := by
-  obtain ⟨proof0, cand0, hH0, hsup0, hch0, -, hB, t, hst, hle⟩ := hH
-  have C : Ctx apps p c d x cand0.turnNum net.state.sent :=
-    ⟨hp, hsw, fun s hs hc => (hB s hs hc).1, fun pr cd hS hsu _ hTh => hpay _ pr cd hB hS hsu hTh,
-      payConc_of hB⟩
-  have hn : 0 < (c : FixedPart).n := List.length_pos_of_mem hp
-  have hI : TI apps T.ε c d x cand0.turnNum net.state.sent proof0 net.state :=
-    ⟨Nitro.participant_received_unforged A.toBounds net, rfl, hH0,
-      fun t' ht' => (by rw [hst] at ht'; cases ht'; exact Or.inl hle),
-      fun _ _ h => (by rw [hst] at h; cases h), fun _ _ _ h => (by rw [hst] at h; cases h),
-      (by rw [hst]; simp only [ChannelStatus.turnNumRecord_open]; omega),
-      fun _ _ h => (by rw [hst] at h; cases h)⟩
-  exact takeout C A c.dur_le hsup0 hch0 rfl _ net.state hI (le_refl _)
-
-/-- **ForceMove apps whose game library takes nothing from a non-mover are
-    IR.** -/
-theorem forceMove_IR {apps : Apps E} {a : AppId} {vt : State E → State E → Bool}
-    {dest : Participant → E} (ha : apps a = forceMoveRules vt) (hNT : NoTakeFromNonMover vt dest) :
-    AppIR apps a dest := by
-  intro p T A net c x hca hp hH
-  have happ : apps (c : FixedPart).appDef = forceMoveRules vt := by rw [hca, ha]
-  refine canTakeOut_of A net c hp (by rw [happ]; exact forceMoveRules_supportWindow vt)
-    (fun Th proof cand hB hS hsu hTh => ?_) hH
-  rw [happ] at hsu
-  exact forceMove_pay hNT hp hB hS hsu hTh
-
-/-- **The consensus app is IR.** -/
-theorem consensus_IR {apps : Apps E} {a : AppId} {dest : Participant → E}
-    (ha : apps a = consensusRules) : AppIR apps a dest := by
-  intro p T A net c x hca hp hH
-  have happ : apps (c : FixedPart).appDef = consensusRules := by rw [hca, ha]
-  refine canTakeOut_of A net c hp (by rw [happ]; exact consensusRules_supportWindow)
-    (fun Th proof cand hB hS hsu hTh => ?_) hH
-  rw [happ] at hsu
-  exact consensus_pay hp hB hS hsu hTh
-
-
-end
-
-end TakeOut
-
-open TakeOut in
 /-- `p0` is paid at `true`, `q0` at `false`. -/
 def destB (q : Participant) : Bool := decide (q = p0)
 
-open TakeOut in
 /-- The trivial game fails IR: at `net1`, `p0` holds `s1`, which pays it 5,
     the channel is open at turn 0, and `p0` cannot finalize any outcome that
-    pays it 5. -/
+    pays it 5. So `appsB` fails the premise `hir` of both Nitro-24
+    statements. -/
 theorem appsB_not_IR : ¬ AppIR appsB ⟨0⟩ destB := by
   intro h
   have hS : HoldsShare appsB net1 c0 (destB p0) 5 := by
@@ -2150,11 +1287,10 @@ theorem appsB_not_IR : ¬ AppIR appsB ⟨0⟩ destB := by
       0, rfl, Nat.zero_le _⟩
     rw [List.mem_singleton.1 hs]
     exact ⟨le_refl _, fun _ => by decide⟩
-  have hU := h T0 A0 ⟨net1, net1_reachable⟩ tc0 5 rfl (by decide) hS
+  have hU := h.takeOut T0 A0 ⟨net1, net1_reachable⟩ tc0 5 rfl (by decide) hS
   exact not_finalizable_from (fun Ω => 5 ≤ share Ω true) cut1 (by decide) net1 (invA_net1 _)
     (Or.inl ⟨0, rfl⟩) (UnbeatableIn.imp (fun ⟨Ω, hf, hs⟩ => ⟨Ω, hf, by simpa [destB] using hs⟩) hU)
 
-open TakeOut in
 /-- The trivial game fails `NoTakeFromNonMover`: `q0`'s move at turn 2 cuts
     `p0`'s payment from 5 to 0. -/
 theorem vtAll_not_noTake : ¬ NoTakeFromNonMover vtAll destB := by
@@ -2163,7 +1299,6 @@ theorem vtAll_not_noTake : ¬ NoTakeFromNonMover vtAll destB := by
   exact absurd this (by decide)
 
 #print axioms appsB_not_IR
-#print axioms TakeOut.forceMove_IR
-#print axioms TakeOut.consensus_IR
+#print axioms vtAll_not_noTake
 
 end ArmadaLean.Nitro.CounterexampleIRGame

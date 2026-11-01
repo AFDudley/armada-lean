@@ -233,12 +233,21 @@ def Spec.channel_finalizability_cases : Prop :=
     support shape (ForceMove:744-778, 1340-1354, 1379-1381; Nitro:633 "for a
     ForceMove channel"); an app that lets old signatures support a higher turn
     must fail the claim (`docs/counterexamples/finalizable_or_two_enabled.lean`,
-    `docs/counterexamples/finalizable_or_two_enabled_happ.lean`). -/
+    `docs/counterexamples/finalizable_or_two_enabled_happ.lean`). Operator
+    ruling 2026-11-01: the papers assume desirable apps and do not state it.
+    The app must carry `AppIR` for a destination map `dest`: armada-laconic
+    `labbook/2026-10-30-app-classes-ic-ir.md` §2, "from any state, an online
+    honest participant can enforce at least what its holdings give it"
+    (ForceMove:410-416, 125-130). Game B fails `AppIR`
+    (`docs/counterexamples/ir_game_rewrites_share.lean`). The claim is false
+    for an app that has `AppIR`: go-nitro `SingleAssetPayments.sol`
+    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
 def Spec.finalizable_or_two_enabled : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
     (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (dest : Participant → E) (hir : AppIR apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
@@ -254,12 +263,21 @@ def Spec.finalizable_or_two_enabled : Prop :=
     `Rules.SupportWindow`, ForceMove's support shape (ForceMove:744-778,
     1340-1354, 1379-1381; Nitro:633 "for a ForceMove channel"); an app that
     lets old signatures support a higher turn must fail the claim
-    (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`). -/
+    (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`). Operator
+    ruling 2026-11-01: the papers assume desirable apps and do not state it.
+    The app must carry `AppIR` for a destination map `dest`: armada-laconic
+    `labbook/2026-10-30-app-classes-ic-ir.md` §2, "from any state, an online
+    honest participant can enforce at least what its holdings give it"
+    (ForceMove:410-416, 125-130). Game B fails `AppIR`
+    (`docs/counterexamples/ir_game_rewrites_share.lean`). The claim is false
+    for an app that has `AppIR`: go-nitro `SingleAssetPayments.sol`
+    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
 def Spec.single_enabled_is_finalizable : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
     (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (dest : Participant → E) (hir : AppIR apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
