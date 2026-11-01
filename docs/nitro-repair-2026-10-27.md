@@ -939,67 +939,52 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E) (ali
 - A search of `ArmadaLean/Nitro/` and `docs/` for the renamed constructor's earlier spelling, concatenated,
   hyphenated or spaced, finds nothing.
 
-## 7. Nitro-24 in the payout reading, 2026-11-01
+## 7. Nitro-24 with `AppIR` and own-violations, 2026-11-01
 
-Operator ruling 2026-11-01: Nitro-24's "finalizable" and "enabled" (Nitro:590-593, 641-658) are about what `p` can
-secure, not one exact outcome. The library has the payout forms next to `Finalizable` and `Enabled`
-(`ArmadaLean/Nitro/Strategy.lean`, with `share`):
+Two operator rulings of 2026-11-01 apply to Nitro-24 (Nitro:653-658):
 
-- `FinalizableFor apps T c dest Ω`: `p` has an unbeatable strategy that finalizes `c` with an outcome that pays `p`,
-  at `dest p`, at least `share Ω (dest p)`.
-- `EnabledFor apps T c dest Ω`: `p` has no strategy that prevents the finalization of `c` with an outcome that pays
-  `p` at most `share Ω (dest p)`.
+1. The papers assume desirable apps. `AppIR` (`ArmadaLean/Types/App.lean`, armada-laconic
+   `labbook/2026-10-30-app-classes-ic-ir.md` §2) is a premise of both statements, next to `SupportWindow`.
+2. Own-violation is one rule for every participant (`ArmadaLean/Types/OwnViolation.lean`). A signer `q` commits an
+   own-violation with a state `st` when (a) `q` already signed a state of the same channel and slot with another
+   outcome (`OwnViolation.Conflict`; every setup turn is slot 0, `State.signSlot`), or (b) `st` pays `q`, at
+   `dest q`, less than a known state of the turn before (`OwnViolation.Gift`).
 
-The two Nitro-24 statements are not restated yet. They keep the exact forms with `SupportWindow` and `AppIR`, and
-stay `sorry` (rows 8 and 9).
+The rule binds both sides:
 
-### 7.1 What the tests show
+- The honest participant: `HonestSend.noConflict` replaces `HonestSend.setupOutcome`. With
+  `State.signSlot_setup` it gives the setup rule.
+- The adversary: `Threat.noOwnViolation T dest` (`ArmadaLean/Nitro/Strategy.lean`) is `T` without the moves in
+  which another signer commits an own-violation (`AdvMove.NoOwnViolation`). It is a derived threat, not a premise:
+  a premise on `T` contradicts `Assumptions.capable`.
+
+### 7.1 Statement changes (`ArmadaLean/Spec/Nitro/Liveness.lean`)
+
+- `finalizable_or_two_enabled`, `single_enabled_is_finalizable`: new binder `dest`, premise
+  `hir : AppIR apps c.appDef dest`, `net : ReachableParticipant apps (T.noOwnViolation dest)`, and `Finalizable` /
+  `Enabled` over `T.noOwnViolation dest`. `A : Assumptions apps p T` and `SupportWindow` stay.
+- `funding_point_universally_finalizable`: doc comment only. Its type changes through `HonestSend`.
+- `participant_sent_honest`: no text change. Its type changes through `HonestSend`.
+
+The payout forms `FinalizableFor` and `EnabledFor` are removed.
+
+### 7.2 Tests
 
 | Test | File | Result |
 |---|---|---|
-| Exact forms, an IR app, full funding | `docs/counterexamples/single_asset_payments_ir.lean` | false: `finalizable_or_two_enabled_false`, `single_enabled_is_finalizable_false`. `c0` holds 10 = all of `O1` (`net1_funded`). Funding changes only balances, so no step of the gift play depends on it. |
-| Payout forms, the same state | same file | `O1` is enabled (`enabledFor_O1`) and `p0` secures what `O1` pays it (`finalizableFor_O1`, from `appsS_IR`). |
-| Payout form of the single-enabled claim, without `AppIR` | `docs/counterexamples/ir_game_rewrites_share.lean` | false: `least_enabled_is_finalizable_noIR_false`. Level 5 is the least enabled level, every lower level is prevented (`prevents_bad`), and `p0` cannot secure 5. |
+| Game B, an app that is not IR | `docs/counterexamples/ir_game_rewrites_share.lean` | `appsB_not_IR`; the statements before `AppIR` fail. |
+| `SingleAssetPayments`, the gift play | `docs/counterexamples/single_asset_payments_ir.lean` | The statements against the full threat fail. The answer of `q0` is a gift (`gift_is_ownViolation`), so the play is not a play of `T.noOwnViolation dest`. |
+| Consensus double-sign | `docs/counterexamples/consensus_double_sign.lean` | Two states at one slot with two outcomes are a conflict (`doubleSign_conflict`); the honest participant never sends the second (`doubleSign_not_honest`). |
+| Unowned pool | `docs/counterexamples/unowned_pool_take.lean` | Both current statements fail. `q0` moves coins of a pool (the destination of no participant) to `p0`. The app is IR, the answers are no own-violations. |
+| Strict form, minting | `docs/counterexamples/strict_premise_mint.lean` | Both current statements fail. The app meets the strict form "a valid transition lowers no entry except the mover's own" (`strict_vtS`). `q0` mints coins for `p0`. |
 
-### 7.2 Reading of the two claims in the payout forms
+### 7.3 Status
 
-- `EnabledFor` is upward closed in `share`: if `Ω` is enabled, every outcome that pays `p` more is enabled. So "two
-  enabled outcomes" follows from one, and the literal premise "only one outcome is enabled" never holds. The
-  single-enabled claim then reads: if `Ω` is the least enabled level (`∀ Ω', EnabledFor Ω' → share Ω (dest p) ≤
-  share Ω' (dest p)`), then `FinalizableFor Ω`.
-- The dichotomy (first claim) has a first disjunct that holds with `share Ω (dest p) = 0` as soon as `p` can force
-  some finalization. The paper says "exactly one of" (Nitro:653-656). The operator decides its form.
+Both statements stay `sorry`. They are false as stated: `unowned_pool_take.lean` refutes them. The strict form of
+the app premise does not repair them: `strict_premise_mint.lean` meets it and refutes them too. In both files, the
+honest `p0` restores its outcome `O1` after each move of `q0`, so only `O1` is enabled, and `q0` answers each
+challenge by a new outcome that pays `p0` more, so no outcome is finalizable.
 
-### 7.3 The single-enabled claim with `AppIR`: open
-
-There is no proof and no counterexample. The obstacle:
-
-1. `AppIR` gives a take-out strategy only at a state where `HoldsShare` holds. That needs an open status at a turn no
-   higher than the held candidate, and every state of `p` in the window of that candidate must pay at least the
-   level (`SentBelow`).
-2. At the state of the claim, the status can be challenged. An old state of `p` in the window can pay less than the
-   level and still be of no use to the adversary, because the turn record is already above it. Then `HoldsShare`
-   fails, and `AppIR` says nothing at that state.
-3. A proof must therefore derive "every support that the adversary can still use pays at least the level" from the
-   least-enabled premise. For each such support that pays less, it must build an adversary play that finalizes it in
-   one round, which contradicts the premise. Then it applies a take-out strategy (`TakeOut.canTakeOut_of`) with
-   premises weaker than `HoldsShare`. For a support that `p` can only answer by signing a new state, this
-   contradiction does not exist, and `AppIR` must exclude the case. No route from the black-box `AppIR` to that step
-   is known.
-4. For the consensus app and for ForceMove apps with `NoTakeFromNonMover`, the step holds from the structure of the
-   app: the adversary's moves never lower `p`'s payment, so the support that the adversary can use pays at least
-   what `p`'s latest state pays.
-
-### 7.4 What changes under a premise on the adversary (no gifts)
-
-The operator considers a premise that excludes gifts: the counterparty does not make a move against its own payment
-to block a finalization.
-
-- The exact forms then hold for the SingleAssetPayments test: the only moves of `q0` after `O1` are gifts or a move
-  that keeps `O1`, so the challenge with `O1` expires with `O1`. The payout forms are not needed for that test.
-- Step 3 of 7.3 changes: a support that the adversary can use must not be a gift, so its payment to `p` is bounded
-  from above by `p`'s held level, and `AppIR` bounds it from below. The two bounds fix the payment, but not the
-  outcome, when other destinations exist. The exact claim still needs that every outcome the adversary can
-  finalize at that payment is the same outcome.
-- Steps 1 and 2 do not change: `AppIR` still applies only at open `HoldsShare` states.
-- Game B is unchanged: its cuts are not gifts, and it fails `AppIR`.
+[INFERENCE] The minting app breaks a go-nitro rule: `SingleAssetPayments.sol` keeps the total ("Total allocated
+cannot change"). With the strict form and a kept total, a clean move of `q0` changes no amount. Then `q0` can change
+the outcome only by its form (for example the order of the entries), unless the app fixes the form.

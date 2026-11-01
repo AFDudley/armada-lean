@@ -294,6 +294,33 @@ structure Threat (E : Type) (p : Participant) where
   ε : Time
   ε_pos : 0 < ε
 
+/-- An adversary move commits no own-violation of a participant other than
+    `p`: every state it delivers, and every proof state of a call it makes,
+    is no own-violation (`OwnViolation`, `ArmadaLean/Types/OwnViolation.lean`)
+    of any of its signers other than `p`, against the states that `p`
+    received and the other proof states of the call. -/
+def AdvMove.NoOwnViolation {p : Participant} (dest : Participant → E) (net : NetworkState E p) :
+    AdvMove E → Prop
+  | .deliver ss => ∀ q ∈ ss.signers, q ≠ p → ¬ OwnViolation dest q net.received ss.state
+  | .chain _ op => ∀ ss ∈ op.proofStates, ∀ q ∈ ss.signers, q ≠ p →
+      ¬ OwnViolation dest q (op.proofStates ++ net.received) ss.state
+  | _ => True
+
+/-- **The threat without own-violations of the other participants.**
+    Operator ruling 2026-11-01: own-violation is one rule for every
+    participant; a state signed against the signer's own interest costs only
+    the signer and never defeats another participant's guarantee. An attacker's
+    own-violation is griefing (ForceMove §4.5), not a clean attack. The
+    derived threat plays only the moves of `T` that commit no such violation.
+    A statement keeps `Assumptions apps p T` for `T` itself: the premise
+    "`T` never violates" would contradict `Capable`, which makes every
+    unforged move of another participant feasible. -/
+def Threat.noOwnViolation {p : Participant} (T : Threat E p) (dest : Participant → E) :
+    Threat E p where
+  feasible net m := T.feasible net m ∧ m.NoOwnViolation dest net
+  ε := T.ε
+  ε_pos := T.ε_pos
+
 /-- One round's adversary play while `p`'s reaction, issued at the round's
     own start time `t`, still has `pending` calls unlanded (Lamport's
     explicit-time form, CHARME 2005, quoted in this file's header). Three
@@ -738,6 +765,13 @@ structure Bounds (apps : Apps E) (p : Participant) (T : Threat E p) : Prop where
   /-- The adversary never acts as `p`. -/
   notHonest : ∀ net caller op, T.feasible net (.chain caller op) → caller ≠ p
 
+/-- The derived threat `T.noOwnViolation dest` plays only moves of `T`, so it
+    keeps the bounds of `T`. -/
+theorem Bounds.noOwnViolation {apps : Apps E} {p : Participant} {T : Threat E p}
+    (B : Bounds apps p T) (dest : Participant → E) : Bounds apps p (T.noOwnViolation dest) :=
+  ⟨fun net caller op h => B.unforgeable net caller op h.1, fun net ss h => B.unforgeableDeliver net ss h.1,
+    fun net caller op h => B.notHonest net caller op h.1⟩
+
 /-- The capabilities of the adversary `T`. Nitro:460-461: the adversary
     controls every other participant. -/
 structure Capable (apps : Apps E) (p : Participant) (T : Threat E p) : Prop where
@@ -859,29 +893,6 @@ def Finalizable (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPar
 def Enabled (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart) (Ω : Outcome E)
     (net : NetworkState E p) : Prop :=
   ¬ Prevents apps T (fun net' => net'.Finalized c Ω) net
-
-/-- The amount that an outcome pays the external destination `d`: the first
-    entry for `d` (`Allocation.owed`). -/
-def share (Ω : Outcome E) (d : E) : Coins := Ω.entries.owed (.external d)
-
-/-- The payout form of `Finalizable` (operator ruling 2026-11-01: Nitro-24's
-    "finalizable" and "enabled", Nitro:590-593, 641-658, are about what `p`
-    can secure, not one exact outcome). `p` has an unbeatable strategy that
-    finalizes `c` with some outcome that pays `p`, at `dest p`, at least what
-    `Ω` pays it. `Finalizable` implies it. -/
-def FinalizableFor (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart)
-    (dest : Participant → E) (Ω : Outcome E) (net : NetworkState E p) : Prop :=
-  Unbeatable apps T (fun net' => ∃ Ω', net'.Finalized c Ω' ∧ share Ω (dest p) ≤ share Ω' (dest p))
-    net
-
-/-- The payout form of `Enabled` (operator ruling 2026-11-01, as for
-    `FinalizableFor`; Nitro:641-652). `p` has no strategy to prevent the
-    finalization of `c` with an outcome that pays `p`, at `dest p`, no more
-    than `Ω` pays it. `Enabled` implies it. -/
-def EnabledFor (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart)
-    (dest : Participant → E) (Ω : Outcome E) (net : NetworkState E p) : Prop :=
-  ¬ Prevents apps T (fun net' => ∃ Ω', net'.Finalized c Ω' ∧ share Ω' (dest p) ≤ share Ω (dest p))
-    net
 
 /-- Nitro:480-481: "A channel χ is funded for participant A with x coins, if A
     has an unbeatable strategy for obtaining a state where χ is directly

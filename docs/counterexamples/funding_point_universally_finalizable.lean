@@ -7,7 +7,7 @@
   sign two different states at one turn number: it gates an honest send only
   by `Network.VoucherSendable`. `AtFundingPoint` bounds the turn number of a
   sent state, not its outcome. Operator ruling 2026-11-01 (option A): the
-  honest network `Nitro.network` forbids this send (`HonestSend.setupOutcome`,
+  honest network `Nitro.network` forbids this send (`HonestSend.noConflict`,
   `ArmadaLean/Types/Honest.lean`), so `nE` is not reachable on it
   (`nE_not_honest`), and the library theorem has no premise for it. This
   file shows that the claim fails without the rule.
@@ -490,12 +490,13 @@ theorem funding_point_universally_finalizable_false :
 
 
 /-- The canonical own-violation: `q0` signed two setup states of `c2` with two
-    outcomes (`sA1` with `Ωg`, `sB1` with `Ωb`), against `HonestSend.setupOutcome`. -/
+    outcomes (`sA1` with `Ωg`, `sB1` with `Ωb`), against `HonestSend.noConflict`
+    (one slot for every setup turn, `State.signSlot_setup`). -/
 theorem q0_made_alternative_moves :
     ¬ ∀ s ∈ (nE.views q0).sent, HonestSend (nE.views q0).sent (nE.views q0).HoldsPrefund s.state := by
   intro h
-  have h_eq := (h ⟨sB1, [q0]⟩ (by simp [nE_views_q0])).setupOutcome (by decide)
-    ⟨sA1, [q0]⟩ (by simp [nE_views_q0]) (by decide) (by decide)
+  have h_eq := (h ⟨sB1, [q0]⟩ (by simp [nE_views_q0])).outcome_eq ⟨sA1, [q0]⟩
+    (by simp [nE_views_q0]) (by decide) (State.signSlot_setup ⟨by decide, by decide⟩)
   exact Ωb_ne_Ωg h_eq.symm
 
 /-- `nE` is not reachable on the honest network: there, every view satisfies the

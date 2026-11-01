@@ -3390,21 +3390,31 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
     `labbook/2026-10-30-app-classes-ic-ir.md` §2, "from any state, an online
     honest participant can enforce at least what its holdings give it"
     (ForceMove:410-416, 125-130). Game B fails `AppIR`
-    (`docs/counterexamples/ir_game_rewrites_share.lean`). The claim is false
-    for an app that has `AppIR`: go-nitro `SingleAssetPayments.sol`
-    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
+    (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
+    2026-11-01: own-violation is one rule for every participant; a state
+    signed against the signer's own interest costs only the signer. The claim
+    is read against the threat without own-violations of the other
+    participants (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the
+    honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
+    The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
+    (`docs/counterexamples/single_asset_payments_ir.lean`). The claim fails
+    as stated: `docs/counterexamples/unowned_pool_take.lean` (an IR app that
+    moves value out of the entry of no participant) and
+    `docs/counterexamples/strict_premise_mint.lean` (an app with the strict
+    premise that mints). -/
 theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (A : Assumptions apps p T) (dest : Participant → E)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
     (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).SupportWindow)
-    (dest : Participant → E) (hir : AppIR apps (c : FixedPart).appDef dest)
+    (hir : AppIR apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
       candidate.channel = (c : FixedPart)) :
-    (∃ Ω, Finalizable apps T (c : FixedPart) Ω net.state) ∨
-    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps T (c : FixedPart) Ω1 net.state ∧
-      Enabled apps T (c : FixedPart) Ω2 net.state) := by
+    (∃ Ω, Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω1 net.state ∧
+      Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω2 net.state) := by
   sorry
 
 /-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
@@ -3419,21 +3429,31 @@ theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat
     `labbook/2026-10-30-app-classes-ic-ir.md` §2, "from any state, an online
     honest participant can enforce at least what its holdings give it"
     (ForceMove:410-416, 125-130). Game B fails `AppIR`
-    (`docs/counterexamples/ir_game_rewrites_share.lean`). The claim is false
-    for an app that has `AppIR`: go-nitro `SingleAssetPayments.sol`
-    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
+    (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
+    2026-11-01: own-violation is one rule for every participant; a state
+    signed against the signer's own interest costs only the signer. The claim
+    is read against the threat without own-violations of the other
+    participants (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the
+    honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
+    The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
+    (`docs/counterexamples/single_asset_payments_ir.lean`). The claim fails
+    as stated: `docs/counterexamples/unowned_pool_take.lean` (an IR app that
+    moves value out of the entry of no participant) and
+    `docs/counterexamples/strict_premise_mint.lean` (an app with the strict
+    premise that mints). -/
 theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (A : Assumptions apps p T) (dest : Participant → E)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
     (c : TimedChannel T.ε)
     (happ : (apps (c : FixedPart).appDef).SupportWindow)
-    (dest : Participant → E) (hir : AppIR apps (c : FixedPart).appDef dest)
+    (hir : AppIR apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
-    (Ω : Outcome E) (hΩ : Enabled apps T (c : FixedPart) Ω net.state)
-    (huniq : ∀ Ω', Enabled apps T (c : FixedPart) Ω' net.state → Ω' = Ω) :
-    Finalizable apps T (c : FixedPart) Ω net.state := by
+    (Ω : Outcome E) (hΩ : Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state)
+    (huniq : ∀ Ω', Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω' net.state → Ω' = Ω) :
+    Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state := by
   sorry
 
 /-- Nitro-23, ForceMove-A14. Nitro:637-640: "When a single conclusion proof is known to
@@ -13011,7 +13031,7 @@ and wait for a running challenge to end. Every supported candidate of `c`
 has the outcome `Ω` (`funding_candidate`), and so does every conclusion
 proof (`funding_conclusion`): each one carries a signature of `p`, and every
 state of `c` that `p` signed has the outcome `Ω` (`FundingSent`, from
-`HonestSend.setupOutcome`). The rank `fundingRank` falls at each change of
+`HonestSend.noConflict` and `State.signSlot_setup`). The rank `fundingRank` falls at each change of
 the status of `c`. -/
 
 /-- The setup facts of a ForceMove channel `c` at the funding point: the app
@@ -13026,7 +13046,7 @@ structure ForceMoveSetup (apps : Apps E) (vt : State E → State E → Bool) (c 
 /-- What `p` signed for `c`, at the funding point and later in its strategy:
     every state is below the funding point and has the outcome `Ω`. The final
     theorem derives it from `AtFundingPoint` and the signing rule
-    `HonestSend.setupOutcome`. -/
+    `HonestSend.noConflict` (`State.signSlot_setup`). -/
 structure FundingSent (c : FixedPart) (Ω : Outcome E) (sent : List (SignedState E)) : Prop where
   below : ∀ s ∈ sent, s.state.channel = c → s.state.turnNum < c.n
   outcome : ∀ s ∈ sent, s.state.channel = c → s.state.outcome = Ω
@@ -13424,10 +13444,10 @@ theorem funding_strategy {apps : Apps E} {vt : State E → State E → Bool} {c 
     and the game library accepts its transitions. An honest participant signs
     every setup state of `c` with the setup outcome (operator rulings 2026-10-31 and
     2026-11-01; labbook/2026-10-31-funding-point-alternative-moves.md):
-    `HonestSend.setupOutcome`, which `Nitro.participant_sent_honest` gives for
+    `HonestSend.noConflict` (`State.signSlot_setup`), which `Nitro.participant_sent_honest` gives for
     every view. The strategy is `funding_strategy`. Operator ruling 2026-11-01: no
     timing premise; every candidate and conclusion proof carries Ω
-    (`HonestSend.setupOutcome`). -/
+    (`HonestSend.noConflict`). -/
 theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E apps) (v : Views E)
     (n : Nitro.ReachableNetwork apps Ts)
     (hvn : v = n.state.views) (c : FixedPart) (Ω : Outcome E) (vt : State E → State E → Bool)
@@ -13458,8 +13478,8 @@ theorem funding_point_universally_finalizable (apps : Apps E) (Ts : Threats E ap
     obtain ⟨k, hkp⟩ := List.mem_iff_getElem?.mp hp
     have hk : k < c.n := (List.getElem?_eq_some_iff.mp hkp).1
     obtain ⟨s', hs', hc', ht', hΩ'⟩ := hsentk k hk hkp
-    have heq := (hhon s hs).setupOutcome (by rw [hsc]; exact hbelow p hp s hs hsc) s' hs'
-      (by rw [hc', hsc]) (by rw [hsc, ht']; exact hk)
+    have heq := (hhon s hs).outcome_eq s' hs' (by rw [hc', hsc]) (State.signSlot_setup
+      ⟨by rw [hc', ht']; exact hk, by rw [hsc]; exact hbelow p hp s hs hsc⟩)
     rw [← heq, hΩ']
   -- The funding window: the `c.n` setup states that `p` holds form a
   -- `forceMoveRules` support proof (`SetupPhaseAccepted` accepts each step).

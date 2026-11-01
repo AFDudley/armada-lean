@@ -9,10 +9,12 @@
   `isFinal` flag. So a participant that kept that rule could still sign a
   final state below the funding point, at a turn where another participant
   is the mover, and the claim failed on the honest network of that time.
-  Operator ruling 2026-11-01: `HonestSend.setupOutcome` replaces
-  `noAlternative`. Below the funding point, every state that an honest
-  participant signs on a channel, final or not, carries the setup outcome
-  (ForceMove:1112-1114, ForceMove:1208). So `nF` is not reachable on the
+  Operator ruling 2026-11-01: `HonestSend.noConflict` replaces
+  `noAlternative`. The honest participant signs no two states of one
+  channel at one slot with two outcomes, and every setup turn is one slot.
+  So below the funding point, every state that it signs on a channel, final
+  or not, carries the setup outcome (ForceMove:1112-1114, ForceMove:1208;
+  `State.signSlot_setup`). So `nF` is not reachable on the
   honest network `Nitro.network` (`nF_not_honest`), and the library theorem
   holds. This file shows that the claim fails without the rule, on the
   unrestricted network `Nitro.networkUnrestricted`.
@@ -207,19 +209,19 @@ theorem funding_point_universally_finalizable_false :
 
 /-- The own-violation: `p0` signed two setup states of `c2` with two outcomes
     (`sA0` with `Ωg`, the final `sF1` with `Ωb`), against
-    `HonestSend.setupOutcome`. -/
-theorem p0_breaks_setupOutcome :
+    `HonestSend.noConflict` (one slot for every setup turn, `State.signSlot_setup`). -/
+theorem p0_breaks_noConflict :
     ¬ ∀ s ∈ (nF.views p0).sent, HonestSend (nF.views p0).sent (nF.views p0).HoldsPrefund s.state := by
   intro h
-  have h_eq := (h ⟨sF1, [p0]⟩ (by simp [nF_views_p0])).setupOutcome (by decide)
-    ⟨sA0, [p0]⟩ (by simp [nF_views_p0]) (by decide) (by decide)
+  have h_eq := (h ⟨sF1, [p0]⟩ (by simp [nF_views_p0])).outcome_eq ⟨sA0, [p0]⟩
+    (by simp [nF_views_p0]) (by decide) (State.signSlot_setup ⟨by decide, by decide⟩)
   exact Ωb_ne_Ωg h_eq.symm
 
 /-- `nF` is not reachable on the honest network: there, every view satisfies the
     signing rules (`Nitro.participant_sent_honest`,
     `Nitro.network_views_participant_reachable`). -/
 theorem nF_not_honest : ¬ (Nitro.network apps1 (Ts apps1)).Reachable nF := fun h =>
-  p0_breaks_setupOutcome
+  p0_breaks_noConflict
     (Nitro.participant_sent_honest ⟨_, Nitro.network_views_participant_reachable ⟨nF, h⟩ p0⟩)
 
 end ArmadaLean.Nitro.Counterexample.FundingPointConclude

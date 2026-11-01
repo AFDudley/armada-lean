@@ -968,10 +968,14 @@ theorem σX_feasible (B : Outcome Bool → Prop) (n : NetworkState Bool p0) : (�
   · assumption
   · trivial
 
-theorem send_ansP_feasible {n : NetworkState Bool p0} {t : Nat} (ht : 2 ≤ t) :
+/-- `p0` may sign `ansP t`: every state it signed carries `O1` (`SentOK`), so
+    the send commits no own-violation of kind (a) (`HonestSend.noConflict`). -/
+theorem send_ansP_feasible {n : NetworkState Bool p0} {t : Nat} (hS : SentOK n) :
     (HonestMove.send (ansP t)).Feasible n := by
-  refine (HonestMove.Feasible_send n (ansP t)).mpr ⟨fun hlt => ?_, ?_, ?_⟩
-  · exact absurd hlt (by simp only [ansP, st, c0, FixedPart.n, List.length_cons, List.length_nil]; omega)
+  refine (HonestMove.Feasible_send n (ansP t)).mpr ⟨fun ⟨s, hs, hc, _, hne⟩ => ?_, ?_, ?_⟩
+  · rcases List.mem_cons.1 hs with rfl | hs
+    · exact hne rfl
+    · exact hne (hS s hs hc).1
   · show O1.entries.GuaranteesExternal
     decide
   · exact HonestSend.fundsCommitted_of_fundable (by show ∀ e ∈ O1.entries, _; decide)
@@ -1020,7 +1024,7 @@ theorem σX_cases {B : Outcome Bool → Prop} {n : NetworkState Bool p0} (hI : I
         have hid : idealX B n = .send (ansP t) := by
           unfold idealX; rw [hs]; simp only [if_pos hx, dif_neg hd]
         unfold σX
-        rw [hid, if_pos (send_ansP_feasible hinfo.2.2.1)]
+        rw [hid, if_pos (send_ansP_feasible hI.sentOK)]
     · exact Or.inl ⟨hwait (by unfold idealX; rw [hs]; simp only [if_neg hx]),
         fun t' ch' h => by cases h; exact hx⟩
 
@@ -1308,51 +1312,5 @@ theorem vtAll_not_noTake : ¬ NoTakeFromNonMover vtAll destB := by
 
 #print axioms appsB_not_IR
 #print axioms vtAll_not_noTake
-
-/-! ## The payout reading of Nitro:657-658 needs `AppIR`
-
-Operator ruling 2026-11-01: Nitro-24 reads in payouts (`FinalizableFor`,
-`EnabledFor`). Its single-enabled claim reads: if `Ω` is the least enabled
-level for `p`, then `p` can secure that level. Without `AppIR` this fails for
-game B: level 5 (`O1`) is enabled (`enabled_O1`), every lower level is
-prevented (`prevents_bad`), and `p0` cannot secure 5 (`not_finalizable_from`). -/
-
-/-- The least-enabled-level reading of Nitro:657-658 in the payout forms,
-    with `Rules.SupportWindow` and without `AppIR`. -/
-def NoIR_least_enabled_is_finalizable : Prop :=
-  ∀ (apps : Apps Bool) {p : Participant} (T : Threat Bool p)
-    (_A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
-    (c : TimedChannel T.ε)
-    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
-    (dest : Participant → Bool)
-    (_hp : p ∈ (c : FixedPart).participants)
-    (_hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
-      ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
-      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
-    (Ω : Outcome Bool) (_hΩ : EnabledFor apps T (c : FixedPart) dest Ω net.state)
-    (_huniq : ∀ Ω', EnabledFor apps T (c : FixedPart) dest Ω' net.state →
-      share Ω (dest p) ≤ share Ω' (dest p)),
-    FinalizableFor apps T (c : FixedPart) dest Ω net.state
-
-theorem least_enabled_is_finalizable_noIR_false : ¬ NoIR_least_enabled_is_finalizable := by
-  intro h
-  have hd : destB p0 = true := rfl
-  have h5 : share O1 true = 5 := rfl
-  have hE : EnabledFor appsB T0 c0 destB O1 net1 := fun ⟨σ, hσ, hprev⟩ =>
-    enabled_O1 ⟨σ, hσ, fun n1 n2 hr hround hf => hprev n1 n2 hr hround ⟨O1, hf, le_refl _⟩⟩
-  have hU := h appsB T0 A0 ⟨net1, net1_reachable⟩ tc0 appsB_supportWindow destB (by decide)
-    (fun t ht _ => by
-      rw [List.mem_singleton.1 ht]
-      exact ⟨[r0, s1], holds_r0s1, supports_r0s1⟩)
-    O1 hE (fun Ω' hE' => by
-      by_contra hlt
-      apply hE'
-      exact prevents_bad (fun Ω'' => share Ω'' (destB p0) ≤ share Ω' (destB p0)) hlt)
-  refine not_finalizable_from (fun Ω => 5 ≤ share Ω true) cut1 (by decide) net1 (invA_net1 _)
-    (Or.inl ⟨0, rfl⟩) (UnbeatableIn.imp (fun ⟨Ω, hf, hs⟩ => ⟨Ω, hf, ?_⟩) hU)
-  rw [hd, h5] at hs
-  exact hs
-
-#print axioms least_enabled_is_finalizable_noIR_false
 
 end ArmadaLean.Nitro.CounterexampleIRGame

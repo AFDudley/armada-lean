@@ -1,7 +1,8 @@
 /-
-  Counterexample to both Nitro-24 statements with the `AppIR` premise
-  (Nitro:653-658; `Spec.finalizable_or_two_enabled`,
-  `Spec.single_enabled_is_finalizable`, `ArmadaLean/Spec/Nitro/Liveness.lean`).
+  Failure test: both Nitro-24 statements with the `AppIR` premise, read
+  against the full threat (Nitro:653-658; `Old_finalizable_or_two_enabled`,
+  `Old_single_enabled_is_finalizable` below, the forms of
+  `ArmadaLean/Spec/Nitro/Liveness.lean` before the own-violation ruling).
 
   The app is go-nitro's own example payment app, `SingleAssetPayments.sol`
   (`packages/nitro-protocol/contracts/examples/`, commit `d2990e8`), on a
@@ -12,8 +13,14 @@
   * `Rules.SupportWindow` (`appsS_supportWindow`, the premise `happ`);
   * `AppIR` (`appsS_IR`, the premise `hir`): `vtS` takes nothing from a
     non-mover (`noTake_vtS`), so `TakeOut.forceMove_IR` applies.
-  Both statements still fail (`finalizable_or_two_enabled_false`,
+  Both old statements fail (`finalizable_or_two_enabled_false`,
   `single_enabled_is_finalizable_false`).
+
+  Operator ruling 2026-11-01: own-violation is one rule for every
+  participant. The adversary's answer pays `p0` out of `q0`'s own slot: a
+  gift, an own-violation of kind (b) (`gift_is_ownViolation`). The current
+  statements read against `Threat.noOwnViolation`, which never plays it, so
+  this file does not refute them. `unowned_pool_take.lean` refutes them.
 
   The channel `c0` is a ledger channel with the participants `[q0, p0]`, so
   `q0` moves at even turns and the honest `p0` at odd turns (`n = 2`). The
@@ -1206,10 +1213,14 @@ theorem σX_feasible (X : Outcome Nat) (n : NetworkState Nat p0) : (σX X n).Fea
   · assumption
   · trivial
 
-theorem send_ansP_feasible {n : NetworkState Nat p0} {t : Nat} (ht : 2 ≤ t) :
+/-- `p0` may sign `ansP t`: every state it signed carries `O1` (`SentOK`), so
+    the send commits no own-violation of kind (a) (`HonestSend.noConflict`). -/
+theorem send_ansP_feasible {n : NetworkState Nat p0} {t : Nat} (hS : SentOK n) :
     (HonestMove.send (ansP t)).Feasible n := by
-  refine (HonestMove.Feasible_send n (ansP t)).mpr ⟨fun hlt => ?_, ?_, ?_⟩
-  · exact absurd hlt (by simp only [ansP, st, c0, FixedPart.n, List.length_cons, List.length_nil]; omega)
+  refine (HonestMove.Feasible_send n (ansP t)).mpr ⟨fun ⟨s, hs, hc, _, hne⟩ => ?_, ?_, ?_⟩
+  · rcases List.mem_cons.1 hs with rfl | hs
+    · exact hne rfl
+    · exact hne (hS s hs hc).1
   · show O1.entries.GuaranteesExternal
     decide
   · exact HonestSend.fundsCommitted_of_fundable (by show ∀ e ∈ O1.entries, _; decide)
@@ -1259,7 +1270,7 @@ theorem σX_cases {X : Outcome Nat} {n : NetworkState Nat p0} (hI : InvX X n) :
         have hid : idealX X n = .send (ansP t) := by
           unfold idealX; rw [hs]; simp only [if_pos hx, dif_neg hd]
         unfold σX
-        rw [hid, if_pos (send_ansP_feasible hinfo.2.2.1)]
+        rw [hid, if_pos (send_ansP_feasible hI.sentOK)]
     · exact Or.inl ⟨hwait (by unfold idealX; rw [hs]; simp only [if_neg hx]),
         fun t' ch' h => by cases h; exact hx⟩
 
@@ -1494,7 +1505,40 @@ theorem noTake_vtS : NoTakeFromNonMover vtS destS := by
 theorem appsS_IR : AppIR appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IR rfl noTake_vtS
 
-theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
+/-- `Spec.finalizable_or_two_enabled` read against the full threat `T`, not
+    against `T.noOwnViolation dest` (the form before the operator ruling of
+    2026-11-01 on own-violations). -/
+def Old_finalizable_or_two_enabled : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (_A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε)
+    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (dest : Participant → Nat) (_hir : AppIR apps (c : FixedPart).appDef dest)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
+      candidate.channel = (c : FixedPart)),
+    (∃ Ω, Finalizable apps T (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps T (c : FixedPart) Ω1 net.state ∧
+      Enabled apps T (c : FixedPart) Ω2 net.state)
+
+/-- `Spec.single_enabled_is_finalizable` read against the full threat `T`
+    (the form before the operator ruling of 2026-11-01 on own-violations). -/
+def Old_single_enabled_is_finalizable : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (_A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T)
+    (c : TimedChannel T.ε)
+    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (dest : Participant → Nat) (_hir : AppIR apps (c : FixedPart).appDef dest)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
+      ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
+    (Ω : Outcome Nat) (_hΩ : Enabled apps T (c : FixedPart) Ω net.state)
+    (_huniq : ∀ Ω', Enabled apps T (c : FixedPart) Ω' net.state → Ω' = Ω),
+    Finalizable apps T (c : FixedPart) Ω net.state
+
+theorem finalizable_or_two_enabled_false : ¬ Old_finalizable_or_two_enabled := by
   intro h
   rcases h appsS T0 A0 ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow destS appsS_IR (by decide)
       ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
@@ -1504,7 +1548,7 @@ theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E
     · exact hE2 (prevents_other Ω2 (fun h2 => hne (h1.trans h2.symm)))
     · exact hE1 (prevents_other Ω1 h1)
 
-theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Nat) := by
+theorem single_enabled_is_finalizable_false : ¬ Old_single_enabled_is_finalizable := by
   intro h
   refine not_finalizable O1 (h appsS T0 A0 ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow destS
     appsS_IR (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
@@ -1513,29 +1557,21 @@ theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finaliza
   · by_contra hne
     exact hE (prevents_other Ω' hne)
 
+/-! ## The gift play is an own-violation
+
+Operator ruling 2026-11-01: own-violation is one rule for every participant.
+The answer of the adversary to the target `O1` is `q0`'s move at turn 2 that
+pays `p0` one more coin out of `q0`'s own entry: a gift (`OwnViolation.Gift`)
+against `p0`'s state `s1`. The threat without own-violations
+(`Threat.noOwnViolation`) never plays it, so this file does not refute the
+current Nitro-24 statements. -/
+
+theorem gift_is_ownViolation : OwnViolation destS q0 [s1] (st 2 (ansQ O1)) :=
+  Or.inr ⟨s1, List.mem_singleton_self _, rfl, rfl, by decide⟩
+
 #print axioms appsS_IR
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
-
-/-! ## The payout forms hold at `net1`
-
-Operator ruling 2026-11-01: Nitro-24 reads in payouts. At `net1`, `O1` is
-enabled in the payout form, and `p0` can secure what `O1` pays it
-(`FinalizableFor`, from `appsS_IR`): the gift play does not break the payout
-reading. -/
-
-theorem enabledFor_O1 : EnabledFor appsS T0 c0 destS O1 net1 := fun ⟨σ, hσ, hprev⟩ =>
-  enabled_O1 ⟨σ, hσ, fun n1 n2 hr hround hf => hprev n1 n2 hr hround ⟨O1, hf, le_refl _⟩⟩
-
-theorem finalizableFor_O1 : FinalizableFor appsS T0 c0 destS O1 net1 := by
-  have hS : HoldsShare appsS net1 c0 (destS p0) 5 := by
-    refine ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl, by decide, fun s hs _ => ?_,
-      0, rfl, Nat.zero_le _⟩
-    rw [List.mem_singleton.1 hs]
-    exact ⟨le_refl _, fun _ => by decide⟩
-  exact appsS_IR.takeOut T0 A0 ⟨net1, net1_reachable⟩ tc0 5 rfl (by decide) hS
-
-#print axioms enabledFor_O1
-#print axioms finalizableFor_O1
+#print axioms gift_is_ownViolation
 
 end ArmadaLean.Nitro.CounterexampleSAP
