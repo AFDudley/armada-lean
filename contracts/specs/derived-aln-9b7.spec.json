@@ -1,0 +1,93 @@
+{
+  "id": "derived-aln-9b7",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. `turbo_value_is_value` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body.\nWhat holds now? Describe the current, observed state. `turbo_value_is_value`'s proof body is `sorry`. `scripts/check.sh --json turbo_value_is_value` lists it in `sorry`.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json turbo_value_is_value` from the repo root and read the printed JSON object.\nWhat constraints apply? State them in plain prose. The theorem statement does not change.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean/Nitro/Liveness.lean, theorem turbo_value_is_value",
+  "restatement": "The theorem `turbo_value_is_value` in `ArmadaLean/Nitro/Liveness.lean` must carry a complete, genuine Lean proof: its proof body must contain no `sorry`. The fix must not change the theorem's stated signature \u2014 only its proof body changes. The repo's own acceptance script, `scripts/check.sh --json turbo_value_is_value`, is the sole observation method: it reports whether the named theorem still appears in the `sorry` list, whether the whole tree still builds, and whether the theorem's statement text still matches the frozen baseline.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "`turbo_value_is_value` in `ArmadaLean/Nitro/Liveness.lean` has a proof with no `sorry` in its own proof body, and the whole project still builds."
+    },
+    {
+      "id": "c2",
+      "text": "The theorem statement for `turbo_value_is_value` does not change."
+    }
+  ],
+  "goal": "Replace the `sorry` proof body of `turbo_value_is_value` in ArmadaLean/Nitro/Liveness.lean with a real proof, with the theorem's statement unchanged.",
+  "acceptance_criteria": [
+    "Running the project's check script and asking it about turbo_value_is_value shows the theorem is no longer in the list of unproved theorems, and the project still builds cleanly.",
+    "Running the project's check script shows the wording of the theorem's statement is still exactly what the project's frozen baseline recorded, so only the proof changed."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's check script and asking it about turbo_value_is_value shows the theorem is no longer in the list of unproved theorems, and the project still builds cleanly."
+    },
+    {
+      "id": "c2",
+      "text": "Running the project's check script shows the wording of the theorem's statement is still exactly what the project's frozen baseline recorded, so only the proof changed."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's check script and asking it about turbo_value_is_value shows the theorem is no longer in the list of unproved theorems, and the project still builds cleanly.",
+      "proves": "c1: the theorem has a real proof body with no sorry, and that proof compiles as part of a successful build.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_is_value"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "theorem_in_sorry",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Running the project's check script shows the wording of the theorem's statement is still exactly what the project's frozen baseline recorded, so only the proof changed.",
+      "proves": "c2: the theorem's statement text is unchanged from the approved baseline.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json",
+          "turbo_value_is_value"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "declared_new_entrypoints": [
+    "scripts/check.sh"
+  ]
+}
