@@ -45,4 +45,17 @@ structure SatpChallenged {P : Participant} (r : Route E) (net : NetworkState E P
   /-- `r.V`'s on-chain status. -/
   status : net.chain.statusOf r.V = .challenged u ch
 
+/-- A ledger outcome after Round 2 of Protocol 3.1 (SATP:411-418) for the ledger between
+    `P` (left) and `Q` (right), with the balance `bal` of `D` before Round 2 and the amount
+    `debit` Round 2 took from it (`Route.LedgerAfterRound2`). `satp_theorem_3_2` (both
+    ledgers of an intermediary) and `satp_end_user_recovers` (Alice's ledger) state this
+    fact, so it is one type (`docs/lean/type-doctrine.md` rule 1). -/
+structure Route.Round2Ledger (r : Route E) (P Q D : Participant) (debit : Coins) where
+  /-- The ledger's allocation after Round 2. -/
+  outcome : Allocation E
+  /-- The balance of `D` before Round 2. -/
+  bal : Coins
+  /-- `outcome` is the Round 2 outcome for `bal` and `debit`. -/
+  afterRound2 : r.LedgerAfterRound2 outcome P Q D bal debit
+
 end ArmadaLean.Nitro

@@ -55,6 +55,32 @@ namespace ArmadaLean.Nitro.Counterexample.Theorem32
 
 open ArmadaLean.Nitro ArmadaLean.Nitro.NonVacuity
 
+/-! Reachability steps on the unrestricted machine `Nitro.participantUnrestricted` (an honest
+    move needs only feasible calls, `HonestMove.CallsFeasible`). -/
+
+theorem participantU_reachable_init {p : Participant} (apps : Apps Nat) (T : Threat Nat p) :
+    (Nitro.participantUnrestricted apps T).Reachable
+      (⟨Adjudicator.genesis, [], []⟩ : NetworkState Nat p) :=
+  ⟨_, rfl, .refl⟩
+
+theorem participantU_reachable_honest {apps : Apps Nat} {p : Participant} {T : Threat Nat p}
+    {net : NetworkState Nat p} (h : (Nitro.participantUnrestricted apps T).Reachable net)
+    (m : HonestMove Nat) (hm : m.CallsFeasible net) :
+    (Nitro.participantUnrestricted apps T).Reachable (net.applyHonest m) :=
+  h.tail (Or.inl ⟨m, hm, rfl⟩)
+
+theorem participantU_reachable_land {apps : Apps Nat} {p : Participant} {T : Threat Nat p}
+    {net : NetworkState Nat p} (h : (Nitro.participantUnrestricted apps T).Reachable net)
+    (op : Op Nat) (hop : op.HonestFeasible net) :
+    (Nitro.participantUnrestricted apps T).Reachable (net.applyAdv apps (.land op)) :=
+  h.tail (Or.inr (Or.inl ⟨op, hop, rfl⟩))
+
+theorem participantU_reachable_adv {apps : Apps Nat} {p : Participant} {T : Threat Nat p}
+    {net : NetworkState Nat p} (h : (Nitro.participantUnrestricted apps T).Reachable net)
+    (m : AdvMove Nat) (hm : T.feasible net m) (hnoland : ∀ op, m ≠ .land op) :
+    (Nitro.participantUnrestricted apps T).Reachable (net.applyAdv apps m) :=
+  h.tail (Or.inr (Or.inr (Or.inl ⟨m, hm, hnoland, rfl⟩)))
+
 /-! ## The instance, on the unrestricted machine -/
 
 /-- `q0` sent `V0`, `Sp` and `Sm`, and received only `p0`'s and `w0`'s ledger signatures:

@@ -3912,7 +3912,7 @@ theorem HonestMove.Feasible.round {apps : Apps E} {p : Participant} {T : Threat 
   | react r =>
     refine ⟨fun op hop => Op.HonestFeasible.round hseq (hfeas.1 op hop), fun st hst => ?_⟩
     rw [hseq.sent_eq]
-    exact (hfeas.2 st hst).mono (fun _ hx => hx) (fun V hV => hV.of_subset
+    exact (hfeas.2 st hst).mono (fun _ hx => hx) (fun V hV => hV.mono fun _ h => h.of_subset
       (fun x hx => by rw [hseq.sent_eq]; exact hx) hseq.received_subset)
   | wait dt => trivial
 
@@ -9049,21 +9049,6 @@ theorem validResponse_turnNum {alice bob : Participant} {c : FixedPart} {s ch re
   · have h' := by simpa only [Bool.and_eq_true, decide_eq_true_eq] using h
     exact h'.1.1.1.1.1.1.1.1.1.2
   · cases h
-
-/-- `NetworkState.Holds.mono`, generalized: `sent` and `received` may both grow, not just
-    `received`. -/
-theorem NetworkState.Holds.mono' {p : Participant} {net net' : NetworkState E p}
-    {ss : SignedState E} (hsent : ∀ s ∈ net.sent, s ∈ net'.sent)
-    (hrecv : ∀ r ∈ net.received, r ∈ net'.received) (h : net.Holds ss) : net'.Holds ss := by
-  obtain ⟨h1, h2⟩ := h
-  refine ⟨fun q hq => ?_, fun v hv q hq => ?_⟩
-  · rcases h1 q hq with ⟨hqp, s, hs, hse⟩ | ⟨r, hr, hre, hrq⟩
-    · exact Or.inl ⟨hqp, s, hsent s hs, hse⟩
-    · exact Or.inr ⟨r, hrecv r hr, hre, hrq⟩
-  · rcases h2 v hv q hq with ⟨hqp, s, hs, hse⟩ | ⟨r, hr, hre⟩
-    · exact Or.inl ⟨hqp, s, hsent s hs, hse⟩
-    · exact Or.inr ⟨r, hrecv r hr, hre⟩
-
 /-- `conclude` on `r.V` can never succeed: it would need a `ByAll`, `isFinal` state signed by
     `P`, but `HoldsVirtualSetup` bounds every state `P` signs for `r.V` to `isFinal = false`. -/
 theorem satpVirtual_conclude_fails {P : Participant} {r : Route E} {alice bob : Participant}
@@ -9941,7 +9926,7 @@ theorem satp_land_keeps_status {apps : Apps E} {P : Participant} {T : Threat E P
       unfold HoldsVirtualSetup; rw [NetworkState.applyAdv_sent]; exact hVs
     have hheld0' : ∀ ss ∈ proof0, (net1.applyAdv apps (AdvMove.tick dt)).Holds ss := by
       intro ss hss
-      exact NetworkState.Holds.mono' (fun s hs => by simpa [NetworkState.applyAdv] using hs)
+      exact NetworkState.Holds.of_subset (fun s hs => by simpa [NetworkState.applyAdv] using hs)
         (fun s hs => by simpa [NetworkState.applyAdv] using hs) (hheld0 ss hss)
     have hlive0' : SatpLive r (net1.applyAdv apps (AdvMove.tick dt)) net2.chain.now := by
       rcases hlive0 with ⟨u, hu⟩ | ⟨u, ch, hu, hdd⟩
@@ -9960,22 +9945,22 @@ theorem satp_land_keeps_status {apps : Apps E} {P : Participant} {T : Threat E P
       intro ss hss
       cases m with
       | tick dt =>
-        exact NetworkState.Holds.mono' (fun s hs => by simpa [NetworkState.applyAdv] using hs)
+        exact NetworkState.Holds.of_subset (fun s hs => by simpa [NetworkState.applyAdv] using hs)
           (fun s hs => by simpa [NetworkState.applyAdv] using hs) (hheld0 ss hss)
       | deliver ss' =>
-        exact NetworkState.Holds.mono' (fun s hs => by simpa using hs)
+        exact NetworkState.Holds.of_subset (fun s hs => by simpa using hs)
           (fun s hs => by simp only [NetworkState.applyAdv]; exact List.mem_cons_of_mem _ hs)
           (hheld0 ss hss)
       | land op => exact absurd rfl (hnoland op)
       | chain caller op =>
         cases h : net1.chain.apply apps caller op with
         | none =>
-          exact NetworkState.Holds.mono' (fun s hs => by
+          exact NetworkState.Holds.of_subset (fun s hs => by
             rw [NetworkState.applyAdv_chain_none apps h]; exact hs)
             (fun s hs => by rw [NetworkState.applyAdv_chain_none apps h]; exact hs)
             (hheld0 ss hss)
         | some s' =>
-          exact NetworkState.Holds.mono' (fun s hs => by
+          exact NetworkState.Holds.of_subset (fun s hs => by
             rw [NetworkState.applyAdv_chain_some apps h]; exact hs)
             (fun s hs => by
               rw [NetworkState.applyAdv_chain_some apps h]
@@ -10108,7 +10093,7 @@ theorem NetVOrigin_apply_step {apps : Apps E} {P : Participant} {r : Route E}
       net.Holds ss → ({ net with chain := s', received := op.proofStates ++ net.received } :
         NetworkState E P).Holds ss := by
     intro ss hss
-    refine NetworkState.Holds.mono' (net := net) (fun s hs => hs) ?_ hss
+    refine NetworkState.Holds.of_subset (net := net) (fun s hs => hs) ?_ hss
     intro s hs
     exact List.mem_append_right op.proofStates hs
   constructor
@@ -10310,14 +10295,14 @@ theorem NetVOrigin_reachable {apps : Apps E} {P : Participant} {T : Threat E P} 
           obtain ⟨proof, cand, hsupp, hcand, hheld⟩ := hP.1 u (by
             simpa [NetworkState.applyHonest] using hu) hune
           exact ⟨proof, cand, hsupp, hcand, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by
+            NetworkState.Holds.of_subset (fun s hs => by
               simp only [NetworkState.applyHonest]; exact List.mem_append_right _ hs)
               (fun s hs => by simpa [NetworkState.applyHonest] using hs) (hheld ss hss)⟩
         · intro u ch hst
           obtain ⟨hturn, proof, hsupp, hheld⟩ := hP.2 u ch (by
             simpa [NetworkState.applyHonest] using hst)
           exact ⟨hturn, proof, hsupp, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by
+            NetworkState.Holds.of_subset (fun s hs => by
               simp only [NetworkState.applyHonest]; exact List.mem_append_right _ hs)
               (fun s hs => by simpa [NetworkState.applyHonest] using hs) (hheld ss hss)⟩
       | wait dt =>
@@ -10327,14 +10312,14 @@ theorem NetVOrigin_reachable {apps : Apps E} {P : Participant} {T : Threat E P} 
             simp only [NetworkState.applyHonest] at hu
             rwa [Adjudicator.tick_statusOf] at hu) hune
           exact ⟨proof, cand, hsupp, hcand, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by simpa [NetworkState.applyHonest] using hs)
+            NetworkState.Holds.of_subset (fun s hs => by simpa [NetworkState.applyHonest] using hs)
               (fun s hs => by simpa [NetworkState.applyHonest] using hs) (hheld ss hss)⟩
         · intro u ch hst
           obtain ⟨hturn, proof, hsupp, hheld⟩ := hP.2 u ch (by
             simp only [NetworkState.applyHonest] at hst
             rwa [Adjudicator.tick_statusOf] at hst)
           exact ⟨hturn, proof, hsupp, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by simpa [NetworkState.applyHonest] using hs)
+            NetworkState.Holds.of_subset (fun s hs => by simpa [NetworkState.applyHonest] using hs)
               (fun s hs => by simpa [NetworkState.applyHonest] using hs) (hheld ss hss)⟩
     · -- `.land op`: `P`'s own call, the `.chain P op` step
       exact NetVOrigin_apply_step hV hP P op
@@ -10347,7 +10332,7 @@ theorem NetVOrigin_reachable {apps : Apps E} {P : Participant} {T : Threat E P} 
           obtain ⟨proof, cand, hsupp, hcand, hheld⟩ := hP.1 u (by
             simp only [NetworkState.applyAdv] at hu; exact hu) hune
           exact ⟨proof, cand, hsupp, hcand, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by simp only [NetworkState.applyAdv]; exact hs)
+            NetworkState.Holds.of_subset (fun s hs => by simp only [NetworkState.applyAdv]; exact hs)
               (fun s hs => by
                 simp only [NetworkState.applyAdv]
                 exact List.mem_cons_of_mem _ hs) (hheld ss hss)⟩
@@ -10355,7 +10340,7 @@ theorem NetVOrigin_reachable {apps : Apps E} {P : Participant} {T : Threat E P} 
           obtain ⟨hturn, proof, hsupp, hheld⟩ := hP.2 u ch (by
             simp only [NetworkState.applyAdv] at hst; exact hst)
           exact ⟨hturn, proof, hsupp, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by simp only [NetworkState.applyAdv]; exact hs)
+            NetworkState.Holds.of_subset (fun s hs => by simp only [NetworkState.applyAdv]; exact hs)
               (fun s hs => by
                 simp only [NetworkState.applyAdv]
                 exact List.mem_cons_of_mem _ hs) (hheld ss hss)⟩
@@ -10366,14 +10351,14 @@ theorem NetVOrigin_reachable {apps : Apps E} {P : Participant} {T : Threat E P} 
             simp only [NetworkState.applyAdv] at hu
             rwa [Adjudicator.tick_statusOf] at hu) hune
           exact ⟨proof, cand, hsupp, hcand, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by simpa [NetworkState.applyAdv] using hs)
+            NetworkState.Holds.of_subset (fun s hs => by simpa [NetworkState.applyAdv] using hs)
               (fun s hs => by simpa [NetworkState.applyAdv] using hs) (hheld ss hss)⟩
         · intro u ch hst
           obtain ⟨hturn, proof, hsupp, hheld⟩ := hP.2 u ch (by
             simp only [NetworkState.applyAdv] at hst
             rwa [Adjudicator.tick_statusOf] at hst)
           exact ⟨hturn, proof, hsupp, fun ss hss =>
-            NetworkState.Holds.mono' (fun s hs => by simpa [NetworkState.applyAdv] using hs)
+            NetworkState.Holds.of_subset (fun s hs => by simpa [NetworkState.applyAdv] using hs)
               (fun s hs => by simpa [NetworkState.applyAdv] using hs) (hheld ss hss)⟩
       | land op => exact NetVOrigin_apply_step hV hP P op
     · -- landed deposit, the `.chain P (.deposit a e x)` step
@@ -10403,7 +10388,7 @@ theorem Threat.Round.reachable {apps : Apps E} {p : Participant} {T : Threat E p
     (Nitro.participant apps T).Reachable net' :=
   h.1.condInvariant ⟨(Threat.reachable_step (T := T)).toStepInvariant.anyGuard,
     (Threat.reachable_step (T := T)).condMono⟩ (match m, hfeas with
-      | .react _, hf => hf
+      | .react _, hf => hf.1
       | .wait _, _ => fun _ hop => absurd hop (List.not_mem_nil)) hR
 
 theorem UnbeatableIn.and_reachable {apps : Apps E} {p : Participant} {T : Threat E p}
@@ -10647,7 +10632,9 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
         subst hop
         simpa [Op.HonestFeasible, Op.proofStates] using hHeld0
-      refine UnbeatableIn.move (.react ⟨[Op.challenge r.V proof0 cand0], []⟩) trivial hfeasR ?_
+      have hfeasM : (HonestMove.react ⟨[Op.challenge r.V proof0 cand0], []⟩ : HonestMove E).Feasible net :=
+        ⟨hfeasR, fun _ h => absurd h List.not_mem_nil⟩
+      refine UnbeatableIn.move (.react ⟨[Op.challenge r.V proof0 cand0], []⟩) trivial hfeasM ?_
       intro net1 hround
       obtain ⟨hseq, hεbound⟩ := hround
       have hnet1 : net1.applyHonest (.react ⟨[Op.challenge r.V proof0 cand0], []⟩) = net1 := by
@@ -10657,7 +10644,7 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
         hεbound hVs hHeld0 (Or.inl ⟨u, hu⟩)
       dsimp only at hres
       have hnr1 : (Nitro.participant apps T).Reachable net1 :=
-        Threat.Round.reachable ⟨hseq, hεbound⟩ hfeasR hnr
+        Threat.Round.reachable ⟨hseq, hεbound⟩ hfeasM hnr
       have hVs1 : HoldsVirtualSetup net1 r alice bob true := by
         unfold HoldsVirtualSetup; rw [hseq.sent_eq]; exact hVs
       rcases hres with ⟨ch1, hst1, -, -⟩ |
@@ -10818,33 +10805,31 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
     (Lm Lp : TimedChannel T.ε) (hLm : r.ledgers[i - 1]? = some (Lm : FixedPart))
     (hLp : r.ledgers[i]? = some (Lp : FixedPart))
     (hdurV : r.V.IsTimed T.ε)
-    (om op : Allocation E) (balm balp : Coins)
-    (hom : r.LedgerAfterRound2 om Pprev P P balm r.b0)
-    (hop : r.LedgerAfterRound2 op P Pnext P balp r.a0)
+    (om : r.Round2Ledger Pprev P P r.b0) (op : r.Round2Ledger P Pnext P r.a0)
     (net : Nitro.ReachableParticipant apps T)
-    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om)
-    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op)
+    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om.outcome)
+    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op.outcome)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
     (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
       net.state.DeadlineAfter r.V T.ε)
     (hchain : net.state.chain.finalizedWith (Lm : FixedPart).address = none ∧
       net.state.chain.finalizedWith (Lp : FixedPart).address = none ∧
       net.state.chain.finalizedWith r.V.address = none) :
-    Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) balm balp
+    Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) om.bal op.bal
       (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
   have _hfunds : ∀ t ∈ net.state.sent, ∀ o, t.state.outcome = .allocation o →
       o.find r.V.address ≠ none → net.state.HoldsPrefund r.V := by
     intro t ht o ho hf
     exact (Nitro.participant_sent_honest net t ht).fundsCommitted r.V hr.2.2.2.2.2.2.1
       (by rw [ho]; exact hf)
-  have _hextm : P ∈ (Lm : FixedPart).participants → om.GuaranteesExternal := by
+  have _hextm : P ∈ (Lm : FixedPart).participants → om.outcome.GuaranteesExternal := by
     obtain ⟨ss, hH, hall, hc, ho, -⟩ := hHm
     intro hPL
     have hext := (Nitro.participant_holds_honest A.toBounds net hH
       (hall P (by rw [hc]; exact hPL))).guaranteesExternal
     rw [ho] at hext
     exact hext
-  have _hextp : P ∈ (Lp : FixedPart).participants → op.GuaranteesExternal := by
+  have _hextp : P ∈ (Lp : FixedPart).participants → op.outcome.GuaranteesExternal := by
     obtain ⟨ss, hH, hall, hc, ho, -⟩ := hHp
     intro hPL
     have hext := (Nitro.participant_holds_honest A.toBounds net hH
@@ -11348,19 +11333,18 @@ theorem satp_end_user_recovers (apps : Apps E) {P : Participant} (T : Threat E P
     (hPA : P = alice) (P1 : Participant) (hP1 : r.peers[1]? = some P1)
     (L0 : TimedChannel T.ε) (hL0 : r.ledgers[0]? = some (L0 : FixedPart))
     (hdurV : r.V.IsTimed T.ε)
-    (o : Allocation E) (bal : Coins)
-    (ho : r.LedgerAfterRound2 o P P1 P bal r.a0)
+    (o : r.Round2Ledger P P1 P r.a0)
     (net : Nitro.ReachableParticipant apps T)
-    (hH : HoldsLatestLedger net.state (L0 : FixedPart) o)
+    (hH : HoldsLatestLedger net.state (L0 : FixedPart) o.outcome)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
     (a b : Coins) (hab : a + b = r.a0 + r.b0)
     (hfin : net.state.chain.finalOutcome r.V.address =
       some (.allocation [alloc (.external (r.dest alice)) a, alloc (.external (r.dest bob)) b]))
     (hpend : net.state.DeadlineAfter (L0 : FixedPart) T.ε)
     (hchain : net.state.chain.finalizedWith (L0 : FixedPart).address = none) :
-    Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) bal a
+    Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) o.bal a
       (net.state.chain.balances.get (.external (r.dest P)))) net.state := by
-  have _hext : P ∈ (L0 : FixedPart).participants → o.GuaranteesExternal := by
+  have _hext : P ∈ (L0 : FixedPart).participants → o.outcome.GuaranteesExternal := by
     obtain ⟨ss, hHs, hall, hc, hos, -⟩ := hH
     intro hPL
     have hext := (Nitro.participant_holds_honest A.toBounds net hHs

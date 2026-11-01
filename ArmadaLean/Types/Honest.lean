@@ -63,6 +63,18 @@ instance (o : Allocation E) : Decidable o.GuaranteesExternal :=
   decidable_of_iff (∀ e ∈ o, e.GuaranteesExternalB = true)
     (forall_congr' fun e => forall_congr' fun _ => (entry_guaranteesExternal_iff e).symm)
 
+/-- The rule `HonestSend.noAlternative`: below the funding point
+    (`turnNum < n`), no state in `signed` has the channel and turn of `st`
+    unless it is `st` (ForceMove:783-784). -/
+abbrev HonestSend.NoAlternative (signed : List (SignedState E)) (st : State E) : Prop :=
+  st.turnNum < st.channel.n → ∀ s ∈ signed, s.state.channel = st.channel →
+    s.state.turnNum = st.turnNum → s.state = st
+
+/-- The rule `HonestSend.fundsCommitted`: every virtual channel `V` that the
+    allocation of `st` names satisfies `prefundHeld` (SATP:409). -/
+abbrev HonestSend.FundsCommitted (prefundHeld : FixedPart → Prop) (st : State E) : Prop :=
+  ∀ V : FixedPart, V.kind = .virtual → st.outcome.entries.find V.address ≠ none → prefundHeld V
+
 /-- **The signing rules for one state `st` that the honest participant
     sends.** `signed` is every state the participant has signed, `st`'s own
     send included. `prefundHeld V` says that the participant holds an
@@ -72,16 +84,32 @@ structure HonestSend (signed : List (SignedState E)) (prefundHeld : FixedPart �
     (st : State E) : Prop where
   /-- Below the funding point (`turnNum < n`), the participant signs no second
       state of the channel at the same turn (ForceMove:783-784). -/
-  noAlternative : st.turnNum < st.channel.n → ∀ s ∈ signed, s.state.channel = st.channel →
-    s.state.turnNum = st.turnNum → s.state = st
+  noAlternative : HonestSend.NoAlternative signed st
   /-- Every guarantee the participant signs names only external peers
       (SATP:411-418). -/
   guaranteesExternal : st.outcome.entries.GuaranteesExternal
   /-- The participant signs an allocation with an entry for a virtual
       channel `V` only when it holds the all-signed pre-fund state of `V`
       (SATP:409). -/
-  fundsCommitted : ∀ V : FixedPart, V.kind = .virtual → st.outcome.entries.find V.address ≠ none →
-    prefundHeld V
+  fundsCommitted : HonestSend.FundsCommitted prefundHeld st
+
+namespace HonestSend
+
+/-- A state that satisfies the rules against `prior` with no held pre-fund
+    state (so it funds no virtual channel) satisfies them against any
+    `signed` whose states are `st` itself or states of `prior`. -/
+theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Prop} {st : State E}
+    (hst : HonestSend prior (fun _ => False) st)
+    (hcover : ∀ s ∈ signed, s.state = st ∨ ∃ s' ∈ prior, s'.state = s.state) :
+    HonestSend signed held st := by
+  refine ⟨fun hlt s hs hc ht => ?_, hst.guaranteesExternal,
+    fun V hV hf => (hst.fundsCommitted V hV hf).elim⟩
+  rcases hcover s hs with h | ⟨s', hs', heq⟩
+  · exact h
+  · rw [← heq] at hc ht ⊢
+    exact hst.noAlternative hlt s' hs' hc ht
+
+end HonestSend
 
 namespace HonestSend
 
@@ -98,8 +126,7 @@ theorem mono {signed signed' : List (SignedState E)} {held held' : FixedPart →
     `Address.fundable`: external, or a ledger channel) funds no virtual
     channel, so `fundsCommitted` holds with no held pre-fund state. -/
 theorem fundsCommitted_of_fundable {held : FixedPart → Prop} {st : State E}
-    (hfund : ∀ e ∈ st.outcome.entries, e.dest.fundable = true) :
-    ∀ V : FixedPart, V.kind = .virtual → st.outcome.entries.find V.address ≠ none → held V := by
+    (hfund : ∀ e ∈ st.outcome.entries, e.dest.fundable = true) : FundsCommitted held st := by
   intro V hV hf
   obtain ⟨e, he⟩ := Option.ne_none_iff_exists'.mp hf
   have hmem : e ∈ st.outcome.entries := List.mem_of_find?_eq_some he

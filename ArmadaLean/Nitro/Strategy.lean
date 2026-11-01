@@ -98,14 +98,13 @@ def NetworkState.HoldsPrefund {p : Participant} (net : NetworkState E p) (V : Fi
   ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = V ∧ ss.state.turnNum = 0
 
 omit [DecidableEq E] in
-/-- `HoldsPrefund` survives a larger `sent` and a larger `received`
-    (`NetworkState.Holds.of_subset`). -/
-theorem NetworkState.HoldsPrefund.of_subset {p : Participant} {net net' : NetworkState E p}
-    {V : FixedPart} (hsent : ∀ s ∈ net.sent, s ∈ net'.sent)
-    (hrecv : ∀ r ∈ net.received, r ∈ net'.received) (h : net.HoldsPrefund V) :
+/-- `HoldsPrefund` survives any change that keeps every held state held
+    (for example `NetworkState.Holds.of_subset`). -/
+theorem NetworkState.HoldsPrefund.mono {p : Participant} {net net' : NetworkState E p}
+    {V : FixedPart} (hmono : ∀ ss, net.Holds ss → net'.Holds ss) (h : net.HoldsPrefund V) :
     net'.HoldsPrefund V := by
   obtain ⟨ss, hH, hall, hc, ht⟩ := h
-  exact ⟨ss, hH.of_subset hsent hrecv, hall, hc, ht⟩
+  exact ⟨ss, hmono ss hH, hall, hc, ht⟩
 
 /-- One honest reaction (Nitro:485-488: "signing commitments, refusing to
     sign commitments, launching/responding to on-chain challenges and

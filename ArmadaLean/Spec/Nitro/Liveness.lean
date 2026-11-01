@@ -846,12 +846,10 @@ def Spec.satp_theorem_3_2 : Prop :=
     (Lm Lp : TimedChannel T.ε) (hLm : r.ledgers[i - 1]? = some (Lm : FixedPart))
     (hLp : r.ledgers[i]? = some (Lp : FixedPart))
     (hdurV : r.V.IsTimed T.ε)
-    (om op : Allocation E) (balm balp : Coins)
-    (hom : r.LedgerAfterRound2 om Pprev P P balm r.b0)
-    (hop : r.LedgerAfterRound2 op P Pnext P balp r.a0)
+    (om : r.Round2Ledger Pprev P P r.b0) (op : r.Round2Ledger P Pnext P r.a0)
     (net : Nitro.ReachableParticipant apps T)
-    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om)
-    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op)
+    (hHm : HoldsLatestLedger net.state (Lm : FixedPart) om.outcome)
+    (hHp : HoldsLatestLedger net.state (Lp : FixedPart) op.outcome)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
     (hpend : net.state.DeadlineAfter (Lm : FixedPart) T.ε ∧ net.state.DeadlineAfter (Lp : FixedPart) T.ε ∧
       net.state.DeadlineAfter r.V T.ε)
@@ -859,7 +857,7 @@ def Spec.satp_theorem_3_2 : Prop :=
       net.state.chain.finalizedWith (Lp : FixedPart).address = none ∧
       net.state.chain.finalizedWith r.V.address = none),
     Claim <|
-    Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) balm balp
+    Unbeatable apps T (IntermediaryRecovered r (Lm : FixedPart) (Lp : FixedPart) om.bal op.bal
       (net.state.chain.balances.get (.external (r.dest P)))) net.state
 
 /-- SATP-20 (Theorem 3.2, Case 1-2, SATP:522-537). An intermediary that has not
@@ -934,10 +932,9 @@ def Spec.satp_end_user_recovers : Prop :=
     (hPA : P = alice) (P1 : Participant) (hP1 : r.peers[1]? = some P1)
     (L0 : TimedChannel T.ε) (hL0 : r.ledgers[0]? = some (L0 : FixedPart))
     (hdurV : r.V.IsTimed T.ε)
-    (o : Allocation E) (bal : Coins)
-    (ho : r.LedgerAfterRound2 o P P1 P bal r.a0)
+    (o : r.Round2Ledger P P1 P r.a0)
     (net : Nitro.ReachableParticipant apps T)
-    (hH : HoldsLatestLedger net.state (L0 : FixedPart) o)
+    (hH : HoldsLatestLedger net.state (L0 : FixedPart) o.outcome)
     (hVs : HoldsVirtualSetup net.state r alice bob true)
     (a b : Coins) (hab : a + b = r.a0 + r.b0)
     (hfin : net.state.chain.finalOutcome r.V.address =
@@ -945,7 +942,7 @@ def Spec.satp_end_user_recovers : Prop :=
     (hpend : net.state.DeadlineAfter (L0 : FixedPart) T.ε)
     (hchain : net.state.chain.finalizedWith (L0 : FixedPart).address = none),
     Claim <|
-    Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) bal a
+    Unbeatable apps T (EndUserRecovered r (L0 : FixedPart) o.bal a
       (net.state.chain.balances.get (.external (r.dest P)))) net.state
 
 /-- SATP-15, SATP-20 (Protocol 3.3 step 3, SATP:484-485; SATP:550-553). After

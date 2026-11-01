@@ -62,6 +62,21 @@ namespace ArmadaLean.Nitro.Counterexample.FundingPoint
 
 open ArmadaLean.Nitro ArmadaLean.Nitro.NonVacuity
 
+/-! Reachability steps on the unrestricted network `Nitro.networkUnrestricted` (an honest
+    move needs only feasible calls, `HonestMove.CallsFeasible`). -/
+
+theorem networkU_reachable_init (apps : Apps Nat) (Ts : Threats Nat apps) (w : Participant → Coins) :
+    (Nitro.networkUnrestricted apps Ts).Reachable
+      (⟨Adjudicator.genesis, fun _ => [], fun _ => [], w⟩ : Network Nat) :=
+  ⟨_, ⟨rfl, rfl, rfl⟩, .refl⟩
+
+theorem networkU_reachable_honest {apps : Apps Nat} {Ts : Threats Nat apps} {n : Network Nat}
+    (h : (Nitro.networkUnrestricted apps Ts).Reachable n) (p : Participant) (m : HonestMove Nat)
+    (hm : m.CallsFeasible (n.view p))
+    (hvgate : ∀ r : Reaction Nat, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) :
+    (Nitro.networkUnrestricted apps Ts).Reachable (Network.applyHonest n p m) :=
+  h.tail ⟨p, Or.inl ⟨m, hm, hvgate, rfl⟩⟩
+
 /-- `omega` after unfolding the `Time` abbreviation. -/
 macro "tomega" : tactic => `(tactic| ((try unfold Time at *); omega))
 

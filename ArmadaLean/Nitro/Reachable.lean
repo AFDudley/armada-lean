@@ -249,8 +249,8 @@ def Nitro.participant (apps : Apps E) {p : Participant} (T : Threat E p) :
 /-- `p`'s own machine with no signing rule: an honest move needs only
     feasible calls (`HonestMove.CallsFeasible`), so `p` may sign against
     `HonestSend`. Only counterexamples that need such a `p` use it
-    (`docs/counterexamples/`), through the reachability helpers of
-    `NonVacuity.lean`; no spec theorem is stated over it. -/
+    (`docs/counterexamples/`, each with its own reachability steps); no
+    declaration of the library is stated over it. -/
 def Nitro.participantUnrestricted (apps : Apps E) {p : Participant} (T : Threat E p) :
     Machine (NetworkState E p) :=
   Nitro.participantWith apps T (fun net m => m.CallsFeasible net)
@@ -413,7 +413,7 @@ theorem NetworkState.applyAdv_sent_received (apps : Apps E) {p : Participant}
     `noAlternative` against a new send is the new send's own
     `noAlternative`. Every other step keeps `sent` and only grows `received`
     (`NetworkState.applyAdv_sent_received`), so `HoldsPrefund` survives
-    (`NetworkState.HoldsPrefund.of_subset`). -/
+    (`NetworkState.HoldsPrefund.mono`, `NetworkState.Holds.of_subset`). -/
 theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Threat E p}
     (net : Nitro.ReachableParticipant apps T) :
     ∀ s ∈ net.state.sent, HonestSend net.state.sent net.state.HoldsPrefund s.state := by
@@ -430,13 +430,14 @@ theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Thr
       intro net' hs hr s hmem
       rw [hs] at hmem ⊢
       exact (hP s hmem).mono (fun _ hx => hx)
-        (fun V hV => hV.of_subset (fun x hx => hs ▸ hx) hr)
+        (fun V hV => hV.mono fun _ h => h.of_subset (fun x hx => hs ▸ hx) hr)
     rcases hstep with ⟨m, hm, rfl⟩ | ⟨op, -, rfl⟩ | ⟨m, -, -, rfl⟩ | ⟨a, e, x, rfl⟩
     · cases m with
       | react r =>
         have hsends : r.SendsHonest net := hm.2
         have hheld : ∀ V, net.HoldsPrefund V → (net.applyHonest (.react r)).HoldsPrefund V :=
-          fun V hV => hV.of_subset (fun x hx => List.mem_append_right _ hx) (fun _ hx => hx)
+          fun V hV => hV.mono fun _ h => h.of_subset (fun x hx => List.mem_append_right _ hx)
+            (fun _ hx => hx)
         intro s hs
         change s ∈ r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent at hs
         change HonestSend (r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent)
@@ -799,8 +800,8 @@ def Nitro.network (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) :=
 /-- The network game with no signing rule: an honest move needs only
     feasible calls (`HonestMove.CallsFeasible`). Only counterexamples that
     need a participant that signs against `HonestSend` use it
-    (`docs/counterexamples/`), through the reachability helpers of
-    `NonVacuity.lean`; no spec theorem is stated over it. -/
+    (`docs/counterexamples/`, each with its own reachability steps); no
+    declaration of the library is stated over it. -/
 def Nitro.networkUnrestricted (apps : Apps E) (Ts : Threats E apps) : Machine (Network E) :=
   Nitro.networkWith apps Ts (fun _ net m => m.CallsFeasible net)
 
