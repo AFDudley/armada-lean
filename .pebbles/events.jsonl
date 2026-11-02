@@ -2019,3 +2019,9 @@
 {"type":"comment","timestamp":"2026-11-02T20:05:44.928996Z","issue_id":"aln-957","payload":{"body":"gate-verdict: 3e91cd213ddb6f532047e412a036c677061f2487 passed 0.2.1+f2395f0b","build":"0.2.1+f2395f0b","outcome":"passed","sha":"3e91cd213ddb6f532047e412a036c677061f2487","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T20:05:44.960172Z","issue_id":"aln-957","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T20:05:44.970239Z","issue_id":"aln-957","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-02T20:06:13.386787Z","issue_id":"aln-4a3","payload":{"description":"Operator-authored branch `draft/doc-vault-helpers`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/doc-vault-helpers","type":"task"}}
+{"type":"comment","timestamp":"2026-11-02T20:06:13.412801Z","issue_id":"aln-4a3","payload":{"body":"branch-identity: draft/doc-vault-helpers"}}
+{"type":"comment","timestamp":"2026-11-02T20:17:03.339975Z","issue_id":"aln-4a3","payload":{"body":"exophial-integration-attempt-started: at 39e3e9b8aeb93f2be3612adb5ca11a10f6cd24f2"}}
+{"type":"comment","timestamp":"2026-11-02T20:17:05.866671Z","issue_id":"aln-4a3","payload":{"body":"gate-verdict: 938d1d8d2af578afd00bed0e2055d97977482618 passed 0.2.1+f2395f0b","build":"0.2.1+f2395f0b","outcome":"passed","sha":"938d1d8d2af578afd00bed0e2055d97977482618","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-02T20:17:05.892851Z","issue_id":"aln-4a3","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-02T20:17:05.902648Z","issue_id":"aln-4a3","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
