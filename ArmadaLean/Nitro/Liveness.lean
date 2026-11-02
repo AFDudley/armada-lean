@@ -6483,21 +6483,6 @@ theorem deposit_bounds_value (apps : Apps E) {p : Participant} (T : Threat E p)
   unfold Coins at *
   omega
 
-theorem Allocation.reduceOwed_self_of_find_alloc {o : Allocation E} {d : Address E} {amt : Coins}
-    (h : o.find d = some ⟨d, .alloc amt⟩) : o.reduceOwed d 0 = o := by
-  induction o with
-  | nil => (simp? [Allocation.find] at h says simp only [find, List.find?_nil, reduceCtorEq] at h)
-  | cons e t ih =>
-    rw [Allocation.find_cons] at h
-    rw [Allocation.reduceOwed_cons]
-    by_cases he : e.dest = d
-    · rw [if_pos he] at h ⊢
-      have he' : e = (⟨d, .alloc amt⟩ : Entry E) := Option.some.inj h
-      subst he'
-      (simp? says simp only [Entry.amount_mk, Item.amount_alloc, tsub_zero])
-    · rw [if_neg he] at h ⊢
-      rw [ih h]
-
 /-- `OnlyTransfers` never changes which destinations a channel's own
     allocation lists (only the amounts move). -/
 theorem allocationOf_dest_applyAll (apps : Apps E) :
@@ -6737,7 +6722,7 @@ theorem transfer_exhausted_fixed {t : Adjudicator E} (hdag : t.IsDAG) (hexh : t.
         rw [FixedPart.address_eq] at hf
         rw [hc, if_pos rfl, hx0, hf]
         congr 2
-        exact Allocation.reduceOwed_self_of_find_alloc hfind
+        exact Allocation.reduceOwed_zero_of_find_alloc hfind
       · rw [hc, if_neg hca]
   · have hb := hbal n
     rw [hx0] at hb

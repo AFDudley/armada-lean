@@ -364,10 +364,6 @@ section Chain
 
 variable {E : Type} [DecidableEq E]
 
-/-- `Adjudicator.finalizedWith_apply` (`Lemmas.lean`): the outcome of
-    finalization never changes. -/
-alias finalizedWith_apply := Adjudicator.finalizedWith_apply
-
 /-- The channel an operation writes. -/
 def opOn : Op E → FixedPart → Prop
   | .transfer a _, c => a = c
@@ -430,7 +426,7 @@ theorem concludeInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
     (hk : ConcludeInv c Ω (t0 + ε) s) : ConcludeInv c Ω (t0 + ε) s' := by
   have hnow := Adjudicator.apply_now_le h
   rcases hk with hf | ho | hc
-  · exact .inl (finalizedWith_apply h hf)
+  · exact .inl (Adjudicator.finalizedWith_apply h hf)
   · by_cases hon : opOn op c
     · obtain ⟨t, ht⟩ := ho
       cases op with
@@ -533,7 +529,7 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
           rcases hk with hf | ⟨t1, ho⟩ | ⟨t1, ch, ht1, hd⟩
           · cases hop : net1.chain.apply apps p (Op.conclude c ss) with
             | none => (simpa? [NetworkState.applyAdv_land_none apps hop] using hf says simpa only [NetworkState.applyAdv_land_none apps hop, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hf)
-            | some s' => (simpa? [NetworkState.applyAdv_land_some apps hop] using finalizedWith_apply hop hf says simpa only [NetworkState.applyAdv_land_some apps hop, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using finalizedWith_apply hop hf)
+            | some s' => (simpa? [NetworkState.applyAdv_land_some apps hop] using Adjudicator.finalizedWith_apply hop hf says simpa only [NetworkState.applyAdv_land_some apps hop, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using Adjudicator.finalizedWith_apply hop hf)
           · have hm : net1.chain.mode c ≠ .finalized := by rw [Adjudicator.mode_eq, ho]; (simp? says simp only [ChannelStatus.mode_open, ne_eq, reduceCtorEq, not_false_eq_true])
             have hop : net1.chain.apply apps p (Op.conclude c ss) =
                 some (net1.chain.setStatus c
@@ -690,7 +686,7 @@ theorem waitInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
         have := (hsent x hx (by rw [hxs]; exact hch)).2
         rw [hxs, hfin] at this; cases this
     · exact .inl (by rw [statusOf_apply_of_not_on h hon]; exact hst)
-  · exact .inr (finalizedWith_apply h hf)
+  · exact .inr (Adjudicator.finalizedWith_apply h hf)
 
 /-- Every `tick`/`other` step preserves `WaitInv`; no `land` case since
     `wait`'s own `calls = []` holds the round's `pending` empty throughout
@@ -792,9 +788,9 @@ theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
       exact hf
     | some s' =>
       simp only [NetworkState.applyAdv_chain_some apps happ]
-      exact finalizedWith_apply happ hf
+      exact Adjudicator.finalizedWith_apply happ hf
   | deliver ss => exact hf
-  | tick dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
+  | tick dt => exact Adjudicator.finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
   | land op =>
     cases happ : n.chain.apply apps p op with
     | none =>
@@ -802,7 +798,7 @@ theorem finalizedWith_applyAdv (apps : Apps E) {p : Participant} (m : AdvMove E)
       exact hf
     | some s' =>
       simp only [NetworkState.applyAdv_land_some apps happ]
-      exact finalizedWith_apply happ hf
+      exact Adjudicator.finalizedWith_apply happ hf
 
 /-- The outcome of finalization survives every honest move: a reaction never
     touches the chain (`NetworkState.applyHonest`'s `.react` case only
@@ -813,7 +809,7 @@ theorem finalizedWith_applyHonest (apps : Apps E) {p : Participant} (m : HonestM
     (n.applyHonest m).chain.finalizedWith c.address = some f := by
   cases m with
   | react r => (simpa? [NetworkState.applyHonest] using hf says simpa only [NetworkState.applyHonest, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hf)
-  | wait dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
+  | wait dt => exact Adjudicator.finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
 
 /-- A channel finalized with `Ω` stays finalized with `Ω` along every play. -/
 theorem Run.finalized {apps : Apps E} {p : Participant} {T : Threat E p} {σ : Strategy E p}

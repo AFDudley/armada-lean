@@ -59,15 +59,8 @@ omit [DecidableEq E] in
 /-- Nitro-08. Every coin that entered the adjudicator is held for a channel
     or was paid out to a participant. -/
 theorem balances_total_split (b : Balances E) :
-    b.total = b.channelTotal + b.paidOutTotal := by
-  induction b with
-  | nil => rfl
-  | cons e t ih =>
-    obtain ⟨k, w⟩ := e
-    rw [Balances.total_eq_sumIf, Balances.channelTotal_eq_sumIf,
-      Balances.paidOutTotal_eq_sumIf] at ih ⊢
-    simp only [Balances.sumIf_cons]
-    cases k <;> simp <;> (grind? says grind only [#c43a, #5afd, #3a2f, #8010, #8238, #0389, #4a56, #f57e, #fb2d, #2129, #8d77, #b26e, #c2a6, #3acd, #3635])
+    b.total = b.channelTotal + b.paidOutTotal :=
+  Balances.total_eq_channelTotal_add_paidOutTotal b
 
 /-- Nitro-04, Nitro-05, ForceMove-C01, docs-0060-02, docs-0060-03,
     docs-0060-04, docs-0060-05. go-nitro MultiAssetHolder.sol:51, 57-60:
