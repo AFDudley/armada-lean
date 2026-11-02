@@ -63,6 +63,12 @@ structure ConsensusMember (apps : Apps E) (p : Participant) (c : FixedPart) : Pr
   app : apps c.appDef = consensusRules
   mem : p ∈ c.participants
 
+/-- A `ConsensusMember` whose challenge duration covers two round delays of `ε`
+    (`FixedPart.IsTimed`). The round lemmas that read a challenge deadline need it. -/
+structure TimedConsensusMember (apps : Apps E) (p : Participant) (ε : Time) (c : FixedPart) :
+    Prop extends ConsensusMember apps p c where
+  timed : c.IsTimed ε
+
 /-- Under the consensus app, a candidate that a support proof of `c` accepts is the one
     state of the proof, and every participant signed it. So when each state of the proof
     that `p` signed is a state of `sent`, the candidate is a state of `c` in `sent`. -/

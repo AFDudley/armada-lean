@@ -1042,8 +1042,7 @@ theorem latest_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Thr
     (`satp_intermediary_before_round2`'s argument). -/
 theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {D : Time}
-    (hC : ConsensusMember apps p c)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) :
+    (hC : TimedConsensusMember apps p T.ε c) :
     ∀ {net net' : NetworkState E p} {t : Time}, Threat.RoundSeq apps T t [] net net' →
       net'.chain.now ≤ D →
       D < net.chain.now + T.ε →
@@ -1133,12 +1132,12 @@ theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participan
             · refine Or.inr (Or.inr ⟨cand.turnNum,
                 Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inl hlt, ?_⟩)
               have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+              have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
               exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
             · refine Or.inr (Or.inr ⟨cand.turnNum,
                 Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inr heqc, ?_⟩)
               have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+              have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
               exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
           · subst hop
             refine Or.inr (Or.inl ⟨cand.turnNum, hnew, ?_⟩)
@@ -1178,12 +1177,12 @@ theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participan
             · refine Or.inr (Or.inr ⟨cand.turnNum,
                 Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inl hlt, ?_⟩)
               have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+              have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
               exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
             · refine Or.inr (Or.inr ⟨cand.turnNum,
                 Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, Or.inr heqc, ?_⟩)
               have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+              have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
               exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
           · subst hop
             refine Or.inr (Or.inl ⟨cand.turnNum, hnew, ?_⟩)
@@ -1214,8 +1213,7 @@ theorem latest_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participan
     (`satp_intermediary_before_round2`'s argument). -/
 theorem latest_round_keeps_status_nil_D {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {D : Time}
-    (hC : ConsensusMember apps p c)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) :
+    (hC : ConsensusMember apps p c) :
     ∀ {net net' : NetworkState E p} {t : Time}, Threat.RoundSeq apps T t [] net net' →
       net'.chain.now ≤ D →
       (∀ t0 ∈ net.sent, t0.state.channel = c →
@@ -1355,12 +1353,9 @@ theorem land_challenge_other_statusOf {apps : Apps E} {p : Participant}
     per channel, against the round's own fixed endpoint `net'` rather than
     a freshly-destructed `RoundSeq` remainder. -/
 theorem land_own_challenge_transitions_status {apps : Apps E} {p : Participant} {T : Threat E p}
-    {c : FixedPart} {ss : SignedState E}
-    (hC : ConsensusMember apps p c) (hall : ss.ByAll)
-    (hchan : ss.state.channel = c) (hdur : 2 * T.ε ≤ c.challengeDuration)
-    {net1 net' : NetworkState E p}
-    (hεbound : net'.chain.now < net1.chain.now + T.ε)
-    (hmono0 : net1.chain.now ≤ net'.chain.now)
+    {c : FixedPart} {ss : SignedState E} (hC : TimedConsensusMember apps p T.ε c) (hall : ss.ByAll)
+    (hchan : ss.state.channel = c) {net1 net' : NetworkState E p}
+    (hεbound : net'.chain.now < net1.chain.now + T.ε) (hmono0 : net1.chain.now ≤ net'.chain.now)
     (hbase : net1.chain.finalizedWith c.address = some ss.state.outcome ∨
       (∃ t0, net1.chain.statusOf c = .open t0 ∧ t0 ≤ ss.state.turnNum) ∨
       (∃ t0 ch, net1.chain.statusOf c = .challenged t0 ch ∧
@@ -1410,7 +1405,7 @@ theorem land_own_challenge_transitions_status {apps : Apps E} {p : Participant} 
       ?_, le_refl _, rfl, ?_⟩
     · rw [Adjudicator.statusOf_setStatus, if_pos rfl]
     · have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-      have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+      have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
       exact lt_of_lt_of_le hεbound (Nat.add_le_add_left hge net1.chain.now)
   · have hltdl0 : net1.chain.now < ch0.deadline := lt_of_le_of_lt hmono0 hdd0
     have hm1 : net1.chain.mode c = .challenge := by
@@ -1436,7 +1431,7 @@ theorem land_own_challenge_transitions_status {apps : Apps E} {p : Participant} 
         ?_, le_refl _, rfl, ?_⟩
       · rw [Adjudicator.statusOf_setStatus, if_pos rfl]
       · have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-        have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+        have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
         exact lt_of_lt_of_le hεbound (Nat.add_le_add_left hge net1.chain.now)
     · have hchs0 : ch0.state = ss.state := hdis0.resolve_left hlt0
       have hcondneg : ¬ (p ∈ c.participants ∧
@@ -1469,14 +1464,11 @@ theorem land_own_challenge_transitions_status {apps : Apps E} {p : Participant} 
     local one — the fix this ruling's own argument turns on
     (`Strategy.lean`'s header, "Time bounds per pending action"). -/
 theorem latest_round_keeps_status_two_ordered {apps : Apps E} {p : Participant} {T : Threat E p}
-    (hbounds : Bounds apps p T)
-    {c1 c2 : FixedPart} {ss1 ss2 : SignedState E} (hne : c1 ≠ c2)
-    (hC1 : ConsensusMember apps p c1) (hC2 : ConsensusMember apps p c2)
+    (hbounds : Bounds apps p T) {c1 c2 : FixedPart} {ss1 ss2 : SignedState E} (hne : c1 ≠ c2)
+    (hC1 : TimedConsensusMember apps p T.ε c1) (hC2 : TimedConsensusMember apps p T.ε c2)
     (hall1 : ss1.ByAll) (hchan1 : ss1.state.channel = c1)
     (hall2 : ss2.ByAll) (hchan2 : ss2.state.channel = c2)
-    (hdur1 : 2 * T.ε ≤ c1.challengeDuration) (hdur2 : 2 * T.ε ≤ c2.challengeDuration)
-    {net n1 net' : NetworkState E p} {t : Time}
-    (hpre : Threat.RoundSeq apps T t [] net n1)
+    {net n1 net' : NetworkState E p} {t : Time} (hpre : Threat.RoundSeq apps T t [] net n1)
     (hmid : Threat.RoundSeq apps T t [Op.challenge c2 [ss2] ss2.state]
       (n1.applyAdv apps (.land (Op.challenge c1 [ss1] ss1.state))) net')
     (hεbound : net'.chain.now < net.chain.now + T.ε)
@@ -1508,13 +1500,13 @@ theorem latest_round_keeps_status_two_ordered {apps : Apps E} {p : Participant} 
   have hεbound_n1 : net'.chain.now < n1.chain.now + T.ε :=
     lt_of_lt_of_le hεbound (Nat.add_le_add_right hpre.now_le T.ε)
   -- `c2`'s pre-land invariant, carried unaffected to `n1`.
-  have hbase2_n1 := latest_round_keeps_status_nil_prelanding hbounds hC2 hdur2
+  have hbase2_n1 := latest_round_keeps_status_nil_prelanding hbounds hC2
     (D := net'.chain.now) hpre hmono_n1 hεbound hlatest2 hfinal2 hbase2
   -- `c1`'s pre-land invariant, carried unaffected to `n1`.
-  have hbase1_n1 := latest_round_keeps_status_nil_prelanding hbounds hC1 hdur1
+  have hbase1_n1 := latest_round_keeps_status_nil_prelanding hbounds hC1
     (D := net'.chain.now) hpre hmono_n1 hεbound hlatest1 hfinal1 hbase1
   -- `c1` lands at `n1`.
-  have hc1_landed := land_own_challenge_transitions_status hC1 hall1 hchan1 hdur1
+  have hc1_landed := land_own_challenge_transitions_status hC1 hall1 hchan1
     (net1 := n1) (net' := net') hεbound_n1 hmono_n1 hbase1_n1
   -- `c2`'s invariant survives `c1`'s own land (different channels).
   have hframe1 := land_challenge_other_statusOf (apps := apps) (c := c2) (c' := c1) hne
@@ -1547,15 +1539,15 @@ theorem latest_round_keeps_status_two_ordered {apps : Apps E} {p : Participant} 
     | some s' => obtain ⟨-, rfl⟩ := Adjudicator.challenge_some h; rfl
   have hεbound_n1' : net'.chain.now < net1'.chain.now + T.ε := hnet1'_now ▸ hεbound_n1
   -- `c1`'s now-landed invariant, carried unaffected through the no-land phase to `n2`.
-  have hc1_n2 := latest_round_keeps_status_nil_D hbounds hC1 hdur1
+  have hc1_n2 := latest_round_keeps_status_nil_D hbounds hC1.toConsensusMember
     (D := net'.chain.now) hmid_pre hmono_n2 (by rw [hnet1'_sent]; exact hlatest1)
     (by rw [hnet1'_sent]; exact hfinal1) hc1_landed
   -- `c2`'s pre-land invariant, carried unaffected through the same phase.
-  have hbase2_n2 := latest_round_keeps_status_nil_prelanding hbounds hC2 hdur2
+  have hbase2_n2 := latest_round_keeps_status_nil_prelanding hbounds hC2
     (D := net'.chain.now) hmid_pre hmono_n2 hεbound_n1' (by rw [hnet1'_sent]; exact hlatest2)
     (by rw [hnet1'_sent]; exact hfinal2) hbase2_landed
   -- `c2` lands at `n2`.
-  have hc2_landed := land_own_challenge_transitions_status hC2 hall2 hchan2 hdur2
+  have hc2_landed := land_own_challenge_transitions_status hC2 hall2 hchan2
     (net1 := n2) (net' := net') hεbound_n2 hmono_n2 hbase2_n2
   -- `c1`'s invariant survives `c2`'s own land (different channels).
   have hframe2 := land_challenge_other_statusOf (apps := apps) (c := c1) (c' := c2) hne.symm
@@ -1568,10 +1560,10 @@ theorem latest_round_keeps_status_two_ordered {apps : Apps E} {p : Participant} 
   have hn2'_sent : net2'.sent = net.sent := by
     rw [hnet2'def, NetworkState.applyAdv_sent]; exact hn2_sent
   -- the final no-land phase to `net'`, for both channels.
-  have hc1_final := latest_round_keeps_status_nil_D hbounds hC1 hdur1
+  have hc1_final := latest_round_keeps_status_nil_D hbounds hC1.toConsensusMember
     (D := net'.chain.now) hmid_post (le_refl _)
     (by rw [hn2'_sent]; exact hlatest1) (by rw [hn2'_sent]; exact hfinal1) hc1_landed2
-  have hc2_final := latest_round_keeps_status_nil_D hbounds hC2 hdur2
+  have hc2_final := latest_round_keeps_status_nil_D hbounds hC2.toConsensusMember
     (D := net'.chain.now) hmid_post (le_refl _)
     (by rw [hn2'_sent]; exact hlatest2) (by rw [hn2'_sent]; exact hfinal2) hc2_landed
   exact ⟨hc1_final, hc2_final⟩
@@ -1587,12 +1579,10 @@ theorem latest_round_keeps_status_two_ordered {apps : Apps E} {p : Participant} 
     share the one round's single `T.ε` bound, not two sequential rounds'
     worth. -/
 theorem latest_round_keeps_status_two {apps : Apps E} {p : Participant} {T : Threat E p}
-    (hbounds : Bounds apps p T)
-    {c1 c2 : FixedPart} {ss1 ss2 : SignedState E} (hne : c1 ≠ c2)
-    (hC1 : ConsensusMember apps p c1) (hC2 : ConsensusMember apps p c2)
+    (hbounds : Bounds apps p T) {c1 c2 : FixedPart} {ss1 ss2 : SignedState E} (hne : c1 ≠ c2)
+    (hC1 : TimedConsensusMember apps p T.ε c1) (hC2 : TimedConsensusMember apps p T.ε c2)
     (hall1 : ss1.ByAll) (hchan1 : ss1.state.channel = c1)
     (hall2 : ss2.ByAll) (hchan2 : ss2.state.channel = c2)
-    (hdur1 : 2 * T.ε ≤ c1.challengeDuration) (hdur2 : 2 * T.ε ≤ c2.challengeDuration)
     {net net' : NetworkState E p} (t : Time) (ht : t = net.chain.now)
     (hseq : Threat.RoundSeq apps T t
       [Op.challenge c1 [ss1] ss1.state, Op.challenge c2 [ss2] ss2.state] net net') :
@@ -1623,9 +1613,9 @@ theorem latest_round_keeps_status_two {apps : Apps E} {p : Participant} {T : Thr
   intro hεbound hlatest1 hlatest2 hfinal1 hfinal2 hbase1 hbase2
   rcases hseq.peel_two with ⟨n1, hpre, hmid⟩ | ⟨n1, hpre, hmid⟩
   · exact latest_round_keeps_status_two_ordered hbounds hne hC1 hC2 hall1 hchan1 hall2
-      hchan2 hdur1 hdur2 hpre hmid hεbound hlatest1 hlatest2 hfinal1 hfinal2 hbase1 hbase2
+      hchan2 hpre hmid hεbound hlatest1 hlatest2 hfinal1 hfinal2 hbase1 hbase2
   · have hswap := latest_round_keeps_status_two_ordered hbounds hne.symm hC2 hC1 hall2
-      hchan2 hall1 hchan1 hdur2 hdur1 hpre hmid hεbound hlatest2 hlatest1 hfinal2 hfinal1 hbase2
+      hchan2 hall1 hchan1 hpre hmid hεbound hlatest2 hlatest1 hfinal2 hfinal1 hbase2
       hbase1
     exact ⟨hswap.2, hswap.1⟩
 
@@ -1675,9 +1665,9 @@ theorem latest_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat 
       hpost.now_le
   have hεbound1 : net'.chain.now < n1.chain.now + T.ε :=
     lt_of_lt_of_le hεbound (Nat.add_le_add_right hpre.now_le T.ε)
-  have hbase1 := latest_round_keeps_status_nil_prelanding hbounds ⟨hc, hp⟩ hdur
+  have hbase1 := latest_round_keeps_status_nil_prelanding hbounds ⟨⟨hc, hp⟩, hdur⟩
     (D := net'.chain.now) hpre hmono0 hεbound hlatest hfinal hbase
-  have hland := land_own_challenge_transitions_status ⟨hc, hp⟩ hall hchan hdur hεbound1 hmono0 hbase1
+  have hland := land_own_challenge_transitions_status ⟨⟨hc, hp⟩, hdur⟩ hall hchan hεbound1 hmono0 hbase1
   have hεbound' : net'.chain.now <
       (n1.applyAdv apps (.land (Op.challenge c [ss] ss.state))).chain.now + T.ε :=
     lt_of_lt_of_le hεbound1
@@ -2018,13 +2008,11 @@ theorem latest_state_finalizable (apps : Apps E) {p : Participant} (T : Threat E
     wait. The strategy plays only that reaction and one wait, so it is a
     strategy in any `allowed` that admits both (`hreact`, `hwait`). -/
 theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Threat E p)
-    {allowed : HonestMove E → Prop}
-    (A : Assumptions apps p T) (net : NetworkState E p)
+    {allowed : HonestMove E → Prop} (A : Assumptions apps p T) (net : NetworkState E p)
     (_hr : (Nitro.participant apps T).Reachable net)
     (c1 c2 : FixedPart) (ss1 ss2 : SignedState E) (hne : c1 ≠ c2)
-    (hC1 : ConsensusMember apps p c1) (hC2 : ConsensusMember apps p c2)
-    (hh1 : net.Holds ss1) (hh2 : net.Holds ss2)
-    (hall1 : ss1.ByAll) (hall2 : ss2.ByAll)
+    (hC1 : TimedConsensusMember apps p T.ε c1) (hC2 : TimedConsensusMember apps p T.ε c2)
+    (hh1 : net.Holds ss1) (hh2 : net.Holds ss2) (hall1 : ss1.ByAll) (hall2 : ss2.ByAll)
     (hchan1 : ss1.state.channel = c1) (hchan2 : ss2.state.channel = c2)
     (hlatest1 : ∀ t ∈ net.sent, t.state.channel = c1 →
       t.state.turnNum < ss1.state.turnNum ∨ t.state = ss1.state)
@@ -2034,7 +2022,6 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
       t.state.outcome = ss1.state.outcome)
     (hfinal2 : ∀ t ∈ net.sent, t.state.channel = c2 → t.state.isFinal = true →
       t.state.outcome = ss2.state.outcome)
-    (hdur1 : 2 * T.ε ≤ c1.challengeDuration) (hdur2 : 2 * T.ε ≤ c2.challengeDuration)
     (hst1 : (∃ t, net.chain.statusOf c1 = .open t ∧ t ≤ ss1.state.turnNum) ∨
       (∃ t ch, net.chain.statusOf c1 = .challenged t ch ∧
         (t < ss1.state.turnNum ∨ ch.state = ss1.state) ∧ net.chain.now + T.ε ≤ ch.deadline))
@@ -2098,11 +2085,13 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
     · show (net3.applyHonest (.wait (max d1 d2 - net2.chain.now))).Finalized c1 ss1.state.outcome
       show (net3.chain.tick (max d1 d2 - net2.chain.now)).finalizedWith c1.address =
         some ss1.state.outcome
-      exact wait_resolves_challenge A.toBounds hC1 hle1 hdw1 hlatest1' hfinal1' hseq2 hb1'
+      exact wait_resolves_challenge A.toBounds hC1.toConsensusMember hle1 hdw1 hlatest1' hfinal1'
+        hseq2 hb1'
     · show (net3.applyHonest (.wait (max d1 d2 - net2.chain.now))).Finalized c2 ss2.state.outcome
       show (net3.chain.tick (max d1 d2 - net2.chain.now)).finalizedWith c2.address =
         some ss2.state.outcome
-      exact wait_resolves_challenge A.toBounds hC2 hle2 hdw2 hlatest2' hfinal2' hseq2 hb2'
+      exact wait_resolves_challenge A.toBounds hC2.toConsensusMember hle2 hdw2 hlatest2' hfinal2'
+        hseq2 hb2'
   have hfeasR : Reaction.Feasible net
       ⟨[Op.challenge c1 [ss1] ss1.state, Op.challenge c2 [ss2] ss2.state], []⟩ := by
     intro op hop
@@ -2130,7 +2119,7 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
     · exact Or.inr (Or.inl ho)
     · exact Or.inr (Or.inr ⟨t, ch, hstt, hlt, lt_of_lt_of_le hεbound hdd⟩)
   have hinv := latest_round_keeps_status_two A.toBounds hne hC1 hC2 hall1 hchan1 hall2
-    hchan2 hdur1 hdur2 net.chain.now rfl hseq hεbound hlatest1 hlatest2 hfinal1 hfinal2 hbase1
+    hchan2 net.chain.now rfl hseq hεbound hlatest1 hlatest2 hfinal1 hfinal2 hbase1
     hbase2
   obtain ⟨hinv1, hinv2⟩ := hinv
   have hb1 : net1.chain.finalizedWith c1.address = some ss1.state.outcome ∨
@@ -2165,8 +2154,7 @@ theorem latest_state_finalizable_two (apps : Apps E) {p : Participant} (T : Thre
     `hsent`'s `isFinal = false`. Used by `late_round_keeps_status`. -/
 theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E}
-    (hC : ConsensusMember apps p c)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) :
+    (hC : TimedConsensusMember apps p T.ε c) :
     ∀ {net net' : NetworkState E p} {t : Time}, Threat.RoundSeq apps T t [] net net' →
       net'.chain.now < net.chain.now + T.ε →
       (∀ t0 ∈ net.sent, t0.state.channel = c →
@@ -2244,7 +2232,7 @@ theorem late_round_keeps_status_nil {apps : Apps E} {p : Participant} {T : Threa
               refine Or.inr ⟨cand.turnNum,
                 Challenge.mk cand (n.chain.now + c.challengeDuration), hnew, by omega, ?_⟩
               have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-              have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+              have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
               exact lt_of_lt_of_le hεb (Nat.add_le_add_left hge n.chain.now)
             · exfalso
               rw [Adjudicator.mode_eq, ho] at hmo
@@ -2464,9 +2452,8 @@ theorem late_round_keeps_status_nil_prelanding {apps : Apps E} {p : Participant}
     second one. -/
 theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E}
-    (hC : ConsensusMember apps p c) (hall : ss.ByAll)
-    (hchan : ss.state.channel = c) (hdur : 2 * T.ε ≤ c.challengeDuration)
-    {net net' : NetworkState E p} (t : Time) (ht : t = net.chain.now)
+    (hC : TimedConsensusMember apps p T.ε c) (hall : ss.ByAll)
+    (hchan : ss.state.channel = c) {net net' : NetworkState E p} (t : Time) (ht : t = net.chain.now)
     (hseq : Threat.RoundSeq apps T t [Op.checkpoint c [ss] ss.state] net net') :
     net'.chain.now < net.chain.now + T.ε →
     (∀ t0 ∈ net.sent, t0.state.channel = c →
@@ -2487,8 +2474,8 @@ theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E 
     lt_of_lt_of_le hεbound (Nat.add_le_add_right hpre.now_le T.ε)
   have hcdbound : net'.chain.now < net.chain.now + c.challengeDuration :=
     lt_of_lt_of_le hεbound (Nat.add_le_add_left
-      (le_trans (by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε) hdur) net.chain.now)
-  have hbase1 := late_round_keeps_status_nil_prelanding hbounds hC
+      (le_trans (by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε) hC.timed) net.chain.now)
+  have hbase1 := late_round_keeps_status_nil_prelanding hbounds hC.toConsensusMember
     (D := net'.chain.now) hpre hmono0 hcdbound hsent hbase
   have hbase_land :
       (∃ T0, (n1.applyAdv apps (.land (Op.checkpoint c [ss] ss.state))).chain.statusOf c =
@@ -2563,7 +2550,7 @@ theorem late_round_keeps_status {apps : Apps E} {p : Participant} {T : Threat E 
       (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state) ∧
         t0.state.isFinal = false := by
     rw [NetworkState.applyAdv_sent, hpre.sent_eq]; exact hsent
-  exact late_round_keeps_status_nil hbounds hC hdur hpost hεbound' hsent_land hbase_land
+  exact late_round_keeps_status_nil hbounds hC hpost hεbound' hsent_land hbase_land
 
 /-- ForceMove-B05. ForceMove:1511-1529: "as long as Alice notices Bob's challenge within
     the timeout period, she cannot hurt her position by playing on as though
@@ -2597,7 +2584,7 @@ theorem late_observer_can_checkpoint (apps : Apps E) {p : Participant} (T : Thre
       (∃ t ch, net.chain.statusOf c = .challenged t ch ∧
         (t < ss.state.turnNum ∨ ch.state = ss.state) ∧ net1.chain.now < ch.deadline) :=
     Or.inr ⟨t, ch, hst, Or.inl hgt, lt_of_lt_of_le hεbound hnow⟩
-  have hinv := late_round_keeps_status A.toBounds ⟨hc, hp⟩ hall hchan hdur net.chain.now rfl hseq
+  have hinv := late_round_keeps_status A.toBounds ⟨⟨hc, hp⟩, hdur⟩ hall hchan net.chain.now rfl hseq
     hεbound hsent hbase
   rcases hinv with ⟨t1, hopen1, hle1⟩ | ⟨t1, ch1, hchal1, hle1, hdd1⟩
   · apply UnbeatableIn.done
@@ -3927,8 +3914,8 @@ theorem finalizable_funded_pays (apps : Apps E) {p : Participant} (T : Threat E 
     of the block that both theorems carried in full (`verification.md` §6a). -/
 theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω1 Ω2 : Outcome E}
-    (hC : ConsensusMember apps p c) (hΩ1 : ss.state.outcome = Ω1)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) {net1 net2 : NetworkState E p} {m : AdvMove E}
+    (hC : TimedConsensusMember apps p T.ε c) (hΩ1 : ss.state.outcome = Ω1)
+    {net1 net2 : NetworkState E p} {m : AdvMove E}
     (hfeas : T.feasible net1 m) (hnotick : ∀ dt, m ≠ .tick dt) (hnoland : ∀ op, m ≠ .land op)
     (hεbound : net2.chain.now < net1.chain.now + T.ε)
     (hnow : (net1.applyAdv apps m).chain.now ≤ net2.chain.now)
@@ -4005,7 +3992,7 @@ theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat 
         (hbounds.unforgeable net1 caller (.challenge c proof cand) hfeas' u hmem).1 hsig
     obtain ⟨hcl1, -⟩ := hsupp proof cand hUl hs
     have hself0 : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-    have hpos : 0 < c.challengeDuration := lt_of_lt_of_le T.ε_pos (le_trans hself0 hdur)
+    have hpos : 0 < c.challengeDuration := lt_of_lt_of_le T.ε_pos (le_trans hself0 hC.timed)
     refine Or.inr (Or.inr ⟨?_, cand.turnNum,
       ⟨cand, net1.chain.now + c.challengeDuration⟩, ?_, ?_⟩)
     · (simp? [FixedPart.address_eq, Adjudicator.finalizedWith_channel,
@@ -4022,7 +4009,7 @@ theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat 
           · exact (hsafe2 (Or.inl (by rw [heq]; exact hΩ1))).elim
           · exact (hsafe2 (Or.inr hΩ2')).elim
         · have hself : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-          have hge : T.ε ≤ c.challengeDuration := le_trans hself hdur
+          have hge : T.ε ≤ c.challengeDuration := le_trans hself hC.timed
           exact lt_of_lt_of_le hεbound (Nat.add_le_add_left hge net1.chain.now)
   have step : ConsensusSafe c ss Ω1 Ω2 net1 net2 →
       ConsensusSafe c ss Ω1 Ω2 (net1.applyAdv apps m) net2 := by
@@ -4458,8 +4445,7 @@ theorem consensus_round_safe_core {apps : Apps E} {p : Participant} {T : Threat 
     checkpoint call lands, and after. -/
 theorem consensus_round_safe_nil {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω1 Ω2 : Outcome E}
-    (hC : ConsensusMember apps p c) (hΩ1 : ss.state.outcome = Ω1)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) :
+    (hC : TimedConsensusMember apps p T.ε c) (hΩ1 : ss.state.outcome = Ω1) :
     ∀ {net net' : NetworkState E p} {t : Time}, Threat.RoundSeq apps T t [] net net' →
       net'.chain.now < net.chain.now + T.ε →
       (∀ t0 ∈ net.sent, t0.state.channel = c →
@@ -4542,7 +4528,7 @@ theorem consensus_round_safe_nil {apps : Apps E} {p : Participant} {T : Threat E
   | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     intro hεbound hsent hbase
     obtain ⟨hεbound', hsent', hbase'⟩ :=
-      consensus_round_safe_core hbounds hC hΩ1 hdur hfeas hnotick hnoland hεbound hrest.now_le hsent hbase
+      consensus_round_safe_core hbounds hC hΩ1 hfeas hnotick hnoland hεbound hrest.now_le hsent hbase
     exact ih hpnil hεbound' hsent' hbase'
 
 /-- Over a round that lands `p`'s one pending call, `ConsensusSafe` is
@@ -4565,9 +4551,8 @@ theorem consensus_round_safe_nil {apps : Apps E} {p : Participant} {T : Threat E
     `consensus_enabled_outcomes`. -/
 theorem consensus_round_safe {apps : Apps E} {p : Participant} {T : Threat E p}
     (hbounds : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω1 Ω2 : Outcome E}
-    (hC : ConsensusMember apps p c) (hΩ1 : ss.state.outcome = Ω1)
-    (hdur : 2 * T.ε ≤ c.challengeDuration) {net net' : NetworkState E p} (t : Time)
-    (ht : t = net.chain.now)
+    (hC : TimedConsensusMember apps p T.ε c) (hΩ1 : ss.state.outcome = Ω1)
+    {net net' : NetworkState E p} (t : Time) (ht : t = net.chain.now)
     (hseq : Threat.RoundSeq apps T t [Op.checkpoint c [ss] ss.state] net net') :
     net'.chain.now < net.chain.now + T.ε →
     (∀ t0 ∈ net.sent, t0.state.channel = c →
@@ -4608,7 +4593,7 @@ theorem consensus_round_safe {apps : Apps E} {p : Participant} {T : Threat E p}
             (t0.state.turnNum < ss.state.turnNum ∨ t0.state = ss.state ∨ t0.state.outcome = Ω2) ∧
             (t0.state.isFinal = true → t0.state.outcome = Ω1 ∨ t0.state.outcome = Ω2) := by
           rw [NetworkState.applyAdv_sent]; exact hsent
-        exact consensus_round_safe_nil hbounds hC hΩ1 hdur hrest hεbound' hsent_land hbase_land
+        exact consensus_round_safe_nil hbounds hC hΩ1 hrest hεbound' hsent_land hbase_land
       · (simp? at hsplit says simp only [List.nil_append, List.cons.injEq, List.nil_eq, reduceCtorEq, and_false] at hsplit)
     · (simp? at hsplit says simp only [List.cons_append, List.cons.injEq, List.nil_eq, List.append_eq_nil_iff, reduceCtorEq, and_false] at hsplit)
   | @tick pending net1 net2 dt hfeas hgate hrest ih =>
@@ -4682,7 +4667,7 @@ theorem consensus_round_safe {apps : Apps E} {p : Participant} {T : Threat E p}
   | @other pending net1 net2 m hfeas hnotick hnoland hrest ih =>
     intro hεbound hsent hbase
     obtain ⟨hεbound', hsent', hbase'⟩ :=
-      consensus_round_safe_core hbounds hC hΩ1 hdur hfeas hnotick hnoland hεbound hrest.now_le hsent hbase
+      consensus_round_safe_core hbounds hC hΩ1 hfeas hnotick hnoland hεbound hrest.now_le hsent hbase
     exact ih heq hεbound' hsent' hbase'
 /-- `ConsensusSafe` without the risky "stale but not yet expired" challenged
     sub-case: finalized with `Ω1`/`Ω2`, open, or challenged with an
@@ -4957,7 +4942,7 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
           (t.state.isFinal = true → t.state.outcome = Ω1 ∨ t.state.outcome = Ω2) := by
         rw [hsentEq]; exact hsent
       have hsafe2 : ConsensusSafe c ss Ω1 Ω2 n2 n2 :=
-        consensus_round_safe A.toBounds ⟨hc, hp⟩ hΩ1 hdur n1'.chain.now rfl hseq hεbound hsentNow
+        consensus_round_safe A.toBounds ⟨⟨hc, hp⟩, hdur⟩ hΩ1 n1'.chain.now rfl hseq hεbound hsentNow
           hsafeStart
       have hturn : ss.state.turnNum ≤ (n2.chain.statusOf c).turnNumRecord ∨
           ∃ Ω, n2.chain.finalizedWith c.address = some Ω :=
@@ -4996,7 +4981,7 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
       (t.state.isFinal = true → t.state.outcome = Ω1 ∨ t.state.outcome = Ω2) := by
     rw [hsentEq]; exact hsent
   have hsafe2 : ConsensusSafe c ss Ω1 Ω2 n2 n2 :=
-    consensus_round_safe A.toBounds ⟨hc, hp⟩ hΩ1 hdur n1.chain.now rfl hseq hεbound hsentNow
+    consensus_round_safe A.toBounds ⟨⟨hc, hp⟩, hdur⟩ hΩ1 n1.chain.now rfl hseq hεbound hsentNow
       hsafeStart
   have hfin' : n2.chain.finalizedWith c.address = some Ω := hfin
   rcases hsafe2 with h1 | h2 | ⟨hfz, -⟩
@@ -7286,9 +7271,8 @@ theorem open_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adj
     touched only in balance, never in status: `Op.targets`'s `transfer`
     case reads only the transfer's own source channel). -/
 theorem channel_stays_open_round {apps : Apps E} {p : Participant} {T : Threat E p}
-    (hbounds : Bounds apps p T) {c2 : FixedPart}
-    (hC2 : ConsensusMember apps p c2)
-    (hdur2 : 2 * T.ε ≤ c2.challengeDuration) {D v0now : Time} (hD : D ≤ v0now + 2 * T.ε) :
+    (hbounds : Bounds apps p T) {c2 : FixedPart} (hC2 : TimedConsensusMember apps p T.ε c2)
+    {D v0now : Time} (hD : D ≤ v0now + 2 * T.ε) :
     ∀ {net net' : NetworkState E p} {t : Time} {pending : List (Op E)},
       Threat.RoundSeq apps T t pending net net' →
       (∀ op ∈ pending, ¬ Op.targets op c2) →
@@ -7438,12 +7422,12 @@ theorem channel_stays_open_round {apps : Apps E} {p : Participant} {T : Threat E
               have hsnow : s'.now = net1.chain.now := by rw [hsucc]; rfl
               have hge : D ≤ net1.chain.now + c'.challengeDuration :=
                 le_trans (le_trans hD (Nat.add_le_add_right hlo (2 * T.ε)))
-                  (Nat.add_le_add_left hdur2 net1.chain.now)
+                  (Nat.add_le_add_left hC2.timed net1.chain.now)
               refine ⟨?_, ?_⟩
               · rw [FixedPart.address_eq, Adjudicator.finalOutcome_channel, hsnow, hsucc,
                   Adjudicator.statusOf_setStatus, if_pos rfl]
                 have hself0 : T.ε ≤ 2 * T.ε := by rw [Nat.two_mul]; exact Nat.le_add_left T.ε T.ε
-                have hpos : 0 < c'.challengeDuration := lt_of_lt_of_le T.ε_pos (le_trans hself0 hdur2)
+                have hpos : 0 < c'.challengeDuration := lt_of_lt_of_le T.ε_pos (le_trans hself0 hC2.timed)
                 have hndz : ¬ net1.chain.now + c'.challengeDuration ≤ net1.chain.now :=
                   not_le.mpr (Nat.lt_add_of_pos_right hpos)
                 simp only [ChannelStatus.finalOutcome, if_neg hndz]
@@ -8089,11 +8073,11 @@ theorem ledger_partial_withdrawal (apps : Apps E) (Ts : Threats E apps) (v : Vie
       have hb2 : n2.chain.now < (v p).chain.now + 2 * (Ts.T p).ε := by
         rw [Nat.two_mul, ← Nat.add_assoc]
         exact lt_of_lt_of_le hε2 (Nat.add_le_add_right (le_of_lt hε1) _)
-      obtain ⟨hfo1, hfl1, hs1⟩ := channel_stays_open_round (Ts.ok p).toBounds ⟨hL'c, hp'⟩
-        (hdur p).2 (D := (v p).chain.now + 2 * (Ts.T p).ε) (v0now := (v p).chain.now) le_rfl
+      obtain ⟨hfo1, hfl1, hs1⟩ := channel_stays_open_round (Ts.ok p).toBounds ⟨⟨hL'c, hp'⟩, (hdur p).2⟩
+        (D := (v p).chain.now + 2 * (Ts.T p).ε) (v0now := (v p).chain.now) le_rfl
         hseq1 (by (simpa? [Op.targets] using hLL' says simpa only [List.mem_cons, List.not_mem_nil, or_false, Op.targets, forall_eq, ne_eq] using hLL')) (by (simp? says simp only [List.mem_cons, List.not_mem_nil, or_false, ne_eq, forall_eq, reduceCtorEq, not_false_eq_true, implies_true])) hb1 le_rfl (hL'open p)
         (hpend p).2 (hL'sent p)
-      exact (channel_stays_open_round (Ts.ok p).toBounds ⟨hL'c, hp'⟩ (hdur p).2
+      exact (channel_stays_open_round (Ts.ok p).toBounds ⟨⟨hL'c, hp'⟩, (hdur p).2⟩
         (D := (v p).chain.now + 2 * (Ts.T p).ε) (v0now := (v p).chain.now) le_rfl hseq2
         (by (simpa? [Op.targets] using hLL' says simpa only [FixedPart.address_eq, List.mem_cons, List.not_mem_nil, or_false, Op.targets, forall_eq, ne_eq] using hLL')) (by (simp? says simp only [FixedPart.address_eq, List.mem_cons, List.not_mem_nil, or_false, ne_eq, forall_eq, reduceCtorEq, not_false_eq_true, implies_true])) hb2 hseq1.now_le hfo1 hfl1 hs1).1
     have hU := conclude_transfer_pays apps (Ts.T p) (Ts.ok p) (v p) hLk hp hh hproof hΩ
@@ -11515,12 +11499,12 @@ theorem satp_intermediary_before_round2 (apps : Apps E) {P : Participant} (T : T
     · exact Or.inr ⟨t, ch, hstt, hlt, hpend.2 t ch hstt⟩
   -- One reaction challenges both ledgers; both finalize with the latest states.
   have hU := latest_state_finalizable_two (allowed := fun _ => True) apps T A net hnr Lm Lp ssm
-    ssp hne ⟨hcm, hPLm⟩ ⟨hcp, hPLp⟩
+    ssp hne ⟨⟨hcm, hPLm⟩, hdur.1⟩ ⟨⟨hcp, hPLp⟩, hdur.2⟩
     hhm hhp hallm hallp hchm hchp (fun t ht hc => (hsentm t ht hc).1)
     (fun t ht hc => (hsentp t ht hc).1)
     (fun t ht hc hfin => by rw [(hsentm t ht hc).2] at hfin; cases hfin)
     (fun t ht hc hfin => by rw [(hsentp t ht hc).2] at hfin; cases hfin)
-    hdur.1 hdur.2 hst1 hst2 trivial (fun _ => trivial)
+    hst1 hst2 trivial (fun _ => trivial)
   rw [houtm, houtp] at hU
   -- Every chain step keeps the credit invariant, from the start to the goal.
   have hI0 : LedgerPairInv Lm Lp om op r.V.address (r.dest P)
@@ -12443,11 +12427,11 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
   have hLpV : Lp ≠ r.V := hLV i Lp hLp
   have hU1 := latest_state_finalizable_two
     (allowed := fun m => (∀ op ∈ m.calls, ¬ Op.targets op r.V) ∧ m.NoSend) apps T A net.state
-    net.reachable Lm Lp ssm ssp hne ⟨hcm, hPLm⟩ ⟨hcp, hPLp⟩ hhm hhp hallm hallp hchm hchp
+    net.reachable Lm Lp ssm ssp hne ⟨⟨hcm, hPLm⟩, hdurLm⟩ ⟨⟨hcp, hPLp⟩, hdurLp⟩ hhm hhp hallm hallp hchm hchp
     (fun t ht hc => (hsentm t ht hc).1) (fun t ht hc => (hsentp t ht hc).1)
     (fun t ht hc hfin => by rw [(hsentm t ht hc).2] at hfin; cases hfin)
     (fun t ht hc hfin => by rw [(hsentp t ht hc).2] at hfin; cases hfin)
-    hdurLm hdurLp hst1 hst2
+    hst1 hst2
     ⟨fun op hop => by
       simp only [HonestMove.calls, List.mem_cons, List.not_mem_nil, or_false] at hop
       rcases hop with rfl | rfl
