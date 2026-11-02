@@ -1806,3 +1806,5 @@
 {"type":"comment","timestamp":"2026-11-02T06:29:44.818011Z","issue_id":"aln-eeb","payload":{"body":"gate-verdict: f5374cb5c81d03fbccb4cf400ce50b5288d453e2 passed 0.2.1+61ee397b","build":"0.2.1+61ee397b","outcome":"passed","sha":"f5374cb5c81d03fbccb4cf400ce50b5288d453e2","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T06:29:44.842200Z","issue_id":"aln-eeb","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T06:29:44.851602Z","issue_id":"aln-eeb","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"comment","timestamp":"2026-11-02T06:30:06.023540Z","issue_id":"aln-185","payload":{"base_sha":"8ea3550998b073015d7299d99082d8a1136294ba","body":"base-sha: 8ea3550998b073015d7299d99082d8a1136294ba","verdict_kind":"base_sha"}}
+{"type":"comment","timestamp":"2026-11-02T06:30:06.058415Z","issue_id":"aln-185","payload":{"body":"preserved-work: worker/aln-185 (captured uncommitted worker changes as 698c962b5429)"}}

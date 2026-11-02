@@ -1,0 +1,314 @@
+{
+  "id": "derived-aln-8ab",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. type_lint reports no layerDiscipline finding for pool_preimageOf_consistent. The statement of pool_preimageOf_consistent does not change.\nWhat holds now? Describe the current, observed state. At integrated, scripts/type_lint.lean prints a layerDiscipline finding with declaration pool_preimageOf_consistent.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and `lake env lean scripts/type_lint.lean` through /home/rix/bin/lean-run; read the JSON lines by their linter and declaration fields.\nWhat constraints apply? State them in plain prose. No spec statement changes; scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes up to 1500 seconds. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) pool_preimageOf_consistent",
+  "restatement": "Fix the layerDiscipline linter false-positive for the declaration pool_preimageOf_consistent, without changing the statement of pool_preimageOf_consistent or any other spec statement. After the fix, running the type_lint.lean script against the built project must no longer emit a layerDiscipline finding naming pool_preimageOf_consistent, while scripts/check.sh --json must continue to report signatures_ok true and keep every _ok field true relative to scripts/gate-baseline.json, within the existing time budget, and without ever invoking a bare lake clean.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "After the fix, lake env lean scripts/type_lint.lean must report no layerDiscipline finding whose declaration field is pool_preimageOf_consistent."
+    },
+    {
+      "id": "c2",
+      "text": "The statement of pool_preimageOf_consistent must not change."
+    },
+    {
+      "id": "c3",
+      "text": "No other spec statement changes as part of this fix."
+    },
+    {
+      "id": "c4",
+      "text": "scripts/check.sh --json must report signatures_ok true."
+    },
+    {
+      "id": "c5",
+      "text": "scripts/check.sh --json must keep every _ok field true against scripts/gate-baseline.json."
+    },
+    {
+      "id": "c6",
+      "text": "A full run of the acceptance checks must complete within 1500 seconds."
+    },
+    {
+      "id": "c7",
+      "text": "A bare lake clean must never be run as part of reproducing or verifying this fix."
+    }
+  ],
+  "goal": "Make a code-quality checker stop flagging a particular proof as breaking a layering rule, without actually changing what that proof claims, and without breaking any other checks that are already passing.",
+  "acceptance_criteria": [
+    "After running the project's type linter, there should be no reported layerDiscipline issue that points at the declaration pool_preimageOf_consistent.",
+    "Someone searches the codebase for the theorem named pool_preimageOf_consistent and prints out its exact statement (the part before ':= by' or the proof body). The check confirms the statement text still matches the known, approved wording.",
+    "After the fix is applied, everything in AGENTS.md outside the 'Acceptance' section (the rules about lake clean, forbidden commands, Lean style, and commit practice) must read exactly the same as before \u2014 only the Acceptance section itself may have changed.",
+    "Running the project's check script in JSON mode shows that the signatures check passed (signatures_ok is true).",
+    "Running the project's check script with --json should show that every field ending in _ok is true, matching or beating the baseline recorded in scripts/gate-baseline.json.",
+    "Running the full set of acceptance checks finishes within 25 minutes (1500 seconds) of being started.",
+    "Checks that the project's build/verification scripts never call 'lake clean' by itself, since doing so would wipe out the shared Mathlib build used by every worktree."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After running the project's type linter, there should be no reported layerDiscipline issue that points at the declaration pool_preimageOf_consistent."
+    },
+    {
+      "id": "c2",
+      "text": "Someone searches the codebase for the theorem named pool_preimageOf_consistent and prints out its exact statement (the part before ':= by' or the proof body). The check confirms the statement text still matches the known, approved wording."
+    },
+    {
+      "id": "c3",
+      "text": "After the fix is applied, everything in AGENTS.md outside the 'Acceptance' section (the rules about lake clean, forbidden commands, Lean style, and commit practice) must read exactly the same as before \u2014 only the Acceptance section itself may have changed."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script in JSON mode shows that the signatures check passed (signatures_ok is true)."
+    },
+    {
+      "id": "c5",
+      "text": "Running the project's check script with --json should show that every field ending in _ok is true, matching or beating the baseline recorded in scripts/gate-baseline.json."
+    },
+    {
+      "id": "c6",
+      "text": "Running the full set of acceptance checks finishes within 25 minutes (1500 seconds) of being started."
+    },
+    {
+      "id": "c7",
+      "text": "Checks that the project's build/verification scripts never call 'lake clean' by itself, since doing so would wipe out the shared Mathlib build used by every worktree."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After running the project's type linter, there should be no reported layerDiscipline issue that points at the declaration pool_preimageOf_consistent.",
+      "proves": "The fix removes the layerDiscipline linter finding for pool_preimageOf_consistent",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_type_lint_check.py",
+        "args": [
+          "pool_preimageOf_consistent"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "found_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Someone searches the codebase for the theorem named pool_preimageOf_consistent and prints out its exact statement (the part before ':= by' or the proof body). The check confirms the statement text still matches the known, approved wording.",
+      "proves": "Confirms the formal statement of pool_preimageOf_consistent has not been altered from its agreed wording, even if its proof changes.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_pool_preimageOf_consistent_statement.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "statement_hash",
+          "op": "eq",
+          "value": "EXPECTED_STATEMENT_HASH_PLACEHOLDER"
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c2"
+    },
+    {
+      "description": "After the fix is applied, everything in AGENTS.md outside the 'Acceptance' section (the rules about lake clean, forbidden commands, Lean style, and commit practice) must read exactly the same as before \u2014 only the Acceptance section itself may have changed.",
+      "proves": "Confirms the fix did not alter any other guidance in the spec document; only the Acceptance clause was touched.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_agents_unchanged.py",
+        "args": [
+          "AGENTS.md"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "non_acceptance_nonblank_line_count",
+          "op": "eq",
+          "value": 14
+        },
+        {
+          "observe": "stdout_json",
+          "field": "has_never_run_bare_clean_line",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "has_forbidden_line",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "has_lean_style_line",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "has_commits_line",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script in JSON mode shows that the signatures check passed (signatures_ok is true).",
+      "proves": "The check.sh --json output reports signatures_ok true, satisfying the acceptance criterion for signatures.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Running the project's check script with --json should show that every field ending in _ok is true, matching or beating the baseline recorded in scripts/gate-baseline.json.",
+      "proves": "scripts/check.sh --json reports all _ok fields as true, satisfying the acceptance gate against the baseline.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_gate.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c5"
+    },
+    {
+      "description": "Running the full set of acceptance checks finishes within 25 minutes (1500 seconds) of being started.",
+      "proves": "The acceptance check suite completes within the required 1500 second time budget.",
+      "restatement_clause_id": "c6",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/time_acceptance_run.py",
+        "args": [
+          "--cmd",
+          "lean-run scripts/check.sh --json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "elapsed_seconds",
+          "op": "le",
+          "value": 1500
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1600,
+      "clause_id": "c6"
+    },
+    {
+      "description": "Checks that the project's build/verification scripts never call 'lake clean' by itself, since doing so would wipe out the shared Mathlib build used by every worktree.",
+      "proves": "Confirms the fix's reproduction/verification steps comply with the rule that a bare 'lake clean' must never be run.",
+      "restatement_clause_id": "c7",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "scripts/check.sh"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_found",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 30,
+      "clause_id": "c7"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_agents_unchanged.py",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_pool_preimageOf_consistent_statement.py",
+    "scripts/run_check_gate.py",
+    "scripts/run_type_lint_check.py",
+    "scripts/time_acceptance_run.py"
+  ]
+}
