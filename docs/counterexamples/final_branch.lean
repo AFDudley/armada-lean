@@ -1,8 +1,9 @@
 /-
-  Failure test: both Nitro-24 statements, with the premise `hpend`, when the
-  honest participant may sign a final state and a non-final state at one
-  turn (Nitro:653-658; `Spec.finalizable_or_two_enabled`,
-  `Spec.single_enabled_is_finalizable`).
+  Failure test: the rule `HonestSend.oneState` (an honest participant signs
+  at most one state per turn number of a channel; Main's decision of
+  2026-11-02) is needed for both Nitro-24 statements (Nitro:653-658). Without
+  it, the honest participant may sign a final state and a non-final state at
+  one turn, and both statements fail with the premise `hpend`.
 
   The app is go-nitro's payment app `SingleAssetPayments.sol` on a two-party
   channel, as in `pending_deadline.lean`: a ForceMove app (`forceMoveRules
@@ -11,7 +12,7 @@
   own-violation. The channel `c0` has the participants `[q0, p0]`, so `q0`
   moves at even turns and `p0` at odd turns (`n = 2`), and `ε = 2`.
 
-  The history (`net_reachable`): the setup states `r0` (turn 0, `q0`) and `s1`
+  The history: the setup states `r0` (turn 0, `q0`) and `s1`
   (turn 1, `p0`) carry `OC = pay 5 5`. `q0` keeps `OC` at turn 2 (`r2`). At
   turn 3 `p0` signs two states with `OC`: `sF`, a final state (the graceful
   end, ForceMove:887-888), and `s3`, a non-final state. `q0` keeps `OC` at
@@ -33,10 +34,13 @@
     with `[s5, r6]` (`OA`, turn 6), and no move by the rules gives `p0` its 5
     coins back. For every other outcome: the adversary concludes with `OC`.
 
-  So `p0` has no finalizable outcome and exactly one enabled outcome. The
-  cause is the two states of `p0` at turn 3. The rule of ForceMove that a
-  participant never signs two different states with one turn number
-  (`HonestSend`, one state per turn) excludes this history.
+  So `p0` has no finalizable outcome and exactly one enabled outcome
+  (`one_enabled_none_finalizable`), and every premise of both statements but
+  reachability holds (`appsS_desirable`, `net_supports`, `net_deadlineAfter`).
+  The cause is the two states of `p0` at turn 3. Before the rule, the history
+  was reachable, and this file refuted `Spec.finalizable_or_two_enabled` and
+  `Spec.single_enabled_is_finalizable` (commit `40e75719`). The rule excludes
+  the history (`net_not_honest`). It binds the honest participant only.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/final_branch.lean`.
@@ -366,13 +370,6 @@ theorem holds_sent {n : NetworkState Nat p0} {s : SignedState Nat} (hs : s ∈ n
   ⟨fun q hq => .inl ⟨by rw [hsig] at hq; exact List.mem_singleton.1 hq, s, hs, rfl⟩,
     fun v h => by rw [hv] at h; cases h⟩
 
-/-- A delivery of a state that only `q0` signed, with no own-violation of
-    `q0` against `received`. -/
-theorem deliver_ok {n : NetworkState Nat p0} {k : Nat} {o : Outcome Nat}
-    (h : ¬ OwnViolation destS q0 n.received ⟨st k o, [q0]⟩) :
-    (AdvMove.deliver ⟨st k o, [q0]⟩).NoOwnViolation destS n := fun q hq _ => by
-  rw [List.mem_singleton.1 hq]; exact h
-
 /-- Two held states, in a list. -/
 theorem holds_two {n : NetworkState Nat p0} {a b : SignedState Nat} (ha : n.Holds a) (hb : n.Holds b) :
     ∀ ss ∈ [a, b], n.Holds ss := by
@@ -391,38 +388,13 @@ theorem moved {n : NetworkState Nat p0} {a : SignedState Nat} {s : State Nat} (h
   · exact .inl ha
   · exact .inr rfl
 
-theorem net_reachable : (Nitro.participant appsS TN).Reachable net := by
-  refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
-  refine .tail (b := ⟨Adjudicator.genesis, [r4, r2, r0], [s5, s3, sF, s1]⟩) ?_
-    (Or.inr (Or.inr (Or.inl ⟨.deliver r6, ⟨unforged_q, deliver_ok (by decide)⟩,
-      fun op h => (by cases h), rfl⟩)))
-  refine .tail (b := ⟨Adjudicator.genesis, [r4, r2, r0], [s3, sF, s1]⟩) ?_ (Or.inl ⟨.send (st 5 OA),
-    (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
-      HonestSend.fundsCommitted_of_fundable (by decide), fun _ => ⟨⟨[s3, r4], st 4 OC,
-        holds_two (holds_sent (by decide) rfl rfl) (holds_of_mem_received (by decide)), by decide,
-        rfl, rfl⟩, [r4, s5], moved (holds_of_mem_received (by decide)), by decide⟩⟩, rfl⟩)
-  refine .tail (b := ⟨Adjudicator.genesis, [r2, r0], [s3, sF, s1]⟩) ?_
-    (Or.inr (Or.inr (Or.inl ⟨.deliver r4, ⟨unforged_q, deliver_ok (by decide)⟩,
-      fun op h => (by cases h), rfl⟩)))
-  refine .tail (b := ⟨Adjudicator.genesis, [r2, r0], [sF, s1]⟩) ?_ (Or.inl ⟨.send (st 3 OC),
-    (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
-      HonestSend.fundsCommitted_of_fundable (by decide), fun _ => ⟨⟨[s1, r2], st 2 OC,
-        holds_two (holds_sent (by decide) rfl rfl) (holds_of_mem_received (by decide)), by decide,
-        rfl, rfl⟩, [r2, s3], moved (holds_of_mem_received (by decide)), by decide⟩⟩, rfl⟩)
-  refine .tail (b := ⟨Adjudicator.genesis, [r2, r0], [s1]⟩) ?_ (Or.inl ⟨.send stF,
-    (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
-      HonestSend.fundsCommitted_of_fundable (by decide), fun _ => ⟨⟨[s1, r2], st 2 OC,
-        holds_two (holds_sent (by decide) rfl rfl) (holds_of_mem_received (by decide)), by decide,
-        rfl, rfl⟩, [r2, sF], moved (holds_of_mem_received (by decide)), by decide⟩⟩, rfl⟩)
-  refine .tail (b := ⟨Adjudicator.genesis, [r0], [s1]⟩) ?_
-    (Or.inr (Or.inr (Or.inl ⟨.deliver r2, ⟨unforged_q, deliver_ok (by decide)⟩,
-      fun op h => (by cases h), rfl⟩)))
-  refine .tail (b := ⟨Adjudicator.genesis, [r0], []⟩) ?_ (Or.inl ⟨.send (st 1 OC),
-    (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
-      HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩, rfl⟩)
-  exact .tail .refl
-    (Or.inr (Or.inr (Or.inl ⟨.deliver r0, ⟨unforged_q, deliver_ok (by decide)⟩,
-      fun op h => (by cases h), rfl⟩)))
+/-- The rule `HonestSend.oneState` excludes `net`: `p0` signed `sF` and `s3`,
+    two different states at turn 3. Without the rule, `net` is reachable by
+    the history of this file's header (commit `40e75719`, where this file
+    refutes both Spec statements). -/
+theorem net_not_honest : ¬ (Nitro.participant appsS TN).Reachable net := fun h =>
+  (Nitro.participant_sent_honest ⟨net, h⟩ sF (show sF ∈ net.sent by decide)).oneState
+    ⟨s3, show s3 ∈ net.sent by decide, rfl, rfl, by decide⟩
 
 theorem net_status : net.chain.statusOf c0 = .open 0 := by decide
 
@@ -1129,7 +1101,7 @@ theorem send_feasible {X : Outcome Nat} (hX : Sacr X) {n : NetworkState Nat p0} 
     ⟨fun ⟨s, hs, _, hslot, hne⟩ => ?_, ?_, ?_, fun _ => ⟨⟨[s5, r6], st 6 OA,
       holds_two (holds_sent hI.s5in rfl rfl) (holds_of_mem_received hI.r6in),
       by show (appsS c0.appDef).supports c0 [s5, r6] (st 6 OA) = true; decide, rfl, rfl⟩,
-      [r6, s7 X], moved (holds_of_mem_received hI.r6in), supports_P hX⟩⟩
+      [r6, s7 X], moved (holds_of_mem_received hI.r6in), supports_P hX⟩, fun ⟨s, hs, _, htn, hne⟩ => ?_⟩
   · rcases List.mem_cons.1 hs with rfl | hs
     · exact hne rfl
     · rcases hI.sentOK s hs with rfl | rfl | rfl | rfl | rfl
@@ -1140,6 +1112,14 @@ theorem send_feasible {X : Outcome Nat} (hX : Sacr X) {n : NetworkState Nat p0} 
       · exact hne rfl
   · rcases hX.cases with rfl | rfl <;> decide
   · rcases hX.cases with rfl | rfl <;> exact HonestSend.fundsCommitted_of_fundable (by decide)
+  · rcases List.mem_cons.1 hs with rfl | hs
+    · exact hne rfl
+    · rcases hI.sentOK s hs with rfl | rfl | rfl | rfl | rfl
+      · exact absurd htn (by show (st 1 OC).turnNum ≠ (st 7 OC).turnNum; decide)
+      · exact absurd htn (by show stF.turnNum ≠ (st 7 OC).turnNum; decide)
+      · exact absurd htn (by show (st 3 OC).turnNum ≠ (st 7 OC).turnNum; decide)
+      · exact absurd htn (by show (st 5 OA).turnNum ≠ (st 7 OC).turnNum; decide)
+      · exact hne rfl
 
 theorem counter_feasible {X : Outcome Nat} {n : NetworkState Nat p0} (hr : r6 ∈ n.received)
     (hs : s7 X ∈ n.sent) : (HonestMove.chain (opP X)).Feasible appsS n := by
@@ -1418,45 +1398,44 @@ theorem prevents_other {Ω : Outcome Nat} (hC : Ω ≠ OC) :
     | round _ hr ih => exact (roundP hX hC hXΩ ih hr).2
   exact ⟨σP (sacr Ω), σP_feasible _, fun n1 n2 hr hround => (roundP hX hC hXΩ (hrun hr) hround).1⟩
 
-/-! ## The two statements fail -/
+/-! ## The game at `net`
+
+At `net`, `OC` is the one enabled outcome and no outcome is finalizable,
+while every premise of both statements but reachability holds: the app is
+a desirable ForceMove app, `p0` holds a support of every state it signed,
+and no challenge is running. Only the rule `HonestSend.oneState` excludes
+`net` (`net_not_honest`). -/
 
 theorem not_finalizable (Ω : Outcome Nat) : ¬ Finalizable appsS TN c0 Ω net := by
   by_cases h : Ω = OC
   · subst h; exact not_finalizable_OC
   · exact not_finalizable_other h
 
-theorem holds_r0s1 : ∀ ss ∈ [r0, s1], net.Holds ss :=
-  holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl)
+/-- `p0` holds a support of every state of `c0` that it signed. -/
+theorem net_supports : ∀ t ∈ net.sent, t.state.channel = c0 →
+    ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧ (appsS c0.appDef).supports c0 proof t.state = true := by
+  intro t ht _
+  simp only [net, List.mem_cons, List.not_mem_nil, or_false] at ht
+  rcases ht with rfl | rfl | rfl | rfl
+  · exact ⟨[r4, s5], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
+      by decide⟩
+  · exact ⟨[r2, s3], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
+      by decide⟩
+  · exact ⟨[r2, sF], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
+      by decide⟩
+  · exact ⟨[r0, s1], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
+      by decide⟩
 
-theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
-  intro h
-  rcases h appsS T0 A0 destS ⟨net, net_reachable⟩ tc0 (Or.inl ⟨vtS, rfl⟩) appsS_desirable
-      (by decide) ⟨[r0, s1], st 1 OC, holds_r0s1, by decide, rfl⟩ net_deadlineAfter with
-    ⟨Ω, hΩ⟩ | ⟨Ω1, Ω2, hne, hE1, hE2⟩
-  · exact not_finalizable Ω hΩ
-  · by_cases h1 : Ω1 = OC
-    · exact hE2 (prevents_other (fun h2 => hne (h1.trans h2.symm)))
-    · exact hE1 (prevents_other h1)
-
-theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Nat) := by
-  intro h
-  refine not_finalizable OC (h appsS T0 A0 destS ⟨net, net_reachable⟩ tc0 (Or.inl ⟨vtS, rfl⟩)
-    appsS_desirable (by decide) (fun t ht _ => ?_) net_deadlineAfter OC enabled_OC (fun Ω' hE => ?_))
-  · simp only [net, List.mem_cons, List.not_mem_nil, or_false] at ht
-    rcases ht with rfl | rfl | rfl | rfl
-    · exact ⟨[r4, s5], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
-        by decide⟩
-    · exact ⟨[r2, s3], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
-        by decide⟩
-    · exact ⟨[r2, sF], holds_two (holds_of_mem_received (by decide)) (holds_sent (by decide) rfl rfl),
-        by decide⟩
-    · exact ⟨[r0, s1], holds_r0s1, by decide⟩
-  · by_contra hne
-    exact hE (prevents_other hne)
+/-- At `net`, `OC` is the one enabled outcome, and no outcome is
+    finalizable. -/
+theorem one_enabled_none_finalizable :
+    Enabled appsS TN c0 OC net ∧ (∀ Ω, Enabled appsS TN c0 Ω net → Ω = OC) ∧
+      ∀ Ω, ¬ Finalizable appsS TN c0 Ω net :=
+  ⟨enabled_OC, fun _ hE => by_contra fun hne => hE (prevents_other hne), not_finalizable⟩
 
 #print axioms appsS_desirable
-#print axioms net_reachable
-#print axioms finalizable_or_two_enabled_false
-#print axioms single_enabled_is_finalizable_false
+#print axioms net_not_honest
+#print axioms net_supports
+#print axioms one_enabled_none_finalizable
 
 end ArmadaLean.Nitro.CounterexampleFinalBranch

@@ -382,7 +382,7 @@ theorem net_reachable : (Nitro.participant appsS TN).Reachable net := by
   refine .tail (b := ⟨sCh, [r2, r0, s1, r0], [s1]⟩) ?_ (Or.inl ⟨.send (st 3 OA),
     (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
       HonestSend.fundsCommitted_of_fundable (by decide), fun _ => ⟨⟨[s1, r2], st 2 OC, ?_, by decide,
-        rfl, rfl⟩, [r2, s3], ?_, by decide⟩⟩, rfl⟩)
+        rfl, rfl⟩, [r2, s3], ?_, by decide⟩, by decide⟩, rfl⟩)
   rotate_left
   · intro ss hss
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hss
@@ -408,7 +408,7 @@ theorem net_reachable : (Nitro.participant appsS TN).Reachable net := by
     · exact unforged_sent (n := ⟨Adjudicator.genesis, [r0], [s1]⟩) (List.mem_singleton_self _)
   refine .tail (b := ⟨Adjudicator.genesis, [r0], []⟩) ?_ (Or.inl ⟨.send (st 1 OC),
     (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
-      HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩, rfl⟩)
+      HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide⟩, rfl⟩)
   exact .tail .refl
     (Or.inr (Or.inr (Or.inl ⟨.deliver r0, ⟨unforged_q, deliver_ok (by decide)⟩,
       fun op h => (by cases h), rfl⟩)))
@@ -1072,7 +1072,7 @@ theorem send_feasible {X : Outcome Nat} (hX : Sacr X) {n : NetworkState Nat p0} 
   refine (HonestMove.Feasible_send appsS n (st 5 X)).mpr
     ⟨fun ⟨s, hs, _, hslot, hne⟩ => ?_, ?_, ?_, fun _ => ⟨⟨[s3, r4], st 4 OA, fun ss hss => ?_,
       by show (appsS c0.appDef).supports c0 [s3, r4] (st 4 OA) = true; decide, rfl, rfl⟩,
-      [r4, s5 X], fun ss hss => ?_, supports_P hX⟩⟩
+      [r4, s5 X], fun ss hss => ?_, supports_P hX⟩, fun ⟨s, hs, _, htn, hne⟩ => ?_⟩
   · rcases List.mem_cons.1 hs with rfl | hs
     · exact hne rfl
     · rcases hI.sentOK s hs with rfl | rfl | rfl
@@ -1090,6 +1090,12 @@ theorem send_feasible {X : Outcome Nat} (hX : Sacr X) {n : NetworkState Nat p0} 
     rcases hss with rfl | rfl
     · exact .inl (holds_of_mem_received hI.r4in)
     · exact .inr rfl
+  · rcases List.mem_cons.1 hs with rfl | hs
+    · exact hne rfl
+    · rcases hI.sentOK s hs with rfl | rfl | rfl
+      · exact absurd htn (by show (st 1 OC).turnNum ≠ (st 5 OC).turnNum; decide)
+      · exact absurd htn (by show (st 3 OA).turnNum ≠ (st 5 OC).turnNum; decide)
+      · exact hne rfl
 
 theorem counter_feasible {X : Outcome Nat} {n : NetworkState Nat p0} (hr : r4 ∈ n.received)
     (hs : s5 X ∈ n.sent) : (HonestMove.chain (opP X)).Feasible appsS n := by

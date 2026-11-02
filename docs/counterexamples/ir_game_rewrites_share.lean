@@ -145,7 +145,7 @@ theorem unforged_r0 (n : NetworkState Bool p0) : n.Unforged r0 :=
 theorem send_feasible :
     (HonestMove.send (st 1 O1)).Feasible appsB (⟨Adjudicator.genesis, [r0], []⟩ : NetworkState Bool p0) :=
   (HonestMove.Feasible_send _ _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide⟩
 
 theorem net1_reachable : (Nitro.participant appsB T0).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
@@ -773,7 +773,8 @@ def XInfo (n : NetworkState Bool p0) (t : Nat) (ch : Challenge Bool) : Prop :=
     odd turn. -/
 def SentOK (n : NetworkState Bool p0) : Prop :=
   ∀ s ∈ n.sent, s.state.channel = c0 →
-    s.state.outcome = O1 ∧ s.state.isFinal = false ∧ s.state.turnNum % 2 = 1
+    s.state.outcome = O1 ∧ s.state.isFinal = false ∧ s.state.turnNum % 2 = 1 ∧
+      s.state = st s.state.turnNum O1
 
 /-- A support of `c0` with unforged states and an outcome other than `O1`:
     its candidate is a non-final move of `q0` at an even turn from 2 on. -/
@@ -999,7 +1000,7 @@ theorem send_ansP_feasible {n : NetworkState Bool p0} {t : Nat} {ch : Challenge 
   obtain ⟨ht, he, -, hf, hc, ⟨x, hx, hxs, hxq⟩, hsup⟩ := hinfo
   refine (HonestMove.Feasible_send appsB n (ansP t)).mpr
     ⟨fun ⟨s, hs, hc, _, hne⟩ => ?_, ?_, ?_, fun _ => ⟨hsup, [x, ⟨ansP t, [p0]⟩], fun ss hss => ?_,
-      supports_ansP hxs hxq ⟨ht, he, hf, hc⟩⟩⟩
+      supports_ansP hxs hxq ⟨ht, he, hf, hc⟩⟩, fun ⟨s, hs, hc, htn, hne⟩ => ?_⟩
   · rcases List.mem_cons.1 hs with rfl | hs
     · exact hne rfl
     · exact hne (hS s hs hc).1
@@ -1010,6 +1011,9 @@ theorem send_ansP_feasible {n : NetworkState Bool p0} {t : Nat} {ch : Challenge 
     rcases hss with rfl | rfl
     · exact .inl (holds_of_mem_received hx)
     · exact .inr rfl
+  · rcases List.mem_cons.1 hs with rfl | hs
+    · exact hne rfl
+    · exact hne (by rw [(hS s hs hc).2.2.2, htn]; rfl)
 
 theorem holds_ansP {n : NetworkState Bool p0} {t : Nat} (h : ∃ s ∈ n.sent, s.state = ansP t) :
     n.Holds ⟨ansP t, [p0]⟩ := by
@@ -1144,7 +1148,7 @@ theorem roundX {B : Outcome Bool → Prop} (hX : ¬ B O1) {n0 n' : NetworkState 
     · rcases hsent s hs with hs | ⟨t0, ch0, h0, hx0, rfl⟩
       · rw [hK.sent] at hs; exact hI0.sentOK s hs hc
       · have he := (hI0.timing t0 ch0 h0 hx0).1.2.1
-        exact ⟨rfl, rfl, by simp only [ansP, st]; omega⟩
+        exact ⟨rfl, rfl, by simp only [ansP, st]; omega, rfl⟩
     · rw [hchain.1]; exact hK.noFin t f o
     · rw [hchain.1] at hc
       obtain ⟨hinfo, hor⟩ := hK.chX t ch hc hx
@@ -1233,7 +1237,7 @@ theorem prevents_bad (B : Outcome Bool → Prop) (hX : ¬ B O1) :
       fun t f o h => (by simp [net1, Adjudicator.genesis, Adjudicator.statusOf] at h),
       fun t ch h => (by simp [net1, Adjudicator.genesis, Adjudicator.statusOf] at h)⟩
     · rw [List.mem_singleton.1 hx]; exact unforged_r0 _
-    · rw [List.mem_singleton.1 hs]; exact ⟨rfl, rfl, rfl⟩
+    · rw [List.mem_singleton.1 hs]; exact ⟨rfl, rfl, rfl, rfl⟩
   have hrun : ∀ {n1}, Run appsB T0 (σX B) net1 n1 → InvX B n1 := by
     intro n1 h
     induction h with

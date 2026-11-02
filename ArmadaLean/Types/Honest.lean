@@ -45,6 +45,13 @@
     state). Signing a state with no support that it holds is the
     defender-side own-violation. The setup states (turns below the funding
     point) are excepted, as the protocol defines them (ForceMove:1092-1125).
+  * `oneState` (Main's decision, 2026-11-02): the participant signs at most
+    one state per turn number of a channel. Re-signing the identical state is
+    allowed. This is ForceMove's rule that a participant never signs two
+    different states with the same turn number. Without it, a final state
+    and a non-final state at one turn break Nitro-24
+    (`docs/counterexamples/final_branch.lean`). The rule binds the honest
+    participant only; the adversary may sign two states at one turn.
 
   The type takes the signer's record as three arguments, not a
   `NetworkState`: `Strategy.lean` (which defines `NetworkState`) imports this
@@ -89,6 +96,15 @@ instance (o : Allocation E) : Decidable o.GuaranteesExternal :=
 abbrev HonestSend.FundsCommitted (prefundHeld : FixedPart → Prop) (st : State E) : Prop :=
   ∀ V : FixedPart, V.kind = .virtual → st.outcome.entries.find V.address ≠ none → prefundHeld V
 
+/-- The rule `HonestSend.oneState` fails: `signed` holds another state of the
+    channel of `st` at the turn of `st`. -/
+def HonestSend.TwoAtTurn (signed : List (SignedState E)) (st : State E) : Prop :=
+  ∃ s ∈ signed, s.state.channel = st.channel ∧ s.state.turnNum = st.turnNum ∧ s.state ≠ st
+
+instance (signed : List (SignedState E)) (st : State E) :
+    Decidable (HonestSend.TwoAtTurn signed st) :=
+  inferInstanceAs (Decidable (∃ s ∈ signed, _))
+
 /-- **The signing rules for one state `st` that the honest participant
     sends.** `signed` is every state the participant has signed, `st`'s own
     send included. `prefundHeld V` says that the participant holds an
@@ -116,6 +132,10 @@ structure HonestSend (signed : List (SignedState E)) (prefundHeld : FixedPart �
       before, which it holds (ForceMove:744-778; operator ruling
       2026-11-02). -/
   movesFrom : st.channel.n ≤ st.turnNum → canMove st
+  /-- The participant signs at most one state per turn number of a channel
+      (ForceMove: a participant never signs two different states with the
+      same turn number; Main's decision 2026-11-02). -/
+  oneState : ¬ HonestSend.TwoAtTurn signed st
 
 namespace HonestSend
 
@@ -136,27 +156,33 @@ theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Pro
     (hcover : ∀ s ∈ signed, s.state = st ∨ ∃ s' ∈ prior, s'.state = s.state) :
     HonestSend signed held sup st := by
   refine ⟨fun ⟨s, hs, hc, hslot, hne⟩ => ?_, hst.guaranteesExternal,
-    fun V hV hf => (hst.fundsCommitted V hV hf).elim, hst.movesFrom⟩
-  rcases hcover s hs with h | ⟨s', hs', heq⟩
-  · exact hne (by rw [h])
-  · rw [← heq] at hc hslot hne
-    exact hne (hst.outcome_eq s' hs' hc hslot)
+    fun V hV hf => (hst.fundsCommitted V hV hf).elim, hst.movesFrom,
+    fun ⟨s, hs, hc, ht, hne⟩ => ?_⟩
+  · rcases hcover s hs with h | ⟨s', hs', heq⟩
+    · exact hne (by rw [h])
+    · rw [← heq] at hc hslot hne
+      exact hne (hst.outcome_eq s' hs' hc hslot)
+  · rcases hcover s hs with h | ⟨s', hs', heq⟩
+    · exact hne h
+    · rw [← heq] at hc ht hne
+      exact hst.oneState ⟨s', hs', hc, ht, hne⟩
 
 end HonestSend
 
 namespace HonestSend
 
 /-- The rules survive a smaller signed record and larger sets of held
-    pre-fund states and of possible moves: `noConflict` reads `signed` only
-    under `∃`, and `fundsCommitted` and `movesFrom` conclude `prefundHeld`
-    and `canMove`. -/
+    pre-fund states and of possible moves: `noConflict` and `oneState` read
+    `signed` only under `∃`, and `fundsCommitted` and `movesFrom` conclude
+    `prefundHeld` and `canMove`. -/
 theorem mono {signed signed' : List (SignedState E)} {held held' : FixedPart → Prop}
     {sup sup' : State E → Prop}
     {st : State E} (hsigned : ∀ s ∈ signed', s ∈ signed) (hheld : ∀ V, held V → held' V)
     (hsup : ∀ s, sup s → sup' s)
     (h : HonestSend signed held sup st) : HonestSend signed' held' sup' st :=
   ⟨fun ⟨s, hs, hrest⟩ => h.noConflict ⟨s, hsigned s hs, hrest⟩, h.guaranteesExternal,
-    fun V hV hf => hheld V (h.fundsCommitted V hV hf), fun hn => hsup _ (h.movesFrom hn)⟩
+    fun V hV hf => hheld V (h.fundsCommitted V hV hf), fun hn => hsup _ (h.movesFrom hn),
+    fun ⟨s, hs, hrest⟩ => h.oneState ⟨s, hsigned s hs, hrest⟩⟩
 
 /-- A state whose allocation names no virtual channel (every destination is
     `Address.fundable`: external, or a ledger channel) funds no virtual

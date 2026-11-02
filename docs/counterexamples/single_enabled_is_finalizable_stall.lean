@@ -153,7 +153,7 @@ theorem unforged_stF {n : NetworkState Unit p0} (hs : ∃ s ∈ n.sent, s.state 
 theorem send_feasible :
     (HonestMove.send stF).Feasible appsΩ (⟨Adjudicator.genesis, [ssQ], []⟩ : NetworkState Unit p0) :=
   (HonestMove.Feasible_send _ _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide⟩
 
 theorem net1_reachable : (Nitro.participant appsΩ T0).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
