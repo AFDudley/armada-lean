@@ -140,29 +140,22 @@ theorem deposit_respects_funding_order (apps : Apps E) (s : ReachableState (Nitr
     o.paidTo (s'.balances.get c.address) e.dest = e.amount ∧
     (∀ j f, k < j → o[j]? = some f → o.paidTo (s'.balances.get c.address) f.dest = 0) := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
-  rw [Adjudicator.apply_deposit_equation] at h
-  by_cases hpre : s.DepositPre c.address (o.aheadOf k)
-  · rw [dif_pos hpre] at h
-    simp only [Option.some.injEq] at h
-    have he0 : s.balances.get c.address = o.aheadOf k := hpre.2.2
-    have hb : s'.balances = s.balances.add c.address e.amount := by
-      rw [← h]; (simp? [Adjudicator.depositEffect] says simp only [Adjudicator.depositEffect, FixedPart.address_eq])
-    have hs' : s'.balances.get c.address = o.aheadOf k + e.amount := by
-      rw [hb]; (simp? at he0 ⊢ says simp only [FixedPart.address_eq, Balances.get_add, ↓reduceIte, Nat.add_right_cancel_iff] at he0 ⊢); rw [he0]
-    have hk := Allocation.total_take_succ he
-    unfold Allocation.aheadOf at he0 hs' ⊢
-    refine ⟨he0, hs', fun j f hj hf => ?_, ?_, fun j f hj hf => ?_⟩
-    · have h1 := Allocation.total_take_succ hf
-      have h2 := Allocation.total_take_mono o (show j + 1 ≤ k by omega)
-      rw [he0, hs', Allocation.paidTo_of_getElem? hdedup hf, Allocation.paidTo_of_getElem? hdedup hf]
-      (grind? says grind only [= min_def, #1b03, #946b, #360f, #6f2e, #8a6f])
-    · rw [hs', Allocation.paidTo_of_getElem? hdedup he]
-      (grind? says grind only [= min_def, #e527])
-    · have h2 := Allocation.total_take_mono o (show k + 1 ≤ j by omega)
-      rw [hs', Allocation.paidTo_of_getElem? hdedup hf]
-      (grind? says grind only [= min_def, #946b, #8a6f])
-  · rw [dif_neg hpre] at h
-    exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+  rw [Adjudicator.apply_deposit] at h
+  obtain ⟨-, he0, hb, -⟩ := Adjudicator.deposit_some h
+  have hs' : s'.balances.get c.address = o.aheadOf k + e.amount := by
+    rw [hb]; (simp? at he0 ⊢ says simp only [FixedPart.address_eq, Balances.get_add, ↓reduceIte, Nat.add_right_cancel_iff] at he0 ⊢); rw [he0]
+  have hk := Allocation.total_take_succ he
+  unfold Allocation.aheadOf at he0 hs' ⊢
+  refine ⟨he0, hs', fun j f hj hf => ?_, ?_, fun j f hj hf => ?_⟩
+  · have h1 := Allocation.total_take_succ hf
+    have h2 := Allocation.total_take_mono o (show j + 1 ≤ k by omega)
+    rw [he0, hs', Allocation.paidTo_of_getElem? hdedup hf, Allocation.paidTo_of_getElem? hdedup hf]
+    (grind? says grind only [= min_def, #1b03, #946b, #360f, #6f2e, #8a6f])
+  · rw [hs', Allocation.paidTo_of_getElem? hdedup he]
+    (grind? says grind only [= min_def, #e527])
+  · have h2 := Allocation.total_take_mono o (show k + 1 ≤ j by omega)
+    rw [hs', Allocation.paidTo_of_getElem? hdedup hf]
+    (grind? says grind only [= min_def, #946b, #8a6f])
 
 /-- ForceMove-C01, docs-0060-02. Deposits made in the order of the
     pre-funding outcome, each with `expectedHeld` equal to the allocations
@@ -353,41 +346,7 @@ theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps))
       s'.held + (if b.isExternal then x else 0) = s.state.held ∧ s'.now = s.state.now := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
   have hheld := (Adjudicator.inv_reachable hr).held
-  classical
-  have heq : s.transfer a b =
-      (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
-    Adjudicator.apply_transfer_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ a b s
-  rw [heq] at h
-  by_cases hpre : s.TransferPre a b
-  swap
-  · rw [dif_neg hpre] at h; cases h
-  rw [dif_pos hpre] at h
-  have hs'eq : s' = s.transferEffect b ⟨a, hpre⟩ := (Option.some.inj h).symm
-  obtain ⟨o, ho⟩ := Option.isSome_iff_exists.1 hpre.2.2
-  have hget : (s.transferSource? a b).get hpre.2.2 = o := by (simp? [ho] says simp only [ho, Option.get_some])
-  have ho2 := ho
-  unfold Adjudicator.transferSource? at ho2
-  have hf : s.finalOutcome a.address = some (.allocation o) := by
-    split at ho2
-    · rename_i hf'
-      split at ho2
-      · cases ho2; exact hf'
-      · cases ho2
-    · cases ho2
-  set x := o.paidTo (s.balances.get a.address) b with hx
-  have hb : s'.balances = (s.balances.add b x).sub a.address x := by
-    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
-    (simp? [hx] says simp only [FixedPart.address_eq, Adjudicator.payTo_balances, Adjudicator.setStatus_balances, hx])
-  have hh : s'.held = (if b.isExternal then s.held - x else s.held) := by
-    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
-    (simp? [hx] says simp only [FixedPart.address_eq, Adjudicator.payTo_held, Adjudicator.setStatus_held, hx])
-  have hs : s'.status = (s.setStatus a ((s.statusOf a).withOutcome
-      (.allocation (o.reduceOwed b x)))).status := by
-    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
-    (simp? [hx] says simp only [FixedPart.address_eq, Adjudicator.payTo_status, hx])
-  have hn : s'.now = s.now := by
-    rw [hs'eq]; unfold Adjudicator.transferEffect; rw [hget]
-    (simp? says simp only [FixedPart.address_eq, Adjudicator.payTo_now, Adjudicator.setStatus_now])
+  obtain ⟨o, -, x, hf, -, hx, hb, hh, hs, hn, -, -⟩ := Adjudicator.transfer_some h
   have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
   have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
     (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
@@ -399,8 +358,8 @@ theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps))
   · (simp? [Adjudicator.statusOf_of_status hs, hn] says simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Adjudicator.statusOf_of_status hs, Adjudicator.statusOf_setStatus, ↓reduceIte, hn, ChannelStatus.finalOutcome_withOutcome])
   · rw [hh]
     split
-    · (simp_all? says simp_all only [↓reduceDIte, Option.get_some, FixedPart.address_eq, Adjudicator.finalOutcome_channel, ↓reduceIte]); (grind? says grind only)
-    · (simp_all? says simp_all only [↓reduceDIte, Option.get_some, FixedPart.address_eq, Adjudicator.finalOutcome_channel, Bool.false_eq_true, ↓reduceIte, Bool.not_eq_true, add_zero])
+    · (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, ↓reduceIte]); (grind? says grind only)
+    · (simp_all? says simp_all only [FixedPart.address_eq, Adjudicator.finalOutcome_channel, Bool.false_eq_true, ↓reduceIte, Bool.not_eq_true, add_zero])
 
 /-- Nitro-28. The reduction of an owed amount is exact. -/
 theorem reduceOwed_owed (o : Allocation E) (d : Address E) (x : Coins) :
@@ -445,28 +404,11 @@ theorem transfer_fails_otherwise (s : Adjudicator E) (a : FixedPart) (b : Addres
     (h : ∀ o, s.finalOutcome a.address = some (.allocation o) →
       ∀ amt, o.find b ≠ some ⟨b, .alloc amt⟩) :
     s.transfer a b = none := by
-  classical
-  have heq : s.transfer a b =
-      (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
-    Adjudicator.apply_transfer_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ a b s
-  rw [heq]
-  by_cases hpre : s.TransferPre a b
-  · rw [dif_pos hpre]
-    exfalso
-    obtain ⟨o, ho⟩ := Option.isSome_iff_exists.1 hpre.2.2
-    have ho2 := ho
-    unfold Adjudicator.transferSource? at ho2
-    split at ho2
-    · rename_i hf'
-      split at ho2
-      · rename_i d amt hfind
-        cases ho2
-        have hd : d = b := Allocation.find_dest hfind
-        subst hd
-        exact absurd hfind (h o hf' amt)
-      · cases ho2
-    · cases ho2
-  · rw [dif_neg hpre]
+  cases ht : s.transfer a b with
+  | none => rfl
+  | some s' =>
+    obtain ⟨o, amt, -, hf, hfind, -⟩ := Adjudicator.transfer_some ht
+    exact absurd hfind (h o hf amt)
 
 /-- Nitro-29. When `a` affords nothing for `b`, the transfer moves no coins.
     Every balance reads the same; the list itself can change (`add b 0`
@@ -493,24 +435,7 @@ theorem transfer_zero_moves_nothing (s : Adjudicator E) (a : FixedPart) (b : Add
     succeeds only on a finalized channel. -/
 theorem transfer_requires_finalized (s : Adjudicator E) (a : FixedPart) (b : Address E)
     (s' : Adjudicator E) (h : s.transfer a b = some s') : s.mode a = .finalized := by
-  classical
-  have heq : s.transfer a b =
-      (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
-    Adjudicator.apply_transfer_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ a b s
-  rw [heq] at h
-  by_cases hpre : s.TransferPre a b
-  swap
-  · rw [dif_neg hpre] at h; cases h
-  obtain ⟨o, ho⟩ := Option.isSome_iff_exists.1 hpre.2.2
-  have ho2 := ho
-  unfold Adjudicator.transferSource? at ho2
-  have hf : s.finalOutcome a.address = some (.allocation o) := by
-    split at ho2
-    · rename_i hf'
-      split at ho2
-      · cases ho2; exact hf'
-      · cases ho2
-    · cases ho2
+  obtain ⟨o, -, -, hf, -⟩ := Adjudicator.transfer_some h
   rw [Adjudicator.mode_eq, ChannelStatus.mode_eq_finalized_iff]
   simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
   (simp? [hf] says simp only [hf, Option.isSome_some])
@@ -625,16 +550,7 @@ theorem challenge_requires (apps : Apps E) (s : Adjudicator E) (challenger : Par
     (apps c.appDef).supports c proof candidate = true ∧ candidate.channel = c ∧
     ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ candidate.turnNum) ∨
      (s.mode c = .challenge ∧ (s.statusOf c).turnNumRecord < candidate.turnNum)) := by
-  classical
-  have heq : s.challenge apps challenger c proof candidate =
-      (if h : s.ChallengePre apps challenger c proof candidate then
-        some (s.challengeEffect apps challenger c proof ⟨candidate, h⟩) else none) :=
-    Adjudicator.apply_challenge_equation apps challenger c proof candidate s
-  have hpre : s.ChallengePre apps challenger c proof candidate := by
-    by_contra hn
-    rw [heq, dif_neg hn] at h
-    cases h
-  exact hpre
+  exact (Adjudicator.challenge_some h).1
 
 omit [DecidableEq E] in
 /-- SATP-14. go-nitro ForceMove.sol:52-54 and SATP:303: a challenge on a
@@ -642,15 +558,11 @@ omit [DecidableEq E] in
 theorem challenge_fails_when_finalized (apps : Apps E) (s : Adjudicator E) (challenger : Participant)
     (c : FixedPart) (proof : SupportProof E) (candidate : State E) (hf : s.mode c = .finalized) :
     s.challenge apps challenger c proof candidate = none := by
-  classical
-  have heq : s.challenge apps challenger c proof candidate =
-      (if h : s.ChallengePre apps challenger c proof candidate then
-        some (s.challengeEffect apps challenger c proof ⟨candidate, h⟩) else none) :=
-    Adjudicator.apply_challenge_equation apps challenger c proof candidate s
-  rw [heq]
-  apply dif_neg
-  rintro ⟨-, -, -, hm⟩
-  rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
+  cases hc : s.challenge apps challenger c proof candidate with
+  | none => rfl
+  | some s' =>
+    obtain ⟨⟨-, -, -, hm⟩, -⟩ := Adjudicator.challenge_some hc
+    rcases hm with ⟨hm, -⟩ | ⟨hm, -⟩ <;> rw [hm] at hf <;> cases hf
 
 omit [DecidableEq E] in
 /-- SATP-14. go-nitro ForceMove.sol:48-50 `_requireIncreasedTurnNumber`: a
@@ -716,16 +628,7 @@ theorem checkpoint_requires (apps : Apps E) (s : Adjudicator E) (c : FixedPart) 
     (candidate : State E) (s' : Adjudicator E) (h : s.checkpoint apps c proof candidate = some s') :
     s.mode c ≠ .finalized ∧ (apps c.appDef).supports c proof candidate = true ∧
     candidate.channel = c ∧ (s.statusOf c).turnNumRecord < candidate.turnNum := by
-  classical
-  have heq : s.checkpoint apps c proof candidate =
-      (if hp : s.CheckpointPre apps c proof candidate then
-        some (s.checkpointEffect apps c proof ⟨candidate, hp⟩) else none) :=
-    Adjudicator.apply_checkpoint_equation apps ⟨0⟩ c proof candidate s
-  have hpre : s.CheckpointPre apps c proof candidate := by
-    by_contra hcon
-    rw [heq, dif_neg hcon] at h
-    exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
-  exact hpre
+  exact (Adjudicator.checkpoint_some h).1
 
 omit [DecidableEq E] in
 /-- ForceMove-A18, ForceMove-B04, ForceMove-A21, docs-0070-10. go-nitro
@@ -793,15 +696,7 @@ omit [DecidableEq E] in
 theorem conclude_requires (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) (s' : Adjudicator E)
     (h : s.conclude c ss = some s') :
     s.mode c ≠ .finalized ∧ ss.state.channel = c ∧ ss.state.isFinal = true ∧ ss.ByAll := by
-  classical
-  have heq : s.conclude c ss =
-      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
-    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
-  have hpre : s.ConcludePre c ss := by
-    by_contra hcon
-    rw [heq, dif_neg hcon] at h
-    cases h
-  exact hpre
+  exact (Adjudicator.conclude_some h).1
 
 omit [DecidableEq E] in
 /-- ForceMove-A09, Nitro-13, SATP-08, SATP-16, docs-0070-01, docs-0020-01.
@@ -812,15 +707,8 @@ omit [DecidableEq E] in
 theorem conclude_needs_all (s : Adjudicator E) (c : FixedPart) (ss : SignedState E) (s' : Adjudicator E)
     (h : s.conclude c ss = some s') (p : Participant) (hp : p ∈ c.participants) :
     p ∈ ss.signers := by
-  classical
-  have heq : s.conclude c ss =
-      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
-    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
-  have hpre : s.ConcludePre c ss := by
-    by_contra hcon
-    rw [heq, dif_neg hcon] at h
-    cases h
-  exact hpre.2.2.2 p (hpre.2.1 ▸ hp)
+  obtain ⟨⟨-, hc, -, hall⟩, -⟩ := Adjudicator.conclude_some h
+  exact hall p (hc ▸ hp)
 
 omit [DecidableEq E] in
 /-- ForceMove-A14, Nitro-13, SATP-16, docs-0070-09. go-nitro
@@ -851,17 +739,8 @@ omit [DecidableEq E] in
 theorem conclude_moves_no_value (s : Adjudicator E) (c : FixedPart) (ss : SignedState E)
     (s' : Adjudicator E) (h : s.conclude c ss = some s') :
     s'.balances = s.balances ∧ s'.held = s.held ∧ s'.now = s.now := by
-  classical
-  have heq : s.conclude c ss =
-      (if h : s.ConcludePre c ss then some (s.concludeEffect c ⟨ss, h⟩) else none) :=
-    Adjudicator.apply_conclude_equation (fun _ => ⟨fun _ _ _ => false⟩) ⟨0⟩ c ss s
-  rw [heq] at h
-  by_cases hpre : s.ConcludePre c ss
-  · rw [dif_pos hpre] at h
-    cases h
-    exact ⟨rfl, rfl, rfl⟩
-  · rw [dif_neg hpre] at h
-    cases h
+  obtain ⟨-, rfl⟩ := Adjudicator.conclude_some h
+  exact ⟨rfl, rfl, rfl⟩
 
 omit [DecidableEq E] in
 /-- ForceMove-B03, ForceMove-D12, Nitro-12, docs-0040-05, docs-0040-06.
