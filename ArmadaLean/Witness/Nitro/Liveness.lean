@@ -9,6 +9,8 @@ import ArmadaLean.Nitro.NonVacuity
 import ArmadaLean.Spec.Nitro.Liveness
 import ArmadaLean.SpecTools
 
+open ArmadaLean.Nitro ArmadaLean.Nitro.NonVacuity
+
 /-- The witness of `ArmadaLean.Nitro.Spec.directly_funded_pays`, from `ArmadaLean.Nitro.NonVacuity.directly_funded_pays.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.directly_funded_pays.witness : spec_premise% ArmadaLean.Nitro.Spec.directly_funded_pays := by
   spec_witness ArmadaLean.Nitro.NonVacuity.directly_funded_pays.nonvacuity
@@ -17,13 +19,24 @@ theorem ArmadaLean.Nitro.Spec.directly_funded_pays.witness : spec_premise% Armad
 theorem ArmadaLean.Nitro.Spec.conclusion_proof_finalizable.witness : spec_premise% ArmadaLean.Nitro.Spec.conclusion_proof_finalizable := by
   spec_witness ArmadaLean.Nitro.NonVacuity.conclusion_proof_finalizable.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.latest_round_keeps_status_nil`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Spec.latest_round_keeps_status_nil`: `c1`
+    under the canonical threat. -/
 theorem ArmadaLean.Nitro.Spec.latest_round_keeps_status_nil.witness : spec_premise% ArmadaLean.Nitro.Spec.latest_round_keeps_status_nil := by
-  sorry
+  refine ⟨Nat, inferInstance, apps0, p0, canon p0, (canon_ok apps0 p0).toBounds, c1, ssF, rfl, by decide, by decide, trivial⟩
 
-/-- The witness of `ArmadaLean.Nitro.Spec.latest_round_keeps_status`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Spec.latest_round_keeps_status`: a round
+    that lands `p0`'s own challenge of `c1` with `ssF`, via
+    `Threat.RoundSeq.landAll`. -/
 theorem ArmadaLean.Nitro.Spec.latest_round_keeps_status.witness : spec_premise% ArmadaLean.Nitro.Spec.latest_round_keeps_status := by
-  sorry
+  obtain ⟨net', hseq, -⟩ := Threat.RoundSeq.landAll apps0 (canon p0) netF.chain.now
+    [Op.challenge c1 [ssF] stF]
+    (fun op hop dt => by
+      simp only [List.mem_singleton] at hop
+      subst hop
+      intro h; cases h)
+    netF
+  refine ⟨Nat, inferInstance, apps0, p0, canon p0, (canon_ok apps0 p0).toBounds, c1, ssF, rfl, by decide,
+    by decide, rfl, by decide, netF, net', netF.chain.now, rfl, hseq, trivial⟩
 
 /-- The witness of `ArmadaLean.Nitro.Spec.latest_state_finalizable`, from `ArmadaLean.Nitro.NonVacuity.latest_state_finalizable.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.latest_state_finalizable.witness : spec_premise% ArmadaLean.Nitro.Spec.latest_state_finalizable := by
@@ -65,17 +78,30 @@ theorem ArmadaLean.Nitro.Spec.finalizable_funded_pays.witness : spec_premise% Ar
 theorem ArmadaLean.Nitro.Spec.consensus_enabled_outcomes.witness : spec_premise% ArmadaLean.Nitro.Spec.consensus_enabled_outcomes := by
   spec_witness ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Threat.RoundSeq.Spec.transfers`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Threat.RoundSeq.Spec.transfers`: the
+    zero-step round of the transfer-only threat. -/
 theorem ArmadaLean.Nitro.Threat.RoundSeq.Spec.transfers.witness : spec_premise% ArmadaLean.Nitro.Threat.RoundSeq.Spec.transfers := by
-  sorry
+  refine ⟨Nat, inferInstance, apps0, p0, turboT p0, 0, turboT_only p0, netF, netF, Threat.RoundSeq.nil, trivial⟩
 
-/-- The witness of `ArmadaLean.Nitro.Threat.Round.Spec.transfer_applyAll`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Threat.Round.Spec.transfer_applyAll`: a
+    one-transfer round, landed with `Threat.RoundSeq.landAll`, whose clock
+    never moves (no call of the round is a `tick`). -/
 theorem ArmadaLean.Nitro.Threat.Round.Spec.transfer_applyAll.witness : spec_premise% ArmadaLean.Nitro.Threat.Round.Spec.transfer_applyAll := by
-  sorry
+  obtain ⟨net', hseq, heq⟩ := Threat.RoundSeq.landAll apps0 (turboT p0) netF.chain.now
+    [Op.transfer c1 d0]
+    (fun op hop dt => by
+      simp only [List.mem_singleton] at hop
+      subst hop
+      intro h; cases h)
+    netF
+  refine ⟨Nat, inferInstance, apps0, p0, turboT p0, turboT_only p0, c1, d0, netF, net', ⟨hseq, ?_⟩, trivial⟩
+  rw [heq]
+  exact Nat.lt_add_of_pos_right (turboT p0).ε_pos
 
-/-- The witness of `ArmadaLean.Nitro.Adjudicator.Ahead.Spec.applyAll_sublist`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Adjudicator.Ahead.Spec.applyAll_sublist`:
+    the empty op list, a sublist of itself. -/
 theorem ArmadaLean.Nitro.Adjudicator.Ahead.Spec.applyAll_sublist.witness : spec_premise% ArmadaLean.Nitro.Adjudicator.Ahead.Spec.applyAll_sublist := by
-  sorry
+  refine ⟨Nat, inferInstance, apps0, [], [], List.Sublist.slnil, fun e he => absurd he List.not_mem_nil, trivial⟩
 
 /-- The witness of `ArmadaLean.Nitro.Spec.turbo_redistribution_unbeatable`, from `ArmadaLean.Nitro.NonVacuity.turbo_redistribution_unbeatable.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.turbo_redistribution_unbeatable.witness : spec_premise% ArmadaLean.Nitro.Spec.turbo_redistribution_unbeatable := by
@@ -89,9 +115,10 @@ theorem ArmadaLean.Nitro.Spec.deposit_bounds_value.witness : spec_premise% Armad
 theorem ArmadaLean.Nitro.Spec.payout_preserves_value.witness : spec_premise% ArmadaLean.Nitro.Spec.payout_preserves_value := by
   spec_witness ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.consensus_channel_stays_open`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Spec.consensus_channel_stays_open`: `c1`
+    under the canonical threat. -/
 theorem ArmadaLean.Nitro.Spec.consensus_channel_stays_open.witness : spec_premise% ArmadaLean.Nitro.Spec.consensus_channel_stays_open := by
-  sorry
+  refine ⟨Nat, inferInstance, apps0, p0, canon p0, (canon_ok apps0 p0).toBounds, c1, rfl, by decide, trivial⟩
 
 /-- The witness of `ArmadaLean.Nitro.Spec.participant_can_prevent_cycles`, from `ArmadaLean.Nitro.NonVacuity.participant_can_prevent_cycles.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.participant_can_prevent_cycles.witness : spec_premise% ArmadaLean.Nitro.Spec.participant_can_prevent_cycles := by
@@ -121,9 +148,20 @@ theorem ArmadaLean.Nitro.Spec.ledger_topup_reorder_safe.witness : spec_premise% 
 theorem ArmadaLean.Nitro.Spec.ledger_topup_deposit_funds.witness : spec_premise% ArmadaLean.Nitro.Spec.ledger_topup_deposit_funds := by
   spec_witness ArmadaLean.Nitro.NonVacuity.ledger_topup_deposit_funds.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.conclude_transfer_pays`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Spec.conclude_transfer_pays`: `netF`'s own
+    conclusion of `c1`, paid to the external `d0`. `x` is external, so
+    `finalOutcome x` is `none` on every state (`Adjudicator.finalOutcome`):
+    `hxopen` needs no further play analysis. -/
 theorem ArmadaLean.Nitro.Spec.conclude_transfer_pays.witness : spec_premise% ArmadaLean.Nitro.Spec.conclude_transfer_pays := by
-  sorry
+  refine ⟨Nat, inferInstance, apps0, p0, canon p0, canon_ok apps0 p0, netF, c1, ssF, o1, d0, 1,
+    rfl, by decide, netF_holds, by decide, rfl,
+    (fun t ht _ _ => by
+      simp only [netF, List.mem_cons, List.not_mem_nil, or_false] at ht
+      subst ht; rfl),
+    by decide, by decide,
+    deadlineAfter_open (by decide : netF.chain.statusOf c1 = .open 0) (canon p0).ε,
+    by decide, by decide, by decide, by decide,
+    (fun _ _ _ _ _ _ => rfl), trivial⟩
 
 /-- The witness of `ArmadaLean.Nitro.Spec.ledger_partial_withdrawal`, from `ArmadaLean.Nitro.NonVacuity.ledger_partial_withdrawal.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.ledger_partial_withdrawal.witness : spec_premise% ArmadaLean.Nitro.Spec.ledger_partial_withdrawal := by
@@ -133,17 +171,19 @@ theorem ArmadaLean.Nitro.Spec.ledger_partial_withdrawal.witness : spec_premise% 
 theorem ArmadaLean.Nitro.Spec.satp_outcome_change_keeps_total.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_outcome_change_keeps_total := by
   spec_witness ArmadaLean.Nitro.NonVacuity.satp_outcome_change_keeps_total.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.satp_validStart_byAll`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Spec.satp_validStart_byAll`: the shared
+    start state `ssS` of `cS`. -/
 theorem ArmadaLean.Nitro.Spec.satp_validStart_byAll.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_validStart_byAll := by
-  sorry
+  refine ⟨Nat, cS, ssS, by decide, trivial⟩
 
 /-- The witness of `ArmadaLean.Nitro.Spec.satp_lemma_3_1`, from `ArmadaLean.Nitro.NonVacuity.satp_lemma_3_1.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.satp_lemma_3_1.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_lemma_3_1 := by
   spec_witness ArmadaLean.Nitro.NonVacuity.satp_lemma_3_1.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.turnNumRecord_mono_apply`: open. -/
+/-- The witness of `ArmadaLean.Nitro.Spec.turnNumRecord_mono_apply`: a `tick`
+    on the genesis chain. -/
 theorem ArmadaLean.Nitro.Spec.turnNumRecord_mono_apply.witness : spec_premise% ArmadaLean.Nitro.Spec.turnNumRecord_mono_apply := by
-  sorry
+  refine ⟨Nat, inferInstance, apps0, g0, g0.tick 1, p0, Op.tick 1, c1, rfl, trivial⟩
 
 /-- The witness of `ArmadaLean.Nitro.Spec.satp_peers_can_finalize`, from `ArmadaLean.Nitro.NonVacuity.satp_peers_can_finalize.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.satp_peers_can_finalize.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_peers_can_finalize := by

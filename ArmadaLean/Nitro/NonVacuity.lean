@@ -2457,4 +2457,36 @@ theorem satp_reclaim_credits_intermediary.nonvacuity : ∃ (s : Adjudicator Nat)
   ⟨sRC, r3, p0, w0, q0, p0, w0, Lm3, Lp3, om3, op3, 1, 1, by decide, by decide, by decide, by decide,
     by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide, rfl⟩
 
+/-! ## Fixtures for the open witnesses of `Lemmas.lean`, `Liveness.lean`,
+    `Reachable.lean`, `SATP.lean`, `Strategy.lean` and `Value.lean`. -/
+
+/-- A two-participant channel for the `validChallenge`/`validResponse`
+    witnesses below. -/
+def cS : FixedPart := ⟨[p0, q0], 8, ⟨0⟩, 4, .virtual⟩
+
+/-- The start-state voucher: unused fields, type `.none`. -/
+def vS : Voucher := ⟨cS, 0, 0, 0, []⟩
+
+/-- The start state of `cS`: signed by both participants, funded total 5. -/
+def stS : State Nat := ⟨cS, 1, .allocation [alloc d0 3, alloc d1 2], false, .satpVirtual ⟨VType.none, vS⟩⟩
+def ssS : SignedState Nat := ⟨stS, [p0, q0]⟩
+
+/-- The challenge voucher: `p0` (alice) and `q0` (bob) both sign, same total. -/
+def vCh : Voucher := ⟨cS, 0, 3, 2, [p0, q0]⟩
+
+/-- The challenge state: `p0` (alice) signs, type `A`. -/
+def stCh : State Nat := ⟨cS, 2, .allocation [alloc d0 3, alloc d1 2], false, .satpVirtual ⟨VType.A, vCh⟩⟩
+def ssCh : SignedState Nat := ⟨stCh, [p0]⟩
+
+theorem validChallenge_cS : validChallenge cS p0 q0 ssS ssCh = true := by decide
+
+/-- The response voucher: a later version, same total. -/
+def vRe : Voucher := ⟨cS, 1, 3, 2, [p0, q0]⟩
+
+/-- The response state: `q0` (bob) signs, as `dc.type = .A` requires. -/
+def stRe : State Nat := ⟨cS, 3, .allocation [alloc d0 3, alloc d1 2], false, .satpVirtual ⟨VType.AB, vRe⟩⟩
+def ssRe : SignedState Nat := ⟨stRe, [p0, q0]⟩
+
+theorem validResponse_cS : validResponse cS p0 q0 ssS ssCh ssRe = true := by decide
+
 end ArmadaLean.Nitro.NonVacuity
