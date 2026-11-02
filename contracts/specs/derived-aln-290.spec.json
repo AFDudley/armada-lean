@@ -1,0 +1,229 @@
+{
+  "id": "derived-aln-290",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. type_lint reports no layerDiscipline finding for ArmadaLean.Nitro.finalized_two_ways. The statement of ArmadaLean.Nitro.finalized_two_ways does not change.\nWhat holds now? Describe the current, observed state. At integrated, scripts/type_lint.lean prints a layerDiscipline finding with declaration ArmadaLean.Nitro.finalized_two_ways.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and `lake env lean scripts/type_lint.lean` through /home/rix/bin/lean-run; read the JSON lines by their linter and declaration fields.\nWhat constraints apply? State them in plain prose. No spec statement changes; scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes up to 1500 seconds. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean.Nitro.finalized_two_ways",
+  "restatement": "Fix the Lean type-doctrine linter so that running scripts/type_lint.lean against the integrated build no longer reports a layerDiscipline finding for the declaration ArmadaLean.Nitro.finalized_two_ways, while the mathematical statement (type signature) of that declaration is left completely unchanged. The fix must not alter any other spec statement, must keep scripts/check.sh --json reporting signatures_ok true, must keep every _ok field in scripts/check.sh --json at least as good as scripts/gate-baseline.json, must complete within 1500 seconds, and must never invoke a bare `lake clean` (which would destroy the shared Mathlib build used by every worktree).",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "type_lint reports no layerDiscipline finding for declaration ArmadaLean.Nitro.finalized_two_ways"
+    },
+    {
+      "id": "c2",
+      "text": "The statement (type signature) of ArmadaLean.Nitro.finalized_two_ways does not change"
+    },
+    {
+      "id": "c3",
+      "text": "scripts/check.sh --json reports signatures_ok true"
+    },
+    {
+      "id": "c4",
+      "text": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json, and a full run takes up to 1500 seconds"
+    },
+    {
+      "id": "c5",
+      "text": "A bare `lake clean` is never run during the fix or verification process"
+    }
+  ],
+  "goal": "Make a specific false-positive warning from the project's lint tool go away for one particular proof, without changing what that proof claims to prove or breaking any of the project's other automated checks.",
+  "acceptance_criteria": [
+    "Running the project's type linter and checking its report shows that there is no 'layerDiscipline' warning or finding pointing at the declaration ArmadaLean.Nitro.finalized_two_ways.",
+    "Before and after the change is made, printing the type (statement) of the Nitro.finalized_two_ways theorem must yield exactly the same text. If the shape of the statement is altered in any way, this check should fail.",
+    "Running the project's check script with --json should show that signatures_ok is true, meaning all declared signatures in the code pass verification.",
+    "Running the project's check script with --json should report every single '_ok' status field as true, matching or beating the baseline recorded in scripts/gate-baseline.json, and the whole check should finish within 1500 seconds.",
+    "After the fix and verification work is done, someone can check the recorded command history/log for the session and confirm that the exact command 'lake clean' (with no extra path argument) was never executed, since that would have wiped out the shared Mathlib build used by every worktree."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's type linter and checking its report shows that there is no 'layerDiscipline' warning or finding pointing at the declaration ArmadaLean.Nitro.finalized_two_ways."
+    },
+    {
+      "id": "c2",
+      "text": "Before and after the change is made, printing the type (statement) of the Nitro.finalized_two_ways theorem must yield exactly the same text. If the shape of the statement is altered in any way, this check should fail."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check script with --json should show that signatures_ok is true, meaning all declared signatures in the code pass verification."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script with --json should report every single '_ok' status field as true, matching or beating the baseline recorded in scripts/gate-baseline.json, and the whole check should finish within 1500 seconds."
+    },
+    {
+      "id": "c5",
+      "text": "After the fix and verification work is done, someone can check the recorded command history/log for the session and confirm that the exact command 'lake clean' (with no extra path argument) was never executed, since that would have wiped out the shared Mathlib build used by every worktree."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's type linter and checking its report shows that there is no 'layerDiscipline' warning or finding pointing at the declaration ArmadaLean.Nitro.finalized_two_ways.",
+      "proves": "The declaration ArmadaLean.Nitro.finalized_two_ways does not violate the layer discipline rule (a proof must not unfold a base operation), as confirmed by the project's own type_lint tool.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_layer_discipline.py",
+        "args": [
+          "ArmadaLean.Nitro.finalized_two_ways"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "has_layerDiscipline_finding",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Before and after the change is made, printing the type (statement) of the Nitro.finalized_two_ways theorem must yield exactly the same text. If the shape of the statement is altered in any way, this check should fail.",
+      "proves": "Confirms that the public type signature of ArmadaLean.Nitro.finalized_two_ways is left untouched by the change, even if its proof body is modified.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_finalized_two_ways_signature.py",
+        "args": [
+          "--baseline-ref",
+          "origin/main"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signature_matches_baseline",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running the project's check script with --json should show that signatures_ok is true, meaning all declared signatures in the code pass verification.",
+      "proves": "The acceptance gate scripts/check.sh --json reports signatures_ok true as required for task completion.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script with --json should report every single '_ok' status field as true, matching or beating the baseline recorded in scripts/gate-baseline.json, and the whole check should finish within 1500 seconds.",
+      "proves": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json, and a full run takes up to 1500 seconds",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_gate.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "not_worse_than_baseline",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "duration_seconds",
+          "op": "le",
+          "value": 1500
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1600,
+      "clause_id": "c4"
+    },
+    {
+      "description": "After the fix and verification work is done, someone can check the recorded command history/log for the session and confirm that the exact command 'lake clean' (with no extra path argument) was never executed, since that would have wiped out the shared Mathlib build used by every worktree.",
+      "proves": "Confirms that the fix/verification process never ran a bare 'lake clean', protecting the shared Mathlib build from accidental deletion.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "--log",
+          "worker_command_log.txt"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_finalized_two_ways_signature.py",
+    "scripts/check_layer_discipline.py",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/run_check_gate.py"
+  ]
+}
