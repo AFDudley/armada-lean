@@ -13,32 +13,7 @@
     "repeatedPremise_groups": 248,
     "summary": true
   },
-  "decision_findings": [
-    {
-      "file": "ArmadaLean/Nitro/Liveness.lean",
-      "declaration": "ArmadaLean.Nitro.Route.IntermediaryInv.step",
-      "kind": "omega",
-      "size": 15
-    },
-    {
-      "file": "ArmadaLean/Nitro/NonVacuity.lean",
-      "declaration": "ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity",
-      "kind": "decide_size",
-      "size": 335
-    },
-    {
-      "file": "ArmadaLean/Nitro/NonVacuity.lean",
-      "declaration": "ArmadaLean.Nitro.NonVacuity.netE_reach",
-      "kind": "decide_size",
-      "size": 355
-    },
-    {
-      "file": "ArmadaLean/Nitro/NonVacuity.lean",
-      "declaration": "ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity",
-      "kind": "decide_size",
-      "size": 331
-    }
-  ],
+  "decision_findings": [],
   "file_hashes": {
     "ArmadaLean/BoundParams.lean": "4739ea7fa5beefc96225e0ec65498a4b18c177bdc8e6f62616366745eb4f5d25",
     "ArmadaLean/Fee.lean": "e5944a2af227f9225ad0f937924200fda15f962e4bf8cea60532a85136198e7e",
@@ -51,8 +26,8 @@
     "ArmadaLean/Nitro/Channel.lean": "b3860619cb38d0bcf4b2e1b975377fe5bb830c8c1bd5c4c87af2e14da400b98d",
     "ArmadaLean/Nitro/Constructions.lean": "ffe5a3b8bbb36574a9c402191b0301646b3ff90ae467af2b12db69528bf9884f",
     "ArmadaLean/Nitro/Lemmas.lean": "131e4f5916e29a5536cd886369a9d6865d8b2cabe0dbf4f0466a09d9b107f985",
-    "ArmadaLean/Nitro/Liveness.lean": "f3dab22deee4efbcc1e157342a68079f5a8b5b7e1f31d1cb673b540c3520f83c",
-    "ArmadaLean/Nitro/NonVacuity.lean": "289147ec76eb26056355ec695eff0328f314ef85f867bbdffbd516e12bf54591",
+    "ArmadaLean/Nitro/Liveness.lean": "04073140d64da975bdaebf2a8bbe7d1b0b9786505866b3b44ad33a3e36212c4e",
+    "ArmadaLean/Nitro/NonVacuity.lean": "b5a330cd39a162a6ed7d63d8a38f1539e7fa7a116237feb80194c1136216b576",
     "ArmadaLean/Nitro/OpEquations.lean": "2a96c15618c1bff87efd4af4ace4e02ecc7f143ddba40e0c0901b6e64ec700eb",
     "ArmadaLean/Nitro/Outcome.lean": "e8c8abdd924d79b677ad98b120ac4a20e3d048bc5c4b77265c33f8da0cd3315e",
     "ArmadaLean/Nitro/Reachable.lean": "e5ba2d09e663951a50dd9d4ecf3a2877a6ac682c88c8fe35a44d14563c1bf042",
