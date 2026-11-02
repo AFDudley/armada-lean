@@ -54,18 +54,6 @@ theorem ArmadaLean.Nitro.Spec.finalizable_unique.witness : spec_premise% ArmadaL
 theorem ArmadaLean.Nitro.Spec.channel_finalizability_cases.witness : spec_premise% ArmadaLean.Nitro.Spec.channel_finalizability_cases := by
   spec_witness ArmadaLean.Nitro.NonVacuity.channel_finalizability_cases.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.finalizable_or_two_enabled`, from `ArmadaLean.Nitro.NonVacuity.finalizable_or_two_enabled.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.finalizable_or_two_enabled.witness : spec_premise% ArmadaLean.Nitro.Spec.finalizable_or_two_enabled := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.finalizable_or_two_enabled.nonvacuity
-
-/-- The witness of `ArmadaLean.Nitro.Spec.single_enabled_is_finalizable`, from `ArmadaLean.Nitro.NonVacuity.single_enabled_is_finalizable.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.single_enabled_is_finalizable.witness : spec_premise% ArmadaLean.Nitro.Spec.single_enabled_is_finalizable := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.single_enabled_is_finalizable.nonvacuity
-
-/-- The witness of `ArmadaLean.Nitro.Spec.funding_point_universally_finalizable`, from `ArmadaLean.Nitro.NonVacuity.funding_point_universally_finalizable.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.funding_point_universally_finalizable.witness : spec_premise% ArmadaLean.Nitro.Spec.funding_point_universally_finalizable := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.funding_point_universally_finalizable.nonvacuity
-
 /-- The witness of `ArmadaLean.Nitro.Spec.concluded_universally_finalizable`, from `ArmadaLean.Nitro.NonVacuity.concluded_universally_finalizable.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.concluded_universally_finalizable.witness : spec_premise% ArmadaLean.Nitro.Spec.concluded_universally_finalizable := by
   spec_witness ArmadaLean.Nitro.NonVacuity.concluded_universally_finalizable.nonvacuity
@@ -107,14 +95,6 @@ theorem ArmadaLean.Nitro.Adjudicator.Ahead.Spec.applyAll_sublist.witness : spec_
 theorem ArmadaLean.Nitro.Spec.turbo_redistribution_unbeatable.witness : spec_premise% ArmadaLean.Nitro.Spec.turbo_redistribution_unbeatable := by
   spec_witness ArmadaLean.Nitro.NonVacuity.turbo_redistribution_unbeatable.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.deposit_bounds_value`, from `ArmadaLean.Nitro.NonVacuity.deposit_bounds_value.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.deposit_bounds_value.witness : spec_premise% ArmadaLean.Nitro.Spec.deposit_bounds_value := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.deposit_bounds_value.nonvacuity
-
-/-- The witness of `ArmadaLean.Nitro.Spec.payout_preserves_value`, from `ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.payout_preserves_value.witness : spec_premise% ArmadaLean.Nitro.Spec.payout_preserves_value := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity
-
 /-- The witness of `ArmadaLean.Nitro.Spec.consensus_channel_stays_open`: `c1`
     under the canonical threat. -/
 theorem ArmadaLean.Nitro.Spec.consensus_channel_stays_open.witness : spec_premise% ArmadaLean.Nitro.Spec.consensus_channel_stays_open := by
@@ -135,6 +115,14 @@ theorem ArmadaLean.Nitro.Spec.turbo_value_achievable.witness : spec_premise% Arm
 /-- The witness of `ArmadaLean.Nitro.Spec.turbo_value_is_value`, from `ArmadaLean.Nitro.NonVacuity.turbo_value_is_value.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.turbo_value_is_value.witness : spec_premise% ArmadaLean.Nitro.Spec.turbo_value_is_value := by
   spec_witness ArmadaLean.Nitro.NonVacuity.turbo_value_is_value.nonvacuity
+
+/-- The witness of `ArmadaLean.Nitro.Spec.deposit_bounds_value`, from `ArmadaLean.Nitro.NonVacuity.deposit_bounds_value.nonvacuity`. -/
+theorem ArmadaLean.Nitro.Spec.deposit_bounds_value.witness : spec_premise% ArmadaLean.Nitro.Spec.deposit_bounds_value := by
+  spec_witness ArmadaLean.Nitro.NonVacuity.deposit_bounds_value.nonvacuity
+
+/-- The witness of `ArmadaLean.Nitro.Spec.payout_preserves_value`, from `ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity`. -/
+theorem ArmadaLean.Nitro.Spec.payout_preserves_value.witness : spec_premise% ArmadaLean.Nitro.Spec.payout_preserves_value := by
+  spec_witness ArmadaLean.Nitro.NonVacuity.payout_preserves_value.nonvacuity
 
 /-- The witness of `ArmadaLean.Nitro.Spec.turbo_order_independent`, from `ArmadaLean.Nitro.NonVacuity.turbo_order_independent.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.turbo_order_independent.witness : spec_premise% ArmadaLean.Nitro.Spec.turbo_order_independent := by
@@ -189,18 +177,22 @@ theorem ArmadaLean.Nitro.Spec.turnNumRecord_mono_apply.witness : spec_premise% A
 theorem ArmadaLean.Nitro.Spec.satp_peers_can_finalize.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_peers_can_finalize := by
   spec_witness ArmadaLean.Nitro.NonVacuity.satp_peers_can_finalize.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.satp_theorem_3_2`, from `ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.satp_theorem_3_2.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_theorem_3_2 := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity
+/-- The witness of `ArmadaLean.Nitro.Spec.satp_reclaim_credits_intermediary`, from `ArmadaLean.Nitro.NonVacuity.satp_reclaim_credits_intermediary.nonvacuity`. -/
+theorem ArmadaLean.Nitro.Spec.satp_reclaim_credits_intermediary.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_reclaim_credits_intermediary := by
+  spec_witness ArmadaLean.Nitro.NonVacuity.satp_reclaim_credits_intermediary.nonvacuity
 
 /-- The witness of `ArmadaLean.Nitro.Spec.satp_intermediary_before_round2`, from `ArmadaLean.Nitro.NonVacuity.satp_intermediary_before_round2.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.satp_intermediary_before_round2.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_intermediary_before_round2 := by
   spec_witness ArmadaLean.Nitro.NonVacuity.satp_intermediary_before_round2.nonvacuity
 
+/-- The witness of `ArmadaLean.Nitro.Spec.satp_theorem_3_2`, from `ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity`. -/
+theorem ArmadaLean.Nitro.Spec.satp_theorem_3_2.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_theorem_3_2 := by
+  spec_witness ArmadaLean.Nitro.NonVacuity.satp_theorem_3_2.nonvacuity
+
 /-- The witness of `ArmadaLean.Nitro.Spec.satp_end_user_recovers`, from `ArmadaLean.Nitro.NonVacuity.satp_end_user_recovers.nonvacuity`. -/
 theorem ArmadaLean.Nitro.Spec.satp_end_user_recovers.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_end_user_recovers := by
   spec_witness ArmadaLean.Nitro.NonVacuity.satp_end_user_recovers.nonvacuity
 
-/-- The witness of `ArmadaLean.Nitro.Spec.satp_reclaim_credits_intermediary`, from `ArmadaLean.Nitro.NonVacuity.satp_reclaim_credits_intermediary.nonvacuity`. -/
-theorem ArmadaLean.Nitro.Spec.satp_reclaim_credits_intermediary.witness : spec_premise% ArmadaLean.Nitro.Spec.satp_reclaim_credits_intermediary := by
-  spec_witness ArmadaLean.Nitro.NonVacuity.satp_reclaim_credits_intermediary.nonvacuity
+/-- The witness of `ArmadaLean.Nitro.Spec.funding_point_universally_finalizable`, from `ArmadaLean.Nitro.NonVacuity.funding_point_universally_finalizable.nonvacuity`. -/
+theorem ArmadaLean.Nitro.Spec.funding_point_universally_finalizable.witness : spec_premise% ArmadaLean.Nitro.Spec.funding_point_universally_finalizable := by
+  spec_witness ArmadaLean.Nitro.NonVacuity.funding_point_universally_finalizable.nonvacuity

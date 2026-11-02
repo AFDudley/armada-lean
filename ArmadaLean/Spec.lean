@@ -14,6 +14,7 @@ import ArmadaLean.Spec.Nitro.Reachable
 import ArmadaLean.Spec.Nitro.SATP
 import ArmadaLean.Spec.Nitro.Safety
 import ArmadaLean.Spec.Nitro.Strategy
+import ArmadaLean.Spec.Nitro.TakeOut
 import ArmadaLean.Spec.Nitro.Value
 import ArmadaLean.Spec.Nullifier
 import ArmadaLean.Spec.PoolOwned

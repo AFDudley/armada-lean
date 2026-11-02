@@ -755,7 +755,9 @@ def find_theorem(text: str, t: dict) -> int:
     short = t["name"].split(".")[-1]
     pat = re.compile(r"^(?:@\[[^\]]*\]\s*)?(?:private |protected )?theorem ([\w.'!?₀-₉]*"
                      + re.escape(short) + r")(?![\w'!?.])", re.M)
-    hits = [m for m in pat.finditer(text) if t["name"].endswith(m.group(1))]
+    # `theorem _root_.A.b` declares `A.b`: compare without the `_root_.` prefix.
+    hits = [m for m in pat.finditer(text)
+            if t["name"].endswith(m.group(1).removeprefix("_root_."))]
     if len(hits) != 1:
         raise SystemExit(f"convert_spec: {len(hits)} declarations match {t['name']}")
     return hits[0].start() + hits[0].group(0).index("theorem")
@@ -981,13 +983,21 @@ def main() -> int:
                 wp.unlink()
             continue
         old_blocks: dict[str, str] = {}
+        old_imports: list[str] = []
+        old_opens: list[str] = []
         if wp.exists():
             wtext = wp.read_text(encoding="utf-8")
             for m in re.finditer(r"(/--.*?-/\s*)?theorem (\S+)\.witness\b.*?(?=\n/--|\ntheorem |\Z)",
                                  wtext, re.S):
                 old_blocks[m.group(2)] = m.group(0).rstrip() + "\n"
+            # A kept witness can need the fixtures its author imported and opened
+            # (`Witness/CircuitValues.lean`, `PoolNonVacuity.lean`): keep the file's own
+            # `import` lines, and the `open` lines before its first declaration.
+            preamble = re.split(r"\n(?=/--|theorem )", wtext, maxsplit=1)[0]
+            old_imports = re.findall(r"^import (\S+)", preamble, re.M)
+            old_opens = re.findall(r"^open .*$", preamble, re.M)
         blocks = []
-        imports = [rel_module(spec_rel(path)), "ArmadaLean.SpecTools"]
+        imports = [rel_module(spec_rel(path)), "ArmadaLean.SpecTools", *old_imports]
         for sf in wneeds:
             if sf in old_blocks:
                 blocks.append(old_blocks[sf])
@@ -1007,6 +1017,7 @@ def main() -> int:
                     f"  sorry\n")
         imports = sorted(set(imports))
         wout = (WITNESS_HEADER.format(path=path) + "".join(f"import {m}\n" for m in imports)
+                + "".join(f"\n{o}" for o in old_opens) + ("\n" if old_opens else "")
                 + "\n" + "\n".join(blocks))
         wp.parent.mkdir(parents=True, exist_ok=True)
         write_lean(wp, wout)

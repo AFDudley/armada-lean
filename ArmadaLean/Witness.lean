@@ -11,6 +11,7 @@ import ArmadaLean.Witness.Nitro.Reachable
 import ArmadaLean.Witness.Nitro.SATP
 import ArmadaLean.Witness.Nitro.Safety
 import ArmadaLean.Witness.Nitro.Strategy
+import ArmadaLean.Witness.Nitro.TakeOut
 import ArmadaLean.Witness.Nitro.Value
 import ArmadaLean.Witness.Nullifier
 import ArmadaLean.Witness.PoolOwned
