@@ -3,6 +3,7 @@
   more statements need is a type.
 -/
 import ArmadaLean.Nitro.SATP
+import ArmadaLean.Types.Channel
 
 namespace ArmadaLean.Nitro
 
@@ -22,6 +23,16 @@ structure SatpEnds (r : Route E) (alice bob P : Participant) : Prop where
   last : r.V.participants.getLast? = some bob
   /-- `P` is a participant of `r.V`. -/
   mem : P ∈ r.V.participants
+
+/-- The SATP virtual channel `r.V` as its finalization sub-game reads it: its parties
+    (`SatpEnds`), its app, and its challenge duration. The `r.V` helpers of
+    `Nitro/Liveness.lean` state these facts together. -/
+structure SatpVirtual (apps : Apps E) (ε : Time) (r : Route E) (alice bob P : Participant) :
+    Prop extends SatpEnds r alice bob P where
+  /-- `r.V` runs the SATP virtual app. -/
+  app : apps r.V.appDef = satpVirtualRules
+  /-- `r.V`'s challenge duration covers two round delays of `ε`. -/
+  timed : r.V.IsTimed ε
 
 /-- A candidate state of `r.V` with a support proof that `r.V`'s rules accept
     (`satpVirtualRules.supports`). A `challenge` or `checkpoint` on `r.V` submits one; the
