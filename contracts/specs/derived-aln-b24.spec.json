@@ -1,0 +1,245 @@
+{
+  "id": "derived-aln-b24",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. type_lint reports no layerDiscipline finding for shield_can_happen. The statement of shield_can_happen does not change.\nWhat holds now? Describe the current, observed state. At integrated, scripts/type_lint.lean prints a layerDiscipline finding with declaration shield_can_happen.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and `lake env lean scripts/type_lint.lean` through /home/rix/bin/lean-run; read the JSON lines by their linter and declaration fields.\nWhat constraints apply? State them in plain prose. No spec statement changes; scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes up to 1500 seconds. When a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) shield_can_happen",
+  "restatement": "Fix the Lean proof of shield_can_happen so that the type-doctrine linter (scripts/type_lint.lean) no longer reports a layerDiscipline finding for that declaration, meaning the proof must stop unfolding a base operation it should treat opaquely. The formal statement (type signature) of shield_can_happen must remain exactly as it is \u2014 only the proof may change. After the fix, running `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` followed by `lake env lean scripts/type_lint.lean` via /home/rix/bin/lean-run must produce JSON lint lines with no layerDiscipline entry whose declaration field is shield_can_happen. Additionally, scripts/check.sh --json must report signatures_ok true, and every _ok field in its JSON output must remain true relative to scripts/gate-baseline.json (unless a count falls, in which case scripts/update_gate_baseline.py updates the baseline in the same branch). A full check.sh run may take up to 1500 seconds. Under no circumstances should a bare `lake clean` be run, since it would destroy the shared Mathlib build used by all worktrees.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "type_lint reports no layerDiscipline finding for shield_can_happen"
+    },
+    {
+      "id": "c2",
+      "text": "The statement (type signature) of shield_can_happen does not change"
+    },
+    {
+      "id": "c3",
+      "text": "scripts/check.sh --json reports signatures_ok true"
+    },
+    {
+      "id": "c4",
+      "text": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json (with update_gate_baseline.py rewriting the baseline in the same branch if a count falls)"
+    },
+    {
+      "id": "c5",
+      "text": "A full scripts/check.sh run takes up to 1500 seconds"
+    },
+    {
+      "id": "c6",
+      "text": "A bare `lake clean` is never run during this work"
+    }
+  ],
+  "goal": "Make an automated code-quality check stop flagging one specific proof for breaking a layering rule, without altering what that proof claims to prove, and without breaking any other existing checks or accidentally wiping shared build artifacts.",
+  "acceptance_criteria": [
+    "Running the project's type-doctrine linter should produce no layer-discipline warning about the proof named shield_can_happen. A person can see this by checking that the lint report lists zero such findings for that proof.",
+    "Confirms that the declared type of shield_can_happen in the Lean source has not been edited, by printing the exact signature line found in the codebase and checking it matches the original expected signature.",
+    "Running the project's check script with the --json flag should print a report where the signatures_ok field is true, confirming that all function signatures match their expected declarations.",
+    "Running the project's check script and asking it for JSON output shows that every field ending in '_ok' reads true, meaning all quality gates (lint, decision scope, etc.) pass and nothing has regressed below the recorded baseline.",
+    "Running the project's full check script from start to finish should complete within 1500 seconds, as shown by timing the run and reporting how long it took.",
+    "Checks the record of shell commands run during the work to confirm that no one ever typed a bare `lake clean` (which would wipe out the shared Mathlib build used by every worktree)."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the project's type-doctrine linter should produce no layer-discipline warning about the proof named shield_can_happen. A person can see this by checking that the lint report lists zero such findings for that proof."
+    },
+    {
+      "id": "c2",
+      "text": "Confirms that the declared type of shield_can_happen in the Lean source has not been edited, by printing the exact signature line found in the codebase and checking it matches the original expected signature."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check script with the --json flag should print a report where the signatures_ok field is true, confirming that all function signatures match their expected declarations."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script and asking it for JSON output shows that every field ending in '_ok' reads true, meaning all quality gates (lint, decision scope, etc.) pass and nothing has regressed below the recorded baseline."
+    },
+    {
+      "id": "c5",
+      "text": "Running the project's full check script from start to finish should complete within 1500 seconds, as shown by timing the run and reporting how long it took."
+    },
+    {
+      "id": "c6",
+      "text": "Checks the record of shell commands run during the work to confirm that no one ever typed a bare `lake clean` (which would wipe out the shared Mathlib build used by every worktree)."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the project's type-doctrine linter should produce no layer-discipline warning about the proof named shield_can_happen. A person can see this by checking that the lint report lists zero such findings for that proof.",
+      "proves": "Confirms that the shield_can_happen proof does not violate the layer rule (it must not unfold a base operation), as required by the linter the acceptance gate relies on.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_shield_can_happen_lint.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "layerDiscipline_findings_for_shield_can_happen",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Confirms that the declared type of shield_can_happen in the Lean source has not been edited, by printing the exact signature line found in the codebase and checking it matches the original expected signature.",
+      "proves": "The clause that shield_can_happen's statement (type signature) does not change.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_shield_can_happen_signature.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signature_matches",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running the project's check script with the --json flag should print a report where the signatures_ok field is true, confirming that all function signatures match their expected declarations.",
+      "proves": "scripts/check.sh --json reports signatures_ok true",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script and asking it for JSON output shows that every field ending in '_ok' reads true, meaning all quality gates (lint, decision scope, etc.) pass and nothing has regressed below the recorded baseline.",
+      "proves": "scripts/check.sh --json reports all _ok fields as true, confirming the acceptance gate from AGENTS.md is satisfied",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_json.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Running the project's full check script from start to finish should complete within 1500 seconds, as shown by timing the run and reporting how long it took.",
+      "proves": "The full scripts/check.sh run finishes inside the 1500 second time budget required for acceptance.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/time_check.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "elapsed_seconds",
+          "op": "le",
+          "value": 1500
+        },
+        {
+          "observe": "stdout_json",
+          "field": "exit_code_of_check",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1600,
+      "clause_id": "c5"
+    },
+    {
+      "description": "Checks the record of shell commands run during the work to confirm that no one ever typed a bare `lake clean` (which would wipe out the shared Mathlib build used by every worktree).",
+      "proves": "Confirms the clause that a bare `lake clean` is never run during this work by scanning the logged command history for any instance of the exact command `lake clean` with no path argument.",
+      "restatement_clause_id": "c6",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "--log",
+          "/tmp/worktree_command_log.txt"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c6"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_shield_can_happen_lint.py",
+    "scripts/check_shield_can_happen_signature.py",
+    "scripts/run_check_json.py",
+    "scripts/time_check.py"
+  ]
+}
