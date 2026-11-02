@@ -3,5 +3,22 @@ open Lake DSL
 
 package «armada-lean» where
 
+-- Mathlib is used wherever it applies (operator ruling 2026-10-27).
+-- Pinned to the toolchain tag, the same pin EVMLean uses.
+require mathlib from git
+  "https://github.com/leanprover-community/mathlib4.git" @ "v4.33.1"
+
 @[default_target]
 lean_lib «ArmadaLean» where
+  -- `ArmadaLean.Machines` (`ArmadaLean/Machines.lean`) is a second root, not
+  -- an import of `ArmadaLean`: it imports `ArmadaLean` itself, to scan the
+  -- whole checked environment for `Machine` values, so `lake build` must
+  -- build it independently (`ArmadaLean.lean` cannot import it back without
+  -- a cycle). See `ArmadaLean/Machines.lean`'s own doc comment.
+  -- Mathlib's `says` re-runs every recorded search when the environment variable `CI`
+  -- is set (`Mathlib/Tactic/Says.lean`). Agent shells here set `CI=true`, which doubled
+  -- the search cost of every build (measured 2026-10-31). Normal builds run only the
+  -- recorded proof; `scripts/verify_says.sh` re-verifies on purpose
+  -- (`-Dsays.verify=true`). type-doctrine.md section 4a rule 5.
+  leanOptions := #[⟨`weak.says.no_verify_in_CI, true⟩]
+  roots := #[`ArmadaLean, `ArmadaLean.Machines]
