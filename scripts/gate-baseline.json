@@ -15,7 +15,7 @@
   },
   "decision_findings": [],
   "file_hashes": {
-    "ArmadaLean/BoundParams.lean": "4739ea7fa5beefc96225e0ec65498a4b18c177bdc8e6f62616366745eb4f5d25",
+    "ArmadaLean/BoundParams.lean": "c2ad79cd78bbbf0513035c63788de0d6edb727daf730f38424a835464d7a99e7",
     "ArmadaLean/Fee.lean": "e5944a2af227f9225ad0f937924200fda15f962e4bf8cea60532a85136198e7e",
     "ArmadaLean/Field.lean": "f8cb6168feefbb15482690979c6e4174e0d822455f8aea57fd7a10a37e0cca28",
     "ArmadaLean/Machine.lean": "9f656787302cc1b59f26984b12debc810ab8a9d6d10dfce399f6bcf7ab539dd5",
@@ -68,7 +68,7 @@
     "ArmadaLean/SpecTools.lean": "93a4ffbaae69da35fb56ab01489d514603be4157d80fb0286a26780bda55abde",
     "ArmadaLean/Token.lean": "d3a80f397601119dadf7f29ac771bee3beaf760f5c33308aee14a44e9b1092e3",
     "ArmadaLean/Transact.lean": "b6c8499fac2d40ca25549a53b99ab1cb4de5893ef30667f1869223de72f78a44",
-    "ArmadaLean/TransactOwned.lean": "28c250f0cc3d0e66303ab6a60889afbc0ac183f28069c3561e4454d97b92829d",
+    "ArmadaLean/TransactOwned.lean": "67298cb64a92755a3c06b46089f26803be4530c0ab87665c857499aa3ba34fcb",
     "ArmadaLean/Types/Channel.lean": "8c10985e39bc16bfa61e53fcc44de0603b67dd735da5a93131840e449e6fdd57",
     "ArmadaLean/Types/Honest.lean": "d5b8e9d9d3d6b2ce420d03e327c01564267a78baabf3bb8be142799245eb7c46",
     "ArmadaLean/Types/Outcome.lean": "7d43ac3057b2308891b32ffb754b64546771a14362abc572c5b5d9794597a02c",
