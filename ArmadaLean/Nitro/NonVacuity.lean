@@ -1224,13 +1224,14 @@ theorem finalizable_or_two_enabled.nonvacuity : ∃ (dest : Participant → Nat)
     (c : TimedChannel (canon p0).ε),
     Assumptions apps0 p0 (canon p0) ∧
     (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable net ∧
-    (apps0 (c : FixedPart).appDef).SupportWindow ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
+    ((∃ vt, apps0 (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps0 (c : FixedPart).appDef = consensusRules) ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
     p0 ∈ (c : FixedPart).participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
       candidate.channel = (c : FixedPart)) :=
   ⟨fun _ => 0, netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach_noOwnViolation _,
-    consensusRules_supportWindow, TakeOut.consensus_desirable _, by decide,
+    Or.inr rfl, TakeOut.consensus_desirable _, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
       by decide, rfl⟩⟩
 
@@ -1243,7 +1244,8 @@ theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → N
     (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
     Assumptions apps0 p0 (canon p0) ∧
     (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable net ∧
-    (apps0 (c : FixedPart).appDef).SupportWindow ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
+    ((∃ vt, apps0 (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps0 (c : FixedPart).appDef = consensusRules) ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
     p0 ∈ (c : FixedPart).participants ∧
     (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
@@ -1254,7 +1256,7 @@ theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → N
     participant_reachable_land (netF_reach_noOwnViolation _) (.conclude c1 ssF)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h; exact netF_holds),
-    consensusRules_supportWindow, TakeOut.consensus_desirable _, by decide,
+    Or.inr rfl, TakeOut.consensus_desirable _, by decide,
     (fun t h _ => by
       rw [List.mem_singleton] at h; subst h
       exact ⟨[ssF], fun ss h' => by

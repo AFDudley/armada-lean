@@ -301,9 +301,9 @@ structure Threat (E : Type) (p : Participant) where
     received and the other proof states of the call. -/
 def AdvMove.NoOwnViolation {p : Participant} (dest : Participant → E) (net : NetworkState E p) :
     AdvMove E → Prop
-  | .deliver ss => ∀ q ∈ ss.signers, q ≠ p → ¬ OwnViolation dest q net.received ss.state
+  | .deliver ss => ∀ q ∈ ss.signers, q ≠ p → ¬ OwnViolation dest q net.received ss
   | .chain _ op => ∀ ss ∈ op.proofStates, ∀ q ∈ ss.signers, q ≠ p →
-      ¬ OwnViolation dest q (op.proofStates ++ net.received) ss.state
+      ¬ OwnViolation dest q (op.proofStates ++ net.received) ss
   | _ => True
 
 /-- **The threat without own-violations of the other participants.**

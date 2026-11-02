@@ -1515,31 +1515,48 @@ theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.
 theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IC stay_vtS _
 
-/-- A valid move of `SingleAssetPayments` keeps the total ("Total allocated
-    cannot change") and lowers only the mover's balance ("Nonmover balance
-    decreased"). -/
+/-- A valid move of `SingleAssetPayments` is a `ConservingStep`: the
+    destinations stay ("Destinations may not change"), both entries are
+    simple allocations, the total stays ("Total allocated cannot change"),
+    and only the mover's balance falls ("Nonmover balance decreased"). -/
 theorem conserve_vtS : ∀ s s' q, vtS s s' = true → s'.mover = some q →
-    s'.outcome.entries.total = s.outcome.entries.total ∧
-    ∀ k, share s'.outcome k < share s.outcome k → k = destS q := by
+    ConservingStep destS q s.outcome s'.outcome := by
   intro s s' q h hq
   obtain ⟨a, b, a', b', h0, h1, hsum, hb, ha⟩ := (vtS_iff _ _).1 h
   rw [decode_eq_some.1 h0, decode_eq_some.1 h1]
-  refine ⟨?_, fun k hk => ?_⟩
+  refine Or.inr ⟨rfl, (by decide : List.Nodup [dQ, dP]), fun e he => ?_, ?_,
+    fun i e e' he he' hlt => ?_⟩
+  · simp only [pay, Outcome.entries, List.cons_append, List.nil_append, List.mem_cons,
+      List.not_mem_nil, or_false] at he
+    rcases he with rfl | rfl | rfl | rfl <;> rfl
   · simp only [pay, Outcome.entries, Allocation.total, alloc, List.map_cons, List.map_nil,
       List.sum_cons, List.sum_nil, Entry.amount, Item.amount]
     show (b' + (a' + 0) : Nat) = b + (a + 0)
     omega
-  · rw [share_pay, share_pay] at hk
-    rcases k with _ | _ | k
-    · have hlt : b' < b := by simpa using hk
+  · rcases i with _ | _ | i
+    · obtain rfl := Option.some.inj he.symm
+      obtain rfl := Option.some.inj he'.symm
+      have hlt' : b' < b := hlt
       rcases hb with h | h
-      · rw [hq] at h; obtain rfl := Option.some.inj h; rfl
+      · rw [hq] at h
+        obtain rfl := Option.some.inj h
+        exact ⟨rfl, fun r hr => by
+          rcases r with ⟨k⟩
+          have : 0 = k := by simpa [alloc, dQ, destS, q0] using hr
+          rw [← this]; rfl⟩
       · omega
-    · have hlt : a' < a := by simpa using hk
+    · obtain rfl := Option.some.inj he.symm
+      obtain rfl := Option.some.inj he'.symm
+      have hlt' : a' < a := hlt
       rcases ha with h | h
-      · rw [hq] at h; obtain rfl := Option.some.inj h; rfl
+      · rw [hq] at h
+        obtain rfl := Option.some.inj h
+        exact ⟨rfl, fun r hr => by
+          rcases r with ⟨k⟩
+          have : 1 = k := by simpa [alloc, dP, destS, p0] using hr
+          rw [← this]; rfl⟩
       · omega
-    · simp at hk
+    · cases he
 
 /-- The app conserves value (`TakeOut.forceMove_conserving`). -/
 theorem appsS_conserving : Conserving appsS (tc0 : FixedPart).appDef destS :=
@@ -1612,8 +1629,8 @@ against `p0`'s state `s1`. The threat without own-violations
 (`Threat.noOwnViolation`) never plays it, so this file does not refute the
 current Nitro-24 statements. -/
 
-theorem gift_is_ownViolation : OwnViolation destS q0 [s1] (st 2 (ansQ O1)) :=
-  Or.inr ⟨s1, List.mem_singleton_self _, rfl, rfl, by decide⟩
+theorem gift_is_ownViolation : OwnViolation destS q0 [s1] ⟨st 2 (ansQ O1), [q0]⟩ :=
+  Or.inr ⟨by decide, s1, List.mem_singleton_self _, rfl, rfl, by decide⟩
 
 #print axioms appsS_desirable
 #print axioms finalizable_or_two_enabled_false

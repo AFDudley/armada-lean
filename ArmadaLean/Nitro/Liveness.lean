@@ -3379,36 +3379,37 @@ theorem channel_finalizability_cases (apps : Apps E) (Ts : Threats E apps) (v : 
 /-- Nitro-24. Nitro:653-656: "For any participant, p, in a channel, χ, exactly one
     of the following statements is true at a given point in time: 1. p has at
     least one finalizable outcome. 2. p has at least two enabled outcomes."
-    The channel is past its setup: `p` holds a supported state of it. Operator
-    ruling 2026-11-01: the app must carry `Rules.SupportWindow`, ForceMove's
-    support shape (ForceMove:744-778, 1340-1354, 1379-1381; Nitro:633 "for a
-    ForceMove channel"); an app that lets old signatures support a higher turn
-    must fail the claim (`docs/counterexamples/finalizable_or_two_enabled.lean`,
+    The channel is past its setup: `p` holds a supported state of it.
+    Operator ruling 2026-11-02: the claim has the paper's own scope, a
+    ForceMove app or the consensus app (Nitro:633 "for a ForceMove channel";
+    Nitro:662-664: the consensus game is a ForceMove application). An app
+    that lets old signatures support a higher turn fails the claim
+    (`docs/counterexamples/finalizable_or_two_enabled.lean`,
     `docs/counterexamples/finalizable_or_two_enabled_happ.lean`). Operator
     ruling 2026-11-01: the papers assume desirable apps and do not state it.
     The app must be `Desirable` for a destination map `dest`, a class defined
     first and independently of the claim: IR, IC and value conservation at
     every state (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md`
-    §2; ForceMove:410-416, 125-130, 339-347; operator ruling 2026-11-02,
-    SATP §2.2 footnote 7). Game B fails `AppIR`
-    (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
-    2026-11-01: own-violation is one rule for every participant; a state
-    signed against the signer's own interest costs only the signer. The claim
-    is read against the threat without own-violations of the other
-    participants (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the
-    honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
-    The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
-    (`docs/counterexamples/single_asset_payments_ir.lean`). The pool and
-    mint apps fail value conservation
+    §2; ForceMove:410-416, 125-130, 339-347; operator rulings 2026-11-02,
+    SATP §2.2 footnote 7, go-nitro `SingleAssetPayments.sol`). Game B fails
+    `AppIR` (`docs/counterexamples/ir_game_rewrites_share.lean`). The pool,
+    mint and zero-entry tag apps fail value conservation
     (`docs/counterexamples/unowned_pool_take.lean`,
-    `docs/counterexamples/strict_premise_mint.lean`). The claim fails as
-    stated: `docs/counterexamples/zero_entry_tag.lean` (a desirable app whose
-    moves change a zero entry and no amount). -/
+    `docs/counterexamples/strict_premise_mint.lean`,
+    `docs/counterexamples/zero_entry_tag.lean`). Operator ruling 2026-11-01:
+    own-violation is one rule for every participant; a state signed against
+    the signer's own interest costs only the signer. The claim is read
+    against the threat without own-violations of the other participants
+    (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the honest `p` signs
+    no two outcomes at one slot (`HonestSend.noConflict`). The gift play of
+    go-nitro `SingleAssetPayments.sol` is such a violation
+    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
 theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
     (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
     (c : TimedChannel T.ε)
-    (happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (hrules : (∃ vt, apps (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps (c : FixedPart).appDef = consensusRules)
     (hdes : Desirable apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
@@ -3421,35 +3422,37 @@ theorem finalizable_or_two_enabled (apps : Apps E) {p : Participant} (T : Threat
 
 /-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
     that outcome must be finalizable for them." `p` holds a support for every
-    state of `c` it signed. Operator ruling 2026-11-01: the app must carry
-    `Rules.SupportWindow`, ForceMove's support shape (ForceMove:744-778,
-    1340-1354, 1379-1381; Nitro:633 "for a ForceMove channel"); an app that
-    lets old signatures support a higher turn must fail the claim
-    (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`). Operator
-    ruling 2026-11-01: the papers assume desirable apps and do not state it.
-    The app must be `Desirable` for a destination map `dest`, a class defined
-    first and independently of the claim: IR, IC and value conservation at
-    every state (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md`
-    §2; ForceMove:410-416, 125-130, 339-347; operator ruling 2026-11-02,
-    SATP §2.2 footnote 7). Game B fails `AppIR`
-    (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
-    2026-11-01: own-violation is one rule for every participant; a state
-    signed against the signer's own interest costs only the signer. The claim
-    is read against the threat without own-violations of the other
-    participants (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the
-    honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
-    The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
-    (`docs/counterexamples/single_asset_payments_ir.lean`). The pool and
-    mint apps fail value conservation
+    state of `c` it signed. Operator ruling 2026-11-02: the claim has the
+    paper's own scope, a ForceMove app or the consensus app (Nitro:633 "for a
+    ForceMove channel"; Nitro:662-664: the consensus game is a ForceMove
+    application). An app that lets old signatures support a higher turn
+    fails the claim
+    (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`).
+    Operator ruling 2026-11-01: the papers assume desirable apps and do not
+    state it. The app must be `Desirable` for a destination map `dest`, a
+    class defined first and independently of the claim: IR, IC and value
+    conservation at every state (armada-laconic
+    `labbook/2026-10-30-app-classes-ic-ir.md` §2; ForceMove:410-416, 125-130,
+    339-347; operator rulings 2026-11-02, SATP §2.2 footnote 7, go-nitro
+    `SingleAssetPayments.sol`). Game B fails `AppIR`
+    (`docs/counterexamples/ir_game_rewrites_share.lean`). The pool, mint and
+    zero-entry tag apps fail value conservation
     (`docs/counterexamples/unowned_pool_take.lean`,
-    `docs/counterexamples/strict_premise_mint.lean`). The claim fails as
-    stated: `docs/counterexamples/zero_entry_tag.lean` (a desirable app whose
-    moves change a zero entry and no amount). -/
+    `docs/counterexamples/strict_premise_mint.lean`,
+    `docs/counterexamples/zero_entry_tag.lean`). Operator ruling 2026-11-01:
+    own-violation is one rule for every participant; a state signed against
+    the signer's own interest costs only the signer. The claim is read
+    against the threat without own-violations of the other participants
+    (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the honest `p` signs
+    no two outcomes at one slot (`HonestSend.noConflict`). The gift play of
+    go-nitro `SingleAssetPayments.sol` is such a violation
+    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
 theorem single_enabled_is_finalizable (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
     (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
     (c : TimedChannel T.ε)
-    (happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (hrules : (∃ vt, apps (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps (c : FixedPart).appDef = consensusRules)
     (hdes : Desirable apps (c : FixedPart).appDef dest)
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →

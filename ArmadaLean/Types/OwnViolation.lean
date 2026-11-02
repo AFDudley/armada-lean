@@ -14,7 +14,9 @@
     funding point it forbids alternative moves with two outcomes
     (ForceMove:782-794).
   * `OwnViolation.Gift` (b): the signer signs a state that pays its own
-    destination less than the state of the turn before, which it holds.
+    destination less than the state of the turn before, which it holds. A
+    state that every participant signed is an agreement (a trade), not a
+    gift (operator ruling 2026-11-02).
 
   The honest signer keeps rule (a) (`HonestSend.noConflict`,
   `ArmadaLean/Types/Honest.lean`).
@@ -63,17 +65,18 @@ instance (d : E) (known : List (SignedState E)) (st : State E) :
   inferInstanceAs (Decidable (∃ prev ∈ known, _))
 
 /-- **The own-violation of a signer `q`** with the destination map `dest`,
-    for a state `st` that `q` signs: (a) `q` already signed, in `known`, a
-    state of the same channel and slot with another outcome, or (b) `st` is
-    a gift of `q` against the state of the turn before in `known`. Operator
-    ruling 2026-11-01. -/
+    for a signed state `ss` that `q` signs: (a) `q` already signed, in
+    `known`, a state of the same channel and slot with another outcome, or
+    (b) not every participant signed `ss`, and `ss` is a gift of `q` against
+    the state of the turn before in `known`. Operator rulings 2026-11-01
+    and 2026-11-02. -/
 def OwnViolation (dest : Participant → E) (q : Participant) (known : List (SignedState E))
-    (st : State E) : Prop :=
-  OwnViolation.Conflict (known.filter fun s => decide (q ∈ s.signers)) st ∨
-    OwnViolation.Gift (dest q) known st
+    (ss : SignedState E) : Prop :=
+  OwnViolation.Conflict (known.filter fun s => decide (q ∈ s.signers)) ss.state ∨
+    (¬ ss.ByAll ∧ OwnViolation.Gift (dest q) known ss.state)
 
-instance (dest : Participant → E) (q : Participant) (known : List (SignedState E)) (st : State E) :
-    Decidable (OwnViolation dest q known st) :=
-  inferInstanceAs (Decidable (_ ∨ _))
+instance (dest : Participant → E) (q : Participant) (known : List (SignedState E))
+    (ss : SignedState E) : Decidable (OwnViolation dest q known ss) :=
+  inferInstanceAs (Decidable (_ ∨ (_ ∧ _)))
 
 end ArmadaLean.Nitro

@@ -122,22 +122,38 @@ structure AppIC (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop wh
     ∃ proof' cand', RulesMove (apps a) c proof cand proof' cand' ∧
       share cand.outcome (dest q) ≤ share cand'.outcome (dest q)
 
+/-- One conserving step from the outcome `o` to `o'` with the mover `q`:
+    the outcome stays, or the step is a go-nitro payment step
+    (`SingleAssetPayments.sol`, `_requireValidOutcome` and
+    `_requireValidTransition`). The destinations and the entry count stay
+    ("Destinations may not change"), every entry is a simple allocation
+    ("not a simple allocation"), each destination appears once (Nitro:744-746:
+    "each address only appears once in the allocation"), the total stays
+    ("Total allocated cannot change"), and an entry falls only when it is
+    the mover's own entry and no other participant's ("Nonmover balance
+    decreased"). -/
+def ConservingStep (dest : Participant → E) (q : Participant) (o o' : Outcome E) : Prop :=
+  o' = o ∨
+  (o'.entries.map Entry.dest = o.entries.map Entry.dest ∧ (o.entries.map Entry.dest).Nodup ∧
+    (∀ e ∈ o.entries ++ o'.entries, e.item.isGuarantee = false) ∧
+    o'.entries.total = o.entries.total ∧
+    ∀ (i : Nat) (e e' : Entry E), o.entries[i]? = some e → o'.entries[i]? = some e' →
+      e'.amount < e.amount → e.dest = .external (dest q) ∧ ∀ r, e.dest = .external (dest r) → r = q)
+
 /-- Value conservation of the app `a`, for the destination map `dest`
-    (operator ruling 2026-11-02; SATP §2.2 footnote 7: "Care must be taken
+    (operator rulings 2026-11-02; SATP §2.2 footnote 7: "Care must be taken
     to ensure application rules encode the fair distribution of assets";
-    go-nitro `SingleAssetPayments.sol`: "Total allocated cannot change").
-    A transition of the app is a consecutive pair of states of a support
-    proof (ForceMove:744-778: a support is a run of valid moves). Every such
-    transition keeps the total allocated, and lowers no entry except one
-    owned by the mover `q` of the new state, the entry of `dest q`. A
-    one-state support (the consensus app) holds no transition. -/
+    go-nitro `SingleAssetPayments.sol`). A transition of the app is a
+    consecutive pair of states of a support proof (ForceMove:744-778: a
+    support is a run of valid moves). Every such transition is a
+    `ConservingStep` with the mover of the new state. A one-state support
+    (the consensus app) holds no transition. -/
 structure Conserving (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop where
   conserve : ∀ (c : FixedPart) (proof : SupportProof E) (cand : State E), c.appDef = a →
     (apps a).supports c proof cand = true →
     ∀ (i : Nat) (m1 m2 : SignedState E) (q : Participant), proof[i]? = some m1 →
       proof[i + 1]? = some m2 → m2.state.mover = some q →
-      m2.state.outcome.entries.total = m1.state.outcome.entries.total ∧
-      ∀ k, share m2.state.outcome k < share m1.state.outcome k → k = dest q
+      ConservingStep dest q m1.state.outcome m2.state.outcome
 
 /-- A desirable app: IR, IC and value conservation at every state, for the
     destination map `dest`. -/
@@ -146,19 +162,11 @@ structure Desirable (apps : Apps E) (a : AppId) (dest : Participant → E) : Pro
   ic : AppIC apps a dest
   conserves : Conserving apps a dest
 
-/-- A move of the go-nitro payment rules (`SingleAssetPayments.sol`,
-    `_requireValidTransition`): the destinations and their order stay, the
-    total stays ("Total allocated cannot change"), and an amount falls only
-    at the mover's own destination, which no other participant has. -/
-def PaymentMove (dest : Participant → E) (s s' : State E) : Prop :=
-  s'.outcome.entries.map Entry.dest = s.outcome.entries.map Entry.dest ∧
-    s'.outcome.entries.total = s.outcome.entries.total ∧
-    ∀ k, share s'.outcome k < share s.outcome k →
-      (∃ q, s'.mover = some q ∧ dest q = k) ∧ ∀ q, s'.mover ≠ some q → dest q ≠ k
-
 /-- A ForceMove game library with the go-nitro payment rules: a transition
-    is valid exactly when it is a `PaymentMove`. -/
+    is valid exactly when the new state has a mover and the transition is a
+    `ConservingStep` with that mover. -/
 structure PaymentRules (vt : State E → State E → Bool) (dest : Participant → E) : Prop where
-  valid_iff : ∀ s s', vt s s' = true ↔ PaymentMove dest s s'
+  valid_iff : ∀ s s', vt s s' = true ↔
+    ∃ q, s'.mover = some q ∧ ConservingStep dest q s.outcome s'.outcome
 
 end ArmadaLean.Nitro

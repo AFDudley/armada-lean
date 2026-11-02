@@ -249,7 +249,7 @@ theorem net1_reachable : (Nitro.participant appsS T1).Reachable net1 := by
   refine .tail (b := ⟨sF, [r0], []⟩) ?_ (Or.inl ⟨.send (st 1 O1), send_feasible, rfl⟩)
   refine .tail (b := ⟨sF, [], []⟩) ?_
     (Or.inr (Or.inr (Or.inl ⟨.deliver r0, ⟨unforged_r0 _, fun q _ _ h => by
-      rcases h with ⟨s, hs, -⟩ | ⟨s, hs, -⟩ <;> simp at hs⟩, fun op h => (by cases h), rfl⟩)))
+      rcases h with ⟨s, hs, -⟩ | ⟨-, s, hs, -⟩ <;> simp at hs⟩, fun op h => (by cases h), rfl⟩)))
   refine .tail (b := ⟨s5, [], []⟩) ?_ (Or.inr (Or.inr (Or.inl ⟨.chain q0 depQ,
     ⟨⟨by decide, fun ss hss => by cases hss⟩, fun ss hss => by cases hss⟩, fun op h => (by cases h),
     h2.symm⟩)))
@@ -561,7 +561,7 @@ theorem roundE_first {m : HonestMove Nat} (hfeas : m.Feasible net1) :
       · exact unforged_r0 _
       · exact ⟨fun _ => ⟨s1, List.mem_singleton_self _, rfl⟩, fun v hv => by simp [s1, st, State.voucher?] at hv⟩
     · show ∀ ss ∈ [r0, s1], ∀ q ∈ ss.signers, q ≠ p0 →
-        ¬ OwnViolation destS q ([r0, s1] ++ [r0]) ss.state
+        ¬ OwnViolation destS q ([r0, s1] ++ [r0]) ss
       decide
   have hnow1 : n1.chain.now = 0 := by rw [hn1]; rfl
   refine ⟨n', mkRound (.other hfeasE (fun _ h => by cases h) (fun _ h => by cases h) hseq)
@@ -745,9 +745,9 @@ theorem answer_clean {A : Outcome Nat} {m : NetworkState Nat p0} (hI : InvA A m)
     {y : SignedState Nat} (hy : y ∈ m.sent) (hyc : y.state.channel = c0)
     (ho : y.state.turnNum % 2 = 1) (hyv : vtS y.state (st (y.state.turnNum + 1) A) = true) :
     ¬ OwnViolation destS q0 ((opAns A y.state).proofStates ++ m.received)
-      (st (y.state.turnNum + 1) A) := by
+      ⟨st (y.state.turnNum + 1) A, [q0]⟩ := by
   have hsh := vtS_share hyv
-  rintro (⟨s, hs, hc, hslot, hne⟩ | ⟨s, hs, hc, ht, hlt⟩)
+  rintro (⟨s, hs, hc, hslot, hne⟩ | ⟨-, s, hs, hc, ht, hlt⟩)
   · obtain ⟨hs, hsq⟩ := List.mem_filter.1 hs
     have hsq : q0 ∈ s.signers := of_decide_eq_true hsq
     simp only [opAns, Op.proofStates, List.cons_append, List.nil_append, List.mem_cons] at hs
@@ -1634,7 +1634,9 @@ theorem appsS_not_conserving : ¬ Conserving appsS (tc0 : FixedPart).appDef dest
   intro h
   have := h.conserve c0 [s1, ⟨st 2 (pay 6 4), [q0]⟩] (st 2 (pay 6 4)) rfl (by decide) 0 s1
     ⟨st 2 (pay 6 4), [q0]⟩ q0 rfl rfl (by decide)
-  exact absurd (this.2 0 (by decide)) (by decide)
+  rcases this with heq | ⟨-, -, -, -, hlow⟩
+  · exact absurd heq (by decide)
+  · exact absurd (hlow 2 (alloc dF 5) (alloc dF 4) rfl rfl (by decide)).1 (by decide)
 
 theorem appsS_not_desirable : ¬ Desirable appsS (tc0 : FixedPart).appDef destS :=
   fun h => appsS_not_conserving h.conserves
@@ -1642,11 +1644,8 @@ theorem appsS_not_desirable : ¬ Desirable appsS (tc0 : FixedPart).appDef destS 
 /-- The app does not have the go-nitro payment rules: the answer of `q0`
     lowers the pool, which is not the mover's own destination
     (`pool_take`). -/
-theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := by
-  intro h
-  obtain ⟨hv, hlt, hd⟩ := pool_take
-  obtain ⟨q, -, hq⟩ := (((h.valid_iff _ _).1 hv).2.2 0 hlt).1
-  exact hd q hq
+theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := fun h =>
+  appsS_not_desirable (TakeOut.paymentRules_desirable h _)
 
 /-- `Spec.finalizable_or_two_enabled` with `AppIR` and `AppIC` in place of
     `Desirable` (the form before the operator ruling of 2026-11-02 added

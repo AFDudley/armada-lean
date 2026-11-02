@@ -1,19 +1,18 @@
 /-
-  Counterexample to both Nitro-24 statements in their current form
-  (Nitro:653-658; `Spec.finalizable_or_two_enabled`,
-  `Spec.single_enabled_is_finalizable`, `ArmadaLean/Spec/Nitro/Liveness.lean`):
-  the threat is `Threat.noOwnViolation`, with the premises `SupportWindow`
-  and `Desirable` (IR, IC and value conservation; operator rulings
-  2026-11-01 and 2026-11-02).
+  Failure test: an app that is IR and IC and conserves every amount, but
+  changes a destination, so it fails value conservation with go-nitro's
+  form rule and is not desirable (operator ruling 2026-11-02). Nitro-24
+  (Nitro:653-658) in the old form, with IR, IC and amount conservation in
+  place of `Desirable` (`Old_finalizable_or_two_enabled`,
+  `Old_single_enabled_is_finalizable`), fails for it, against the threat
+  `Threat.noOwnViolation`.
 
   The app is a three-slot ForceMove app on a two-party ledger channel `c0`
   (`[q0, p0]`, `n = 2`). An outcome `pay a f` pays 5 to `q0`, `a` to `p0`,
   and 0 to the destination `f + 3`, which belongs to no participant (the
   tag `f`). A valid move keeps every amount; any mover may change the tag.
-  The app meets every premise of both statements:
-  * `Rules.SupportWindow` (`appsS_supportWindow`);
-  * `Desirable` (`appsS_desirable`): IR (`appsS_IR`), IC (`appsS_IC`) and
-    value conservation (`appsS_conserving`): no move changes an amount.
+  The app is IR (`appsS_IR`), IC (`appsS_IC`) and keeps every amount
+  (`amountConserving`).
   The adversary is the threat `T1 = T0.noOwnViolation destS`. Its answers
   change the tag. That is no gift (`q0`'s amount stays 5) and no conflict
   (one answer per slot), so it is no own-violation (`answer_clean`).
@@ -26,15 +25,15 @@
     0 after every move of `q0` from `O1`.
   * No outcome is finalizable (`not_finalizable`): the adversary answers
     every challenge with the target `Ω` by a new tag (`ansQ`).
-  Both statements fail (`finalizable_or_two_enabled_false`,
+  Both old forms fail (`finalizable_or_two_enabled_false`,
   `single_enabled_is_finalizable_false`).
 
   No value moves in this play: every outcome pays `q0` 5 and `p0` 5. The
-  statements fail because they speak of one exact outcome, and the answers
-  change the outcome without changing a payment. go-nitro
+  answers only change who a zero entry pays. go-nitro
   `SingleAssetPayments.sol` refuses a changed destination ("Destinations may
-  not change") and a third entry ("|Allocation|!=|participants|"), so the app
-  does not have the go-nitro payment rules (`appsS_not_paymentRules`).
+  not change"), so the app fails value conservation
+  (`appsS_not_conserving`), is not desirable (`appsS_not_desirable`), and
+  lacks the go-nitro payment rules (`appsS_not_paymentRules`).
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/zero_entry_tag.lean`.
@@ -244,7 +243,7 @@ theorem net1_reachable : (Nitro.participant appsS T1).Reachable net1 := by
   refine .tail (b := ⟨sF, [r0], []⟩) ?_ (Or.inl ⟨.send (st 1 O1), send_feasible, rfl⟩)
   refine .tail (b := ⟨sF, [], []⟩) ?_
     (Or.inr (Or.inr (Or.inl ⟨.deliver r0, ⟨unforged_r0 _, fun q _ _ h => by
-      rcases h with ⟨s, hs, -⟩ | ⟨s, hs, -⟩ <;> simp at hs⟩, fun op h => (by cases h), rfl⟩)))
+      rcases h with ⟨s, hs, -⟩ | ⟨-, s, hs, -⟩ <;> simp at hs⟩, fun op h => (by cases h), rfl⟩)))
   refine .tail (b := ⟨s5, [], []⟩) ?_ (Or.inr (Or.inr (Or.inl ⟨.chain q0 depQ,
     ⟨⟨by decide, fun ss hss => by cases hss⟩, fun ss hss => by cases hss⟩, fun op h => (by cases h),
     h2.symm⟩)))
@@ -556,7 +555,7 @@ theorem roundE_first {m : HonestMove Nat} (hfeas : m.Feasible net1) :
       · exact unforged_r0 _
       · exact ⟨fun _ => ⟨s1, List.mem_singleton_self _, rfl⟩, fun v hv => by simp [s1, st, State.voucher?] at hv⟩
     · show ∀ ss ∈ [r0, s1], ∀ q ∈ ss.signers, q ≠ p0 →
-        ¬ OwnViolation destS q ([r0, s1] ++ [r0]) ss.state
+        ¬ OwnViolation destS q ([r0, s1] ++ [r0]) ss
       decide
   have hnow1 : n1.chain.now = 0 := by rw [hn1]; rfl
   refine ⟨n', mkRound (.other hfeasE (fun _ h => by cases h) (fun _ h => by cases h) hseq)
@@ -740,9 +739,9 @@ theorem answer_clean {A : Outcome Nat} {m : NetworkState Nat p0} (hI : InvA A m)
     {y : SignedState Nat} (hy : y ∈ m.sent) (hyc : y.state.channel = c0)
     (ho : y.state.turnNum % 2 = 1) (hyv : vtS y.state (st (y.state.turnNum + 1) A) = true) :
     ¬ OwnViolation destS q0 ((opAns A y.state).proofStates ++ m.received)
-      (st (y.state.turnNum + 1) A) := by
+      ⟨st (y.state.turnNum + 1) A, [q0]⟩ := by
   have hsh := vtS_share hyv
-  rintro (⟨s, hs, hc, hslot, hne⟩ | ⟨s, hs, hc, ht, hlt⟩)
+  rintro (⟨s, hs, hc, hslot, hne⟩ | ⟨-, s, hs, hc, ht, hlt⟩)
   · obtain ⟨hs, hsq⟩ := List.mem_filter.1 hs
     have hsq : q0 ∈ s.signers := of_decide_eq_true hsq
     simp only [opAns, Op.proofStates, List.cons_append, List.nil_append, List.mem_cons] at hs
@@ -1545,12 +1544,14 @@ theorem prevents_other (X : Outcome Nat) (hX : X ≠ O1) :
     | round _ hr ih => exact (roundX hX ih hr).2
   exact ⟨σX X, σX_feasible X, fun n1 n2 hr hround => (roundX hX (hrun hr) hround).1⟩
 
-/-! ## The two statements fail
+/-! ## The old forms fail; the app is not desirable
 
-The app is desirable (`appsS_desirable`): IR (`appsS_IR`), IC (`appsS_IC`)
-and value conservation (`appsS_conserving`). The adversary's answers are no
-own-violations of `q0` (`answer_clean`), so the play is a play of
-`T0.noOwnViolation destS`, the threat of both statements. -/
+The app is IR (`appsS_IR`), IC (`appsS_IC`) and conserves every amount
+(`amountConserving`, the conservation rule before go-nitro's form rule).
+The adversary's answers are no own-violations of `q0` (`answer_clean`), so
+the play is a play of `T0.noOwnViolation destS`. The answers change a
+destination, so the app fails value conservation with go-nitro's form rule
+(`appsS_not_conserving`) and is not desirable (`appsS_not_desirable`). -/
 
 /-- A valid move keeps every amount. -/
 theorem vtS_amounts {s s' : State Nat} (h : vtS s s' = true) (k : Nat) :
@@ -1576,53 +1577,96 @@ theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.
 theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IC stay_vtS _
 
-/-- A valid move keeps the total and lowers no entry. -/
-theorem conserve_vtS : ∀ s s' q, vtS s s' = true → s'.mover = some q →
+/-- Amount conservation, the rule before go-nitro's form rule: a valid move
+    keeps the total and lowers no amount except the mover's own. -/
+def AmountConserving (vt : State Nat → State Nat → Bool) (dest : Participant → Nat) : Prop :=
+  ∀ s s' q, vt s s' = true → s'.mover = some q →
     s'.outcome.entries.total = s.outcome.entries.total ∧
-    ∀ k, share s'.outcome k < share s.outcome k → k = destS q := by
+    ∀ k, share s'.outcome k < share s.outcome k → k = dest q
+
+/-- `vtS` keeps the total and lowers no amount. -/
+theorem amountConserving : AmountConserving vtS destS := by
   intro s s' q h _
   obtain ⟨a, b, a', b', h0, h1, ha⟩ := (vtS_iff _ _).1 h
   refine ⟨?_, fun k hk => absurd (vtS_amounts h k) (Nat.ne_of_lt hk)⟩
   rw [decode_eq_some.1 h0, decode_eq_some.1 h1, ha]
   rfl
 
-/-- The app conserves value (`TakeOut.forceMove_conserving`). -/
-theorem appsS_conserving : Conserving appsS (tc0 : FixedPart).appDef destS :=
-  TakeOut.forceMove_conserving conserve_vtS _
-
-/-- The app is desirable: IR, IC and value conservation at every state. -/
-theorem appsS_desirable : Desirable appsS (tc0 : FixedPart).appDef destS :=
-  ⟨appsS_IR, appsS_IC, appsS_conserving⟩
-
-/-- The app does not have the go-nitro payment rules: the answer of `q0`
-    changes the destination of the third entry ("Destinations may not
-    change", `SingleAssetPayments.sol`). -/
-theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := by
+/-- The app fails value conservation: the answer of `q0` changes the
+    destination of the third entry ("Destinations may not change",
+    `SingleAssetPayments.sol`). -/
+theorem appsS_not_conserving : ¬ Conserving appsS (tc0 : FixedPart).appDef destS := by
   intro h
-  have hv : vtS (st 1 O1) (st 2 (pay 5 1)) = true := by decide
-  exact absurd ((h.valid_iff _ _).1 hv).1 (by decide)
+  have := h.conserve c0 [s1, ⟨st 2 (pay 5 1), [q0]⟩] (st 2 (pay 5 1)) rfl (by decide) 0 s1
+    ⟨st 2 (pay 5 1), [q0]⟩ q0 rfl rfl (by decide)
+  rcases this with heq | ⟨hd, -⟩
+  · exact absurd heq (by decide)
+  · exact absurd hd (by decide)
 
-theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
+theorem appsS_not_desirable : ¬ Desirable appsS (tc0 : FixedPart).appDef destS :=
+  fun h => appsS_not_conserving h.conserves
+
+/-- The app does not have the go-nitro payment rules ("Destinations may not
+    change"): those rules give a desirable app. -/
+theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := fun h =>
+  appsS_not_desirable (TakeOut.paymentRules_desirable h _)
+
+/-- Nitro-24's first claim with IR, IC and amount conservation in place of
+    `Desirable`, for a ForceMove app (the form of 2026-11-02 before
+    go-nitro's form rule). -/
+def Old_finalizable_or_two_enabled : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (_A : Assumptions apps p T) (dest : Participant → Nat)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
+    (c : TimedChannel T.ε) (vt : State Nat → State Nat → Bool)
+    (_hvt : apps (c : FixedPart).appDef = forceMoveRules vt)
+    (_hir : AppIR apps (c : FixedPart).appDef dest) (_hic : AppIC apps (c : FixedPart).appDef dest)
+    (_hcons : AmountConserving vt dest)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
+      candidate.channel = (c : FixedPart)),
+    (∃ Ω, Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω1 net.state ∧
+      Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω2 net.state)
+
+/-- Nitro-24's second claim in the same old form. -/
+def Old_single_enabled_is_finalizable : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (_A : Assumptions apps p T) (dest : Participant → Nat)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
+    (c : TimedChannel T.ε) (vt : State Nat → State Nat → Bool)
+    (_hvt : apps (c : FixedPart).appDef = forceMoveRules vt)
+    (_hir : AppIR apps (c : FixedPart).appDef dest) (_hic : AppIC apps (c : FixedPart).appDef dest)
+    (_hcons : AmountConserving vt dest)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
+      ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
+    (Ω : Outcome Nat) (_hΩ : Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state)
+    (_huniq : ∀ Ω', Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω' net.state → Ω' = Ω),
+    Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state
+
+theorem finalizable_or_two_enabled_false : ¬ Old_finalizable_or_two_enabled := by
   intro h
-  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_desirable
-      (by decide)
-      ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
+  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 vtS rfl appsS_IR appsS_IC
+      amountConserving (by decide) ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
     ⟨Ω, hΩ⟩ | ⟨Ω1, Ω2, hne, hE1, hE2⟩
   · exact not_finalizable Ω hΩ
   · by_cases h1 : Ω1 = O1
     · exact hE2 (prevents_other Ω2 (fun h2 => hne (h1.trans h2.symm)))
     · exact hE1 (prevents_other Ω1 h1)
 
-theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Nat) := by
+theorem single_enabled_is_finalizable_false : ¬ Old_single_enabled_is_finalizable := by
   intro h
-  refine not_finalizable O1 (h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow
-    appsS_desirable (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
+  refine not_finalizable O1 (h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 vtS rfl appsS_IR
+    appsS_IC amountConserving (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
   · rw [List.mem_singleton.1 ht]
     exact ⟨[r0, s1], holds_r0s1, supports_r0s1⟩
   · by_contra hne
     exact hE (prevents_other Ω' hne)
 
-#print axioms appsS_desirable
+#print axioms appsS_not_desirable
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 

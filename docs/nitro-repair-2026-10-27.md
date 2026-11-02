@@ -949,14 +949,19 @@ Operator rulings of 2026-11-01 and 2026-11-02 apply to Nitro-24 (Nitro:653-658):
    can enforce at least what its holdings give it" (ForceMove:410-416, 125-130). IC: "at no state does a participant
    gain by deviating from the rules or by aborting" (ForceMove:339-347). `AppIC`: at every supported non-final
    state, when the rules let the game go on, the mover of the next turn has a move by the rules (`RulesMove`) that
-   pays it at least the current resolution. Value conservation (ruling 2026-11-02; SATP §2.2 footnote 7, go-nitro
-   "Total allocated cannot change"): every consecutive pair of states of a support proof keeps the total allocated
-   and lowers no entry except the one of the mover of the second state. Both statements take `Desirable`, next to
-   `SupportWindow`.
+   pays it at least the current resolution. Value conservation (rulings 2026-11-02; SATP §2.2 footnote 7, go-nitro
+   `SingleAssetPayments.sol`): every consecutive pair of states of a support proof is a `ConservingStep`. The
+   outcome stays, or the destinations and the entry count stay ("Destinations may not change"), every entry is a
+   simple allocation, each destination appears once (Nitro:744-746), the total stays ("Total allocated cannot
+   change"), and an entry falls only when it is the mover's own entry. Both statements take `Desirable`.
 2. Own-violation is one rule for every participant (`ArmadaLean/Types/OwnViolation.lean`). A signer `q` commits an
-   own-violation with a state `st` when (a) `q` already signed a state of the same channel and slot with another
-   outcome (`OwnViolation.Conflict`; every setup turn is slot 0, `State.signSlot`), or (b) `st` pays `q`, at
-   `dest q`, less than a known state of the turn before (`OwnViolation.Gift`).
+   own-violation with a signed state `ss` when (a) `q` already signed a state of the same channel and slot with
+   another outcome (`OwnViolation.Conflict`; every setup turn is slot 0, `State.signSlot`), or (b) not every
+   participant signed `ss`, and `ss` pays `q`, at `dest q`, less than a known state of the turn before
+   (`OwnViolation.Gift`). A state that every participant signed is an agreement, not a gift (ruling 2026-11-02).
+3. Scope (ruling 2026-11-02): a ForceMove app or the consensus app (Nitro:633 "for a ForceMove channel";
+   Nitro:662-664: the consensus game is a ForceMove application). The premise
+   `(∃ vt, apps c.appDef = forceMoveRules vt) ∨ apps c.appDef = consensusRules` replaces `SupportWindow`.
 
 The rule binds both sides:
 
@@ -968,18 +973,18 @@ The rule binds both sides:
 
 ### 7.1 Statement changes (`ArmadaLean/Spec/Nitro/Liveness.lean`)
 
-- `finalizable_or_two_enabled`, `single_enabled_is_finalizable`: new binder `dest`, premise
-  `hdes : Desirable apps c.appDef dest`, `net : ReachableParticipant apps (T.noOwnViolation dest)`, and
-  `Finalizable` / `Enabled` over `T.noOwnViolation dest`. `A : Assumptions apps p T` and `SupportWindow` stay.
+- `finalizable_or_two_enabled`, `single_enabled_is_finalizable`: new binder `dest`, premises
+  `hrules` (the scope above, in place of `SupportWindow`) and `hdes : Desirable apps c.appDef dest`,
+  `net : ReachableParticipant apps (T.noOwnViolation dest)`, and `Finalizable` / `Enabled` over
+  `T.noOwnViolation dest`. `A : Assumptions apps p T` stays.
 - `funding_point_universally_finalizable`: doc comment only. Its type changes through `HonestSend`.
 - `participant_sent_honest`: no text change. Its type changes through `HonestSend`.
 
 The payout forms `FinalizableFor` and `EnabledFor` are removed.
 
-The go-nitro payment rules are not a premise. `PaymentRules vt dest` (a transition is valid exactly when it keeps
-the destinations, their order and the total, and lowers an amount only at the mover's own destination) is a
-sufficient condition: `TakeOut.paymentRules_desirable`. The consensus app is desirable:
-`TakeOut.consensus_desirable` (a consensus support holds one state, so it holds no transition).
+The go-nitro payment rules are not a premise. `PaymentRules vt dest` (a transition is valid exactly when it is a
+`ConservingStep` with the mover) is a sufficient condition: `TakeOut.paymentRules_desirable`. The consensus app is
+desirable: `TakeOut.consensus_desirable` (a consensus support holds one state, so it holds no transition).
 
 ### 7.2 Classification of the counterexample apps
 
@@ -992,16 +997,10 @@ sufficient condition: `TakeOut.paymentRules_desirable`. The consensus app is des
 | `SingleAssetPayments` | `single_asset_payments_ir.lean` | yes | yes (`appsS_desirable`) | — | refutes only the full-threat form; its play is an own-violation (`gift_is_ownViolation`) |
 | Unowned pool | `unowned_pool_take.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
 | Minting | `strict_premise_mint.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
-| Zero-entry tag | `zero_entry_tag.lean` | yes | yes (`appsS_desirable`) | no (`appsS_not_paymentRules`) | refutes both current statements |
+| Zero-entry tag | `zero_entry_tag.lean` | yes | no (`appsS_not_desirable`, a move changes a destination) | no | failure test |
 
 `consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
 
 ### 7.3 Status
 
-Both statements stay `sorry`. They are false for desirable apps: `zero_entry_tag.lean` refutes them with an app
-that meets `SupportWindow` and `Desirable`, against the threat without own-violations. Its outcomes pay 5 to each
-side and carry a zero entry for a destination of no participant. Every move keeps every amount, and any mover may
-change the destination of the zero entry. The honest `p0` restores its outcome `O1` after each move of `q0`, so only
-`O1` is enabled, and `q0` answers each challenge with a new destination for the zero entry, so no outcome is
-finalizable. No value moves. The statements fail because they speak of one exact outcome. go-nitro
-`SingleAssetPayments.sol` refuses the move ("Destinations may not change"), so the app is not a go-nitro app.
+Both statements stay `sorry`. No counterexample under the current definitions is known.
