@@ -9247,7 +9247,7 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
       obtain ⟨net1a, hseq1, hseq2⟩ := Threat.Round.single hround
       obtain ⟨hsent1a, hI1a⟩ := hnil hseq1 hsent' hIat
       rw [NetworkState.applyHonest_chain]
-      have hRest : ∀ {t0 : Time} (net_mid : NetworkState E p) (T0 : Nat) (ch0 : Challenge E),
+      have hRest : ∀ {t0 : Time} {net_mid : NetworkState E p} (T0 : Nat) (ch0 : Challenge E),
           t ≤ T0 → T0 ≤ M →
           (∃ a b, PairOutcome (r.dest alice) (r.dest bob) ch0.state.outcome a b ∧
             a + b = r.a0 + r.b0) →
@@ -9265,42 +9265,11 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
         · exact recurse net1 hsent1 hI1 (by omega)
         · obtain ⟨tr, f, o, hfeq⟩ := hfinr
           exact doneFin net1 tr f o hI1 hfeq
-      cases hstep : net1a.chain.apply apps p (.challenge r.V proof candidate) with
-      | none =>
-        rw [NetworkState.applyAdv_land_none apps hstep] at hseq2
-        obtain ⟨hsent1, hI1⟩ := hnil hseq2 hsent1a hI1a
-        cases hstatus1a : net1a.chain.statusOf r.V with
-        | finalized t1a f1a o1a =>
-          obtain ⟨o1', ho1'⟩ := statusOf_frozen_once_finalized_roundSeq r.V hckV hseq2 hstatus1a
-          exact doneFin net1 t1a f1a o1' hI1 ho1'
-        | challenged t1a ch1a =>
-          have hI1a' := hI1a
-          unfold SatpFinalizeInv at hI1a'
-          rw [hstatus1a] at hI1a'
-          obtain ⟨ht1aM, hbnd1a⟩ := hI1a'
-          have ht1at : t ≤ t1a := by
-            rcases turnNumRecord_mono_roundSeq hseq1 r.V hckV with hle | hfin0
-            · rw [hstatus, hstatus1a] at hle
-              (simpa? using hle says simpa only [ChannelStatus.turnNumRecord_open, ChannelStatus.turnNumRecord_challenged] using hle)
-            · obtain ⟨tr0, f0, o0, hfeq0⟩ := hfin0
-              rw [hfeq0] at hstatus1a
-              cases hstatus1a
-          exact hRest net1a t1a ch1a ht1at ht1aM hbnd1a hsent1a hseq2 hstatus1a
-        | «open» t1a =>
-          have hgt1 : candidate.turnNum < t1a := by
-            by_contra hcon
-            rw [not_lt] at hcon
-            rw [Adjudicator.apply_challenge, challenge_can_happen apps _ p r.V proof candidate hpV
-              (by rw [hV]; exact hsup) hchanc (Or.inl ⟨by rw [Adjudicator.mode_eq, hstatus1a]; rfl,
-                by rw [hstatus1a, ChannelStatus.turnNumRecord_open]; exact hcon⟩)] at hstep
-            cases hstep
-          rcases turnNumRecord_mono_roundSeq hseq2 r.V hckV with hle | hfinr
-          · rw [hstatus1a, ChannelStatus.turnNumRecord_open] at hle
-            exact recurse net1 hsent1 hI1 (by omega)
-          · obtain ⟨tr, f, o, hfeq⟩ := hfinr
-            exact doneFin net1 tr f o hI1 hfeq
-      | some s' =>
-        obtain ⟨-, rfl⟩ := Adjudicator.challenge_some hstep
+      by_cases hpre : net1a.chain.ChallengePre apps p r.V proof candidate
+      · have hstep : _ = some (net1a.chain.setStatus r.V (.challenged candidate.turnNum
+            ⟨candidate, net1a.chain.now + r.V.challengeDuration⟩)) :=
+          (Adjudicator.apply_challenge_equation apps p r.V proof candidate net1a.chain).trans
+            (dif_pos hpre)
         have hmid : (net1a.applyAdv apps (.land (.challenge r.V proof candidate))).chain.statusOf
             r.V = .challenged candidate.turnNum
               ⟨candidate, net1a.chain.now + r.V.challengeDuration⟩ := by
@@ -9308,7 +9277,41 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
             if_pos rfl]
         have hsentmid : (net1a.applyAdv apps (.land (.challenge r.V proof candidate))).sent =
             net.sent := by rw [NetworkState.applyAdv_sent]; exact hsent1a
-        exact hRest _ candidate.turnNum _ htc hcM hbnd hsentmid hseq2 hmid
+        exact hRest candidate.turnNum _ htc hcM hbnd hsentmid hseq2 hmid
+      have hstep := (Adjudicator.apply_challenge_equation apps p r.V proof candidate
+        net1a.chain).trans (dif_neg hpre)
+      rw [NetworkState.applyAdv_land_none apps hstep] at hseq2
+      obtain ⟨hsent1, hI1⟩ := hnil hseq2 hsent1a hI1a
+      cases hstatus1a : net1a.chain.statusOf r.V with
+      | finalized t1a f1a o1a =>
+        obtain ⟨o1', ho1'⟩ := statusOf_frozen_once_finalized_roundSeq r.V hckV hseq2 hstatus1a
+        exact doneFin net1 t1a f1a o1' hI1 ho1'
+      | challenged t1a ch1a =>
+        have hI1a' := hI1a
+        unfold SatpFinalizeInv at hI1a'
+        rw [hstatus1a] at hI1a'
+        obtain ⟨ht1aM, hbnd1a⟩ := hI1a'
+        have ht1at : t ≤ t1a := by
+          rcases turnNumRecord_mono_roundSeq hseq1 r.V hckV with hle | hfin0
+          · rw [hstatus, hstatus1a] at hle
+            (simpa? using hle says simpa only [ChannelStatus.turnNumRecord_open, ChannelStatus.turnNumRecord_challenged] using hle)
+          · obtain ⟨tr0, f0, o0, hfeq0⟩ := hfin0
+            rw [hfeq0] at hstatus1a
+            cases hstatus1a
+        exact hRest t1a ch1a ht1at ht1aM hbnd1a hsent1a hseq2 hstatus1a
+      | «open» t1a =>
+        have hgt1 : candidate.turnNum < t1a := by
+          by_contra hcon
+          rw [not_lt] at hcon
+          rw [Adjudicator.apply_challenge, challenge_can_happen apps _ p r.V proof candidate hpV
+            (by rw [hV]; exact hsup) hchanc (Or.inl ⟨by rw [Adjudicator.mode_eq, hstatus1a]; rfl,
+              by rw [hstatus1a, ChannelStatus.turnNumRecord_open]; exact hcon⟩)] at hstep
+          cases hstep
+        rcases turnNumRecord_mono_roundSeq hseq2 r.V hckV with hle | hfinr
+        · rw [hstatus1a, ChannelStatus.turnNumRecord_open] at hle
+          exact recurse net1 hsent1 hI1 (by omega)
+        · obtain ⟨tr, f, o, hfeq⟩ := hfinr
+          exact doneFin net1 tr f o hI1 hfeq
 
 theorem validChallenge_turnNum {alice bob : Participant} {c : FixedPart} {s ch : SignedState E}
     (h : validChallenge c alice bob s ch = true) : ch.state.turnNum = 2 := by
