@@ -26,7 +26,6 @@ import Lean.Meta.Basic
 import Lean.DocString
 import Lean.Util.FoldConsts
 import Lean.Structure
-import Lean.AuxRecursor
 import Lean.Meta.Match.MatcherInfo
 import Batteries.Tactic.Lint.Basic
 
@@ -563,22 +562,27 @@ def poolCitation (doc : String) : Bool :=
   hasMarkerDigit doc ".sol:" || hasMarkerDigit doc ".circom:" ||
     (doc.splitOn "operator ruling").length > 1
 
+/-- The reflexivity and congruence constants (`Eq.refl a : a = a`,
+    `congrArg f h : f a₁ = f a₂`, the motive of every `rw` step). Lean
+    fills their explicit data arguments in from the goal. -/
+def goalCopyConsts : Array Name :=
+  #[``Eq.refl, ``HEq.refl, ``Iff.refl, ``eq_self, ``iff_self, ``congrArg, ``congrFun, ``congr]
+
 /-- For each argument position of the constant `c`, `true` when
     `valueConstants` does not enter an argument at that position:
     - an implicit or instance-implicit argument (`Eq.mpr`'s `α β`, a
       `casesOn`/`rec` motive, `id`'s type in a `show` ascription);
     - for a matcher, also its motive (`Lean.Meta.MatcherInfo.numParams`),
       an explicit argument; its discriminants and alternatives count;
-    - for any other constant except a recursor, an explicit DATA argument
-      that the constant's result type names (`Eq.refl a : a = a`,
-      `congrArg f h : f a₁ = f a₂`, the motive of every `rw` step). Lean
-      fills such an argument in from the goal, so it is a copy of a term
-      of a type. An explicit proof argument always counts. -/
+    - for a `goalCopyConsts` constant, an explicit data argument that its
+      result type names: a copy of a term of the goal.
+    The last rule is not general. An explicit argument that the result
+    type names can be the author's choice: `Option.eq_none_or_eq_some
+    (s.apply …)` is a case split on `apply`, as `cases h : s.apply …` is. -/
 def skippedArgs (c : Name) : StateT (Std.HashMap Name (Array Bool)) MetaM (Array Bool) := do
   if let some s := (← get)[c]? then return s
-  let env ← getEnv
   let motive := (← getMatcherInfo? c).map (·.numParams)
-  let recursor := isAuxRecursor env c || (env.find? c matches some (.recInfo _))
+  let goalCopy := goalCopyConsts.contains c
   let s ← forallTelescope (← getConstInfo c).type fun xs body => do
     let mut out := #[]
     for h : i in [0:xs.size] do
@@ -586,8 +590,8 @@ def skippedArgs (c : Name) : StateT (Std.HashMap Name (Array Bool)) MetaM (Array
       out := out.push <| ← do
         if !d.binderInfo.isExplicit then pure true
         else if let some m := motive then pure (i == m)
-        else if recursor then pure false
-        else pure (body.containsFVar d.fvarId && !(← isProp d.type))
+        else if goalCopy then pure (body.containsFVar d.fvarId && !(← isProp d.type))
+        else pure false
     return out
   modify (·.insert c s)
   return s

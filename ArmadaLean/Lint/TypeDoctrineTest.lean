@@ -32,6 +32,13 @@ theorem nitroLayered (apps : Apps E) {p : Participant} (n : NetworkState E p) (o
     (n.applyAdv apps (.land op)).chain = Adjudicator.applyAll apps [(p, op)] n.chain :=
   NetworkState.applyAdv_land_chain apps n op
 
+/-- Skips a layer as `nitroSkip` does, with the case split through a
+    lemma: `apply` is an explicit argument that the lemma's result names. -/
+theorem nitroSplitByLemma (apps : Apps E) {p : Participant} (n : NetworkState E p) (op : Op E) :
+    (n.applyAdv apps (.land op)).chain = Adjudicator.applyAll apps [(p, op)] n.chain := by
+  rcases (n.chain.apply apps p op).eq_none_or_eq_some with hap | ⟨_, hap⟩ <;>
+    simp only [NetworkState.applyAdv, Adjudicator.applyAll, Option.getD, hap]
+
 /-- Skips a layer: a statement about reachable states whose proof splits on
     `Step`. Naming `Reachable` does not make `Step.casesOn` a statement
     constant. -/
@@ -61,6 +68,7 @@ def expectHits (n : Name) (ops : Array Name) (expected : Array Name) : MetaM Uni
 
 #eval expectHits ``nitroSkip nitroBaseOps #[``Adjudicator.apply]
 #eval expectHits ``nitroLayered nitroBaseOps #[]
+#eval expectHits ``nitroSplitByLemma nitroBaseOps #[``Adjudicator.apply]
 #eval expectHits ``poolSkip poolBaseOps #[`Step.casesOn]
 #eval expectHits ``poolMotiveOnly poolBaseOps #[]
 #eval expectHits ``poolConstructorOnly poolBaseOps #[]
