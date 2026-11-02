@@ -40,8 +40,8 @@ source text. So a namespace, an attribute or an `omit … in` line cannot hide a
 
 Theorems that `docs/how-to-verify.md` §4 names, but whose own doc comment cites no source in
 these forms, are helpers by this rule. Examples: `transact_value_conserved`,
-`transact_no_double_spend`, `fee_conservation`, `inflation_attack_profitable`,
-`mitigated_attack_unprofitable`. To make one of them a spec theorem, add a §11 citation to its
+`transact_no_double_spend`, `fee_conservation`. To make one of them a spec theorem, add a §11
+citation to its
 doc comment and run `scripts/convert_spec.py`. That is a statement decision for the operator.
 
 **Out of scope (decision 4, removed 2026-11-01).** The check once read the marker "Out of
