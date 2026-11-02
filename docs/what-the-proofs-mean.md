@@ -23,8 +23,9 @@ Lean and proved the properties that the internal security review
 | `merkleRoot_inj_leaf` | A Merkle membership proof binds exactly *one* leaf to the tree root — a proof for one commitment cannot be repurposed for another. |
 | `transact_public_outputs_determined` | Given the private witness, the public outputs (nullifiers, output commitments) are fully determined — no hidden degrees of freedom in the security-critical signals. |
 | `transact_inputs_distinct_nullifiers` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. The first is about one proof only; it is not a no-double-spend theorem. |
-| `inflation_attack_profitable` | On the *current* yield vault share math, the first-depositor inflation attack (issue #365) is provably profitable — the vulnerability is real, not theoretical. |
-| `mitigated_attack_unprofitable` | With the standard virtual-shares fix, the same attack is provably *un*profitable — the fix is mathematically sufficient. |
+| `locked_shares_set_at_first_deposit` / `locked_shares_supply_invariant` | The deployed yield vault **already carries the first-depositor inflation fix** (issue #365, PR #631): the first deposit locks `LOCKED_SHARES` shares to a dead address, and total supply never drops below `LOCKED_SHARES` afterward. |
+| `round_trip_loss_le` / `donation_loss_bound` | The exact rounding loss a depositor can suffer from a donation, as a closed integer bound — sharper than the contract's own `~donation / LOCKED_SHARES` NatSpec estimate. |
+| `donation_attack_unprofitable_post_fix` | With the fix in place, the donation (first-depositor inflation) attack **cannot profit**, for any donation or victim deposit. |
 | `fee_*` | The shield fee, a ratio fixed at deployment with floor division, conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). |
 
 ## The trust base — what you are trusting when you trust these proofs

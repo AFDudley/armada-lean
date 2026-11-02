@@ -23,4 +23,4 @@ import ArmadaLean.Spec.RangeCheck
 import ArmadaLean.Spec.Transact
 import ArmadaLean.Spec.TransactOwned
 import ArmadaLean.Spec.ValueConservation
-import ArmadaLean.Spec.Vault
+import ArmadaLean.Spec.Yield.Vault

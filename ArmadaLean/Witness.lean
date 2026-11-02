@@ -20,3 +20,4 @@ import ArmadaLean.Witness.RangeCheck
 import ArmadaLean.Witness.Transact
 import ArmadaLean.Witness.TransactOwned
 import ArmadaLean.Witness.ValueConservation
+import ArmadaLean.Witness.Yield.Vault

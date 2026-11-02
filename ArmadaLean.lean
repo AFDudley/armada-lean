@@ -20,7 +20,7 @@ import ArmadaLean.Pool
 import ArmadaLean.PoolMachine
 import ArmadaLean.PoolSafety
 import ArmadaLean.PoolNonVacuity
-import ArmadaLean.Vault
+import ArmadaLean.Yield.Vault
 import ArmadaLean.Fee
 -- Nitro protocol specification (S1 ForceMove, S2 Nitro, S3 SATP); see docs/nitro-theorems.md
 import ArmadaLean.Nitro.Address

@@ -75,8 +75,8 @@ import ArmadaLean
 #print axioms transact_inputs_distinct_nullifiers
 #print axioms merkleRoot_inj_leaf
 #print axioms no_wraparound_minting
-#print axioms inflation_attack_profitable
-#print axioms mitigated_attack_unprofitable
+#print axioms donation_attack_unprofitable
+#print axioms donation_attack_unprofitable_post_fix
 #print axioms fee_conservation
 EOF
 lake env lean /tmp/check_axioms.lean
@@ -90,9 +90,12 @@ Compare against the recorded output in `docs/axioms-circuit.txt` and
   verifier by its type only (read their doc comments in `ArmadaLean/Transact.lean`,
   `ArmadaLean/PoolSafety.lean` and `ArmadaLean/PoolOwned.lean`). Poseidon is a
   symbolic term, not an axiom (`ArmadaLean/Poseidon.lean`).
-- **`no_wraparound_minting` and all vault/fee theorems** depend only on
-  `propext` / `Quot.sound` — Lean's standard logical axioms, i.e. they are
-  unconditional mathematics.
+- **`no_wraparound_minting`** depends only on `propext` / `Quot.sound` — Lean's
+  standard logical axioms, i.e. it is unconditional mathematics. **The vault
+  and fee theorems** depend on `propext` / `Quot.sound`, and the vault's
+  rounding-bound theorems also list `Classical.choice` (Mathlib's `nlinarith`
+  pulls it in) — still Lean's standard logical axioms, not a project-declared
+  primitive.
 - **`sorryAx` appears only for the pool theorems and the `Liveness.lean` theorems
   that still wait for a proof** —
   anywhere else it would indicate a hidden `sorry`.
@@ -109,7 +112,7 @@ order (~30 min):
 | `ArmadaLean/Transact.lean` (`Constrained`) | `armada-circuits/src/operations/Transact.circom` (cited line-by-line) |
 | `ArmadaLean/Merkle.lean` (`merkleStep`, `merkleRoot`) | `armada-circuits/src/lib/merkle.circom:39-54` |
 | `ArmadaLean/RangeCheck.lean` (`bitsVal`) | circomlib `Num2Bits` semantics |
-| `ArmadaLean/Vault.lean` (`c2s`, `c2a`) | `armada-poc/contracts/yield/ArmadaYieldVault.sol:492-515` |
+| `ArmadaLean/Yield/Vault.lean` (`c2s`, `c2a`, `LOCKED_SHARES`) | `armada-poc/contracts/yield/ArmadaYieldVault.sol:491-514, 285-290` (`origin/main` `64436c14`) |
 | `ArmadaLean/Fee.lean` (`shieldFee`, `shieldBase`) | `armada-poc/contracts/privacy-pool/modules/ShieldModule.sol:353-371` |
 
 ## 6. (Optional) Modify something and watch it break

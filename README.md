@@ -112,12 +112,20 @@ the admin step; `spend_not_blocked` replaces them); `live_values_lt_2pow120` (P-
 `live_values_spendable`, bound moved to the circuit layer); `pool_ownedRandomOf_consistent`
 (P-10: no `ownedRandomOf` map); `fee_exact_50bps` (P-9: no basis-point constant).
 
-### Yield vault (`armada-poc/contracts/yield/ArmadaYieldVault.sol`, issue #365)
+### Yield vault (`armada-poc/contracts/yield/ArmadaYieldVault.sol`, FIXED, operator ruling 2026-10-31)
+
+The model follows the fixed contract: `armada-poc` `origin/main` `64436c14`
+(blob `8859da5c`), PR #631 (`04753139`, the `LOCKED_SHARES` lock) and PR #632
+(`6e38fddd`, cost-basis removal, no change to the conversion math).
 
 | Lean theorem | Module | Property | Contract code |
 |---|---|---|---|
-| `inflation_attack_profitable` | `Vault` | first-depositor inflation attack is profitable on the current share math (`_convertToShares`/`_convertToAssets`, `ArmadaYieldVault.sol:492-515`) | confirms **#365** |
-| `mitigated_attack_unprofitable` | `Vault` | with virtual shares/assets offset the attack costs more than it returns | proves the fix |
+| `locked_shares_set_at_first_deposit` | `Yield.Vault` | after a valid first deposit, total supply equals the deposited assets and exceeds `LOCKED_SHARES` | `ArmadaYieldVault.sol:74-81, 285-290` |
+| `locked_shares_supply_invariant` | `Yield.Vault` | a burn bounded by the non-locked balance keeps total supply at or above `LOCKED_SHARES` | `ArmadaYieldVault.sol:74-81, 83-85` |
+| `round_trip_loss_le` | `Yield.Vault` | a deposit-then-redeem round trip loses at most `C / S + 1`, the exact floor-division bound | `ArmadaYieldVault.sol:491-514` |
+| `donation_loss_bound` | `Yield.Vault` | a depositor's rounding loss from a donation `X` is at most `X / LOCKED_SHARES + 2`, sharper than the NatSpec's `~` estimate | `ArmadaYieldVault.sol:74-81, 491-514` |
+| `donation_attack_unprofitable` | `Yield.Vault` | a donation attacker holding `s < S` shares out of supply `S` recovers at most `X + s` | `ArmadaYieldVault.sol:74-81, 491-514` |
+| `donation_attack_unprofitable_post_fix` | `Yield.Vault` | `donation_attack_unprofitable`, specialized to the fixed contract's own invariant `s ≤ S - LOCKED_SHARES`; the donation attack cannot profit, unconditionally | `ArmadaYieldVault.sol:74-85` |
 
 ### Shield fee (`armada-poc/contracts/privacy-pool/modules/ShieldModule.sol`, audit C-3)
 
@@ -183,7 +191,8 @@ ArmadaLean/
   PoolOwned.lean          pool's owned path (TransactModule.transactOwned) and preimage storage
   Pool.lean               pool state (live notes, nullifiers, roots, custody) and operations
   PoolSafety.lean         pool contract's safety theorems, over Pool.lean
-  Vault.lean              #365 attack + mitigation proofs
+  Yield/
+    Vault.lean             #365 fix (LOCKED_SHARES lock) conversion model + proofs
   Fee.lean                shield-fee reference spec
   Nitro/
     Address.lean          coins, time, participants, fixed part, destinations, balances
