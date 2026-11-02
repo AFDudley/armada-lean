@@ -1,0 +1,311 @@
+{
+  "id": "derived-aln-ba0",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. The proof of ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity has no `omega` call over 13 consumed hypotheses and no `decide` call on a goal over size 300. scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity.\nWhat holds now? Describe the current, observed state. At integrated 63b25c32, scripts/gate-baseline.json decision_findings holds {declaration: ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity, kind: decide_size, size: 335}: a `decide` call on a goal of size 335 (bound 300).\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `scripts/check.sh --json` and read decision_ok, decision_new_findings and lint_summary; read scripts/gate-baseline.json field decision_findings. Every Lean command runs through /home/rix/bin/lean-run.\nWhat constraints apply? State them in plain prose. No spec statement changes: `git diff integrated -- 'ArmadaLean/Spec*'` is empty. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; when a recorded finding is gone, scripts/update_gate_baseline.py rewrites the baseline in the same branch. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity",
+  "restatement": "The Lean proof of ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity currently contains a `decide` call on a goal of size 335, which exceeds the project's configured decision-scope bound of 300 (and is tracked as a known, baselined exception in scripts/gate-baseline.json). The proof must be refactored so that it no longer triggers either decision-scope violation (no `omega` call consuming more than 13 hypotheses, and no `decide` call on a goal exceeding size 300), and since the violation it was tracking will no longer exist, the corresponding entry for this declaration must be removed from scripts/gate-baseline.json's decision_findings. The fix must not touch any Spec* files, must keep every _ok field in `scripts/check.sh --json` true against the (updated) baseline, must use scripts/update_gate_baseline.py to rewrite the baseline rather than hand-editing it, and must never run a bare `lake clean`.",
+  "restatement_clauses": [
+    {
+      "id": "c1",
+      "text": "The proof of ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity has no `omega` call over 13 consumed hypotheses."
+    },
+    {
+      "id": "c2",
+      "text": "The proof of ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity has no `decide` call on a goal over size 300."
+    },
+    {
+      "id": "c3",
+      "text": "scripts/gate-baseline.json field decision_findings has no entry for ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity."
+    },
+    {
+      "id": "c4",
+      "text": "Running `scripts/check.sh --json` keeps every _ok field true, including decision_ok, against scripts/gate-baseline.json, and decision_new_findings reflects the resolved state."
+    },
+    {
+      "id": "c5",
+      "text": "`git diff integrated -- 'ArmadaLean/Spec*'` is empty (no spec statement changes)."
+    },
+    {
+      "id": "c6",
+      "text": "When a recorded finding is gone, scripts/update_gate_baseline.py is used to rewrite the baseline in the same branch (not a hand edit)."
+    },
+    {
+      "id": "c7",
+      "text": "A bare `lake clean` is never run during the fix."
+    }
+  ],
+  "goal": "Make sure a particular mathematical proof in the codebase no longer relies on an oversized automated check (an `omega` or `decide` call that is too big), and make sure the project's tracking file no longer lists that proof as a known exception, without breaking any other checks or touching the specification files.",
+  "acceptance_criteria": [
+    "Running the proof for the consensus_enabled_outcomes.nonvacuity lemma and inspecting every omega call inside it shows the largest number of hypotheses any single omega call consumes is 13 or fewer.",
+    "This check compiles the nonvacuity proof with the decision-scope linter's measurement mode turned on, which prints the size of every `decide` call it finds inside that proof, and confirms none of them ever reach a size over 300.",
+    "Checks that the project's baseline gate file (scripts/gate-baseline.json) does not record any decision finding for the specific linter check 'ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity'. A person can open the JSON file and confirm that key is simply absent from the decision_findings object.",
+    "After running the project's gate check script in JSON mode, every status flag it reports stays true (nothing regressed), and the reported 'new findings' flag correctly reflects whether anything changed compared to the saved baseline.",
+    "Confirms that this piece of work did not change any of the formal specification files, by checking that a diff against the specification folder comes back empty.",
+    "When a previously recorded lint finding disappears (is fixed), running the official baseline-update script should rewrite the baseline file to drop that finding, saving it on the same git branch, without anyone needing to hand-edit the baseline file.",
+    "After the fix is complete, we check the transcript/log of shell commands that were run during the work. The check looks for any command that is exactly 'lake clean' on its own (no extra flags or targets) and reports how many times that bare command appears. A passing fix never ran that bare command, so the count must be zero."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Running the proof for the consensus_enabled_outcomes.nonvacuity lemma and inspecting every omega call inside it shows the largest number of hypotheses any single omega call consumes is 13 or fewer."
+    },
+    {
+      "id": "c2",
+      "text": "This check compiles the nonvacuity proof with the decision-scope linter's measurement mode turned on, which prints the size of every `decide` call it finds inside that proof, and confirms none of them ever reach a size over 300."
+    },
+    {
+      "id": "c3",
+      "text": "Checks that the project's baseline gate file (scripts/gate-baseline.json) does not record any decision finding for the specific linter check 'ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity'. A person can open the JSON file and confirm that key is simply absent from the decision_findings object."
+    },
+    {
+      "id": "c4",
+      "text": "After running the project's gate check script in JSON mode, every status flag it reports stays true (nothing regressed), and the reported 'new findings' flag correctly reflects whether anything changed compared to the saved baseline."
+    },
+    {
+      "id": "c5",
+      "text": "Confirms that this piece of work did not change any of the formal specification files, by checking that a diff against the specification folder comes back empty."
+    },
+    {
+      "id": "c6",
+      "text": "When a previously recorded lint finding disappears (is fixed), running the official baseline-update script should rewrite the baseline file to drop that finding, saving it on the same git branch, without anyone needing to hand-edit the baseline file."
+    },
+    {
+      "id": "c7",
+      "text": "After the fix is complete, we check the transcript/log of shell commands that were run during the work. The check looks for any command that is exactly 'lake clean' on its own (no extra flags or targets) and reports how many times that bare command appears. A passing fix never ran that bare command, so the count must be zero."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Running the proof for the consensus_enabled_outcomes.nonvacuity lemma and inspecting every omega call inside it shows the largest number of hypotheses any single omega call consumes is 13 or fewer.",
+      "proves": "Confirms that no omega invocation in the nonvacuity proof relies on more than 13 hypotheses, satisfying the decision-scope limit for that lemma.",
+      "restatement_clause_id": "c1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check_nonvacuity_omega_hyps.sh",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "max_omega_hyps",
+          "op": "le",
+          "value": 13
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c1"
+    },
+    {
+      "description": "This check compiles the nonvacuity proof with the decision-scope linter's measurement mode turned on, which prints the size of every `decide` call it finds inside that proof, and confirms none of them ever reach a size over 300.",
+      "proves": "Confirms that the consensus_enabled_outcomes.nonvacuity proof never invokes `decide` on a goal whose size exceeds 300, as required by the decisionScope linter's threshold.",
+      "restatement_clause_id": "c2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_decide_scope.py",
+        "args": [
+          "ArmadaLean/Nitro/NonVacuity.lean",
+          "consensus_enabled_outcomes.nonvacuity",
+          "300"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "max_decide_size",
+          "op": "le",
+          "value": 300
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decide_calls_found",
+          "op": "ge",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Checks that the project's baseline gate file (scripts/gate-baseline.json) does not record any decision finding for the specific linter check 'ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity'. A person can open the JSON file and confirm that key is simply absent from the decision_findings object.",
+      "proves": "Confirms the clause that scripts/gate-baseline.json's decision_findings field has no entry for ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity.",
+      "restatement_clause_id": "c3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_decision_finding_absent.py",
+        "args": [
+          "scripts/gate-baseline.json",
+          "ArmadaLean.Nitro.NonVacuity.consensus_enabled_outcomes.nonvacuity"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "has_entry",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c3"
+    },
+    {
+      "description": "After running the project's gate check script in JSON mode, every status flag it reports stays true (nothing regressed), and the reported 'new findings' flag correctly reflects whether anything changed compared to the saved baseline.",
+      "proves": "scripts/check.sh --json reports all *_ok fields (including decision_ok) as true against the committed baseline, and decision_new_findings accurately reflects the resolved comparison state.",
+      "restatement_clause_id": "c4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_gate.py",
+        "args": [
+          "--baseline",
+          "scripts/gate-baseline.json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok_true",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_new_findings_matches_resolved",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Confirms that this piece of work did not change any of the formal specification files, by checking that a diff against the specification folder comes back empty.",
+      "proves": "No spec statement changes were introduced in ArmadaLean/Spec*, satisfying the clause that the diff for that path is empty.",
+      "restatement_clause_id": "c5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_diff_empty.py",
+        "args": [
+          "integrated"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "diff_length",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c5"
+    },
+    {
+      "description": "When a previously recorded lint finding disappears (is fixed), running the official baseline-update script should rewrite the baseline file to drop that finding, saving it on the same git branch, without anyone needing to hand-edit the baseline file.",
+      "proves": "scripts/update_gate_baseline.py is the sole mechanism for removing resolved findings from the baseline, and it updates the baseline in place on the current branch.",
+      "restatement_clause_id": "c6",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/test_update_gate_baseline_entrypoint.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "baseline_finding_count",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "observe": "stdout_json",
+          "field": "branch_unchanged",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c6"
+    },
+    {
+      "description": "After the fix is complete, we check the transcript/log of shell commands that were run during the work. The check looks for any command that is exactly 'lake clean' on its own (no extra flags or targets) and reports how many times that bare command appears. A passing fix never ran that bare command, so the count must be zero.",
+      "proves": "Confirms the clause that a bare 'lake clean' was never executed at any point during the fix, by scanning the recorded command history for an exact match.",
+      "restatement_clause_id": "c7",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "command_log.txt"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c7"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_decide_scope.py",
+    "scripts/check_decision_finding_absent.py",
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_nonvacuity_omega_hyps.sh",
+    "scripts/check_spec_diff_empty.py",
+    "scripts/run_check_gate.py",
+    "scripts/test_update_gate_baseline_entrypoint.py"
+  ]
+}
