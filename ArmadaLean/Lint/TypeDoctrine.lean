@@ -598,14 +598,16 @@ def skippedArgs (c : Name) : StateT (Std.HashMap Name (Array Bool)) MetaM (Array
 
 /-- The constants `e` names in a VALUE position: the positions the proof's
     author chose, as opposed to the positions Lean fills in from a type.
-    The walk does not enter the binder type of a `fun`, `∀` or `let`, nor
-    an argument `skippedArgs` excludes. A constant that enters the proof
-    only through one of these is named by a type: a constructor's field
-    type (destructuring `Nitro.Step.mk` gives `h : s.apply … = some s'`), a
-    lemma's instantiated statement (`obtain ⟨spent', h⟩ :=
-    markSpent_succeeds …`), or a rewrite motive. Every other position
-    counts, including a case-split discriminant (`cases h : s.apply apps
-    caller op`) and an explicit witness. -/
+    The walk does not enter the binder type of a `fun`, `∀` or `let`, an
+    argument `skippedArgs` excludes, nor an implicit argument of a local
+    hypothesis (`ih` of an induction: `ih (sg := (sg.transfer a b).getD
+    sg) h'` names `transfer` only because unification filled `sg` in). A
+    constant that enters the proof only through one of these is named by
+    a type: a constructor's field type (destructuring `Nitro.Step.mk` gives
+    `h : s.apply … = some s'`), a lemma's instantiated statement (`obtain
+    ⟨spent', h⟩ := markSpent_succeeds …`), or a rewrite motive. Every other
+    position counts, including a case-split discriminant (`cases h :
+    s.apply apps caller op`) and an explicit witness. -/
 partial def valueConstants (e : Expr) (acc : NameSet) :
     StateT (Std.HashMap Name (Array Bool)) MetaM NameSet := do
   match e with
@@ -614,20 +616,29 @@ partial def valueConstants (e : Expr) (acc : NameSet) :
     let args := e.getAppArgs
     let mut acc := acc
     let mut skip := #[]
-    if let .const n _ := e.getAppFn then
+    match e.getAppFn with
+    | .const n _ =>
       acc := acc.insert n
       skip ← skippedArgs n
-    else
-      acc ← valueConstants e.getAppFn acc
+    | .fvar fv => skip := implicitKinds (← instantiateMVars (← fv.getType)) #[]
+    | f => acc ← valueConstants f acc
     for h : i in [0:args.size] do
       if skip[i]?.getD false then continue
       acc ← valueConstants args[i] acc
     return acc
-  | .lam _ _ b _ => valueConstants b acc
-  | .letE _ _ v b _ => valueConstants b (← valueConstants v acc)
+  | .lam n t b bi => withLocalDecl n bi t fun x => valueConstants (b.instantiate1 x) acc
+  | .letE n t v b _ => do
+    let acc ← valueConstants v acc
+    withLetDecl n t v fun x => valueConstants (b.instantiate1 x) acc
   | .mdata _ b => valueConstants b acc
   | .proj _ _ b => valueConstants b acc
   | _ => return acc
+where
+  /-- For each leading `∀` binder of `t`, `true` when it is not explicit. -/
+  implicitKinds (t : Expr) (out : Array Bool) : Array Bool :=
+    match t with
+    | .forallE _ _ b bi => implicitKinds b (out.push !bi.isExplicit)
+    | _ => out
 
 /-- `c` is an unfolding auxiliary of `op`: an equation lemma (`op.eq_<n>`,
     `op.eq_def`), a matcher compiled from `op`'s body or one of its lemmas

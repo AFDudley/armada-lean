@@ -39,6 +39,14 @@ theorem nitroSplitByLemma (apps : Apps E) {p : Participant} (n : NetworkState E 
   rcases (n.chain.apply apps p op).eq_none_or_eq_some with hap | ⟨_, hap⟩ <;>
     simp only [NetworkState.applyAdv, Adjudicator.applyAll, Option.getD, hap]
 
+/-- Names `transfer` only in a `have` type and in the implicit arguments
+    of two local hypotheses, which unification fills in. -/
+theorem nitroLocalImplicitOnly (s : Adjudicator E) (a : FixedPart) (b : Address E)
+    (P : Adjudicator E → Prop) (Q : Prop) (hP : ∀ {t : Adjudicator E}, P t → Q)
+    (hall : ∀ {t : Adjudicator E}, P t) : Q := by
+  have h : P ((s.transfer a b).getD s) := hall
+  exact hP h
+
 /-- Skips a layer: a statement about reachable states whose proof splits on
     `Step`. Naming `Reachable` does not make `Step.casesOn` a statement
     constant. -/
@@ -72,6 +80,7 @@ def expectHits (n : Name) (ops : Array Name) (expected : Array Name) : MetaM Uni
 #eval expectHits ``poolSkip poolBaseOps #[`Step.casesOn]
 #eval expectHits ``poolMotiveOnly poolBaseOps #[]
 #eval expectHits ``poolConstructorOnly poolBaseOps #[]
+#eval expectHits ``nitroLocalImplicitOnly nitroBaseOps #[]
 
 /-- Premises the premise-shape linters skip (a Pool structure, a base
     call result, a transition relation) and one they keep (`Reachable s`,
