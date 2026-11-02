@@ -21,7 +21,10 @@ from the checked environment on each run.
   `ReachableState` binder, or its spec definition says "Every state: REASON".
 - nonvacuity_ok: every spec entry with a hypothesis has its witness
   `N.Spec.x.witness : spec_premise% N.Spec.x`, with allowed axioms. A witness
-  proved by `sorry` is open required work (`witness_open`).
+  proved by `sorry` is open required work (`witness_open`). With a THEOREM_NAME,
+  `theorem_witness_open` says whether that theorem's witness is open: one boolean,
+  so an acceptance oracle can compare it with `eq` (the oracle grammar has no
+  list-membership comparison).
 - sorry: the spec theorems whose axioms include `sorryAx`.
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
 """
@@ -208,6 +211,8 @@ def main() -> int:
             "theorem_under_test": theorem,
             "theorem_in_sorry": bool(theorem) and any(
                 n == theorem or n.endswith("." + theorem) for n in sorry),
+            "theorem_witness_open": bool(theorem) and any(
+                n == theorem or n.endswith("." + theorem) for n in witness_open),
             "spec_count": len(members),
             "helper_count": len(helpers),
             "witness_open": sorted(witness_open),

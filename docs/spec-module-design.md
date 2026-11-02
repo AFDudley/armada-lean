@@ -187,8 +187,10 @@ that the open pebble specs read keep their names:
 | `nonvacuity_ok` | `NonVacuity.lean` has no `sorry` | every spec entry with a hypothesis has a witness of its premise, with axioms that pass §6 |
 | `reach_ok` | baseline theorems over a state name `Reachable*` or have a TSV row | every spec entry over a state type has a `ReachableState` binder or an "Every state:" line |
 
-New fields: `spec_count`, `helper_count`, `witness_open`, `every_state`, `vacuous_defs`,
-`failures`, `runtime_seconds`.
+New fields: `spec_count`, `helper_count`, `witness_open`, `theorem_witness_open`, `every_state`,
+`vacuous_defs`, `failures`, `runtime_seconds`. `theorem_witness_open` answers, for the theorem
+named on the command line, whether its witness is in `witness_open`. It is one boolean because
+the acceptance-oracle grammar compares scalars only and has no list membership.
 
 A pebble that reads `theorem_in_sorry` reads the same answer for a spec theorem. A helper is
 not in `sorry` any more: an open helper shows in `sorry` through the spec theorems that use it.
