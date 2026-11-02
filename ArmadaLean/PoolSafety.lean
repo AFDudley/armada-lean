@@ -670,7 +670,7 @@ theorem shield_can_happen (s : ReachableState Pool.machine) (token : Token)
     (x : Nat) (npk : Term)
     (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.state.feeRatio x)) :
     ∃ s', Step s.state s' := obtain_reach% ⟨s, _hr⟩ := s;
-  ⟨_, Step.shield token x npk hValue hSpendable⟩
+  let H := shield_creates_exactly token x npk hValue hSpendable; ⟨H.choose, H.choose_spec.1⟩
 
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` live notes in tree `bp.treeNumber`, re-minting them into `M` new
