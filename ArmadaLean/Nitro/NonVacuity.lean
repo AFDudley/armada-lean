@@ -1238,11 +1238,12 @@ theorem finalizable_or_two_enabled.nonvacuity : ∃ (dest : Participant → Nat)
     p0 ∈ (c : FixedPart).participants ∧
     (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
-      candidate.channel = (c : FixedPart)) :=
+      candidate.channel = (c : FixedPart)) ∧
+    net.DeadlineAfter (c : FixedPart) (canon p0).ε :=
   ⟨fun _ => 0, netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach_noOwnViolation _,
     Or.inr rfl, TakeOut.consensus_desirable _, by decide,
     ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
-      by decide, rfl⟩⟩
+      by decide, rfl⟩, deadlineAfter_open (t := 0) rfl _⟩
 
 /-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
     is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `p0`'s
@@ -1259,6 +1260,7 @@ theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → N
     (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
       (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true) ∧
+    net.DeadlineAfter (c : FixedPart) (canon p0).ε ∧
     Enabled apps0 ((canon p0).noOwnViolation dest) (c : FixedPart) Ω net ∧
     (∀ Ω', Enabled apps0 ((canon p0).noOwnViolation dest) (c : FixedPart) Ω' net → Ω' = Ω) :=
   ⟨fun _ => 0, ⟨sCon, [ssF], [ssF]⟩, ⟨c1, by decide⟩, .allocation o1, canon_ok _ _,
@@ -1272,6 +1274,9 @@ theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → N
         rw [List.mem_singleton] at h'; subst h'
         exact holds_intro _ _ (by decide) (fun _ h => by cases h),
         by decide⟩),
+    (fun _ _ h' => by
+      cases (show sCon.statusOf c1 = .finalized 0 (.allocation o1) (.allocation o1)
+        from by decide).symm.trans h'),
     fun ⟨σ, hfeas, hσ⟩ => by
       obtain ⟨n2, hround⟩ := Threat.Round.exists ((canon p0).noOwnViolation fun _ => 0)
         (hfeas (⟨sCon, [ssF], [ssF]⟩ : NetworkState Nat p0))

@@ -972,6 +972,12 @@ Operator rulings of 2026-11-01 and 2026-11-02 apply to Nitro-24 (Nitro:653-658):
    that `p` holds, with `st`, support `st` (ForceMove:744-778: a move is a valid transition from the current
    state). The setup states (turns below `c.n`) are excepted. The rule is in the type of the honest send, so it
    binds every reachable state, not only the two statements.
+6. Pending deadline (pending operator ruling, 2026-11-02): a running challenge of `c` ends no sooner than `ε`
+   (`hpend : net.state.DeadlineAfter c T.ε`), as in `conclusion_proof_finalizable` and four other approved
+   Liveness statements. Without it both statements fail (`pending_deadline.lean`): when a challenge with `OC`
+   ends within `ε`, the adversary finalizes it before `p`'s calls land, so `OC` is enabled. `p` prevents every
+   other outcome, and the adversary defeats every finalization: it overrides `OC` with a later state before the
+   deadline, or it lets `OC` finalize.
 
 The rule binds both sides:
 
@@ -986,7 +992,8 @@ The rule binds both sides:
 - `finalizable_or_two_enabled`, `single_enabled_is_finalizable`: new binder `dest`, premises
   `hrules` (the scope above, in place of `SupportWindow`) and `hdes : Desirable apps c.appDef dest`,
   `net : ReachableParticipant apps (T.noOwnViolation dest)`, and `Finalizable` / `Enabled` over
-  `T.noOwnViolation dest`. `A : Assumptions apps p T` stays.
+  `T.noOwnViolation dest`. `A : Assumptions apps p T` stays. Pending ruling: the premise
+  `hpend : net.state.DeadlineAfter (c : FixedPart) T.ε` (rule 6).
 - `funding_point_universally_finalizable`: doc comment only. Its type changes through `HonestSend`.
 - `participant_sent_honest`, `participant_holds_honest` (`ArmadaLean/Nitro/Reachable.lean`): no text change.
   Their types change through `HonestSend`: the third argument is `net.CanMoveTo apps`.
@@ -1024,6 +1031,7 @@ desirable: `TakeOut.consensus_desirable` (a consensus support holds one state, s
 | Unowned pool | `unowned_pool_take.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
 | Minting | `strict_premise_mint.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
 | Zero-entry tag | `zero_entry_tag.lean` | yes | no (`appsS_not_desirable`, a move changes a destination) | no | failure test |
+| `SingleAssetPayments`, pending challenge | `pending_deadline.lean` | yes | yes (`appsS_desirable`) | — | refutes the form without `hpend` (`NoDeadline_*`), against `T.noOwnViolation`; `net` breaks `DeadlineAfter` (`net_not_deadlineAfter`) |
 
 `consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
 
@@ -1035,4 +1043,4 @@ the final state `stF` moved from turn 2 to the setup turn 1 for this reason; the
 
 ### 7.3 Status
 
-Both statements stay `sorry`. No counterexample under the current definitions is known.
+Both statements stay `sorry`. With rules 1-6, no counterexample is known.

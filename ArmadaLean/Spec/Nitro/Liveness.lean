@@ -252,7 +252,11 @@ def Spec.channel_finalizability_cases : Prop :=
     (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the honest `p` signs
     no two outcomes at one slot (`HonestSend.noConflict`). The gift play of
     go-nitro `SingleAssetPayments.sol` is such a violation
-    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
+    (`docs/counterexamples/single_asset_payments_ir.lean`). Pending operator
+    ruling of 2026-11-02: a running challenge of `c` ends no sooner than `ε`
+    (`hpend`, as in `conclusion_proof_finalizable`). A challenge that ends
+    within `ε` lets the adversary finalize it before `p`'s calls land
+    (`docs/counterexamples/pending_deadline.lean`). -/
 def Spec.finalizable_or_two_enabled : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
@@ -264,7 +268,8 @@ def Spec.finalizable_or_two_enabled : Prop :=
     (hp : p ∈ (c : FixedPart).participants)
     (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
-      candidate.channel = (c : FixedPart)),
+      candidate.channel = (c : FixedPart))
+    (hpend : net.state.DeadlineAfter (c : FixedPart) T.ε),
     Claim <|
     (∃ Ω, Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state) ∨
     (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω1 net.state ∧
@@ -296,7 +301,11 @@ def Spec.finalizable_or_two_enabled : Prop :=
     (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the honest `p` signs
     no two outcomes at one slot (`HonestSend.noConflict`). The gift play of
     go-nitro `SingleAssetPayments.sol` is such a violation
-    (`docs/counterexamples/single_asset_payments_ir.lean`). -/
+    (`docs/counterexamples/single_asset_payments_ir.lean`). Pending operator
+    ruling of 2026-11-02: a running challenge of `c` ends no sooner than `ε`
+    (`hpend`, as in `conclusion_proof_finalizable`). A challenge that ends
+    within `ε` lets the adversary finalize it before `p`'s calls land
+    (`docs/counterexamples/pending_deadline.lean`). -/
 def Spec.single_enabled_is_finalizable : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
@@ -309,6 +318,7 @@ def Spec.single_enabled_is_finalizable : Prop :=
     (hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
       ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
       (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
+    (hpend : net.state.DeadlineAfter (c : FixedPart) T.ε)
     (Ω : Outcome E) (hΩ : Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state)
     (huniq : ∀ Ω', Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω' net.state → Ω' = Ω),
     Claim <|
