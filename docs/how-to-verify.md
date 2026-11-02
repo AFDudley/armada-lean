@@ -45,9 +45,9 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result: only the `ArmadaLean/Nitro/Liveness.lean` theorems that still
-wait for a proof (their types are approved, tag `nitro-proofs-approved-2026-10-28`),
-and the non-vacuity witnesses of `ArmadaLean/Witness/` that are still open.
+Expected result: no spec theorem proof uses `sorry` (since 2026-11-02, `main`
+`8b3f0928`). The matches are comments, counterexample notes, and the non-vacuity
+witnesses of `ArmadaLean/Witness/` that are still open.
 
 The acceptance check computes the same set from Lean itself, with no stored list:
 

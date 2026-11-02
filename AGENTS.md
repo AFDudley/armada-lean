@@ -97,6 +97,15 @@ scripts/update_gate_baseline.py` and commit the updated
 a count or add a finding without a fix: the gate refuses a raised
 baseline the same way it refuses a raised count, by comparing the tree
 against the committed file — so a raised baseline shows up in the
-branch's own diff for review.
+branch's own diff for review. One exception: a commit that only
+corrects a linter's measure, with no change to the model code, may
+raise a count. It is its own commit, and its message states the
+defect and the counts before and after (coordinator decision
+2026-11-02; `looseHypothesis` 122 → 228 in `af3b5938`).
+
+**A spec theorem is finished** when `scripts/check.sh --json NAME`
+prints both `theorem_in_sorry` false and `theorem_witness_open` false.
+`sorry_count` counts proofs only; an open non-vacuity witness is listed
+in `witness_open`.
 ## Repair pass
 A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.6, in the order R.6 gives; each operation equation is proved against its Spec statement.
