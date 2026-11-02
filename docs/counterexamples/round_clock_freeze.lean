@@ -66,7 +66,7 @@ theorem trans_nil {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
 /-- Under `Capable`, every move of `p` has a round in which the clock
     advances: the adversary ticks by 1 after `p`'s calls land. -/
 theorem clock_runs (apps : Apps E) {p : Participant} (T : Threat E p) (hC : Capable apps p T)
-    {m : HonestMove E} {n : NetworkState E p} (hfeas : m.Feasible n) :
+    {m : HonestMove E} {n : NetworkState E p} (hfeas : m.Feasible apps n) :
     ∃ n', T.Round apps m n n' ∧ n.chain.now < n'.chain.now := by
   have hnotick : ∀ op ∈ m.calls, ∀ dt, op ≠ Op.tick dt := by
     cases m with

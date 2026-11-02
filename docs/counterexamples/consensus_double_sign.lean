@@ -45,9 +45,9 @@ theorem doubleSign_conflict : OwnViolation.Conflict [⟨stA, [p0]⟩] stB :=
   ⟨⟨stA, [p0]⟩, List.mem_singleton_self _, rfl, rfl, by decide⟩
 
 /-- Once `p0` signed `stA`, the honest machine never lets it sign `stB`. -/
-theorem doubleSign_not_honest (net : NetworkState Nat p0) (h : ⟨stA, [p0]⟩ ∈ net.sent) :
-    ¬ (HonestMove.send stB).Feasible net := fun hf =>
-  ((HonestMove.Feasible_send _ _).1 hf).noConflict
+theorem doubleSign_not_honest (apps : Apps Nat) (net : NetworkState Nat p0)
+    (h : ⟨stA, [p0]⟩ ∈ net.sent) : ¬ (HonestMove.send stB).Feasible apps net := fun hf =>
+  ((HonestMove.Feasible_send _ _ _).1 hf).noConflict
     ⟨_, List.mem_cons_of_mem _ h, rfl, rfl, by decide⟩
 
 #print axioms doubleSign_conflict

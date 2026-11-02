@@ -850,7 +850,7 @@ theorem participant_reachable_init {p : Participant} (apps : Apps E) (T : Threat
   ⟨_, rfl, .refl⟩
 
 theorem participant_reachable_honest {apps : Apps E} {p : Participant} {T : Threat E p} {net : NetworkState E p}
-    (h : (Nitro.participant apps T).Reachable net) (m : HonestMove E) (hm : m.Feasible net) :
+    (h : (Nitro.participant apps T).Reachable net) (m : HonestMove E) (hm : m.Feasible apps net) :
     (Nitro.participant apps T).Reachable (net.applyHonest m) :=
   h.tail (Or.inl ⟨m, hm, rfl⟩)
 
@@ -894,7 +894,7 @@ theorem network_reachable_init (apps : Apps E) (Ts : Threats E apps) (w : Partic
 
 theorem network_reachable_honest {apps : Apps E} {Ts : Threats E apps} {n : Network E}
     (h : (Nitro.network apps Ts).Reachable n) (p : Participant) (m : HonestMove E)
-    (hm : m.Feasible (n.view p))
+    (hm : m.Feasible apps (n.view p))
     (hvgate : ∀ r : Reaction E, m = .react r → ∀ st ∈ r.sends, n.VoucherSendable st) :
     (Nitro.network apps Ts).Reachable (Network.applyHonest n p m) :=
   h.tail ⟨p, Or.inl ⟨m, hm, hvgate, rfl⟩⟩
@@ -920,12 +920,15 @@ theorem network_reachable_deposit {apps : Apps E} {Ts : Threats E apps} {n : Net
     (Nitro.network apps Ts).Reachable (Network.deposit n p (.channel c) e x) :=
   h.tail ⟨p, Or.inr (Or.inr (Or.inr ⟨c, e, x, hxle, rfl⟩))⟩
 
-/-- One send of a state that funds no virtual channel and repeats no earlier
-    state below the funding point (`HonestMove.Feasible_send`,
-    `HonestSend.fundsCommitted_of_fundable`), closed by `decide`. -/
+/-- One send of a setup state (turn below the funding point, so
+    `HonestSend.movesFrom` is vacuous) that funds no virtual channel and
+    repeats no earlier state below the funding point
+    (`HonestMove.Feasible_send`, `HonestSend.fundsCommitted_of_fundable`),
+    closed by `decide`. -/
 macro "honest_send" : tactic =>
-  `(tactic| exact (HonestMove.Feasible_send _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩)
+  `(tactic| exact (HonestMove.Feasible_send _ _ _).mpr
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
+      fun h => absurd h (by decide)⟩)
 
 end Reachability
 
@@ -1128,7 +1131,13 @@ theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h
         exact holds_intro _ _ (by decide) (fun _ h => by cases h)))
-    (.send stO) (by honest_send)
+    (.send stO) ((HonestMove.Feasible_send _ _ _).mpr
+      ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun _ =>
+        ⟨⟨[ssO0], stO0, fun ss h => by
+          simp only [List.mem_singleton] at h; subst h
+          exact holds_intro _ _ (fun q hq => .inl ⟨List.mem_singleton.1 hq, ssO0,
+            List.mem_singleton_self _, rfl⟩) (fun _ h => by cases h), rfl, rfl, rfl⟩,
+          [ssO], fun ss h => .inr (by rw [List.mem_singleton.1 h]; rfl), rfl⟩⟩)
 
 /-- `late_observer_can_checkpoint`. -/
 theorem late_observer_can_checkpoint.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
@@ -1668,22 +1677,23 @@ theorem sent_after_send_self (n0 : Network Nat) (p : Participant) (st : State Na
   rfl
 
 /-- One send of `st` is feasible when `st` satisfies the signing rules against
-    `prior` with no held pre-fund state, and every state `p` sent repeats a state
-    of `prior` (`HonestSend.of_prior`). -/
-theorem send_feasible_prior {p : Participant} {net : NetworkState Nat p}
+    `prior` with no held pre-fund state and no held support (so `st` is a
+    setup state), and every state `p` sent repeats a state of `prior`
+    (`HonestSend.of_prior`). -/
+theorem send_feasible_prior {apps : Apps Nat} {p : Participant} {net : NetworkState Nat p}
     {prior : List (SignedState Nat)} {st : State Nat}
-    (hst : HonestSend prior (fun _ => False) st)
+    (hst : HonestSend prior (fun _ => False) (fun _ => False) st)
     (hcover : ∀ s ∈ net.sent, ∃ s' ∈ prior, s'.state = s.state) :
-    (HonestMove.send st).Feasible net :=
-  (HonestMove.Feasible_send _ _).mpr (hst.of_prior fun s hs => by
+    (HonestMove.send st).Feasible apps net :=
+  (HonestMove.Feasible_send _ _ _).mpr ((hst.of_prior fun s hs => by
     rcases List.mem_cons.mp hs with rfl | hs
     · exact .inl rfl
-    · exact .inr (hcover s hs))
+    · exact .inr (hcover s hs)).mono (fun _ hx => hx) (fun _ h => h) (fun _ h => h.elim))
 
 theorem nOneCh_reach {n0 : Network Nat} {st : State Nat}
     (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0) (hv : st.voucher? = none)
-    (hstp : HonestSend (n0.sent p0) (fun _ => False) st)
-    (hstq : HonestSend (n0.sent q0) (fun _ => False) st) :
+    (hstp : HonestSend (n0.sent p0) (fun _ => False) (fun _ => False) st)
+    (hstq : HonestSend (n0.sent q0) (fun _ => False) (fun _ => False) st) :
     (Nitro.network apps0 (Ts apps0)).Reachable (nOneCh n0 st) :=
   network_reachable_honest
     (network_reachable_honest hr0 p0 (.send st) (send_feasible_prior hstp fun s hs => ⟨s, hs, rfl⟩)
@@ -1775,10 +1785,10 @@ def nTwoCh (n0 : Network Nat) (st1 st2 : State Nat) : Network Nat :=
 theorem nTwoCh_reach {n0 : Network Nat} {st1 st2 : State Nat}
     (hr0 : (Nitro.network apps0 (Ts apps0)).Reachable n0)
     (hv1 : st1.voucher? = none) (hv2 : st2.voucher? = none)
-    (hst1p : HonestSend (n0.sent p0) (fun _ => False) st1)
-    (hst1q : HonestSend (n0.sent q0) (fun _ => False) st1)
-    (hst2p : HonestSend (⟨st1, [p0]⟩ :: n0.sent p0) (fun _ => False) st2)
-    (hst2q : HonestSend (⟨st1, [q0]⟩ :: n0.sent q0) (fun _ => False) st2) :
+    (hst1p : HonestSend (n0.sent p0) (fun _ => False) (fun _ => False) st1)
+    (hst1q : HonestSend (n0.sent q0) (fun _ => False) (fun _ => False) st1)
+    (hst2p : HonestSend (⟨st1, [p0]⟩ :: n0.sent p0) (fun _ => False) (fun _ => False) st2)
+    (hst2q : HonestSend (⟨st1, [q0]⟩ :: n0.sent q0) (fun _ => False) (fun _ => False) st2) :
     (Nitro.network apps0 (Ts apps0)).Reachable (nTwoCh n0 st1 st2) :=
   have hp1 : ((Network.applyHonest (Network.applyHonest n0 p0 (.send st1)) q0 (.send st1)).view
       p0).sent = ⟨st1, [p0]⟩ :: n0.sent p0 := by
@@ -2049,10 +2059,14 @@ theorem cLWF_ne_cL2F : cLWF ≠ cL2F := by decide
 def nPWF : Network Nat := nTwoCh nLWF1 stPWLF stPWLF'
 theorem nPWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPWF :=
   nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher
-    (by rw [nLWF1_sent_p0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩)
-    (by rw [nLWF1_sent_q0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩)
-    (by rw [nLWF1_sent_p0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩)
-    (by rw [nLWF1_sent_q0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩)
+    (by rw [nLWF1_sent_p0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
+      fun h => absurd h (by decide)⟩)
+    (by rw [nLWF1_sent_q0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
+      fun h => absurd h (by decide)⟩)
+    (by rw [nLWF1_sent_p0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
+      fun h => absurd h (by decide)⟩)
+    (by rw [nLWF1_sent_q0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
+      fun h => absurd h (by decide)⟩)
 
 theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
     (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps0) (χ : FixedPart)
@@ -2279,10 +2293,12 @@ theorem net3R_reach : (Nitro.participant apps2 (canon q0)).Reachable net3R :=
                 (simp? [V0, State.voucher?] at h says simp only [State.voucher?, V0, Option.some.injEq] at h); subst h; exact absurd hp List.not_mem_nil⟩ :
               NetworkState.Unforged _ ⟨V0, [p0, q0, w0]⟩)
             (fun op h => by cases h))
-          (.send Sp) ((HonestMove.Feasible_send _ _).mpr ⟨by decide, by decide,
-            fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide))⟩))
-        (.send Sm) ((HonestMove.Feasible_send _ _).mpr ⟨by decide, by decide,
-          fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide))⟩))
+          (.send Sp) ((HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
+            fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide)),
+            fun h => absurd h (by decide)⟩))
+        (.send Sm) ((HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
+          fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide)),
+          fun h => absurd h (by decide)⟩))
       (.deliver ⟨Sp, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
       (fun op h => by cases h))
@@ -2396,25 +2412,10 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
             (.deliver ⟨V0r, [q0]⟩) (by
               refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
               cases h; exact absurd hp (by decide)) (fun op h => by cases h))
-          (.send S0) ((HonestMove.Feasible_send _ _).mpr ⟨(by
-              intro hlt s hs hc ht
-              -- `s` ranges over the two-element `signed` list `[⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]`;
-              -- only `S0` has channel `Lr`, so the `V0r` case is vacuous via `hc`.
-              cases hs with
-              | head => rfl
-              | tail _ hs' =>
-                cases hs' with
-                | head => exact absurd hc (by decide)
-                | tail _ hs'' => exact absurd hs'' List.not_mem_nil),
-              by decide,
+          (.send S0) ((HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
             fundsCommitted_one Vr (by decide)
-              ⟨⟨V0r, [p0, q0]⟩, holds_intro _ _ (fun q hq => by
-                simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
-                rcases hq with rfl | rfl
-                · exact .inl ⟨rfl, _, List.mem_cons_self, rfl⟩
-                · exact .inr ⟨_, List.mem_cons_self, rfl, List.mem_cons_self⟩)
-                (fun _ h => by cases h; rfl), by decide,
-                rfl, rfl⟩⟩))
+              ⟨⟨V0r, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h; rfl), by decide,
+                rfl, rfl⟩, fun h => absurd h (by decide)⟩))
         (.deliver ⟨S0, [q0]⟩) (by
           refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
           cases h) (fun op h => by cases h))

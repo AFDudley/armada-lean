@@ -610,7 +610,7 @@ theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
         UnbeatableIn apps T (fun _ => True) (Goal c d x) n := by
       intro P cand hH _ hok hpos
       refine UnbeatableIn.move (.chain (.challenge c P cand)) trivial
-        ((HonestMove.Feasible_chain _ _).2 hH) fun n1 hr => ?_
+        ((HonestMove.Feasible_chain _ _ _).2 hH) fun n1 hr => ?_
       rw [NetworkState.applyHonest_chain]
       obtain ⟨hI1, hlt⟩ := challenge_round C A hdur hI hH hok hpos hr
       exact ih _ (lt_of_lt_of_le hlt hμ) n1 hI1 (le_refl _)
@@ -989,6 +989,7 @@ theorem consensus_conserving {dest : Participant → E} (a : AppId) :
   | _ :: _ :: _, h =>
     (simp? [consensusRules] at h says simp only [consensusRules, Bool.false_eq_true] at h)
 
+omit [DecidableEq E] in
 /-- A state with a mover has a mover at the next turn. -/
 theorem mover_next {s : State E} {q : Participant} (h : s.mover = some q) :
     ∃ q', ({ s with turnNum := s.turnNum + 1 } : State E).mover = some q' := by

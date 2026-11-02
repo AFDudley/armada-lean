@@ -3805,8 +3805,8 @@ theorem Op.HonestFeasible.round {apps : Apps E} {p : Participant} {T : Threat E 
     case, so `funded_entry_round` gets its feasibility hypothesis from
     `hfeas` without naming `net` or `m` explicitly (avoiding a `cases m`
     on a hypothesis that outlives the match). -/
-theorem HonestMove.Feasible.calls {p : Participant} {net : NetworkState E p} {m : HonestMove E}
-    (hfeas : m.Feasible net) : ∀ op ∈ m.calls, op.HonestFeasible net := by
+theorem HonestMove.Feasible.calls {apps : Apps E} {p : Participant} {net : NetworkState E p}
+    {m : HonestMove E} (hfeas : m.Feasible apps net) : ∀ op ∈ m.calls, op.HonestFeasible net := by
   cases m with
   | react r => exact hfeas.1
   | wait dt => (simp? [HonestMove.calls] says simp only [HonestMove.calls, List.not_mem_nil, IsEmpty.forall_iff, implies_true])
@@ -3948,13 +3948,14 @@ theorem funded_entry_honest_step {p : Participant}
 theorem HonestMove.Feasible.round {apps : Apps E} {p : Participant} {T : Threat E p} {t : Time}
     {pending : List (Op E)} {net net' : NetworkState E p}
     (hseq : Threat.RoundSeq apps T t pending net net') {m : HonestMove E}
-    (hfeas : m.Feasible net) : m.Feasible net' := by
+    (hfeas : m.Feasible apps net) : m.Feasible apps net' := by
   cases m with
   | react r =>
+    have hsub : ∀ x ∈ net.sent, x ∈ net'.sent := fun x hx => by rw [hseq.sent_eq]; exact hx
     refine ⟨fun op hop => Op.HonestFeasible.round hseq (hfeas.1 op hop), fun st hst => ?_⟩
     rw [hseq.sent_eq]
-    exact (hfeas.2 st hst).mono (fun _ hx => hx) (fun V hV => hV.mono fun _ h => h.of_subset
-      (fun x hx => by rw [hseq.sent_eq]; exact hx) hseq.received_subset)
+    have hm := NetworkState.held_mono (apps := apps) fun _ h => h.of_subset hsub hseq.received_subset
+    exact (hfeas.2 st hst).mono (fun _ hx => hx) hm.1 hm.2
   | wait dt => trivial
 
 /-- A `FundedFor`-shaped `UnbeatableIn` tree, run from a state where `c` is
@@ -5036,7 +5037,7 @@ theorem consensus_enabled_outcomes (apps : Apps E) {p : Participant} (T : Threat
   set σ : Strategy E p :=
     fun n => if n.Holds ss then HonestMove.chain (.checkpoint c [ss] ss.state) else .wait 0
     with hσdef
-  have hfeas : ∀ n, (σ n).Feasible n := by
+  have hfeas : ∀ n, (σ n).Feasible apps n := by
     intro n
     by_cases hn : n.Holds ss
     · rw [hσdef]; simp only [if_pos hn, HonestMove.Feasible_chain, Op.HonestFeasible,
@@ -10892,7 +10893,7 @@ theorem Threat.reachable_step {apps : Apps E} {p : Participant} {T : Threat E p}
     (`Threat.RoundSeq.condInvariant` on `Threat.reachable_step`). -/
 theorem Threat.Round.reachable {apps : Apps E} {p : Participant} {T : Threat E p}
     {m : HonestMove E} {net net' : NetworkState E p} (h : T.Round apps m net net')
-    (hfeas : m.Feasible net) (hR : (Nitro.participant apps T).Reachable net) :
+    (hfeas : m.Feasible apps net) (hR : (Nitro.participant apps T).Reachable net) :
     (Nitro.participant apps T).Reachable net' :=
   h.1.condInvariant ⟨(Threat.reachable_step (T := T)).toStepInvariant.anyGuard,
     (Threat.reachable_step (T := T)).condMono⟩ (match m, hfeas with
@@ -11140,7 +11141,8 @@ theorem satp_virtual_finalize_aux {apps : Apps E} {P : Participant} {T : Threat 
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
         subst hop
         (simpa? [Op.HonestFeasible, Op.proofStates] using hHeld0 says simpa only [Op.HonestFeasible, Op.proofStates] using hHeld0)
-      have hfeasM : (HonestMove.react ⟨[Op.challenge r.V proof0 cand0], []⟩ : HonestMove E).Feasible net :=
+      have hfeasM : (HonestMove.react ⟨[Op.challenge r.V proof0 cand0], []⟩ : HonestMove E).Feasible
+          apps net :=
         ⟨hfeasR, fun _ h => absurd h List.not_mem_nil⟩
       refine UnbeatableIn.move (.react ⟨[Op.challenge r.V proof0 cand0], []⟩) trivial hfeasM ?_
       intro net1 hround
@@ -12501,8 +12503,8 @@ theorem UnbeatableIn.and_satpSetup {apps : Apps E} {P : Participant} {T : Threat
         (n.applyAdv apps m).HoldsPrefund r.V := by
     intro n m hVs hpre
     refine ⟨by unfold HoldsVirtualSetup; rw [NetworkState.applyAdv_sent]; exact hVs, ?_⟩
-    refine hpre.mono fun ss hH => hH.of_subset (fun s hs => ?_)
-      (NetworkState.applyAdv_received_subset apps n m)
+    refine (NetworkState.held_mono (apps := apps) fun ss hH => hH.of_subset (fun s hs => ?_)
+      (NetworkState.applyAdv_received_subset apps n m)).1 _ hpre
     rw [NetworkState.applyAdv_sent]; exact hs
   have hstep : T.CondStepInvariant apps (fun _ => True) (fun n => SatpSetup r alice bob n)
       (fun _ op => ¬ Op.targets op r.V) := by
@@ -12733,7 +12735,7 @@ theorem satp_theorem_3_2 (apps : Apps E) {P : Participant} (T : Threat E P)
   subst hpo
   -- Phase 3 (Protocol 3.3 step 3): one reaction reclaims both guarantees.
   have hfeas : (HonestMove.react ⟨[Op.reclaim Lm r.V, Op.reclaim Lp r.V], []⟩ :
-      HonestMove E).Feasible net2 :=
+      HonestMove E).Feasible apps net2 :=
     ⟨fun op hop => by
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
       rcases hop with rfl | rfl <;> exact fun ss hss => by (simp? [Op.proofStates] at hss says simp only [Op.proofStates, List.not_mem_nil] at hss),
@@ -13400,7 +13402,7 @@ theorem funding_strategy {apps : Apps E} {vt : State E → State E → Bool} {c 
     obtain ⟨proof, cand, hH, hsup, hcc, hle⟩ := hI.witness t hst
     have hfeas : (Op.challenge c proof cand).HonestFeasible n := hH
     refine UnbeatableIn.move (.chain (.challenge c proof cand)) trivial
-      ((HonestMove.Feasible_chain _ _).2 hfeas) fun n1 hround => ?_
+      ((HonestMove.Feasible_chain _ _ _).2 hfeas) fun n1 hround => ?_
     rw [NetworkState.applyHonest_chain]
     obtain ⟨na, hseqA, hseqB⟩ := Threat.Round.single hround
     have hK : 0 < fundingRank c (ChannelStatus.open t : ChannelStatus E) := Nat.succ_pos _

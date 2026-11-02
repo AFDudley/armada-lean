@@ -346,7 +346,7 @@ theorem land_all (t : Time) : ∀ (pending : List (Op Nat)),
 /-- Every call of a feasible move of `q0` is not a tick and carries only
     `Good` `p0` signatures. -/
 theorem calls_good {n : NetworkState Nat q0} (hps : PSig n) {m : HonestMove Nat}
-    (hfeas : m.Feasible n) :
+    {ap : Apps Nat} (hfeas : m.Feasible ap n) :
     ∀ op ∈ m.calls, (∀ dt, op ≠ .tick dt) ∧ ∀ ss ∈ op.proofStates, GoodP0 ss := by
   cases m with
   | wait dt => intro op hop; simp [HonestMove.calls] at hop
@@ -373,7 +373,8 @@ theorem inv_applyHonest {n : NetworkState Nat q0} (hI : Inv n) (m : HonestMove N
 
 /-- From any state with the invariant, the adversary lands `q0`'s calls
     and does nothing else. -/
-theorem round_inv (n : NetworkState Nat q0) (hI : Inv n) (m : HonestMove Nat) (hfeas : m.Feasible n) :
+theorem round_inv (n : NetworkState Nat q0) (hI : Inv n) (m : HonestMove Nat)
+    (hfeas : m.Feasible apps1 n) :
     ∃ n', T.Round apps1 m n n' ∧ Inv (n'.applyHonest m) := by
   obtain ⟨n', hseq, hI', hnow⟩ := land_all n.chain.now m.calls (calls_good hI.1 hfeas) n hI
   refine ⟨n', ⟨hseq, ?_⟩, inv_applyHonest hI' m⟩
@@ -439,7 +440,7 @@ theorem bad_feasible : T.feasible net0 (.chain p0 badOp) := by
   · exact unforged_intro _ _ (fun h => absurd h (by decide)) (fun _ h => by cases h)
 
 /-- The adversary challenges with `badOp`, then lands `q0`'s calls. -/
-theorem first_round (m : HonestMove Nat) (hfeas : m.Feasible net0) :
+theorem first_round (m : HonestMove Nat) (hfeas : m.Feasible apps1 net0) :
     ∃ n', T.Round apps1 m net0 n' ∧ Inv (n'.applyHonest m) := by
   have hps0 : PSig net0 := by
     intro r hr hp hc
@@ -492,8 +493,8 @@ theorem funding_point_universally_finalizable_false :
 /-- The canonical own-violation: `q0` signed two setup states of `c2` with two
     outcomes (`sA1` with `Ωg`, `sB1` with `Ωb`), against `HonestSend.noConflict`
     (one slot for every setup turn, `State.signSlot_setup`). -/
-theorem q0_made_alternative_moves :
-    ¬ ∀ s ∈ (nE.views q0).sent, HonestSend (nE.views q0).sent (nE.views q0).HoldsPrefund s.state := by
+theorem q0_made_alternative_moves {sup : State Nat → Prop} :
+    ¬ ∀ s ∈ (nE.views q0).sent, HonestSend (nE.views q0).sent (nE.views q0).HoldsPrefund sup s.state := by
   intro h
   have h_eq := (h ⟨sB1, [q0]⟩ (by simp [nE_views_q0])).outcome_eq ⟨sA1, [q0]⟩
     (by simp [nE_views_q0]) (by decide) (State.signSlot_setup ⟨by decide, by decide⟩)

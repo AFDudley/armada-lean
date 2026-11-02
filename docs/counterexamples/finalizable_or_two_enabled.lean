@@ -227,7 +227,8 @@ def Inv1 (n : NetworkState Unit p0) : Prop := (∃ k, n.chain.statusOf c0 = .ope
 
 /-- The adversary's answer to any move of `p0`: land `p0`'s calls, then
     checkpoint `c0` at the next turn. -/
-theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit) (hfeas : m.Feasible n) :
+theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit)
+    (hfeas : m.Feasible appsAll n) :
     ∃ n', T0.Round appsAll m n n' ∧ Inv1 (n'.applyHonest m) := by
   obtain ⟨⟨k, hk⟩, hpo⟩ := hI
   have hgood : ∀ op ∈ m.calls, Good op := by
@@ -286,7 +287,7 @@ theorem not_finalizable (Ω : Outcome Unit) : ¬ Finalizable appsAll T0 c0 Ω ne
 def σ0 : Strategy Unit p0 := fun n =>
   .chain (.checkpoint c0 [] (stAt ((n.chain.statusOf c0).turnNumRecord + 1)))
 
-theorem σ0_feasible (n : NetworkState Unit p0) : (σ0 n).Feasible n := by
+theorem σ0_feasible (n : NetworkState Unit p0) : (σ0 n).Feasible appsAll n := by
   simp [σ0, Op.HonestFeasible, Op.proofStates]
 
 theorem applyAdv_now_le (n : NetworkState Unit p0) (m : AdvMove Unit) :

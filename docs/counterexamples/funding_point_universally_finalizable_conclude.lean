@@ -210,8 +210,8 @@ theorem funding_point_universally_finalizable_false :
 /-- The own-violation: `p0` signed two setup states of `c2` with two outcomes
     (`sA0` with `Ωg`, the final `sF1` with `Ωb`), against
     `HonestSend.noConflict` (one slot for every setup turn, `State.signSlot_setup`). -/
-theorem p0_breaks_noConflict :
-    ¬ ∀ s ∈ (nF.views p0).sent, HonestSend (nF.views p0).sent (nF.views p0).HoldsPrefund s.state := by
+theorem p0_breaks_noConflict {sup : State Nat → Prop} :
+    ¬ ∀ s ∈ (nF.views p0).sent, HonestSend (nF.views p0).sent (nF.views p0).HoldsPrefund sup s.state := by
   intro h
   have h_eq := (h ⟨sF1, [p0]⟩ (by simp [nF_views_p0])).outcome_eq ⟨sA0, [p0]⟩
     (by simp [nF_views_p0]) (by decide) (State.signSlot_setup ⟨by decide, by decide⟩)

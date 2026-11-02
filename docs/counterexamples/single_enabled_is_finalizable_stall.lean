@@ -17,15 +17,15 @@
   proves:
   * `appsΩ_not_supportWindow`: `appsΩ` fails `Rules.SupportWindow`, the
     premise `happ` of both statements (ForceMove:744-778, 1340-1354,
-    1379-1381). Signatures at turns 1 and 2 support a candidate at turn 7.
+    1379-1381). Signatures at turn 1 support a candidate at turn 7.
   * `single_enabled_is_finalizable_false` and
     `finalizable_or_two_enabled_false`: both statements with the premise of
     the operator ruling of 2026-10-30 (`OldPremise`, every participant signed
     some state of the proof) are false. `appsΩ` carries `OldPremise`
     (`appsΩ_oldPremise`).
 
-  At `net1`, `p0` received `stAt 1` signed by `q0` (`q0`'s turn), and then
-  `p0` sent `stF`, a final state at turn 2 with the same outcome `Ω0`
+  At `net1`, `p0` received `stAt 1` signed by `q0`, and then `p0` sent
+  `stF`, a final state at the setup turn 1 with the same outcome `Ω0`
   (ForceMove:887-888, the graceful end, with the resolution kept,
   ForceMove:986-987). The send is honest (`send_feasible`), so `net1` is
   reachable on the honest machine (`net1_reachable`). `p0` holds the proof
@@ -87,9 +87,10 @@ def c0 : FixedPart :=
 def stAt (k : Nat) : State Unit :=
   { channel := c0, turnNum := k, outcome := Ω0, isFinal := false, appData := .opaque 0 }
 
-/-- A final state of `c0` with the outcome `Ω0`. -/
+/-- A final state of `c0` with the outcome `Ω0`, at turn 1, a setup turn
+    (`HonestSend.movesFrom` binds only the turns from `c0.n` on). -/
 def stF : State Unit :=
-  { channel := c0, turnNum := 2, outcome := Ω0, isFinal := true, appData := .opaque 0 }
+  { channel := c0, turnNum := 1, outcome := Ω0, isFinal := true, appData := .opaque 0 }
 
 def ssF : SignedState Unit := ⟨stF, [p0]⟩
 def ssQ : SignedState Unit := ⟨stAt 1, [q0]⟩
@@ -104,8 +105,8 @@ theorem supports_P_stAt (k : Nat) : (appsΩ c0.appDef).supports c0 P (stAt k) = 
 
 theorem supports_P_stF : (appsΩ c0.appDef).supports c0 P stF = true := rfl
 
-/-- `appsΩ` fails `Rules.SupportWindow`: `P` holds signatures at turns 1 and
-    2, and it supports `stAt 7`. -/
+/-- `appsΩ` fails `Rules.SupportWindow`: `P` holds signatures at turn 1,
+    and it supports `stAt 7`. -/
 theorem appsΩ_not_supportWindow : ¬ (appsΩ c0.appDef).SupportWindow := by
   intro h
   obtain ⟨ss, hss, -, -, -, hlt⟩ := h c0 P (stAt 7) (supports_P_stAt _) p0 (by simp [c0])
@@ -148,11 +149,11 @@ theorem unforged_stF {n : NetworkState Unit p0} (hs : ∃ s ∈ n.sent, s.state 
   exact ⟨s, hs, hst.trans hss.symm⟩
 
 /-- The send of `stF` after `p0` received `ssQ` satisfies `HonestSend`: one
-    state at the funding turn `c0.n`, an empty allocation. -/
+    setup state, an empty allocation. -/
 theorem send_feasible :
-    (HonestMove.send stF).Feasible (⟨Adjudicator.genesis, [ssQ], []⟩ : NetworkState Unit p0) :=
-  (HonestMove.Feasible_send _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩
+    (HonestMove.send stF).Feasible appsΩ (⟨Adjudicator.genesis, [ssQ], []⟩ : NetworkState Unit p0) :=
+  (HonestMove.Feasible_send _ _ _).mpr
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩
 
 theorem net1_reachable : (Nitro.participant appsΩ T0).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
@@ -319,7 +320,8 @@ def Inv1 (n : NetworkState Unit p0) : Prop :=
 
 /-- The adversary's answer to any move of `p0`: land `p0`'s calls, then
     checkpoint `c0` with `P` at the next turn. -/
-theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit) (hfeas : m.Feasible n) :
+theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit)
+    (hfeas : m.Feasible appsΩ n) :
     ∃ n', T0.Round appsΩ m n n' ∧ Inv1 (n'.applyHonest m) := by
   obtain ⟨⟨k, hk⟩, hq, hsent⟩ := hI
   have hgood : ∀ op ∈ m.calls, Good op := by
@@ -634,7 +636,7 @@ theorem appsΩ_not_desirable (dest : Participant → Unit) : ¬ Desirable appsΩ
   have hH : HoldsShare appsΩ net1 c0 (dest p0) 0 :=
     ⟨P, stAt 2, holds_P, supports_P_stAt 2, rfl, Nat.zero_le _, fun s hs _ => by
       simp only [net1, List.mem_singleton] at hs; subst hs
-      exact ⟨le_refl _, fun _ => Nat.zero_le _⟩, 0, statusOf_genesis, Nat.zero_le _⟩
+      exact ⟨by decide, fun _ => Nat.zero_le _⟩, 0, statusOf_genesis, Nat.zero_le _⟩
   exact not_unbeatable_any net1
     (h.ir.takeOut T0 A0 ⟨net1, net1_reachable⟩ ⟨c0, by decide⟩ 0 rfl (by simp [c0]) hH)
     ⟨⟨0, statusOf_genesis⟩, qnf_net1, ssF, by simp [net1], rfl⟩

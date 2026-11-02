@@ -119,9 +119,9 @@ theorem unforged_ssQ (n : NetworkState Unit p0) : n.Unforged ssQ :=
 /-- The send of `stAt 0` from the empty state satisfies `HonestSend`: one
     state, an empty allocation. -/
 theorem send_feasible :
-    (HonestMove.send (stAt 0)).Feasible (⟨Adjudicator.genesis, [], []⟩ : NetworkState Unit p0) :=
-  (HonestMove.Feasible_send _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩
+    (HonestMove.send (stAt 0)).Feasible appsU (⟨Adjudicator.genesis, [], []⟩ : NetworkState Unit p0) :=
+  (HonestMove.Feasible_send _ _ _).mpr
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩
 
 theorem net1_reachable : (Nitro.participant appsU T0).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
@@ -280,7 +280,8 @@ def Inv1 (n : NetworkState Unit p0) : Prop :=
 
 /-- The adversary's answer to any move of `p0`: land `p0`'s calls, then
     checkpoint `c0` with `P` at the next turn. -/
-theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit) (hfeas : m.Feasible n) :
+theorem round1 (n : NetworkState Unit p0) (hI : Inv1 n) (m : HonestMove Unit)
+    (hfeas : m.Feasible appsU n) :
     ∃ n', T0.Round appsU m n n' ∧ Inv1 (n'.applyHonest m) := by
   obtain ⟨⟨k, hk⟩, hq, hsent⟩ := hI
   have hgood : ∀ op ∈ m.calls, Good op := by
@@ -399,7 +400,7 @@ noncomputable def σ1 : Strategy Unit p0 := fun n => if Q n then .chain (opAt n)
 
 theorem σ1_eq {n : NetworkState Unit p0} (h : Q n) : σ1 n = .chain (opAt n) := if_pos h
 
-theorem σ1_feasible (n : NetworkState Unit p0) : (σ1 n).Feasible n := by
+theorem σ1_feasible (n : NetworkState Unit p0) : (σ1 n).Feasible appsU n := by
   by_cases h : Q n
   · rw [σ1_eq h, HonestMove.Feasible_chain]
     exact holdsP_of_Q h

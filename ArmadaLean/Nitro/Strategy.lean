@@ -98,15 +98,6 @@ theorem NetworkState.Holds.of_subset {p : Participant} {net net' : NetworkState 
 def NetworkState.HoldsPrefund {p : Participant} (net : NetworkState E p) (V : FixedPart) : Prop :=
   ∃ ss, net.Holds ss ∧ ss.ByAll ∧ ss.state.channel = V ∧ ss.state.turnNum = 0
 
-omit [DecidableEq E] in
-/-- `HoldsPrefund` survives any change that keeps every held state held
-    (for example `NetworkState.Holds.of_subset`). -/
-theorem NetworkState.HoldsPrefund.mono {p : Participant} {net net' : NetworkState E p}
-    {V : FixedPart} (hmono : ∀ ss, net.Holds ss → net'.Holds ss) (h : net.HoldsPrefund V) :
-    net'.HoldsPrefund V := by
-  obtain ⟨ss, hH, hall, hc, ht⟩ := h
-  exact ⟨ss, hmono ss hH, hall, hc, ht⟩
-
 /-- One honest reaction (Nitro:485-488: "signing commitments, refusing to
     sign commitments, launching/responding to on-chain challenges and
     calling on-chain operations"): the on-chain calls `p` submits and the
@@ -172,21 +163,53 @@ theorem Op.HonestFeasible.mem {p : Participant} {net : NetworkState E p} {op : O
 def Reaction.Feasible {p : Participant} (net : NetworkState E p) (r : Reaction E) : Prop :=
   ∀ op ∈ r.calls, op.HonestFeasible net
 
+/-- `p` holds a support of a state of `c` at turn `k`: every state of the
+    support proof is held, and the app of `c` supports the candidate. -/
+def NetworkState.HoldsSupportAt {p : Participant} (apps : Apps E) (net : NetworkState E p)
+    (c : FixedPart) (k : Nat) : Prop :=
+  ∃ proof cand, (∀ ss ∈ proof, net.Holds ss) ∧ (apps c.appDef).supports c proof cand = true ∧
+    cand.channel = c ∧ cand.turnNum = k
+
+/-- `p` can move to `st` by the rules: `p` holds a support of a state of
+    the channel of `st` at the turn before, and `p`'s held states with `st`
+    support `st` (a valid move from the current state, ForceMove:744-778).
+    The argument `canMove` of `HonestSend` (`HonestSend.movesFrom`). -/
+def NetworkState.CanMoveTo {p : Participant} (apps : Apps E) (net : NetworkState E p)
+    (st : State E) : Prop :=
+  net.HoldsSupportAt apps st.channel (st.turnNum - 1) ∧
+  ∃ proof', (∀ ss ∈ proof', net.Holds ss ∨ ss.state = st) ∧
+    (apps st.channel.appDef).supports st.channel proof' st = true
+
+omit [DecidableEq E] in
+/-- The held pre-fund states and the possible moves survive any change that
+    keeps every held state held (for example `NetworkState.Holds.of_subset`). -/
+theorem NetworkState.held_mono {p : Participant} {apps : Apps E} {net net' : NetworkState E p}
+    (hmono : ∀ ss, net.Holds ss → net'.Holds ss) :
+    (∀ V, net.HoldsPrefund V → net'.HoldsPrefund V) ∧
+      ∀ st, net.CanMoveTo apps st → net'.CanMoveTo apps st :=
+  ⟨fun _ ⟨ss, hH, hall, hc, ht⟩ => ⟨ss, hmono ss hH, hall, hc, ht⟩,
+    fun _ ⟨⟨proof, cand, hH, hs, hc, hk⟩, proof', hH', hs'⟩ =>
+      ⟨⟨proof, cand, fun ss hss => hmono ss (hH ss hss), hs, hc, hk⟩, proof',
+        fun ss hss => (hH' ss hss).imp_left (hmono ss), hs'⟩⟩
+
 /-- Every send of `r` satisfies the signing rules (`HonestSend`,
     `Types/Honest.lean`): against every state `p` has signed once `r`'s sends
     are out (`NetworkState.applyHonest`'s `.react` arm), and against the
-    pre-fund states `p` holds now. -/
-def Reaction.SendsHonest {p : Participant} (net : NetworkState E p) (r : Reaction E) : Prop :=
+    pre-fund states and the supports `p` holds now. -/
+def Reaction.SendsHonest {p : Participant} (apps : Apps E) (net : NetworkState E p)
+    (r : Reaction E) : Prop :=
   ∀ st ∈ r.sends,
-    HonestSend (r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent) net.HoldsPrefund st
+    HonestSend (r.sends.map (fun st => (⟨st, [p]⟩ : SignedState E)) ++ net.sent) net.HoldsPrefund
+      (net.CanMoveTo apps) st
 
 /-- The honest participant may play a reaction only when every one of its
     calls is feasible and every one of its sends satisfies the signing rules
     (`Reaction.SendsHonest`; operator ruling 2026-11-01, `Types/Honest.lean`:
     the honest strategy makes a signed state only here). `wait` is always
     feasible. -/
-def HonestMove.Feasible {p : Participant} (net : NetworkState E p) : HonestMove E → Prop
-  | .react r => r.Feasible net ∧ r.SendsHonest net
+def HonestMove.Feasible {p : Participant} (apps : Apps E) (net : NetworkState E p) :
+    HonestMove E → Prop
+  | .react r => r.Feasible net ∧ r.SendsHonest apps net
   | .wait _ => True
 
 /-- A move whose calls are feasible, with no rule on its sends: the honest
@@ -198,8 +221,8 @@ def HonestMove.CallsFeasible {p : Participant} (net : NetworkState E p) : Honest
   | .wait _ => True
 
 /-- A feasible move's calls are feasible. -/
-theorem HonestMove.Feasible.callsFeasible {p : Participant} {net : NetworkState E p}
-    {m : HonestMove E} (h : m.Feasible net) : m.CallsFeasible net := by
+theorem HonestMove.Feasible.callsFeasible {p : Participant} {apps : Apps E}
+    {net : NetworkState E p} {m : HonestMove E} (h : m.Feasible apps net) : m.CallsFeasible net := by
   cases m with
   | react r => exact h.1
   | wait dt => trivial
@@ -294,17 +317,42 @@ structure Threat (E : Type) (p : Participant) where
   ε : Time
   ε_pos : 0 < ε
 
+/-- A proof state `ss` is accepted by `p` in the proof `proof` when a later
+    state of the same proof carries `p`'s signature: `p` moved on top of it.
+    Operator ruling 2026-11-02: a payment that `p` has built on is accepted
+    history, not an attack. -/
+def SupportProof.AcceptedBy {p : Participant} (proof : SupportProof E) (ss : SignedState E) :
+    Prop :=
+  ∃ (i j : Nat) (t : SignedState E), proof[i]? = some ss ∧ i < j ∧ proof[j]? = some t ∧
+    p ∈ t.signers
+
 /-- An adversary move commits no own-violation of a participant other than
     `p`: every state it delivers, and every proof state of a call it makes,
     is no own-violation (`OwnViolation`, `ArmadaLean/Types/OwnViolation.lean`)
     of any of its signers other than `p`, against the states that `p`
-    received and the other proof states of the call. -/
+    received and the other proof states of the call. In a call, a gift that
+    `p` accepted in the same proof (`SupportProof.AcceptedBy`) does not
+    count: the candidate's outcome comes from `p`'s last state and the clean
+    moves after it, so an accepted gift cannot turn the candidate against
+    `p` (operator ruling 2026-11-02). A conflict always counts. -/
 def AdvMove.NoOwnViolation {p : Participant} (dest : Participant → E) (net : NetworkState E p) :
     AdvMove E → Prop
   | .deliver ss => ∀ q ∈ ss.signers, q ≠ p → ¬ OwnViolation dest q net.received ss
   | .chain _ op => ∀ ss ∈ op.proofStates, ∀ q ∈ ss.signers, q ≠ p →
-      ¬ OwnViolation dest q (op.proofStates ++ net.received) ss
+      ¬ OwnViolation.Conflict
+          ((op.proofStates ++ net.received).filter fun s => decide (q ∈ s.signers)) ss.state ∧
+        (SupportProof.AcceptedBy (p := p) op.proofStates ss ∨
+          ¬ OwnViolation dest q (op.proofStates ++ net.received) ss)
   | _ => True
+
+/-- A call whose proof states are no own-violations at all commits no
+    own-violation. -/
+theorem AdvMove.NoOwnViolation.chain_of {p : Participant} {dest : Participant → E}
+    {net : NetworkState E p} {caller : Participant} {op : Op E}
+    (h : ∀ ss ∈ op.proofStates, ∀ q ∈ ss.signers, q ≠ p →
+      ¬ OwnViolation dest q (op.proofStates ++ net.received) ss) :
+    (AdvMove.chain caller op).NoOwnViolation dest net :=
+  fun ss hss q hq hqp => ⟨fun hc => h ss hss q hq hqp (Or.inl hc), Or.inr (h ss hss q hq hqp)⟩
 
 /-- **The threat without own-violations of the other participants.**
     Operator ruling 2026-11-01: own-violation is one rule for every
@@ -387,16 +435,17 @@ omit [DecidableEq E] in
 omit [DecidableEq E] in
 @[simp] theorem HonestMove.calls_wait (dt : Time) : (HonestMove.wait (E := E) dt).calls = [] := rfl
 
-@[simp] theorem HonestMove.Feasible_chain {p : Participant} (net : NetworkState E p) (op : Op E) :
-    (HonestMove.chain op).Feasible net ↔ op.HonestFeasible net := by
+@[simp] theorem HonestMove.Feasible_chain {p : Participant} (apps : Apps E) (net : NetworkState E p)
+    (op : Op E) : (HonestMove.chain op).Feasible apps net ↔ op.HonestFeasible net := by
   simp only [HonestMove.Feasible, HonestMove.chain, Reaction.one, Reaction.Feasible, List.mem_cons,
     List.not_mem_nil, or_false, forall_eq, Reaction.SendsHonest, List.map_nil, List.nil_append,
     IsEmpty.forall_iff, implies_true, and_true]
 
 /-- One send is feasible exactly when it satisfies the signing rules
     (`HonestSend`) against `p`'s sent states with itself added. -/
-@[simp] theorem HonestMove.Feasible_send {p : Participant} (net : NetworkState E p) (st : State E) :
-    (HonestMove.send st).Feasible net ↔ HonestSend (⟨st, [p]⟩ :: net.sent) net.HoldsPrefund st := by
+@[simp] theorem HonestMove.Feasible_send {p : Participant} (apps : Apps E) (net : NetworkState E p)
+    (st : State E) : (HonestMove.send st).Feasible apps net ↔
+      HonestSend (⟨st, [p]⟩ :: net.sent) net.HoldsPrefund (net.CanMoveTo apps) st := by
   simp only [HonestMove.Feasible, HonestMove.send, Reaction.Feasible, List.not_mem_nil,
     IsEmpty.forall_iff, implies_true, Reaction.SendsHonest, List.mem_cons, or_false, List.map_cons,
     List.map_nil, List.cons_append, List.nil_append, forall_eq, true_and]
@@ -692,7 +741,7 @@ theorem Threat.RoundSeq.landAll (apps : Apps E) {p : Participant} (T : Threat E 
     unmoved, the round's own bound (`net'.chain.now < net.chain.now +
     T.ε`) is `T.ε_pos`. -/
 theorem Threat.Round.exists {apps : Apps E} {p : Participant} (T : Threat E p)
-    {m : HonestMove E} {net : NetworkState E p} (hfeas : m.Feasible net) :
+    {m : HonestMove E} {net : NetworkState E p} (hfeas : m.Feasible apps net) :
     ∃ net', T.Round apps m net net' := by
   have hnotick : ∀ op ∈ m.calls, ∀ dt, op ≠ Op.tick dt := by
     cases m with
@@ -803,7 +852,7 @@ structure Assumptions (apps : Apps E) (p : Participant) (T : Threat E p) : Prop
 inductive UnbeatableIn (apps : Apps E) {p : Participant} (T : Threat E p)
     (allowed : HonestMove E → Prop) (G : NetworkState E p → Prop) : NetworkState E p → Prop
   | done {net} : G net → UnbeatableIn apps T allowed G net
-  | move {net} (m : HonestMove E) : allowed m → m.Feasible net →
+  | move {net} (m : HonestMove E) : allowed m → m.Feasible apps net →
       (∀ net', T.Round apps m net net' →
         UnbeatableIn apps T allowed G (net'.applyHonest m)) →
       UnbeatableIn apps T allowed G net
@@ -848,7 +897,7 @@ theorem UnbeatableIn.and_condInvariant {apps : Apps E} {p : Participant} {T : Th
     {allowed : HonestMove E → Prop} {G : NetworkState E p → Prop} {Inv : NetworkState E p → Prop}
     {Cond : NetworkState E p → Op E → Prop}
     (h : T.CondStepInvariant apps (fun _ => True) Inv Cond)
-    (hcondfeas : ∀ {n : NetworkState E p} {m : HonestMove E}, allowed m → m.Feasible n →
+    (hcondfeas : ∀ {n : NetworkState E p} {m : HonestMove E}, allowed m → m.Feasible apps n →
       ∀ op ∈ m.calls, Cond n op)
     (hhonest : ∀ {n : NetworkState E p} {m : HonestMove E}, allowed m → Inv n →
       Inv (n.applyHonest m))
@@ -866,7 +915,7 @@ theorem UnbeatableIn.and_condInvariant {apps : Apps E} {p : Participant} {T : Th
     within the rounds too. -/
 def Prevents (apps : Apps E) {p : Participant} (T : Threat E p)
     (G : NetworkState E p → Prop) (net : NetworkState E p) : Prop :=
-  ∃ σ : Strategy E p, (∀ n, (σ n).Feasible n) ∧
+  ∃ σ : Strategy E p, (∀ n, (σ n).Feasible apps n) ∧
     ∀ n1 n2, Run apps T σ net n1 → T.Round apps (σ n1) n1 n2 → ¬ G n2
 
 /-- Nitro:602-603 `⟦χ ↦ Ω⟧`: `χ` finalized with the outcome `Ω`. A later

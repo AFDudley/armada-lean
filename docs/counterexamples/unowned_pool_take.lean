@@ -236,9 +236,9 @@ theorem unforged_r0 (n : NetworkState Nat p0) : n.Unforged r0 :=
   ⟨fun h => absurd (List.mem_singleton.1 h) p0_ne_q0, fun v hv => by simp [r0, st, State.voucher?] at hv⟩
 
 theorem send_feasible :
-    (HonestMove.send (st 1 O1)).Feasible (⟨sF, [r0], []⟩ : NetworkState Nat p0) :=
-  (HonestMove.Feasible_send _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide)⟩
+    (HonestMove.send (st 1 O1)).Feasible appsS (⟨sF, [r0], []⟩ : NetworkState Nat p0) :=
+  (HonestMove.Feasible_send _ _ _).mpr
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide)⟩
 
 theorem net1_reachable : (Nitro.participant appsS T1).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
@@ -496,7 +496,7 @@ theorem roundE {n0 : NetworkState Nat p0} (hI0 : InvE n0) (t : Time) :
 /-- Every feasible move of `p0` has a round, one tick long, that keeps
     `InvE`. -/
 theorem roundE_exists {n : NetworkState Nat p0} (hI : InvE n) {m : HonestMove Nat}
-    (hfeas : m.Feasible n) :
+    (hfeas : m.Feasible appsS n) :
     ∃ n', T1.Round appsS m n n' ∧ InvE n' ∧ n'.chain.now = n.chain.now + 1 := by
   have hcalls : ∀ op ∈ m.calls, op.HonestFeasible n := by
     cases m with
@@ -518,7 +518,7 @@ theorem opE_apply : sF.apply appsS q0 opE = some sChE := by
 
 /-- The first round: the adversary challenges, then `p0`'s calls land, then
     one tick. -/
-theorem roundE_first {m : HonestMove Nat} (hfeas : m.Feasible net1) :
+theorem roundE_first {m : HonestMove Nat} (hfeas : m.Feasible appsS net1) :
     ∃ n', T1.Round appsS m net1 n' ∧ InvE n' ∧ n'.chain.now = 1 := by
   let n1 : NetworkState Nat p0 := net1.applyAdv appsS (.chain q0 opE)
   have hn1 : n1 = ⟨sChE, [r0, s1] ++ [r0], [s1]⟩ := by
@@ -555,7 +555,7 @@ theorem roundE_first {m : HonestMove Nat} (hfeas : m.Feasible net1) :
       exact holds_mono hs hr (h0 ss hss)
   obtain ⟨n', hseq, hI', hnow, -⟩ := roundE hI0 0 m.calls hcalls n1 hI1 rfl
   have hfeasE : T1.feasible net1 (.chain q0 opE) := by
-    refine ⟨⟨by decide, fun ss hss => ?_⟩, ?_⟩
+    refine ⟨⟨by decide, fun ss hss => ?_⟩, AdvMove.NoOwnViolation.chain_of ?_⟩
     · simp only [opE, Op.proofStates, List.mem_cons, List.not_mem_nil, or_false] at hss
       rcases hss with rfl | rfl
       · exact unforged_r0 _
@@ -906,7 +906,8 @@ theorem closeA {G : Outcome Nat → Prop} {A : Outcome Nat} (hA : Adv G A)
         by simp, hA.notG⟩)
     obtain ⟨m', hseq, hI', hS', hnow, hsent⟩ := htick ma hIa hSa
     have hfe : T1.feasible m (.chain q0 (opAns A y.state)) := by
-      refine ⟨⟨by decide, fun ss hss => ?_⟩, fun ss hss q hq hqp => ?_⟩
+      refine ⟨⟨by decide, fun ss hss => ?_⟩,
+        AdvMove.NoOwnViolation.chain_of fun ss hss q hq hqp => ?_⟩
       · simp only [opAns, Op.proofStates, List.mem_cons, List.not_mem_nil, or_false] at hss
         rcases hss with rfl | rfl
         · exact hUy _ hy
@@ -947,7 +948,7 @@ theorem roundA {G : Outcome Nat → Prop} {A : Outcome Nat} (hA : Adv G A)
     `HonestSend` against the record `n0.sent = n.sent`, so `p0` signs one
     outcome per channel and turn. -/
 theorem InvA.applyHonest {G : Outcome Nat → Prop} {A : Outcome Nat} {n n0 : NetworkState Nat p0}
-    (hI : InvA A n) (hS : SafeA G (n.chain.statusOf c0)) {m : HonestMove Nat} (hm : m.Feasible n0)
+    (hI : InvA A n) (hS : SafeA G (n.chain.statusOf c0)) {m : HonestMove Nat} (hm : m.Feasible appsS n0)
     (hsent : n.sent = n0.sent) :
     InvA A (n.applyHonest m) ∧ SafeA G ((n.applyHonest m).chain.statusOf c0) := by
   cases m with
@@ -1081,7 +1082,8 @@ theorem ansP_valid {y m0 : State Nat} (hc : y.channel = c0) (he : y.turnNum % 2 
 /-- What `p0` holds of a challenge with the outcome `X` at turn `t`. -/
 def XInfo (n : NetworkState Nat p0) (t : Nat) (ch : Challenge Nat) : Prop :=
   ch.state.turnNum = t ∧ t % 2 = 0 ∧ 2 ≤ t ∧ ch.state.isFinal = false ∧ ch.state.channel = c0 ∧
-    vtS ch.state (ansP t) = true ∧ ∃ x ∈ n.received, x.state = ch.state ∧ q0 ∈ x.signers
+    vtS ch.state (ansP t) = true ∧ (∃ x ∈ n.received, x.state = ch.state ∧ q0 ∈ x.signers) ∧
+    n.HoldsSupportAt appsS c0 t
 
 /-- Every state of `c0` that `p0` signs: the outcome `O1`, non-final, at an
     odd turn. -/
@@ -1154,9 +1156,10 @@ theorem KX.start {X : Outcome Nat} {n0 : NetworkState Nat p0} (hI : InvX X n0) :
     fun t ch h hx => ⟨(hI.timing t ch h hx).1, Or.inl rfl⟩, fun _ _ _ _ => Or.inl rfl, le_refl _⟩
 
 theorem XInfo.mono {n n' : NetworkState Nat p0} {t : Nat} {ch : Challenge Nat}
-    (h : XInfo n t ch) (hr : ∀ r ∈ n.received, r ∈ n'.received) : XInfo n' t ch := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, x, hx, hxs, hxq⟩ := h
-  exact ⟨h1, h2, h3, h4, h5, h6, x, hr x hx, hxs, hxq⟩
+    (h : XInfo n t ch) (hs : ∀ s ∈ n.sent, s ∈ n'.sent) (hr : ∀ r ∈ n.received, r ∈ n'.received) :
+    XInfo n' t ch := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, ⟨x, hx, hxs, hxq⟩, P, cd, hH, hsP, hcd, hk⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, h6, ⟨x, hr x hx, hxs, hxq⟩, P, cd, fun ss h => (hH ss h).of_subset hs hr, hsP, hcd, hk⟩
 
 theorem apply_now_le {s s' : Adjudicator Nat} {caller : Participant} {op : Op Nat}
     (h : s.apply appsS caller op = some s') : s.now ≤ s'.now := by
@@ -1201,7 +1204,7 @@ theorem stepK {X : Outcome Nat} (hX : X ≠ O1) {n0 n : NetworkState Nat p0} {R 
       by rw [heq]; exact hK.recR⟩
     · rw [heq] at hc
       obtain ⟨hinfo, hor⟩ := hK.chX t ch hc hx
-      exact ⟨hinfo.mono hrec, by rw [heq]; exact hor⟩
+      exact ⟨hinfo.mono (fun _ h => h) hrec, by rw [heq]; exact hor⟩
     · rw [heq]; exact hK.left t0 ch0 h0 hx
   · have hge : (n.chain.statusOf c0).turnNumRecord ≤ cand.turnNum := by
       rcases hmode with ⟨-, h⟩ | ⟨-, h⟩
@@ -1214,7 +1217,8 @@ theorem stepK {X : Outcome Nat} (hX : X ≠ O1) {n0 n : NetworkState Nat p0} {R 
       obtain ⟨rfl, rfl⟩ := ChannelStatus.challenged.inj hc
       obtain ⟨he, h2, hnf, hch, hvt, m1, hm1, hm1s, hm1q⟩ := candX hSn hsup hU
         (fun h => hX (hx.symm.trans h))
-      refine ⟨⟨rfl, he, h2, hnf, hch, hvt, m1, List.mem_append_left _ hm1, hm1s, hm1q⟩,
+      refine ⟨⟨rfl, he, h2, hnf, hch, hvt, ⟨m1, List.mem_append_left _ hm1, hm1s, hm1q⟩,
+        P, _, fun ss hss => holds_of_mem_received (List.mem_append_left _ hss), hsup, hcc, rfl⟩,
         Or.inr (Nat.add_le_add_right hK.now0 6)⟩
     · right
       rw [hst]
@@ -1285,7 +1289,7 @@ theorem KX.stepInv {X : Outcome Nat} (hX : X ≠ O1) {n0 : NetworkState Nat p0} 
       · exact hfe.1.of_sent rfl
       · exact (hK.recvU r hr).of_sent rfl
     · obtain ⟨hinfo, hor⟩ := hK.chX t ch hc hx
-      exact ⟨hinfo.mono (fun r hr => List.mem_cons_of_mem _ hr), hor⟩
+      exact ⟨hinfo.mono (fun _ h => h) (fun r hr => List.mem_cons_of_mem _ hr), hor⟩
   tick := fun {n dt} _ _ hK => by
     rw [NetworkState.applyAdv_tick]
     refine ⟨fun r hr => (hK.recvU r hr).of_sent rfl, hK.sent, hK.recv,
@@ -1320,25 +1324,52 @@ noncomputable def idealX (X : Outcome Nat) (n : NetworkState Nat p0) : HonestMov
 open Classical in
 /-- The strategy: `idealX` where it is feasible, a wait otherwise. -/
 noncomputable def σX (X : Outcome Nat) : Strategy Nat p0 := fun n =>
-  if (idealX X n).Feasible n then idealX X n else .wait 0
+  if (idealX X n).Feasible appsS n then idealX X n else .wait 0
 
-theorem σX_feasible (X : Outcome Nat) (n : NetworkState Nat p0) : (σX X n).Feasible n := by
+theorem σX_feasible (X : Outcome Nat) (n : NetworkState Nat p0) : (σX X n).Feasible appsS n := by
   unfold σX
   split
   · assumption
   · trivial
 
+/-- `p0`'s move `ansP t0` after `q0`'s challenge state `x` at `t0` is a
+    support of `ansP t0`. -/
+theorem supports_ansP {ch : Challenge Nat} {t0 : Nat} {x : SignedState Nat}
+    (hxs : x.state = ch.state) (hxq : q0 ∈ x.signers) (hinfo : ch.state.turnNum = t0 ∧ t0 % 2 = 0 ∧
+      ch.state.isFinal = false ∧ ch.state.channel = c0 ∧ vtS ch.state (ansP t0) = true) :
+    (appsS c0.appDef).supports c0 [x, ⟨ansP t0, [p0]⟩] (ansP t0) = true := by
+  obtain ⟨ht, he, hf, hc, hv⟩ := hinfo
+  have hxc : x.state.channel = c0 := by rw [hxs]; exact hc
+  have hb1 : x.byMover = true := (SignedState.byMover_iff _).2
+    ⟨q0, by rw [mover_c0 hxc, if_pos (by rw [hxs, ht]; exact he)], hxq⟩
+  have hm2 : (ansP t0).mover = some p0 := by
+    rw [mover_c0 rfl, if_neg (by simp only [ansP, st]; omega)]
+  have hb2 : (⟨ansP t0, [p0]⟩ : SignedState Nat).byMover = true := by
+    simp [SignedState.byMover, hm2]
+  have hv' : vtS x.state (ansP t0) = true := by rw [hxs]; exact hv
+  simp only [appsS, forceMoveRules, validRun, validMove, hb2, hv']
+  simp [hxs, hc, hf, ht, ansP, st, c0, FixedPart.n, hb1]
+
 /-- `p0` may sign `ansP t`: every state it signed carries `O1` (`SentOK`), so
-    the send commits no own-violation of kind (a) (`HonestSend.noConflict`). -/
-theorem send_ansP_feasible {n : NetworkState Nat p0} {t : Nat} (hS : SentOK n) :
-    (HonestMove.send (ansP t)).Feasible n := by
-  refine (HonestMove.Feasible_send n (ansP t)).mpr ⟨fun ⟨s, hs, hc, _, hne⟩ => ?_, ?_, ?_⟩
+    the send commits no own-violation of kind (a) (`HonestSend.noConflict`),
+    and `p0` moves by the rules from the challenge state at turn `t`, whose
+    support it holds (`HonestSend.movesFrom`). -/
+theorem send_ansP_feasible {n : NetworkState Nat p0} {t : Nat} {ch : Challenge Nat}
+    (hS : SentOK n) (hinfo : XInfo n t ch) : (HonestMove.send (ansP t)).Feasible appsS n := by
+  obtain ⟨ht, he, -, hf, hc, hv, ⟨x, hx, hxs, hxq⟩, hsup⟩ := hinfo
+  refine (HonestMove.Feasible_send appsS n (ansP t)).mpr
+    ⟨fun ⟨s, hs, hc, _, hne⟩ => ?_, ?_, ?_, fun _ => ⟨hsup, [x, ⟨ansP t, [p0]⟩], fun ss hss => ?_,
+      supports_ansP hxs hxq ⟨ht, he, hf, hc, hv⟩⟩⟩
   · rcases List.mem_cons.1 hs with rfl | hs
     · exact hne rfl
     · exact hne (hS s hs hc).1
   · show O1.entries.GuaranteesExternal
     decide
   · exact HonestSend.fundsCommitted_of_fundable (by show ∀ e ∈ O1.entries, _; decide)
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hss
+    rcases hss with rfl | rfl
+    · exact .inl (holds_of_mem_received hx)
+    · exact .inr rfl
 
 theorem holds_ansP {n : NetworkState Nat p0} {t : Nat} (h : ∃ s ∈ n.sent, s.state = ansP t) :
     n.Holds ⟨ansP t, [p0]⟩ := by
@@ -1373,19 +1404,19 @@ theorem σX_cases {X : Outcome Nat} {n : NetworkState Nat p0} (hI : InvX X n) :
           unfold idealX; rw [hs]; simp only [if_pos hx, dif_pos hd]
         unfold σX
         rw [hid, if_pos]
-        refine (HonestMove.Feasible_chain _ _).2 fun ss hss => ?_
+        refine (HonestMove.Feasible_chain _ _ _).2 fun ss hss => ?_
         simp only [Op.proofStates, List.mem_cons, List.not_mem_nil, or_false] at hss
         rcases hss with rfl | rfl
         · exact holds_of_mem_received hx1
         · exact holds_ansP hd.1
       · right; left
         have hns : ¬ ∃ s ∈ n.sent, s.state = ansP t := fun h =>
-          hd ⟨h, hinfo.2.2.2.2.2.2⟩
+          hd ⟨h, hinfo.2.2.2.2.2.2.1⟩
         refine ⟨t, ch, rfl, hx, hns, ?_⟩
         have hid : idealX X n = .send (ansP t) := by
           unfold idealX; rw [hs]; simp only [if_pos hx, dif_neg hd]
         unfold σX
-        rw [hid, if_pos (send_ansP_feasible hI.sentOK)]
+        rw [hid, if_pos (send_ansP_feasible hI.sentOK hinfo)]
     · exact Or.inl ⟨hwait (by unfold idealX; rw [hs]; simp only [if_neg hx]),
         fun t' ch' h => by cases h; exact hx⟩
 
@@ -1434,18 +1465,7 @@ theorem checkpoint_apply {s : Adjudicator Nat} {t0 : Nat} {ch : Challenge Nat}
       ch.state.isFinal = false ∧ ch.state.channel = c0 ∧ vtS ch.state (ansP t0) = true) :
     s.apply appsS p0 (.checkpoint c0 [x, ⟨ansP t0, [p0]⟩] (ansP t0)) =
       some (s.setStatus c0 (.open (t0 + 1))) := by
-  obtain ⟨ht, he, hf, hc, hv⟩ := hinfo
-  have hxc : x.state.channel = c0 := by rw [hxs]; exact hc
-  have hb1 : x.byMover = true := (SignedState.byMover_iff _).2
-    ⟨q0, by rw [mover_c0 hxc, if_pos (by rw [hxs, ht]; exact he)], hxq⟩
-  have hm2 : (ansP t0).mover = some p0 := by
-    rw [mover_c0 rfl, if_neg (by simp only [ansP, st]; omega)]
-  have hb2 : (⟨ansP t0, [p0]⟩ : SignedState Nat).byMover = true := by
-    simp [SignedState.byMover, hm2]
-  have hv' : vtS x.state (ansP t0) = true := by rw [hxs]; exact hv
-  have hsup : (appsS c0.appDef).supports c0 [x, ⟨ansP t0, [p0]⟩] (ansP t0) = true := by
-    simp only [appsS, forceMoveRules, validRun, validMove, hb2, hv']
-    simp [hxs, hc, hf, ht, ansP, st, c0, FixedPart.n, hb1]
+  have hsup := supports_ansP hxs hxq hinfo
   show s.checkpoint appsS c0 _ _ = _
   unfold Adjudicator.checkpoint
   have hopen : (s.statusOf c0).IsOpen s.now := by
@@ -1490,7 +1510,7 @@ theorem roundX {X : Outcome Nat} (hX : X ≠ O1) {n0 n' : NetworkState Nat p0} (
     · rw [hchain.1]; exact hK.noFin t f o
     · rw [hchain.1] at hc
       obtain ⟨hinfo, hor⟩ := hK.chX t ch hc hx
-      refine ⟨hinfo.mono (fun r hr => by rw [hrecv]; exact hr), ?_⟩
+      refine ⟨hinfo.mono hsub (fun r hr => by rw [hrecv]; exact hr), ?_⟩
       rcases hor with h0 | h6
       · exact hS0 t ch hc hx h0
       · rw [hchain.2]

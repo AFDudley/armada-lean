@@ -398,7 +398,8 @@ theorem adv_first {n : NetworkState Nat p0} (hI : Inv n) :
       · exact .inr (.inr (corrupt_step happ hc))
 
 /-- The answer of the adversary to any move of `p0`. -/
-theorem round (n : NetworkState Nat p0) (hI : Inv n) (m : HonestMove Nat) (hfeas : m.Feasible n) :
+theorem round (n : NetworkState Nat p0) (hI : Inv n) (m : HonestMove Nat)
+    (hfeas : m.Feasible apps2 n) :
     ∃ n', (canon p0).Round apps2 m n n' ∧ Inv (n'.applyHonest m) := by
   have hgood : ∀ op ∈ m.calls, Good op := by
     cases m with

@@ -37,10 +37,18 @@
   * `fundsCommitted`: the premise `hR1` of `satp_theorem_3_2` (operator
     ruling 2026-10-31; SATP:409, "Proceed when s0 is committed"; Definition
     3.1, SATP:394-399).
+  * `movesFrom` (operator ruling 2026-11-02): above the funding point, the
+    participant signs a state only as a move from a supported state that it
+    holds, at the turn before, and only a move by the rules: with its held
+    states and the new state, the rules support the new state
+    (ForceMove:744-778: a move is a valid transition from the current
+    state). Signing a state with no support that it holds is the
+    defender-side own-violation. The setup states (turns below the funding
+    point) are excepted, as the protocol defines them (ForceMove:1092-1125).
 
-  The type takes the signer's record as two arguments, not a `NetworkState`:
-  `Strategy.lean` (which defines `NetworkState`) imports this module, because
-  `HonestMove.Feasible` reads `HonestSend`.
+  The type takes the signer's record as three arguments, not a
+  `NetworkState`: `Strategy.lean` (which defines `NetworkState`) imports this
+  module, because `HonestMove.Feasible` reads `HonestSend`.
 -/
 import ArmadaLean.Nitro.Lemmas
 import ArmadaLean.Types.OwnViolation
@@ -85,9 +93,12 @@ abbrev HonestSend.FundsCommitted (prefundHeld : FixedPart → Prop) (st : State 
     sends.** `signed` is every state the participant has signed, `st`'s own
     send included. `prefundHeld V` says that the participant holds an
     all-signed pre-fund (turn 0) state of `V` (`NetworkState.HoldsPrefund`,
+    `Strategy.lean`). `canMove st` says that the participant holds a
+    support of a state of the channel of `st` at the turn before, and that
+    its held states and `st` support `st` (`NetworkState.CanMoveTo`,
     `Strategy.lean`). Each field is one rule of this module's header. -/
 structure HonestSend (signed : List (SignedState E)) (prefundHeld : FixedPart → Prop)
-    (st : State E) : Prop where
+    (canMove : State E → Prop) (st : State E) : Prop where
   /-- The participant commits no own-violation of kind (a): it signs no two
       states of one channel at one slot with two outcomes
       (`OwnViolation.Conflict`; ForceMove:782-794, ForceMove:1112-1114,
@@ -100,25 +111,32 @@ structure HonestSend (signed : List (SignedState E)) (prefundHeld : FixedPart �
       channel `V` only when it holds the all-signed pre-fund state of `V`
       (SATP:409). -/
   fundsCommitted : HonestSend.FundsCommitted prefundHeld st
+  /-- Above the funding point, the participant signs a state only as a move
+      by the rules from a supported state of the same channel at the turn
+      before, which it holds (ForceMove:744-778; operator ruling
+      2026-11-02). -/
+  movesFrom : st.channel.n ≤ st.turnNum → canMove st
 
 namespace HonestSend
 
 /-- Two states that the participant signed on one channel at one slot carry
     one outcome. -/
-theorem outcome_eq {signed : List (SignedState E)} {held : FixedPart → Prop} {st : State E}
-    (h : HonestSend signed held st) : ∀ s ∈ signed, s.state.channel = st.channel →
+theorem outcome_eq {signed : List (SignedState E)} {held : FixedPart → Prop}
+    {sup : State E → Prop} {st : State E}
+    (h : HonestSend signed held sup st) : ∀ s ∈ signed, s.state.channel = st.channel →
     s.state.signSlot = st.signSlot → s.state.outcome = st.outcome := fun s hs hc hslot =>
   Classical.byContradiction fun hne => h.noConflict ⟨s, hs, hc, hslot, hne⟩
 
 /-- A state that satisfies the rules against `prior` with no held pre-fund
     state (so it funds no virtual channel) satisfies them against any
     `signed` whose states are `st` itself or states of `prior`. -/
-theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Prop} {st : State E}
-    (hst : HonestSend prior (fun _ => False) st)
+theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Prop}
+    {sup : State E → Prop} {st : State E}
+    (hst : HonestSend prior (fun _ => False) sup st)
     (hcover : ∀ s ∈ signed, s.state = st ∨ ∃ s' ∈ prior, s'.state = s.state) :
-    HonestSend signed held st := by
+    HonestSend signed held sup st := by
   refine ⟨fun ⟨s, hs, hc, hslot, hne⟩ => ?_, hst.guaranteesExternal,
-    fun V hV hf => (hst.fundsCommitted V hV hf).elim⟩
+    fun V hV hf => (hst.fundsCommitted V hV hf).elim, hst.movesFrom⟩
   rcases hcover s hs with h | ⟨s', hs', heq⟩
   · exact hne (by rw [h])
   · rw [← heq] at hc hslot hne
@@ -128,14 +146,17 @@ end HonestSend
 
 namespace HonestSend
 
-/-- The rules survive a smaller signed record and a larger set of held
-    pre-fund states: `noConflict` reads `signed` only under `∃`, and
-    `fundsCommitted` concludes `prefundHeld`. -/
+/-- The rules survive a smaller signed record and larger sets of held
+    pre-fund states and of possible moves: `noConflict` reads `signed` only
+    under `∃`, and `fundsCommitted` and `movesFrom` conclude `prefundHeld`
+    and `canMove`. -/
 theorem mono {signed signed' : List (SignedState E)} {held held' : FixedPart → Prop}
+    {sup sup' : State E → Prop}
     {st : State E} (hsigned : ∀ s ∈ signed', s ∈ signed) (hheld : ∀ V, held V → held' V)
-    (h : HonestSend signed held st) : HonestSend signed' held' st :=
+    (hsup : ∀ s, sup s → sup' s)
+    (h : HonestSend signed held sup st) : HonestSend signed' held' sup' st :=
   ⟨fun ⟨s, hs, hrest⟩ => h.noConflict ⟨s, hsigned s hs, hrest⟩, h.guaranteesExternal,
-    fun V hV hf => hheld V (h.fundsCommitted V hV hf)⟩
+    fun V hV hf => hheld V (h.fundsCommitted V hV hf), fun hn => hsup _ (h.movesFrom hn)⟩
 
 /-- A state whose allocation names no virtual channel (every destination is
     `Address.fundable`: external, or a ledger channel) funds no virtual

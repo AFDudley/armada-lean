@@ -697,7 +697,8 @@ theorem land_all (t : Time) : ∀ (pending : List (Op Nat)),
 
 /-- The adversary's one strategy against any move of `q0`: land every one of `q0`'s own
     pending calls, and do nothing else (no `.chain`, `.deliver`, `.tick` of its own). -/
-theorem round (n : NetworkState Nat q0) (hI : Inv n) (m : HonestMove Nat) (hfeas : m.Feasible n) :
+theorem round (n : NetworkState Nat q0) (hI : Inv n) (m : HonestMove Nat)
+    (hfeas : m.Feasible apps2 n) :
     ∃ n', (canon q0).Round apps2 m n n' ∧ Inv (n'.applyHonest m) := by
   have hgood : ∀ op ∈ m.calls, Good op ∧ op.HonestFeasible n := by
     cases m with
@@ -793,8 +794,8 @@ theorem net3_holds_no_V3_prefund :
 /-- `net3` breaks the signing rule `HonestSend.fundsCommitted` (operator ruling 2026-11-01):
     `q0` sent `Sm`, a ledger state with a guarantee for `V3`, and
     `net3_holds_no_V3_prefund` shows that `q0` holds no `ByAll` pre-fund state of `V3`. -/
-theorem net3_violates_fundsCommitted :
-    ¬ ∀ s ∈ net3.sent, HonestSend net3.sent net3.HoldsPrefund s.state := by
+theorem net3_violates_fundsCommitted {sup : State Nat → Prop} :
+    ¬ ∀ s ∈ net3.sent, HonestSend net3.sent net3.HoldsPrefund sup s.state := by
   intro h
   exact net3_holds_no_V3_prefund
     ((h ⟨Sm, [q0]⟩ (by simp [net3])).fundsCommitted V3 rfl (by decide))

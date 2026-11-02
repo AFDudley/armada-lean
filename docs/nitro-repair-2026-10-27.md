@@ -962,6 +962,16 @@ Operator rulings of 2026-11-01 and 2026-11-02 apply to Nitro-24 (Nitro:653-658):
 3. Scope (ruling 2026-11-02): a ForceMove app or the consensus app (Nitro:633 "for a ForceMove channel";
    Nitro:662-664: the consensus game is a ForceMove application). The premise
    `(∃ vt, apps c.appDef = forceMoveRules vt) ∨ apps c.appDef = consensusRules` replaces `SupportWindow`.
+4. Accepted gift (ruling 2026-11-02): in a call of the adversary, a gift in a proof state does not count when a
+   later state of the same proof has the signature of `p` (`SupportProof.AcceptedBy`). `p`'s accepted history
+   stays usable. A received state does not count as accepted: with that reading, gift answers delivered before
+   the call revive the `SingleAssetPayments` gift play. A conflict always counts.
+5. Moves by the rules (ruling 2026-11-02, option (b)): above the funding point, the honest `p` signs a state `st`
+   only when it can move to `st` by the rules (`HonestSend.movesFrom`, `NetworkState.CanMoveTo`). `p` holds a
+   support of a state of the channel of `st` at the turn before (`NetworkState.HoldsSupportAt`), and the states
+   that `p` holds, with `st`, support `st` (ForceMove:744-778: a move is a valid transition from the current
+   state). The setup states (turns below `c.n`) are excepted. The rule is in the type of the honest send, so it
+   binds every reachable state, not only the two statements.
 
 The rule binds both sides:
 
@@ -978,7 +988,23 @@ The rule binds both sides:
   `net : ReachableParticipant apps (T.noOwnViolation dest)`, and `Finalizable` / `Enabled` over
   `T.noOwnViolation dest`. `A : Assumptions apps p T` stays.
 - `funding_point_universally_finalizable`: doc comment only. Its type changes through `HonestSend`.
-- `participant_sent_honest`: no text change. Its type changes through `HonestSend`.
+- `participant_sent_honest`, `participant_holds_honest` (`ArmadaLean/Nitro/Reachable.lean`): no text change.
+  Their types change through `HonestSend`: the third argument is `net.CanMoveTo apps`.
+
+Rule 5 changes the meaning of every statement over the honest machines. `HonestMove.Feasible` now takes `apps`
+and checks `movesFrom`, so `Nitro.participant` and `Nitro.network` reach fewer states, and `p` has fewer moves
+in `Unbeatable`, `UnbeatableIn` and `Prevents`. The Spec text does not change. These Spec statements
+(`ArmadaLean/Spec/Nitro/Liveness.lean`) change meaning through the type: `directly_funded_pays`,
+`conclusion_proof_finalizable`, `latest_state_finalizable`, `late_observer_can_checkpoint`,
+`finalizable_unique`, `channel_finalizability_cases`, `finalizable_or_two_enabled`,
+`single_enabled_is_finalizable`, `funding_point_universally_finalizable`, `concluded_universally_finalizable`,
+`finalizable_funded_pays`, `consensus_enabled_outcomes`, `turbo_redistribution_unbeatable`,
+`deposit_bounds_value`, `payout_to_other_affects_only_owner`, `participant_can_prevent_cycles`,
+`turbo_value_upper_bound`, `turbo_value_achievable`, `turbo_value_is_value`, `ledger_offload_funds_subchannel`,
+`subchannel_open_value_preserving`, `subchannel_close_value_preserving`, `conclude_transfer_pays`,
+`ledger_partial_withdrawal`, `satp_lemma_3_1`, `satp_peers_can_finalize`, `satp_theorem_3_2`,
+`satp_intermediary_before_round2`, `satp_end_user_recovers`. Rule 4 changes only `Threat.noOwnViolation`,
+which only the two Nitro-24 statements use. The Safety statements read the chain machine and do not change.
 
 The payout forms `FinalizableFor` and `EnabledFor` are removed.
 
@@ -1000,6 +1026,12 @@ desirable: `TakeOut.consensus_desirable` (a consensus support holds one state, s
 | Zero-entry tag | `zero_entry_tag.lean` | yes | no (`appsS_not_desirable`, a move changes a destination) | no | failure test |
 
 `consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
+
+Under rule 5, each failure test shows that its honest sends are moves by the rules. In the 2-party files, `p0`
+answers a challenge with `ansP t` after the challenge state, whose support it holds (`supports_ansP`,
+`send_ansP_feasible`). The sends of `single_enabled_is_finalizable_stall.lean`,
+`finalizable_or_two_enabled_happ.lean` and `turbo_value_achievable.lean` are setup states. In the stall file,
+the final state `stF` moved from turn 2 to the setup turn 1 for this reason; the refutations do not change.
 
 ### 7.3 Status
 
