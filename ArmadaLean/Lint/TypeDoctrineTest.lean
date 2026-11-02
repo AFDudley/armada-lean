@@ -1,12 +1,12 @@
 /-
-  Failure tests for `layerDiscipline` (`ArmadaLean/Lint/TypeDoctrine.lean`,
-  `layerHits`). Each `#eval` throws, and so fails the build of this module,
-  when `layerHits` gives a result other than the expected one.
+  Failure tests for the type-doctrine linters (`ArmadaLean/Lint/TypeDoctrine.lean`:
+  `layerHits`, `analyzeDecl`). Each `#eval` throws, and so fails the build of this module,
+  when its result differs from the expected one.
   `scripts/gate_extra.py` builds this module before it runs
   `scripts/type_lint.lean`, so a failed test fails `lint_ok`.
 
   The declarations below are not in the linters' scope (`inScope` excludes
-  `ArmadaLean.Lint`). Each test passes its layer's base operations to
+  `ArmadaLean.Lint`). Each `layerHits` test passes its layer's base operations to
   `layerHits` explicitly.
 -/
 import ArmadaLean
@@ -64,5 +64,31 @@ def expectHits (n : Name) (ops : Array Name) (expected : Array Name) : MetaM Uni
 #eval expectHits ``poolSkip poolBaseOps #[`Step.casesOn]
 #eval expectHits ``poolMotiveOnly poolBaseOps #[]
 #eval expectHits ``poolConstructorOnly poolBaseOps #[]
+
+/-- Premises the premise-shape linters skip (a Pool structure, a base
+    call result, a transition relation) and one they keep (`Reachable s`,
+    a condition on one input that `ReachableState` types). -/
+theorem premiseCases {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M}
+    {spent spent' : NullifierSet} {ns : List _root_.Term} {s s' : PoolState}
+    (_hc : Constrained w pub) (_hm : markSpent spent ns = some spent') (_hs : Step s s')
+    (_hr : Reachable s) : s = s := rfl
+
+/-- One alias (`tn` defined from `trees`) and one condition on one input
+    (`o = o.dedup`), which is not an alias. -/
+theorem aliasCases (o : List Nat) (trees : List TreeState) (tn k : Nat)
+    (_ho : o = o.dedup) (_ht : tn = insertTree trees k) : o = o := rfl
+
+/-- Throws unless `analyzeDecl` on `n` keeps exactly the conjuncts
+    `kept` (pretty-printed) and reports exactly the alias binders
+    `aliases`. -/
+def expectConjuncts (n : Name) (kept : Array String) (aliases : Array Name) : MetaM Unit := do
+  let d ← analyzeDecl (← getEnv) n
+  let gotKept := d.conjuncts.map (·.pretty)
+  let gotAliases := d.conjuncts.filterMap fun c => c.aliasInfo.map (·.1)
+  unless gotKept == kept && gotAliases == aliases do
+    throwError "analyzeDecl {n}: expected {kept} / {aliases}, got {gotKept} / {gotAliases}"
+
+#eval expectConjuncts ``premiseCases #["_root_.Reachable s"] #[]
+#eval expectConjuncts ``aliasCases #["o = o.dedup", "tn = insertTree trees k"] #[`tn]
 
 end ArmadaLean.Lint.TypeDoctrineTest

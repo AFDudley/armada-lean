@@ -270,18 +270,44 @@ structure DeclInfo where
   deriving Inhabited
 
 /-- Check whether `e` is `x = f …` (or `f … = x`) with `x` one of
-    `binders`. -/
+    `binders` and `f …` free of `x`. An equation whose other side
+    mentions `x` (`o = o.dedup`) does not define `x` from another
+    argument: it is a condition on `x` alone (rule 2), not an alias
+    (rule 3). -/
 def aliasCandidate (binders : Array FVarId) (e : Expr) : MetaM (Option (Name × String)) := do
   let some (_, lhs, rhs) := e.eq? | return none
   let side (x y : Expr) : MetaM (Option (Name × String)) := do
     let .fvar fv := x | return none
-    if binders.contains fv && y.isApp then
+    if binders.contains fv && y.isApp && !y.containsFVar fv then
       return some (← fv.getUserName, toString (← ppExpr y))
     else
       return none
   match ← side lhs rhs with
   | some r => return some r
   | none => side rhs lhs
+
+/-- Nitro's base operations (`type-doctrine.md` §4a). -/
+def nitroBaseOps : Array Name := #[
+  `ArmadaLean.Nitro.Adjudicator.apply,
+  `ArmadaLean.Nitro.NetworkState.applyAdv,
+  `ArmadaLean.Nitro.Adjudicator.transfer,
+  `ArmadaLean.Nitro.Adjudicator.challenge,
+  `ArmadaLean.Nitro.Adjudicator.checkpoint,
+  `ArmadaLean.Nitro.Adjudicator.conclude,
+  `ArmadaLean.Nitro.Adjudicator.reclaim]
+
+/-- The Pool's base operations (`type-doctrine.md` §4a): tree insertion,
+    nullifier marking, preimage records, and case analysis on `Step`. -/
+def poolBaseOps : Array Name := #[
+  `removeAll, `markSpent, `applyRecords, `recordPreimages, `insertLeaves,
+  `insertTree, `insertStart, `withTreePositionsFrom, `Step.casesOn]
+
+/-- `n` is declared in a module under `ArmadaLean`. The test is the
+    module, not the name: the Pool's declarations sit at the root
+    namespace (`Constrained`, `Step`), so a name test misses them (the
+    module comment above). -/
+def isArmadaConst (env : Environment) (n : Name) : Bool :=
+  (declModule env n).any (`ArmadaLean).isPrefixOf
 
 /-- `e`'s head is already the typed result rule 1 asks for, so `e` is
     not itself a premise rule 1 can act on. Unfolds the head constant's
@@ -299,33 +325,72 @@ def aliasCandidate (binders : Array FVarId) (e : Expr) : MetaM (Option (Name × 
 partial def unfoldsToTypedCarrier (env : Environment) (e : Expr) : MetaM Bool := do
   let .const n _ := e.getAppFn | return false
   if n == ``Subtype then return true
-  if (`ArmadaLean).isPrefixOf n && isStructure env n then return true
+  if isArmadaConst env n && isStructure env n then return true
   let some (.defnInfo _) := env.find? n | return false
   let some e' ← Meta.unfoldDefinition? e | return false
   unfoldsToTypedCarrier env (← Meta.whnfR e')
 
+/-- `e` is the result of one base-operation call: an equation with a
+    base operation of `nitroBaseOps` or `poolBaseOps` at the head of one
+    side, and not a bare variable on the other side (`s.apply apps caller
+    op = some s'`, `markSpent spent ns = some spent'`). `tn = insertTree
+    trees k` is an alias of `tn` (rule 3), not a call result. -/
+def isBaseOpResult (e : Expr) : Bool :=
+  match e.eq? with
+  | some (_, lhs, rhs) =>
+    let call (x y : Expr) :=
+      !y.isFVar && x.getAppFn.constName?.any (nitroBaseOps ++ poolBaseOps).contains
+    call lhs rhs || call rhs lhs
+  | none => false
+
+/-- `n` is an `ArmadaLean` transition relation: an inductive type or a
+    structure field whose type ends in `S → S → Prop`, two arguments of
+    one type (`Step s s'`, `Threat.RoundSeq apps T t pending net net'`,
+    `ReachableFrom s s'`, `Machine.step`). -/
+def isTransitionRelation (env : Environment) (n : Name) : MetaM Bool := do
+  if !isArmadaConst env n then return false
+  if !(env.find? n matches some (.inductInfo _)) && !env.isProjectionFn n then return false
+  forallTelescope (← getConstInfo n).type fun xs body => do
+    if !body.isProp || xs.size < 2 then return false
+    return (← inferType xs[xs.size - 2]!) == (← inferType xs[xs.size - 1]!)
+
 /-- `e`, a hypothesis conjunct, is excluded from every premise-shape
     linter (`repeatedPremise`, `premiseVariant`, `looseHypothesis`,
-    `aliasHypothesis`) for one of two reasons:
+    `aliasHypothesis`) for one of four reasons:
     - **`e`'s head is a local variable** (`Inv net`, `Cond n op`): the
       head is the declaration's OWN parameter, not a named declaration
       rule 1 could replace. Rule 1 converts a condition on a value into
       a type; it cannot act on the abstraction's own predicate
       parameter, which has no fixed meaning to give a type to.
-    - **`e`'s head names a structure, or a `def` under `ArmadaLean` that
-      unfolds to a structure or a `Subtype`** (`unfoldsToTypedCarrier`):
-      `e` already IS the typed value rule 1 asks for (`SatpEnds r alice
-      bob P`, with `SatpEnds` a structure made to satisfy rule 1 on some
-      earlier repeated condition). Counting it as a NEW `repeatedPremise`
-      group would flag the intended result of the rule as a fresh
-      violation of the rule. The `ArmadaLean` scope matches `inScope`:
-      a head outside `ArmadaLean` (a Mathlib/core predicate) is not a
-      type this doctrine governs. -/
-def premiseAlreadyTyped (env : Environment) (e : Expr) : MetaM Bool := do
+    - **`e`'s head names an `ArmadaLean` structure, or an `ArmadaLean`
+      `def` that unfolds to a structure or a `Subtype`**
+      (`unfoldsToTypedCarrier`): `e` already IS the typed value rule 1
+      asks for (`SatpEnds r alice bob P`, with `SatpEnds` a structure
+      made to satisfy rule 1 on some earlier repeated condition).
+      Counting it as a NEW `repeatedPremise` group would flag the
+      intended result of the rule as a fresh violation of the rule. A
+      head outside `ArmadaLean` (a Mathlib/core predicate) is not a type
+      this doctrine governs. `ArmadaLean` is the declaring module
+      (`isArmadaConst`), so the Pool's `Constrained w pub` counts.
+    - **`e` is the result of one base-operation call**
+      (`isBaseOpResult`). A per-call lemma takes the call's result as
+      its premise: that layer sits directly above the base operations
+      (`type-doctrine.md` §4a rule 1, `writing-lean.md` §6), and the
+      typed operation equations keep this premise
+      (`docs/process.md` R.2). The premise relates a call's inputs to
+      its result. It is not a fact about one input that a type can
+      carry.
+    - **`e`'s head is a transition relation** (`isTransitionRelation`).
+      A lemma about a step or a run takes it as its premise
+      (`writing-lean.md` §5, `inv_step … (h : Step s s')`). The relation
+      is the subject of the lemma, and it is already an inductive type. -/
+def premiseExcluded (env : Environment) (e : Expr) : MetaM Bool := do
+  if isBaseOpResult e then return true
   match e.getAppFn with
   | .fvar _ => return true
   | .const n _ =>
-    if !(`ArmadaLean).isPrefixOf n then return false
+    if !isArmadaConst env n then return false
+    if ← isTransitionRelation env n then return true
     unfoldsToTypedCarrier env e
   | _ => return false
 
@@ -351,7 +416,7 @@ def analyzeDecl (env : Environment) (n : Name) : MetaM DeclInfo := do
       let parts := splitAnd ldecl.type
       for i in [0:parts.size] do
         let e := parts[i]!
-        if ← premiseAlreadyTyped env e then continue
+        if ← premiseExcluded env e then continue
         let key := normalizedKey e
         let pretty := toString (← ppExpr e)
         let refs ← fieldRefsM e
@@ -462,22 +527,6 @@ def aliasFindings (decls : Array DeclInfo) : Array (Name × Name × String) := I
   return out
 
 /-! ## `layerDiscipline` (§4a) -/
-
-/-- Nitro's base operations (`type-doctrine.md` §4a). -/
-def nitroBaseOps : Array Name := #[
-  `ArmadaLean.Nitro.Adjudicator.apply,
-  `ArmadaLean.Nitro.NetworkState.applyAdv,
-  `ArmadaLean.Nitro.Adjudicator.transfer,
-  `ArmadaLean.Nitro.Adjudicator.challenge,
-  `ArmadaLean.Nitro.Adjudicator.checkpoint,
-  `ArmadaLean.Nitro.Adjudicator.conclude,
-  `ArmadaLean.Nitro.Adjudicator.reclaim]
-
-/-- The Pool's base operations (`type-doctrine.md` §4a): tree insertion,
-    nullifier marking, preimage records, and case analysis on `Step`. -/
-def poolBaseOps : Array Name := #[
-  `removeAll, `markSpent, `applyRecords, `recordPreimages, `insertLeaves,
-  `insertTree, `insertStart, `withTreePositionsFrom, `Step.casesOn]
 
 /-- `true` when `s` names `marker` immediately followed by a digit
     (ignoring one optional space), anywhere in `s`. A hand-rolled
