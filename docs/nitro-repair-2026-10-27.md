@@ -1074,3 +1074,20 @@ no conflict. It is no gift, because no state at turn 2 is in `p0`'s received sta
 
 The play does not refute `single_enabled_is_finalizable`: its premise `hsupp` requires a held support of `S'`.
 For `single_enabled_is_finalizable`, no counterexample is known.
+
+### 7.4 Resolution, 2026-11-02: enabled outcomes against the exit strategy
+
+Operator ruling 2026-11-02: the enabled outcomes are measured against the participant's own strategy, not against
+every strategy at once. The four counterexamples have one cause: preventing each outcome can need a different
+strategy, and no single strategy then prevents them all (`proposal_escape.lean`). The paper's argument assumes
+one strategy.
+
+- `Strategy.lean`: `UnbeatableBy σ` (reach a goal with the one strategy `σ`), `EnabledBy σ` (the outcomes that
+  some play of `σ` finalizes), `UnbeatableBy.sound`.
+- `TakeOut.lean`: `exitStrategy` is the take-out tree written as a function. `exit_finalizes`: from every reachable
+  state where `p` holds a support at least as new as the chain's record and no challenge ends within `ε`
+  (`ExitReady`), the exit strategy finalizes the channel.
+- Both Nitro-24 theorems follow from `exit_finalizes` and are proved. They need no `Desirable` premise and no
+  restriction of the threat. The literal statements stay refuted in `docs/counterexamples/`.
+- The honest rules (`noConflict`, `movesFrom`, `oneState`, `finalLast`) and `Threat.noOwnViolation` stay in the
+  model for later work.
