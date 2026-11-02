@@ -516,6 +516,15 @@ theorem transact_root_was_produced (s : ReachableState Pool.machine)
 
 /-! ### The preimage registry -/
 
+/-- One step keeps the preimage registry consistent. -/
+theorem step_preimageOf_consistent {s s' : PoolState} (hstep : Step s s')
+    (h : RegistryConsistent s.preimageOf) : RegistryConsistent s'.preimageOf := by
+  cases hstep with
+  | shield => exact recordStep_preserves_consistency h rfl
+  | transact _ _ _ _ _ _ hC _ _ _ _ _ _ _ _ _ _ _ hRecords =>
+    exact applyRecords_preserves_consistency h fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp)
+  | transactOwned _ _ _ _ _ hC => exact applyRecords_preserves_consistency h (ownedOutputRecords_valid hC)
+
 /--
 **The preimage registry is always consistent.** Every entry the pool has ever written to
 `preimageOf`, at any reachable state, hashes to the commitment it is recorded under —
@@ -528,17 +537,7 @@ theorem pool_preimageOf_consistent (s : ReachableState Pool.machine)
   obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
   | genesis r => intro c pre hc; (simp? [genesis] at hc says simp only [genesis, reduceCtorEq] at hc)
-  | step _ hstep ih =>
-    cases hstep with
-    | shield token x npk hValue hSpendable =>
-      exact recordStep_preserves_consistency ih rfl
-    | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
-        openings hRoot hRemove hNullify hRecords =>
-      exact applyRecords_preserves_consistency ih
-        (fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp))
-    | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
-        openings hRoot hRemove hNullify =>
-      exact applyRecords_preserves_consistency ih (ownedOutputRecords_valid hC)
+  | step _ hstep ih => exact step_preimageOf_consistent hstep ih
 
 /--
 **After an owned transact, the pool's preimage registry returns exactly this output's
