@@ -1,0 +1,228 @@
+{
+  "id": "derived-aln-36e",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. type_lint reports no repeatedPremise group for this premise shape: the declarations take it as one refined type or structure instead of a repeated hypothesis. No statement changes meaning.\nWhat holds now? Describe the current, observed state. At integrated, scripts/type_lint.lean prints a repeatedPremise group with the premise `net'.chain.now < net.chain.now + T.\u03b5` and the declarations ArmadaLean.Nitro.conclude_round_finalized, ArmadaLean.Nitro.consensus_round_safe, ArmadaLean.Nitro.consensus_round_safe_core, ArmadaLean.Nitro.consensus_round_safe_nil, ArmadaLean.Nitro.land_own_challenge_transitions_status, ArmadaLean.Nitro.late_round_keeps_status, ArmadaLean.Nitro.late_round_keeps_status_nil, ArmadaLean.Nitro.latest_round_keeps_status, ArmadaLean.Nitro.latest_round_keeps_status_nil, ArmadaLean.Nitro.latest_round_keeps_status_two, ArmadaLean.Nitro.latest_round_keeps_status_two_ordered, ArmadaLean.Nitro.round_keeps_status, ArmadaLean.Nitro.satp_land_keeps_status, ArmadaLean.Nitro.satp_late_round_keeps_challenged_above_nil, ArmadaLean.Nitro.satp_late_round_keeps_progress_nil, ArmadaLean.Nitro.satp_late_round_keeps_status_nil, ArmadaLean.Nitro.satp_wait_resolves_or_escalates.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Run `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and `lake env lean scripts/type_lint.lean` through /home/rix/bin/lean-run; read the JSON lines by their linter and declaration fields.\nWhat constraints apply? State them in plain prose. No spec statement changes; scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes up to 1500 seconds. A bare `lake clean` is never run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean.Nitro.conclude_round_finalized, ArmadaLean.Nitro.consensus_round_safe, ArmadaLean.Nitro.consensus_round_safe_core, ArmadaLean.Nitro.consensus_round_safe_nil, ArmadaLean.Nitro.land_own_challenge_transitions_status, ArmadaLean.Nitro.late_round_keeps_status, ArmadaLean.Nitro.late_round_keeps_status_nil, ArmadaLean.Nitro.latest_round_keeps_status, ArmadaLean.Nitro.latest_round_keeps_status_",
+  "restatement": "The type_lint script currently flags a group of declarations (conclude_round_finalized, consensus_round_safe, consensus_round_safe_core, consensus_round_safe_nil, land_own_challenge_transitions_status, late_round_keeps_status and its variants, latest_round_keeps_status and its variants, round_keeps_status, satp_land_keeps_status, satp_late_round_keeps_challenged_above_nil, satp_late_round_keeps_progress_nil, satp_late_round_keeps_status_nil, satp_wait_resolves_or_escalates) as sharing a repeated premise `net'.chain.now < net.chain.now + T.\u03b5`, treating it as a duplicated hypothesis. The fix must make type_lint stop reporting a repeatedPremise group for this specific premise shape across exactly these declarations, because the declarations actually take the premise as one refined type/structure, not a repeated hypothesis. No proof statement's meaning may change, signatures must remain ok, and every other gate baseline _ok field must stay true.",
+  "restatement_clauses": [
+    {
+      "id": "C1",
+      "text": "Running `lake build ArmadaLean ArmadaLean.Lint.TypeDoctrine` and `lake env lean scripts/type_lint.lean` must no longer print a repeatedPremise group with premise `net'.chain.now < net.chain.now + T.\u03b5` for the declarations: ArmadaLean.Nitro.conclude_round_finalized, ArmadaLean.Nitro.consensus_round_safe, ArmadaLean.Nitro.consensus_round_safe_core, ArmadaLean.Nitro.consensus_round_safe_nil, ArmadaLean.Nitro.land_own_challenge_transitions_status, ArmadaLean.Nitro.late_round_keeps_status, ArmadaLean.Nitro.late_round_keeps_status_nil, ArmadaLean.Nitro.latest_round_keeps_status, ArmadaLean.Nitro.latest_round_keeps_status_nil, ArmadaLean.Nitro.latest_round_keeps_status_two, ArmadaLean.Nitro.latest_round_keeps_status_two_ordered, ArmadaLean.Nitro.round_keeps_status, ArmadaLean.Nitro.satp_land_keeps_status, ArmadaLean.Nitro.satp_late_round_keeps_challenged_above_nil, ArmadaLean.Nitro.satp_late_round_keeps_progress_nil, ArmadaLean.Nitro.satp_late_round_keeps_status_nil, ArmadaLean.Nitro.satp_wait_resolves_or_escalates."
+    },
+    {
+      "id": "C2",
+      "text": "No spec statement changes meaning as a result of the fix."
+    },
+    {
+      "id": "C3",
+      "text": "scripts/check.sh --json reports signatures_ok true after the fix."
+    },
+    {
+      "id": "C4",
+      "text": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json, with a full run taking up to 1500 seconds."
+    },
+    {
+      "id": "C5",
+      "text": "A bare `lake clean` is never run as part of achieving this fix."
+    }
+  ],
+  "goal": "When the code's type-checking linter is run, it should no longer mistakenly complain that a certain mathematical condition is being repeated unnecessarily across a specific list of proofs, since it's actually being used correctly as a single refined concept \u2014 and nothing about what any of those proofs actually states should change.",
+  "acceptance_criteria": [
+    "After building the project and running the type-lint script, the lint output should no longer flag any of the listed Nitro declarations with a repeated-premise warning about 'net'.chain.now < net.chain.now + T.\u03b5'. Running the checker should report zero such flagged occurrences.",
+    "After a bug fix is applied, every statement in the specification files should still mean exactly what it meant before, except for the one statement that the fix was explicitly allowed to touch. This check reads the specification files before and after the fix and reports how many statements other than the permitted one actually changed wording or meaning.",
+    "Running the project's check script with the --json flag should print a report that includes signatures_ok set to true, confirming the signature problem has been fixed.",
+    "Running the project's check script and asking for JSON output should show that every quality gate field ending in _ok is true, meaning nothing has regressed compared to the saved baseline.",
+    "Checks the record of every shell command run while fixing the issue, and confirms that no command run was exactly a bare `lake clean` (a `lake clean` run with extra arguments or as part of another documented step is fine, but not a plain unqualified `lake clean`)."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "After building the project and running the type-lint script, the lint output should no longer flag any of the listed Nitro declarations with a repeated-premise warning about 'net'.chain.now < net.chain.now + T.\u03b5'. Running the checker should report zero such flagged occurrences."
+    },
+    {
+      "id": "c2",
+      "text": "After a bug fix is applied, every statement in the specification files should still mean exactly what it meant before, except for the one statement that the fix was explicitly allowed to touch. This check reads the specification files before and after the fix and reports how many statements other than the permitted one actually changed wording or meaning."
+    },
+    {
+      "id": "c3",
+      "text": "Running the project's check script with the --json flag should print a report that includes signatures_ok set to true, confirming the signature problem has been fixed."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script and asking for JSON output should show that every quality gate field ending in _ok is true, meaning nothing has regressed compared to the saved baseline."
+    },
+    {
+      "id": "c5",
+      "text": "Checks the record of every shell command run while fixing the issue, and confirms that no command run was exactly a bare `lake clean` (a `lake clean` run with extra arguments or as part of another documented step is fine, but not a plain unqualified `lake clean`)."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "After building the project and running the type-lint script, the lint output should no longer flag any of the listed Nitro declarations with a repeated-premise warning about 'net'.chain.now < net.chain.now + T.\u03b5'. Running the checker should report zero such flagged occurrences.",
+      "proves": "The repeatedPremise lint finding for the net'.chain.now < net.chain.now + T.\u03b5 premise has been eliminated for all 17 named ArmadaLean.Nitro declarations.",
+      "restatement_clause_id": "C1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_repeated_premise_gone.py",
+        "args": [
+          "ArmadaLean.Nitro.conclude_round_finalized",
+          "ArmadaLean.Nitro.consensus_round_safe",
+          "ArmadaLean.Nitro.consensus_round_safe_core",
+          "ArmadaLean.Nitro.consensus_round_safe_nil",
+          "ArmadaLean.Nitro.land_own_challenge_transitions_status",
+          "ArmadaLean.Nitro.late_round_keeps_status",
+          "ArmadaLean.Nitro.late_round_keeps_status_nil",
+          "ArmadaLean.Nitro.latest_round_keeps_status",
+          "ArmadaLean.Nitro.latest_round_keeps_status_nil",
+          "ArmadaLean.Nitro.latest_round_keeps_status_two",
+          "ArmadaLean.Nitro.latest_round_keeps_status_two_ordered",
+          "ArmadaLean.Nitro.round_keeps_status",
+          "ArmadaLean.Nitro.satp_land_keeps_status",
+          "ArmadaLean.Nitro.satp_late_round_keeps_challenged_above_nil",
+          "ArmadaLean.Nitro.satp_late_round_keeps_progress_nil",
+          "ArmadaLean.Nitro.satp_late_round_keeps_status_nil",
+          "ArmadaLean.Nitro.satp_wait_resolves_or_escalates"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "flagged_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "After a bug fix is applied, every statement in the specification files should still mean exactly what it meant before, except for the one statement that the fix was explicitly allowed to touch. This check reads the specification files before and after the fix and reports how many statements other than the permitted one actually changed wording or meaning.",
+      "proves": "The fix did not alter the meaning of any spec statement other than the one it was meant to correct.",
+      "restatement_clause_id": "C2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_spec_meaning.py",
+        "args": [
+          "--before",
+          "spec_before.md",
+          "--after",
+          "spec_after.md",
+          "--allowed-id",
+          "clause-under-fix"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "unexpected_changed_statements",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 3,
+      "timeout_seconds": 30,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running the project's check script with the --json flag should print a report that includes signatures_ok set to true, confirming the signature problem has been fixed.",
+      "proves": "The fix makes scripts/check.sh --json report signatures_ok as true.",
+      "restatement_clause_id": "C3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 60,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script and asking for JSON output should show that every quality gate field ending in _ok is true, meaning nothing has regressed compared to the saved baseline.",
+      "proves": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json",
+      "restatement_clause_id": "C4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/run_check_gate.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "all_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1500,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Checks the record of every shell command run while fixing the issue, and confirms that no command run was exactly a bare `lake clean` (a `lake clean` run with extra arguments or as part of another documented step is fine, but not a plain unqualified `lake clean`).",
+      "proves": "Confirms the fix was achieved without ever running a bare `lake clean` command.",
+      "restatement_clause_id": "C5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_no_bare_lake_clean.py",
+        "args": [
+          "command_log.txt"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "bare_lake_clean_count",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 30,
+      "clause_id": "c5"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_no_bare_lake_clean.py",
+    "scripts/check_repeated_premise_gone.py",
+    "scripts/check_spec_meaning.py",
+    "scripts/run_check.py",
+    "scripts/run_check_gate.py"
+  ]
+}
