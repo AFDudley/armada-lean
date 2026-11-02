@@ -73,7 +73,7 @@ changed after 2026-10-27 names the change in its row.
 | 5 | `late_observer_can_checkpoint` | proved | Checkpoint with `ss`; if the adversary registered `ss.state` first, the goal holds already. |
 | 6 | `finalizable_unique` | proved | Joint play with one clock per participant (`finalizable_joint`, aln-a14). The calls of each participant run in the view of the other as adversary moves; a `wait` moves only its own clock. The status of `c` agrees on both chains up to the deadline of a running challenge. When both wait, `q` waits first if the running challenge pays `Ω`, else `p` waits first, so the first chain that finalizes `c` gives `Ω = Ω'` or contradicts a strategy. |
 | 7 | `channel_finalizability_cases` | unknown | Follows from 6 by a case split. |
-| 8 | `finalizable_or_two_enabled` | false | A determinacy argument; not checked. 2026-10-30: false for an arbitrary app (Lean counterexample `docs/counterexamples/finalizable_or_two_enabled.lean`: an app that supports every state lets either side checkpoint in every round). Operator ruling 2026-10-30: the theorem took `NoUnilateralSupport`; false under it (`docs/counterexamples/finalizable_or_two_enabled_happ.lean`). Operator ruling 2026-11-01: the theorem takes `(apps c.appDef).SupportWindow`, ForceMove's support shape. False under it too: `docs/counterexamples/ir_game_rewrites_share.lean` (the trivial ForceMove game: an IR failure of the game rules). Operator ruling 2026-11-01: the theorem also takes `AppIR apps c.appDef dest` (`ArmadaLean/Types/App.lean`), which the trivial game fails (`appsB_not_IR`). False under it too: `docs/counterexamples/single_asset_payments_ir.lean`. The app is go-nitro `SingleAssetPayments.sol`, which is IR (`TakeOut.forceMove_IR`). The adversary answers each challenge with the target outcome by a payment of one coin to `p`, so `p` finalizes some outcome that pays it its share, but no fixed outcome. |
+| 8 | `finalizable_or_two_enabled` | false | A determinacy argument; not checked. 2026-10-30: false for an arbitrary app (Lean counterexample `docs/counterexamples/finalizable_or_two_enabled.lean`: an app that supports every state lets either side checkpoint in every round). Operator ruling 2026-10-30: the theorem took `NoUnilateralSupport`; false under it (`docs/counterexamples/finalizable_or_two_enabled_happ.lean`). Operator ruling 2026-11-01: the theorem takes `(apps c.appDef).SupportWindow`, ForceMove's support shape. False under it too: `docs/counterexamples/ir_game_rewrites_share.lean` (the trivial ForceMove game: an IR failure of the game rules). Operator ruling 2026-11-01: the theorem also takes `AppIR apps c.appDef dest` (`ArmadaLean/Types/App.lean`), which the trivial game fails (`appsB_not_IR`). False under it too: `docs/counterexamples/single_asset_payments_ir.lean`. The app is go-nitro `SingleAssetPayments.sol`, which is IR (`TakeOut.forceMove_IR`). The adversary answers each challenge with the target outcome by a payment of one coin to `p`, so `p` finalizes some outcome that pays it its share, but no fixed outcome. 2026-11-02: false with rules 1-8 of §7 and `hpend` (`docs/counterexamples/proposal_escape.lean`, §7.3). |
 | 9 | `single_enabled_is_finalizable` | false | As 8, including the 2026-10-30 and 2026-11-01 type changes. |
 | 10 | `finalizable_is_enabled` | removed | `c = [p]`, fresh: `p` finalizes by `send` then `conclude`; `p` also prevents every finalization by signing nothing. "Can force" and "cannot prevent" differ whenever the outcome needs `p`'s signature. Coordinator ruling 2026-10-27 (§6.1): Nitro 2019 §4.4's dichotomy (finalizable or two enabled) never claims finalizable implies enabled; the theorem is removed, not repaired. |
 | 11 | `funding_point_universally_finalizable` | false | New defect D9 below: with `n = 2` and a game library that accepts a move after the setup, the adversary challenges with a state at turn `n` that it never delivers; `p` cannot answer it. 2026-10-29: true after the D9 repair (argument, armada-laconic `.scratch/false-theorem-reaudit.md` §1). 2026-10-30: false again (Lean counterexample on `worker/aln-cc8` at `3235226`): a participant signs two states at its turn below `c.n` ("alternative moves", ForceMove:782-794), and the next mover picks the one that suits the adversary. The statement waits for the operator. |
@@ -1050,6 +1050,7 @@ desirable: `TakeOut.consensus_desirable` (a consensus support holds one state, s
 | `SingleAssetPayments`, pending challenge | `pending_deadline.lean` | yes | yes (`appsS_desirable`) | — | refutes the form without `hpend` (`NoDeadline_*`), against `T.noOwnViolation`; `net` breaks `DeadlineAfter` (`net_not_deadlineAfter`) |
 | `SingleAssetPayments`, final branch | `final_branch.lean` | yes | yes (`appsS_desirable`) | — | refuted both Spec statements with `hpend` before rule 7 (commit `40e75719`); now `net` is not honest-reachable (`net_not_honest`) |
 | `SingleAssetPayments`, final proposal | `final_proposal.lean` | yes | yes (`appsS_desirable`) | — | refuted `finalizable_or_two_enabled` with `hpend` before rule 8 (commit `cf6ffe15`); now `net` is not honest-reachable (`net_not_honest`) |
+| consensus app, proposal escape | `proposal_escape.lean` | yes | yes (`TakeOut.consensus_desirable`) | — | refutes `finalizable_or_two_enabled` with `hpend` and rules 1-8 (`finalizable_or_two_enabled_false`) |
 
 `consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
 
@@ -1061,4 +1062,15 @@ the final state `stF` moved from turn 2 to the setup turn 1 for this reason; the
 
 ### 7.3 Status
 
-Both statements stay `sorry`. With rules 1-8, no counterexample is known.
+Both statements stay `sorry`. With rules 1-8, `finalizable_or_two_enabled` is false (`proposal_escape.lean`,
+2026-11-02). The app is the consensus app. `p0` holds the support of `h` (turn 1, `OH`). `p0` proposes `S'`
+(turn 2, `OS`), and `q0` does not countersign it. `q0` signs `X` (turn 3, `OX`) and delivers it. This delivery is
+no conflict. It is no gift, because no state at turn 2 is in `p0`'s received states.
+
+- `OH` is the only enabled outcome. When the adversary challenges with `S'`, `p0` signs `X` and challenges with
+  it, so `p0` prevents `OS`.
+- No outcome is finalizable. The adversary answers `p0`'s challenge with `h` by a checkpoint with `S'`. After
+  that, no support that `p0` can hold carries `OH`.
+
+The play does not refute `single_enabled_is_finalizable`: its premise `hsupp` requires a held support of `S'`.
+For `single_enabled_is_finalizable`, no counterexample is known.
