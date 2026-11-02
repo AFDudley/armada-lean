@@ -2344,54 +2344,6 @@ theorem finalizedWith_stable {apps : Apps E} {s s' : Adjudicator E}
     obtain ⟨_, _, _, _, happ⟩ := hstep
     exact finalizedWith_apply happ ih
 
-/-! ### The coins-held invariant -/
-
-/-- Nitro:230-231 with go-nitro's external payouts: each address has one
-    balance entry, and the coins held equal the channel balances. -/
-def HeldInv (s : Adjudicator E) : Prop :=
-  s.balances.KeysNodup ∧ s.held = s.balances.channelTotal
-
-omit [DecidableEq E] in
-theorem heldInv_genesis : (genesis : Adjudicator E).HeldInv := ⟨Balances.keysNodup_nil, rfl⟩
-
-theorem heldInv_step {apps : Apps E} {caller : Participant} {op : Op E} {s s' : Adjudicator E}
-    (hi : s.HeldInv) (h : s.apply apps caller op = some s') : s'.HeldInv := by
-  obtain ⟨hnd, hheld⟩ := hi
-  cases op with
-  | deposit a e x =>
-    obtain ⟨⟨c, rfl, -⟩, -, hb, hh, -, -⟩ := deposit_some h
-    refine ⟨hb ▸ hnd.add _ _, ?_⟩
-    have := Balances.sumIf_set (fun a => decide (a.isExternal = false)) hnd (.channel c)
-      (s.balances.get (.channel c) + x)
-    rw [Balances.channelTotal_eq_sumIf] at hheld ⊢
-    rw [hh, hb]
-    simp only [Balances.add]
-    (simp? at this says simp only [Bool.decide_eq_false, Address.isExternal_channel, decide_true, ↓reduceIte] at this)
-    (grind? says grind only [#3a2f, #8010, #3acd])
-  | transfer a b =>
-    obtain ⟨o, _, x, -, -, hx, hb, hh, -, -, -, -⟩ := transfer_some h
-    have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
-    refine ⟨hb ▸ (hnd.add _ _).sub _ _, ?_⟩
-    have := Balances.sumIf_add_sub (fun a => decide (a.isExternal = false)) hnd a.address b hxa
-    have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-      (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
-    rw [hh, hb, Balances.channelTotal_eq_sumIf]
-    rw [Balances.channelTotal_eq_sumIf] at hheld
-    cases b <;> simp at this ⊢ <;> (grind? says grind only [#3a2f, #8010, #3acd])
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; exact ⟨hnd, hheld⟩
-  | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; exact ⟨hnd, hheld⟩
-  | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; exact ⟨hnd, hheld⟩
-  | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; exact ⟨hnd, hheld⟩
-  | tick dt => (simp? at h says simp only [apply_tick, Option.some.injEq] at h); subst h; exact ⟨hnd, hheld⟩
-
-theorem heldInv_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s) : s.HeldInv := by
-  induction hr with
-  | refl => exact heldInv_genesis
-  | tail _ hstep ih =>
-    cases hstep with
-    | mk caller op _ _ h => exact heldInv_step ih h
-
 /-- **The balances sum moves only by a deposit's own amount.** `deposit`
     raises it by `x` (`sumIf_set`, the indicator always true); `transfer`
     moves `x` from the source to the destination, net zero (`sumIf_add_sub`,
@@ -2437,42 +2389,6 @@ theorem total_step_no_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : P
   | checkpoint c proof cand => obtain ⟨_, rfl⟩ := checkpoint_some h; (simp? says simp only [setStatus_balances])
   | conclude c ss => obtain ⟨_, rfl⟩ := conclude_some h; (simp? says simp only [setStatus_balances])
   | tick dt => (simp? at h says simp only [apply_tick, Option.some.injEq] at h); subst h; (simp? says simp only [tick_balances])
-
-/-- **A deposit's `held` plus everything ever paid out rises by exactly its
-    own amount.** `HeldInv` (`held = channelTotal`) at both `s` and `s'`
-    (`heldInv_step`), joined with `total_step_deposit` through
-    `total_eq_channelTotal_add_paidOutTotal`. The D10 ruling's own
-    conservation fact, chain side: `Reachable.lean`'s
-    `Nitro.network_conservation` restates this for a `Network`'s wallets. -/
-theorem held_paidOut_step_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
-    {a : Address E} {e x : Coins} (hi : s.HeldInv)
-    (h : s.apply apps caller (Op.deposit a e x) = some s') :
-    s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal + x := by
-  have hi' : s'.HeldInv := heldInv_step hi h
-  have e1 : s.held + s.balances.paidOutTotal = s.balances.total := by
-    rw [hi.2, Balances.total_eq_channelTotal_add_paidOutTotal]
-  have e2 : s'.held + s'.balances.paidOutTotal = s'.balances.total := by
-    rw [hi'.2, Balances.total_eq_channelTotal_add_paidOutTotal]
-  have ht := total_step_deposit hi.1 h
-  rw [e2, ht, e1]
-
-/-- **Every non-deposit operation leaves `held` plus everything ever paid
-    out unchanged.** Same proof shape as `held_paidOut_step_deposit`. -/
-theorem held_paidOut_step_no_deposit {apps : Apps E} {s s' : Adjudicator E} {caller : Participant}
-    {op : Op E} (hi : s.HeldInv) (hop : ∀ a e x, op ≠ Op.deposit a e x)
-    (h : s.apply apps caller op = some s') :
-    s'.held + s'.balances.paidOutTotal = s.held + s.balances.paidOutTotal := by
-  have hi' : s'.HeldInv := heldInv_step hi h
-  have e1 : s.held + s.balances.paidOutTotal = s.balances.total := by
-    rw [hi.2, Balances.total_eq_channelTotal_add_paidOutTotal]
-  have e2 : s'.held + s'.balances.paidOutTotal = s'.balances.total := by
-    rw [hi'.2, Balances.total_eq_channelTotal_add_paidOutTotal]
-  have ht := total_step_no_deposit hi.1 hop h
-  rw [e2, ht, e1]
-
-theorem held_paidOut_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s) :
-    s.held + s.balances.paidOutTotal = s.balances.total := by
-  rw [(heldInv_reachable hr).2, Balances.total_eq_channelTotal_add_paidOutTotal]
 
 /-! ### One state ahead of another under transfers
 

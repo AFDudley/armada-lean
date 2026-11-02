@@ -16,7 +16,8 @@ Source order (`armada-laconic/docs/lean/writing-lean.md`, "Source order"): the p
 | `ArmadaLean/Nitro/Value.lean` | outcome network, DAG, Turbo Value Algorithm | Nitro §5.2 |
 | `ArmadaLean/Nitro/Constructions.lean` | ledger channels with sub-channels | Nitro §5.3-5.4; the virtual channel is in SATP.lean |
 | `ArmadaLean/Nitro/SATP.lean` | vouchers, the virtual channel rules, routes, Protocols 3.1-3.3 state | SATP §3, Appendix A |
-| `ArmadaLean/Nitro/Lemmas.lean` | the `@[simp]` reading lemmas of balances, allocations, payouts, channel statuses and the operations; the coins-held invariant `Adjudicator.HeldInv` | no source: proof helpers for `Safety.lean` |
+| `ArmadaLean/Nitro/Lemmas.lean` | the `@[simp]` reading lemmas of balances, allocations, payouts, channel statuses and the operations | no source: proof helpers for `Safety.lean` |
+| `ArmadaLean/Nitro/Invariant.lean` | the adjudicator safety invariant `Adjudicator.Inv`: one balance entry per address, `held = channelTotal`, the origin of each channel status, and the safety facts of each step; genesis satisfies it, each step keeps it, so each reachable state satisfies it (`Adjudicator.inv_reachable`). The reachable-state theorems of `Safety.lean` project its fields | no source: proof helpers for `Safety.lean` |
 | `ArmadaLean/Nitro/Safety.lean` | 63 theorems, all proved: on-chain safety, conservation, data operations | go-nitro and SATP first |
 | `ArmadaLean/Nitro/Liveness.lean` | 31 theorems: unbeatable strategies, the Turbo value algorithm, ledger constructions, SATP Lemma 3.1 and Theorem 3.2; three more sub-channel theorems are block comments (operator ruling 2026-10-31) | SATP §3; Nitro §4-5 |
 | `ArmadaLean/Nitro/NonVacuity.lean` | one proved witness per theorem with hypotheses (verification.md §5a): 54 for `Safety.lean`, 31 for `Liveness.lean`; the strategies "conclude now" and "wait until the deadline" | no source: acceptance check |
@@ -106,7 +107,7 @@ Counterexample A. The state is unreachable. The channel `c` holds 10 and the con
 - `transfer_effects`. The last conjunct reads `0 + 10 = 5`. Correction: add `(apps : Apps)` and `(hr : Reachable apps s)`.
 - `redistribution_conserves_total`. `s'.held + paidOut' = 0 + 10`, but `s.held + paidOut = 5 + 0`. Correction: add `(hr : Reachable apps s)`. On an unreachable state an address can also have two balance entries; `Balances.set` drops both.
 
-With `Reachable`, the invariant `Adjudicator.HeldInv` (one balance entry per address, and `held = channelTotal`) gives `x ≤ held`.
+With `Reachable`, the invariant `Adjudicator.Inv` (fields `keysNodup`: one balance entry per address, and `held`: `held = channelTotal`) gives `x ≤ held`.
 
 Counterexample B. The state is reachable: a conclude of `c` with outcome `[participant p : 5]` and no deposit. `transfer c p` pays 0. The balance list changes from `[]` to `[(c, 0), (p, 0)]`, because `Balances.add b 0` writes an entry.
 

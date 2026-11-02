@@ -1,13 +1,14 @@
 /-
   Nitro protocol theorems: on-chain adjudicator safety, conservation and the
   correctness of the data operations. The proofs use the `@[simp]` API and
-  the invariant `Adjudicator.HeldInv` of `Lemmas.lean`. The statements
+  the invariant `Adjudicator.Inv` of `Invariant.lean`. The statements
   are the deliverable. Each doc comment cites the latest source first (SATP,
   then Nitro, then ForceMove), then go-nitro, and names the property ids of
   `docs/nitro-theorems.md`.
 -/
 import ArmadaLean.Nitro.SATP
 import ArmadaLean.Nitro.Lemmas
+import ArmadaLean.Nitro.Invariant
 import ArmadaLean.Nitro.OpEquations
 import ArmadaLean.Types.Reachable
 import ArmadaLean.SpecTools
@@ -52,7 +53,7 @@ theorem balances_absent_zero (b : Balances E) (a : Address E) (h : ∀ e ∈ b, 
 theorem held_eq_channel_balances (apps : Apps E) (s : ReachableState (Nitro.chain apps)) :
     s.state.held = s.state.balances.channelTotal := by
   obtain_reach ⟨s, h : Reachable apps s⟩ := s
-  exact (Adjudicator.heldInv_reachable h).2
+  exact (Adjudicator.inv_reachable h).held
 
 omit [DecidableEq E] in
 /-- Nitro-08. Every coin that entered the adjudicator is held for a channel
@@ -239,22 +240,7 @@ theorem held_falls_only_by_payout (apps : Apps E) (s : ReachableState (Nitro.cha
     ∃ d : E, s'.balances.get (.external d) = s.state.balances.get (.external d) + (s.state.held - s'.held) ∧
       ∀ d', d' ≠ d → s'.balances.get (.external d') = s.state.balances.get (.external d') := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
-  obtain ⟨-, hheld⟩ := Adjudicator.heldInv_reachable hr
-  cases op with
-  | transfer a b =>
-    obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
-    have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
-    have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-      (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
-    rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
-    cases b with
-    | channel d => (simp? [hh] at hlt says simp only [hh, Address.isExternal_channel, Bool.false_eq_true, ↓reduceIte, lt_self_iff_false] at hlt)
-    | external p =>
-      refine ⟨rfl, p, ?_, fun q hq => ?_⟩
-      · rw [hb, hh]; (simp? says simp only [FixedPart.address_eq, Balances.get_sub, reduceCtorEq, ↓reduceIte, Balances.get_add, Address.isExternal_external, Nat.add_left_cancel_iff]); (grind? says grind only [#299a])
-      · rw [hb]; (simp? [hq] says simp only [FixedPart.address_eq, Balances.get_sub, reduceCtorEq, ↓reduceIte, Balances.get_add, Address.external.injEq, hq])
-  | deposit a e x => obtain ⟨-, -, -, hh, -, -⟩ := Adjudicator.deposit_some h; (grind? says grind only)
-  | _ => exact absurd (Adjudicator.apply_held_frame rfl h) (ne_of_lt hlt)
+  exact (Adjudicator.inv_reachable hr).heldFalls h hlt
 
 /-- Nitro-07. Nitro:227-229: no operation takes a channel's coins except a
     redistribution. go-nitro: only `holdings[asset][channelId] -=
@@ -366,7 +352,7 @@ theorem transfer_effects (apps : Apps E) (s : ReachableState (Nitro.chain apps))
       s'.finalOutcome a.address = some (.allocation (o.reduceOwed b x)) ∧
       s'.held + (if b.isExternal then x else 0) = s.state.held ∧ s'.now = s.state.now := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
-  obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
+  have hheld := (Adjudicator.inv_reachable hr).held
   classical
   have heq : s.transfer a b =
       (if hp : s.TransferPre a b then some (s.transferEffect b ⟨a, hp⟩) else none) :=
@@ -548,129 +534,7 @@ theorem redistribution_conserves_total (apps : Apps E) (s : ReachableState (Nitr
     s'.balances.total = s.state.balances.total ∧
     s'.held + s'.balances.paidOutTotal = s.state.held + s.state.balances.paidOutTotal := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
-  obtain ⟨hnd, hheld⟩ := Adjudicator.heldInv_reachable hr
-  cases op with
-  | transfer a b =>
-    obtain ⟨o, _, x, -, -, hx, hb, hh, -, -⟩ := Adjudicator.transfer_some h
-    have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
-    have hle := Balances.get_le_sumIf (fun a => decide (a.isExternal = false)) s.balances
-      (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
-    rw [← Balances.channelTotal_eq_sumIf, ← hheld] at hle
-    have h1 := Balances.sumIf_add_sub (fun _ => true) hnd a.address b hxa
-    have h2 := Balances.sumIf_add_sub (fun a => decide (a.isExternal = true)) hnd a.address b hxa
-    rw [Balances.total_eq_sumIf, Balances.total_eq_sumIf, Balances.paidOutTotal_eq_sumIf,
-      Balances.paidOutTotal_eq_sumIf, hb, hh]
-    cases b <;> simp at h1 h2 ⊢ <;> (grind? says grind only)
-  | reclaim l v =>
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := Adjudicator.reclaim_some h; (simp? says simp only [FixedPart.address_eq, Adjudicator.setStatus_balances, Adjudicator.setStatus_held, Nat.add_left_cancel_iff, and_self])
-  | _ => (simp? [Op.isRedistribution] at hop says simp only [Op.isRedistribution, Bool.false_eq_true] at hop)
-
-/-- One redistribution of a finalized outcome: Nitro:770 (transfer),
-    SATP:358-361 and go-nitro `compute_reclaim_effects` (reclaim on the
-    ledger). -/
-inductive RedistributeStep : Outcome E → Outcome E → Prop
-  | reduce (o : Allocation E) (d : Address E) (x : Coins) :
-      RedistributeStep (.allocation o) (.allocation (o.reduceOwed d x))
-  | reclaim (o : Allocation E) (left right v : Address E) (x y : Coins) :
-      RedistributeStep (.allocation o) (.allocation (((o.addTo left x).addTo right y).remove v))
-
-/-- Zero or more redistributions (Mathlib `Relation.ReflTransGen`). -/
-def Redistributed : Outcome E → Outcome E → Prop :=
-  Relation.ReflTransGen RedistributeStep
-
-/-- The conclusion of `finalized_two_ways` for a channel `c` and an outcome
-    `Ω` at the state `s`: a conclude, or a challenge whose deadline is at or
-    before `s.now`, followed by redistributions. -/
-def FinalizedTwoWays (apps : Apps E) (s : Adjudicator E) (c : FixedPart) (Ω : Outcome E) : Prop :=
-  ∃ s0 s1 caller, Reachable apps s0 ∧
-    ((∃ ss, s0.apply apps caller (.conclude c ss) = some s1 ∧ ConclusionProof c ss ∧
-        Redistributed ss.state.outcome Ω) ∨
-     (∃ proof candidate, s0.apply apps caller (.challenge c proof candidate) = some s1 ∧
-        s0.now + c.challengeDuration ≤ s.now ∧ Redistributed candidate.outcome Ω))
-
-theorem FinalizedTwoWays.mono {apps : Apps E} {s s' : Adjudicator E} {c : FixedPart} {Ω Ω' : Outcome E}
-    (h : FinalizedTwoWays apps s c Ω) (hn : s.now ≤ s'.now) (hR : Redistributed Ω Ω') :
-    FinalizedTwoWays apps s' c Ω' := by
-  obtain ⟨s0, s1, caller, hr0, ⟨ss, h1, h2, h3⟩ | ⟨proof, cand, h1, h2, h3⟩⟩ := h
-  · exact ⟨s0, s1, caller, hr0, Or.inl ⟨ss, h1, h2, h3.trans hR⟩⟩
-  · exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, cand, h1, by (grind? says grind only), h3.trans hR⟩⟩
-
-/-- Nitro:288-290: the origin of a channel status. A running challenge came
-    from a challenge step whose deadline it keeps; a finalized status
-    satisfies `FinalizedTwoWays`. -/
-def StatusOrigin (apps : Apps E) (s : Adjudicator E) (c : FixedPart) : Prop :=
-  match s.statusOf c with
-  | .open _ => True
-  | .challenged _ ch => ∃ s0 s1 caller proof, Reachable apps s0 ∧
-      s0.apply apps caller (.challenge c proof ch.state) = some s1 ∧
-      s0.now + c.challengeDuration = ch.deadline
-  | .finalized _ _ Ω => FinalizedTwoWays apps s c Ω
-
-theorem statusOrigin_of_eq {apps : Apps E} {s s' : Adjudicator E} {c : FixedPart}
-    (ho : StatusOrigin apps s c) (hs : s'.statusOf c = s.statusOf c) (hn : s.now ≤ s'.now) :
-    StatusOrigin apps s' c := by
-  unfold StatusOrigin at ho ⊢
-  rw [hs]
-  split at ho
-  · trivial
-  · exact ho
-  · exact ho.mono hn Relation.ReflTransGen.refl
-
-/-- A redistribution of a finalized outcome keeps its origin. -/
-theorem statusOrigin_redistribute {apps : Apps E} {s s' : Adjudicator E} {c : FixedPart} {Ω Ω' : Outcome E}
-    (ho : StatusOrigin apps s c) (hf : (s.statusOf c).finalOutcome s.now = some Ω)
-    (hR : Redistributed Ω Ω') (hn : s.now ≤ s'.now)
-    (hs : s'.statusOf c = (s.statusOf c).withOutcome Ω') :
-    StatusOrigin apps s' c := by
-  unfold StatusOrigin at ho ⊢
-  rw [hs]
-  revert ho hf
-  cases s.statusOf c with
-  | «open» t => intro _ hf; (simp? at hf says simp only [ChannelStatus.finalOutcome_open, reduceCtorEq] at hf)
-  | challenged t ch =>
-    intro ho hf
-    simp only [ChannelStatus.finalOutcome_challenged] at hf
-    split at hf
-    · cases hf
-      obtain ⟨s0, s1, caller, proof, hr0, h1, h2⟩ := ho
-      exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by (grind? says grind only), hR⟩⟩
-    · cases hf
-  | finalized t f o =>
-    intro ho hf
-    simp only [ChannelStatus.finalOutcome_finalized, Option.some.injEq] at hf
-    subst hf
-    exact ho.mono hn hR
-
-theorem statusOrigin_step {apps : Apps E} {s s' : Adjudicator E} {caller : Participant} {op : Op E}
-    (hr : Reachable apps s) (ho : ∀ c, StatusOrigin apps s c)
-    (h : s.apply apps caller op = some s') (c : FixedPart) : StatusOrigin apps s' c := by
-  have hn := Adjudicator.apply_now_le h
-  rcases Adjudicator.statusOf_step h c with
-    heq | ⟨o, b, x, hf, heq⟩ | ⟨oL, left, x1, right, x2, rm, hL, heq⟩ |
-    ⟨proof, cand, hch, heq⟩ | ⟨proof, cand, hcp, heq⟩ | ⟨ss, hcl, heq⟩
-  · exact statusOrigin_of_eq (ho c) heq hn
-  · exact statusOrigin_redistribute (ho c) hf
-      (Relation.ReflTransGen.single (RedistributeStep.reduce o b x)) hn heq
-  · exact statusOrigin_redistribute (ho c) hL
-      (Relation.ReflTransGen.single (RedistributeStep.reclaim oL left right rm x1 x2)) hn heq
-  · unfold StatusOrigin
-    rw [heq]
-    exact ⟨s, s', caller, proof, hr, hch, rfl⟩
-  · unfold StatusOrigin
-    rw [heq]
-    trivial
-  · unfold StatusOrigin
-    rw [heq]
-    obtain ⟨⟨-, hp⟩, -⟩ := Adjudicator.conclude_some hcl
-    exact ⟨s, s', caller, hr, Or.inl ⟨ss, hcl, hp, Relation.ReflTransGen.refl⟩⟩
-
-theorem statusOrigin_reachable {apps : Apps E} {s : Adjudicator E} (hr : Reachable apps s)
-    (c : FixedPart) : StatusOrigin apps s c := by
-  induction hr generalizing c with
-  | refl => unfold StatusOrigin; exact trivial
-  | tail hr' hstep ih =>
-    cases hstep with
-    | mk caller op _ _ h => exact statusOrigin_step hr' ih h c
+  exact (Adjudicator.inv_reachable hr).conserves hop h
 
 /-- Nitro-11, ForceMove-B03, SATP-16, docs-0070-04, ForceMove-A14.
     SATP:284-292: assets are released on explicit consent (conclude) or
@@ -688,24 +552,7 @@ theorem finalized_two_ways (apps : Apps E) (s : ReachableState (Nitro.chain apps
        (∃ proof candidate, s0.apply apps caller (.challenge c proof candidate) = some s1 ∧
           s0.now + c.challengeDuration ≤ s.state.now ∧ Redistributed candidate.outcome Ω)) := by
   obtain_reach ⟨s, hr : Reachable apps s⟩ := s
-  have ho := statusOrigin_reachable hr c
-  simp only [FixedPart.address_eq, Adjudicator.finalOutcome_channel] at hf
-  unfold StatusOrigin at ho
-  revert ho hf
-  cases s.statusOf c with
-  | «open» t => (simp? says simp only [ChannelStatus.finalOutcome_open, reduceCtorEq, Adjudicator.apply_conclude, Adjudicator.apply_challenge, exists_and_left, forall_const, IsEmpty.forall_iff])
-  | challenged t ch =>
-    intro hf ho
-    simp only [ChannelStatus.finalOutcome_challenged] at hf
-    split at hf
-    · cases hf
-      obtain ⟨s0, s1, caller, proof, hr0, h1, h2⟩ := ho
-      exact ⟨s0, s1, caller, hr0, Or.inr ⟨proof, ch.state, h1, by (grind? says grind only), Relation.ReflTransGen.refl⟩⟩
-    · cases hf
-  | finalized t Ω0 =>
-    intro hf ho
-    cases hf
-    exact ho
+  exact (Adjudicator.inv_reachable hr).twoWays c Ω hf
 
 /-- Nitro-14, ForceMove-A14, ForceMove-D12. Nitro:301-302: "the rules of
     operation only allow one outcome to be finalized for each channel."

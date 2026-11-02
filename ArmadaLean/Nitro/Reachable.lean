@@ -22,6 +22,7 @@
 import ArmadaLean.Machine
 import ArmadaLean.Types.Reachable
 import ArmadaLean.Nitro.Strategy
+import ArmadaLean.Nitro.Invariant
 import ArmadaLean.Nitro.Lemmas
 import ArmadaLean.SpecTools
 import Mathlib.Tactic.Says
@@ -1451,15 +1452,12 @@ theorem Nitro.network_conservation {apps : Apps E} {Ts : Threats E apps} {n0 n :
         intro a e x heq
         rw [heq] at hopfeas
         simp only [Op.HonestFeasible] at hopfeas
-      have hhi : n1.chain.HeldInv :=
-        Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
-      have hstep' := Adjudicator.held_paidOut_step_no_deposit hhi hnodep hop
+      have hstep' := Adjudicator.held_paidOut_step_no_deposit
+        (Nitro.network_chain_reachable hr1) hnodep hop
       exact ⟨deposits, by rw [hchain, hstep']; exact hheld, by rw [hwal]; exact hwallet⟩
     · exact ⟨deposits, by rw [hchain]; exact hheld, by rw [hwal]; exact hwallet⟩
-    · have hhi : n1.chain.HeldInv :=
-        Adjudicator.heldInv_reachable (Nitro.network_chain_reachable hr1)
-      have hopEq : n1.chain.apply apps p₀ (.deposit (.channel c) e x) = some s' := hdep
-      have hstep' := Adjudicator.held_paidOut_step_deposit hhi hopEq
+    · have hopEq : n1.chain.apply apps p₀ (.deposit (.channel c) e x) = some s' := hdep
+      have hstep' := Adjudicator.held_paidOut_step_deposit (Nitro.network_chain_reachable hr1) hopEq
       refine ⟨(p₀, x) :: deposits, ?_, ?_⟩
       · rw [hchain]
         simp only [List.map_cons, List.sum_cons]

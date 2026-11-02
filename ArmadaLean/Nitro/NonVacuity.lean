@@ -178,12 +178,12 @@ theorem redistribution_conserves_total.nonvacuity_4 : ∃ (s s' : Adjudicator Na
   ⟨sCon, sCon, c1, _, _, ⟨sDep, sCon, p0, sDep_reach, .inl ⟨ssF, sDep_con, by decide, .refl⟩⟩,
     rfl, .refl, le_rfl, rfl⟩
 
-/-- `statusOrigin_step`. -/
-theorem redistribution_conserves_total.nonvacuity_5 : ∃ (s s' : Adjudicator Nat) (caller : Participant) (op : Op Nat),
-    Reachable apps0 s ∧ (∀ c, StatusOrigin apps0 s c) ∧ s.apply apps0 caller op = some s' :=
-  ⟨g0, sDep, p0, _, .refl, fun _ => trivial, g0_dep⟩
+/-- `Adjudicator.inv_step`. -/
+theorem redistribution_conserves_total.nonvacuity_5 : ∃ s s' : Adjudicator Nat,
+    Reachable apps0 s ∧ s.Inv apps0 ∧ Step apps0 s s' :=
+  ⟨g0, sDep, .refl, Adjudicator.inv_genesis, .mk p0 _ _ _ g0_dep⟩
 
-/-- `statusOrigin_reachable`. -/
+/-- `Adjudicator.inv_reachable`. -/
 theorem redistribution_conserves_total.nonvacuity_6 : ∃ s : Adjudicator Nat, Reachable apps0 s := ⟨g0, .refl⟩
 
 /-- `finalized_two_ways`. -/
