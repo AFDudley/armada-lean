@@ -2013,3 +2013,9 @@
 {"type":"comment","timestamp":"2026-11-02T19:48:04.737345Z","issue_id":"aln-660","payload":{"body":"gate-verdict: 6ca5f5fa6ecd7d93761eb4d066d93f023506a1d4 passed 0.2.1+f2395f0b","build":"0.2.1+f2395f0b","outcome":"passed","sha":"6ca5f5fa6ecd7d93761eb4d066d93f023506a1d4","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T19:48:04.764618Z","issue_id":"aln-660","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T19:48:04.775620Z","issue_id":"aln-660","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-02T19:55:07.999661Z","issue_id":"aln-957","payload":{"description":"Operator-authored branch `draft/vault-port`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/vault-port","type":"task"}}
+{"type":"comment","timestamp":"2026-11-02T19:55:08.025453Z","issue_id":"aln-957","payload":{"body":"branch-identity: draft/vault-port"}}
+{"type":"comment","timestamp":"2026-11-02T20:05:42.410136Z","issue_id":"aln-957","payload":{"body":"exophial-integration-attempt-started: at a4eb344d7a01b218e4bd364e05097b5210a3acbd"}}
+{"type":"comment","timestamp":"2026-11-02T20:05:44.928996Z","issue_id":"aln-957","payload":{"body":"gate-verdict: 3e91cd213ddb6f532047e412a036c677061f2487 passed 0.2.1+f2395f0b","build":"0.2.1+f2395f0b","outcome":"passed","sha":"3e91cd213ddb6f532047e412a036c677061f2487","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-02T20:05:44.960172Z","issue_id":"aln-957","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-02T20:05:44.970239Z","issue_id":"aln-957","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
