@@ -116,6 +116,30 @@ repos:
         language: system
         stages: [commit-msg]
 
+  # gate-baseline-fresh (2026-11-02): scripts/gate-baseline.json's
+  # file_hashes must match the tracked ArmadaLean/**/*.lean tree, outside
+  # ArmadaLean/Lint/. A stale hash makes gate_extra.check_decision_scope
+  # rescan a file whose findings did not change, raising decision_seconds
+  # for no reason -- the cause of a 4-file, ~37s-per-file rescan found on
+  # `integrated` 2026-11-02 (decision_seconds 91.8 of a 310s check.sh run).
+  # Hashing only, no lake build, so this stays cheap on every commit.
+  # `stages: [pre-commit, manual]` is load-bearing (AGENTS.md "Lean work:
+  # standing rules" / skill exophial-precommit-config): `manual` is the
+  # stage `pre-commit run --all-files --hook-stage manual` selects, the
+  # command the gate runs at the merge boundary (.claude/doctrine/
+  # husband.md); `pre-commit` is the stage a plain `git commit` selects.
+  # A hook scoped to only one of the two misses either a local commit or
+  # the merge boundary it is meant to guard.
+  - repo: local
+    hooks:
+      - id: gate-baseline-fresh
+        name: "scripts/gate-baseline.json file_hashes match the tracked tree"
+        entry: python3 scripts/gate_baseline_fresh_check.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, manual]
+
   # === Base hooks ===
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

@@ -16,8 +16,12 @@ dispatcher:
 # `scripts/check.sh` (moved from docs/lean/verification.md section 1 — the
 # gate container sees only tracked files). Measured in the gate container
 # (.exophial/gate/Dockerfile, which bakes `lake exe cache get` + `lake build`
-# at image-build time): lake build ~23s, scripts/check.sh ~3s on this host.
-# 1800s keeps a wide margin over a container run on a loaded host.
+# at image-build time): lake build ~23s. Measured 2026-11-02 on `integrated`,
+# host load 16.5 on 32 CPUs: `scripts/check.sh --json` took 310s wall
+# (lint_seconds 22.4, decision_seconds 91.8, counterexamples_seconds 37.5).
+# 1800s keeps a wide margin over a container run on a loaded host. An
+# acceptance oracle that runs `scripts/check.sh --json` needs a bound of at
+# least 1800s, which is `gate.timeout`.
 gate:
   command: ["bash", "-c", "lake build && scripts/check.sh"]
   timeout: 1800

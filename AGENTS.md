@@ -70,6 +70,19 @@ alone, with no full `spec_check.py` build report needed. The
 decisionScope check scans only the `ArmadaLean/**/*.lean` files whose
 content differs from `scripts/gate-baseline.json`'s recorded hash.
 
+The `gate-baseline-fresh` pre-commit hook (`.pre-commit-config.yaml`)
+catches a stale hash before it reaches the decisionScope check. It
+fails when a tracked `ArmadaLean/**/*.lean` file (outside
+`ArmadaLean/Lint/`) has a sha256 that differs from
+`scripts/gate-baseline.json`'s `file_hashes`, or is missing from it. It
+only hashes files, so it runs in seconds on every commit and at the
+merge-boundary gate (`stages: [pre-commit, manual]`). A merge that
+changes one of these files without refreshing the hash is the common
+cause: run `python3 scripts/update_gate_baseline.py --hashes-only` to
+refresh `file_hashes` alone, without the full `lake build` and
+decisionScope scan `scripts/update_gate_baseline.py` otherwise runs,
+and commit the result.
+
 **The gate baseline.** `scripts/gate-baseline.json` is tracked: the
 type-lint summary counts, every `decisionScope` finding, and the sha256
 of every `ArmadaLean/**/*.lean` file (outside `ArmadaLean/Lint/`), all

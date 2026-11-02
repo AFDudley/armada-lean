@@ -14,9 +14,18 @@ the gate (`gate_extra.check_lint`/`check_decision_scope`) compares the
 tree against this committed file, so a baseline raised without a
 matching fix shows up in the branch's own diff for review (`AGENTS.md`,
 "Lean work: standing rules").
+
+Usage: python3 scripts/update_gate_baseline.py --hashes-only
+Rewrites only `file_hashes`. Keeps `lint_summary` and `decision_findings`
+as the committed file already has them. Hashing only, no `lake build` and
+no `decisionScope` scan: seconds, not minutes. Use this after a merge
+changes a file's bytes without changing its lint counts or its
+decisionScope findings, so `decisionScope` stops rescanning a file that
+did not really change its findings.
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -25,8 +34,26 @@ import gate_extra  # noqa: E402
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--hashes-only",
+        action="store_true",
+        help="Rewrite only file_hashes. Keep lint_summary and "
+        "decision_findings as committed.",
+    )
+    args = parser.parse_args()
     root = Path.cwd()
-    baseline = gate_extra.compute_baseline(root)
+    if args.hashes_only:
+        existing = gate_extra.load_baseline(root)
+        files = gate_extra._lean_files(root)
+        file_hashes = {str(f): gate_extra._file_sha256(root / f) for f in files}
+        baseline = {
+            "lint_summary": existing["lint_summary"],
+            "decision_findings": existing["decision_findings"],
+            "file_hashes": file_hashes,
+        }
+    else:
+        baseline = gate_extra.compute_baseline(root)
     gate_extra.write_baseline(root, baseline)
     print(
         f"wrote {gate_extra.BASELINE_REL}: "
