@@ -58,7 +58,9 @@
   any tag the circuits themselves carry, and not on `Term.val` vs `Term.hash`
   (both shapes are `Term.hash` terms now).
 
-  DEPARTURE (contract, confirmed by reading the source): `_validateOwnedTransaction`
+  DEPARTURE of the current contract, removed by the rewrite (armada-laconic
+  `labbook/2026-11-02-refinement-risks.md` §7: the rewrite takes a 20-byte
+  `ownerField` and rejects a value at or above 2^160). `_validateOwnedTransaction`
   authorizes with `msg.sender == address(uint160(uint256(ownerField)))`
   (TransactModule.sol:637) — the contract truncates `ownerField` to its low 160
   bits before comparing, so it also accepts a non-canonical `ownerField` with

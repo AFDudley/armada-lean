@@ -7,8 +7,10 @@
   PrivacyPoolStorage.sol:46-57). This module keeps the hash symbolic: `hashBoundParams`
   is a Keccak `Term` of the parameters (`ArmadaLean.Poseidon`), so two different
   parameter records never give the same hash (`hashBoundParams_inj`). The ABI encoding
-  and the `% p` reduction belong to a refinement layer. This model does not represent
-  them. Audit finding P-2 (armada-laconic `labbook/2026-10-26-pool-layout-audit.md`)
+  and the `% p` reduction belong to the current contract. The rewrite does not keep the
+  `% p` reduction: it encodes the hash as the low 248 bits of the Keccak output
+  (armada-laconic `labbook/2026-11-02-refinement-risks.md` §7). This model represents
+  neither. Audit finding P-2 (armada-laconic `labbook/2026-10-26-pool-layout-audit.md`)
   records the earlier `boundParamsHash : Nat`.
 
   The record holds the fields that the pool reads:
