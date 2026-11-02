@@ -1858,3 +1858,9 @@
 {"type":"comment","timestamp":"2026-11-02T10:22:06.601905Z","issue_id":"aln-760","payload":{"body":"gate-verdict: 89e9510dd572d63df91e3a06cd99b2b5ebb563b0 passed 0.2.1+23412471","build":"0.2.1+23412471","outcome":"passed","sha":"89e9510dd572d63df91e3a06cd99b2b5ebb563b0","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T10:22:06.624864Z","issue_id":"aln-760","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T10:22:06.633365Z","issue_id":"aln-760","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-02T13:20:41.373225Z","issue_id":"aln-d4b","payload":{"description":"Operator-authored branch `draft/nitro24-appir`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/nitro24-appir","type":"task"}}
+{"type":"comment","timestamp":"2026-11-02T13:20:41.399444Z","issue_id":"aln-d4b","payload":{"body":"branch-identity: draft/nitro24-appir"}}
+{"type":"comment","timestamp":"2026-11-02T13:31:37.075431Z","issue_id":"aln-d4b","payload":{"body":"exophial-integration-attempt-started: at 0b933ad969af6ef1e43e9ea2e05caecc83029091"}}
+{"type":"comment","timestamp":"2026-11-02T13:31:40.792419Z","issue_id":"aln-d4b","payload":{"body":"gate-verdict: 8b3f092800f911c8fa64ad52992b853059e0932d passed 0.2.1+23412471","build":"0.2.1+23412471","outcome":"passed","sha":"8b3f092800f911c8fa64ad52992b853059e0932d","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-02T13:31:40.822434Z","issue_id":"aln-d4b","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-02T13:31:40.831940Z","issue_id":"aln-d4b","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
