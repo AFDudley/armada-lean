@@ -58,6 +58,25 @@ def Adjudicator.IsTopologicalOrder (s : Adjudicator E) (order : List (Address E)
 def Adjudicator.IsDAG (s : Adjudicator E) : Prop :=
   Acyclic s.Edge
 
+/-- A list that orders every edge of `s` forward rules out a cycle of `s`: along a path, the
+    position in the list rises. So a topological order makes `s` a DAG. -/
+theorem Adjudicator.IsTopologicalOrder.isDAG {s : Adjudicator E} {order : List (Address E)}
+    (h : s.IsTopologicalOrder order) : s.IsDAG := by
+  have hpos : ∀ {a b}, Relation.TransGen s.Edge a b →
+      ∃ i j : Nat, order[i]? = some a ∧ order[j]? = some b ∧ i < j := by
+    intro a b hab
+    induction hab with
+    | single he => exact h.2.1 _ _ he
+    | tail _ he ih =>
+      obtain ⟨i, j, hi, hj, hij⟩ := ih
+      obtain ⟨j', k, hj', hk, hjk⟩ := h.2.1 _ _ he
+      have := (List.getElem?_inj (List.getElem?_eq_some_iff.mp hj).1 h.1).mp (hj.trans hj'.symm)
+      exact ⟨i, k, hi, hk, by omega⟩
+  refine ⟨fun c hc => ?_⟩
+  obtain ⟨i, j, hi, hj, hij⟩ := hpos hc
+  have := (List.getElem?_inj (List.getElem?_eq_some_iff.mp hi).1 h.1).mp (hi.trans hj.symm)
+  omega
+
 /-- Nitro:824-834, step 3: pay `remaining` through one node's allocation in
     order; each destination's value rises by `min(payout, remaining)`. A
     guarantee item takes its place in the priority order but credits no
@@ -1105,8 +1124,8 @@ theorem allocationOf_nodup (s : Adjudicator E) (c : Address E) :
     `c` cannot credit itself (a self-edge would be a 1-cycle, excluded by
     `s.IsDAG`). So folding the rest of the order past `c`'s position never
     moves `c`'s reading again. -/
-theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (vals : Balances E)
+theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) (vals : Balances E)
     (c : Address E) (hc : c ∈ order) (hcext : c.isExternal = false) :
     (s.turboValues order vals).get c =
       (s.turboValues (order.takeWhile (fun x => decide (x ≠ c))) vals).get c := by
@@ -1119,7 +1138,7 @@ theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (hdag : s.IsDAG)
   rw [htw, heq, turboValues_append]
   simp only [Adjudicator.turboValues]
   have hnoself : ∀ e ∈ s.allocationOf c, e.dest ≠ c := fun e he hcontra =>
-    hdag.irrefl c (Relation.TransGen.single ⟨hcext, e, he, hcontra⟩)
+    hord.isDAG.irrefl c (Relation.TransGen.single ⟨hcext, e, he, hcontra⟩)
   have hnopost : ∀ m ∈ post, ∀ e ∈ s.allocationOf m, e.dest ≠ c := by
     intro m hm e he hec
     obtain ⟨post1, post2, hpost_eq, -⟩ := List.eq_append_cons_of_mem hm
@@ -1341,8 +1360,8 @@ theorem Adjudicator.turboValueAlong_transfer {s s' : Adjudicator E} {a : FixedPa
 def Adjudicator.CreditsTo (s : Adjudicator E) (c d : Address E) : Bool :=
   ((s.allocationOf c).find d).elim false (fun e => !e.item.isGuarantee)
 
-theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (d : Address E) :
+theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) (d : Address E) :
     ∀ suf pre : List (Address E), order = pre ++ suf →
       (s.turboValues suf (s.turboValues pre s.balances)).get d =
         (s.turboValues pre s.balances).get d +
@@ -1385,7 +1404,7 @@ theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (hdag : s.IsDAG)
             (fun x hx => ?_) (by (simp? says simp only [ne_eq, not_true_eq_false, decide_false]))
           have hxc : x ≠ c := fun h => hcnotpre (h ▸ hx)
           (simpa? using hxc says simpa only [ne_eq, decide_not, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not] using hxc)
-        rw [turboValues_get_eq_takeWhile s hdag order hord s.balances c hcmem hcext, htw]
+        rw [turboValues_get_eq_takeWhile s order hord s.balances c hcmem hcext, htw]
       rw [Adjudicator.CreditsTo] at hP
       rw [hP, if_pos rfl] at hA
       rw [hA, hstab]
@@ -1408,7 +1427,7 @@ theorem turboValueAlong_eq_add_credits (s : Adjudicator E) (hdag : s.IsDAG)
       s.balances.get d +
         ((order.filter (s.CreditsTo · d)).map
           (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
-  have h := turboValueAlong_eq_add_credits_aux s hdag order hord d order [] (by (simp? says simp only [List.nil_append]))
+  have h := turboValueAlong_eq_add_credits_aux s order hord d order [] (by (simp? says simp only [List.nil_append]))
   (simpa? [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h says simpa only [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h)
 
 

@@ -5288,7 +5288,7 @@ theorem participant_can_prevent_cycles (apps : Apps E) {p : Participant} (T : Th
     address's balance to the coins `chainPay` leaves unspent
     (`symbolicLeftover`). `chainPay_exhausted` then reads as "a real
     `transfer` call on this state moves zero coins"
-    (`symbolicTerminal_transfer_unmoved`). -/
+    (`symbolicTerminal_transfer_unmoved_of_matches`). -/
 
 /-- `paidTo` reads only the deduplicated allocation (`Allocation.paidTo`'s
     own definition goes through `o.dedup`), so it agrees with `paidTo` on
@@ -5424,7 +5424,7 @@ theorem Adjudicator.dest_mem_requiredNodes (s : Adjudicator E) (c m : Address E)
     Value as `0`, and `chainPay` on the empty allocation leaves `0`
     unspent. -/
 theorem Adjudicator.symbolicLeftover_eq_zero_of_not_mem_requiredNodes (s : Adjudicator E)
-    (hdag : s.IsDAG) (order : List (Address E)) (hord : s.IsTopologicalOrder order)
+    (order : List (Address E)) (hord : s.IsTopologicalOrder order)
     (m : Address E) (h : m ∉ requiredNodes s) :
     s.symbolicLeftover order m = 0 := by
   have hnact : s.balances.get m = 0 ∧ s.allocationOf m = [] := by
@@ -5444,7 +5444,7 @@ theorem Adjudicator.symbolicLeftover_eq_zero_of_not_mem_requiredNodes (s : Adjud
         exact List.mem_of_find?_eq_some hfind
       exact h (Adjudicator.dest_mem_requiredNodes s c m e he hed)
   have htv : s.turboValueAlong order m = 0 := by
-    rw [turboValueAlong_eq_add_credits s hdag order hord m, hbal0]
+    rw [turboValueAlong_eq_add_credits s hord.isDAG order hord m, hbal0]
     have hfnil : order.filter (s.CreditsTo · m) = [] := by
       rw [List.filter_eq_nil_iff]
       intro c _
@@ -5459,8 +5459,8 @@ theorem Adjudicator.symbolicLeftover_eq_zero_of_not_mem_requiredNodes (s : Adjud
     `s.symbolicLeftover order m` whether or not `m` is a required node
     (`symbolicLeftover_eq_zero_of_not_mem_requiredNodes` covers the
     "outside" case). -/
-theorem Adjudicator.symbolicTerminal_balances_get (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (m : Address E) :
+theorem Adjudicator.symbolicTerminal_balances_get (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) (m : Address E) :
     (s.symbolicTerminal order).balances.get m = s.symbolicLeftover order m := by
   show Balances.get (s.symbolicBalances order) m = s.symbolicLeftover order m
   unfold Adjudicator.symbolicBalances Balances.get
@@ -5468,7 +5468,7 @@ theorem Adjudicator.symbolicTerminal_balances_get (s : Adjudicator E) (hdag : s.
   by_cases hmem : m ∈ (requiredNodes s).dedup
   · rw [if_pos hmem]; (simp? says simp only [Option.getD_some])
   · rw [if_neg hmem]
-    exact (Adjudicator.symbolicLeftover_eq_zero_of_not_mem_requiredNodes s hdag order hord m
+    exact (Adjudicator.symbolicLeftover_eq_zero_of_not_mem_requiredNodes s order hord m
       (fun hc => hmem (List.mem_dedup.mpr hc))).symm
 
 /-- `(s.symbolicTerminal order).statusOf c`: `s.statusOf c` rewritten with
@@ -5668,8 +5668,7 @@ theorem Adjudicator.symbolicAlloc_AheadOf (s : Adjudicator E) (order : List (Add
   rw [hleftover] at hahead
   exact hahead
 
-/-- The `x = 0` fact `symbolicTerminal_transfer_unmoved` and
-    `symbolicTerminal_transfer_unmoved_of_matches` both need: a real
+/-- The `x = 0` fact `symbolicTerminal_transfer_unmoved_of_matches` needs: a real
     `transfer` call reads `o.find b`/`o.paidTo` off `symbolicAlloc`'s raw
     shape, but `paidTo` only ever depends on the deduplicated view
     (`paidTo_dedup`), and that deduplicated view is exactly the `chainPay`
@@ -5729,56 +5728,10 @@ theorem Adjudicator.symbolicAlloc_paidTo_eq_zero (s : Adjudicator E) (order : Li
     (`chainPay_exhausted`, through `symbolicTerminal_balances_get` and
     `symbolicTerminal_finalOutcome`), so every address's *reading*
     (`finalOutcome`, `balances.get`) is unchanged, even though the stored
-    list can reorder. -/
-theorem Adjudicator.symbolicTerminal_transfer_unmoved (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order)
-    {a : FixedPart} {b : Address E} {sg' : Adjudicator E}
-    (h : (s.symbolicTerminal order).transfer a b = some sg') :
-    (∀ n : Address E, sg'.finalOutcome n = (s.symbolicTerminal order).finalOutcome n) ∧
-    (∀ n : Address E, sg'.balances.get n = (s.symbolicTerminal order).balances.get n) := by
-  set sg := s.symbolicTerminal order with hsgdef
-  obtain ⟨o, amt, x, hf, hfind, hk, hbfund, hx, hfoeff, hbal, -, -⟩ := Adjudicator.transfer_effect h
-  have hfo2 := Adjudicator.symbolicTerminal_finalOutcome s order a
-  rw [← hsgdef] at hfo2
-  have heq : some (Outcome.allocation o) =
-      if (s.finalOutcome a.address).isSome then some (.allocation (s.symbolicAlloc order a.address))
-      else s.finalOutcome a.address := hf.symm.trans hfo2
-  by_cases hcond : (s.finalOutcome a.address).isSome
-  · rw [if_pos hcond] at heq
-    have hoeq : o = s.symbolicAlloc order a.address := by
-      injection heq with heq'
-      injection heq'
-    have hx0 : x = 0 := by
-      have hbg : sg.balances.get a.address = s.symbolicLeftover order a.address :=
-        s.symbolicTerminal_balances_get hdag order hord a.address
-      rw [hx, hbg, hoeq]
-      exact s.symbolicAlloc_paidTo_eq_zero order a b amt (hoeq ▸ hfind)
-    refine ⟨fun n => ?_, fun n => ?_⟩
-    · cases n with
-      | external e => (simp? [Adjudicator.finalOutcome] says simp only [finalOutcome])
-      | channel c =>
-        rw [← FixedPart.address_eq]
-        have hc := hfoeff c
-        by_cases hca : c = a
-        · subst hca
-          rw [hc, if_pos rfl, hx0, Allocation.reduceOwed_zero_of_find_alloc hfind, hf]
-        · rw [hc, if_neg hca]
-    · have hbd := hbal n
-      rw [hx0] at hbd
-      simp only [ite_self, Nat.add_zero] at hbd
-      exact hbd
-  · rw [if_neg hcond] at heq
-    have hsome : (s.finalOutcome a.address).isSome = true := by rw [← heq]; rfl
-    exact absurd hsome hcond
-
-/-- A generalization of `symbolicTerminal_transfer_unmoved`: any state that
-    merely READS the same as `sg` (same `finalOutcome`, same `balances.get`
-    everywhere) also absorbs a transfer with no change, by the identical
-    argument (the matched allocation and the budget that reads it are
-    exactly `sg`'s own, via the hypotheses, so `chainPay_exhausted` applies
-    the same way). -/
-theorem symbolicTerminal_transfer_unmoved_of_matches (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (u : Adjudicator E)
+    list can reorder. A state `u` that reads the same as the symbolic terminal state
+    (same `finalOutcome`, same `balances.get` everywhere) absorbs a transfer the same way. -/
+theorem symbolicTerminal_transfer_unmoved_of_matches (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) (u : Adjudicator E)
     (hfo : ∀ n, u.finalOutcome n = (s.symbolicTerminal order).finalOutcome n)
     (hbl : ∀ n, u.balances.get n = (s.symbolicTerminal order).balances.get n)
     {a : FixedPart} {b : Address E} {u' : Adjudicator E} (h : u.transfer a b = some u') :
@@ -5799,7 +5752,7 @@ theorem symbolicTerminal_transfer_unmoved_of_matches (s : Adjudicator E) (hdag :
     have hx0 : x = 0 := by
       have hbg : u.balances.get a.address = s.symbolicLeftover order a.address := by
         rw [hbl a.address]
-        exact s.symbolicTerminal_balances_get hdag order hord a.address
+        exact s.symbolicTerminal_balances_get order hord a.address
       rw [hx, hbg, hoeq]
       exact s.symbolicAlloc_paidTo_eq_zero order a b amt (hoeq ▸ hfind)
     refine ⟨fun n => ?_, fun n => ?_⟩
@@ -5822,8 +5775,8 @@ theorem symbolicTerminal_transfer_unmoved_of_matches (s : Adjudicator E) (hdag :
 
 
 
-theorem symbolicTerminal_applyAll_unmoved (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (apps : Apps E)
+theorem symbolicTerminal_applyAll_unmoved (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) (apps : Apps E)
     (ops : List (Participant × Op E)) (hops : OnlyTransfers ops) (u : Adjudicator E)
     (hfo : ∀ n, u.finalOutcome n = (s.symbolicTerminal order).finalOutcome n)
     (hbl : ∀ n, u.balances.get n = (s.symbolicTerminal order).balances.get n) :
@@ -5845,7 +5798,7 @@ theorem symbolicTerminal_applyAll_unmoved (s : Adjudicator E) (hdag : s.IsDAG)
     | none => simp only [Option.getD_none]; exact ih hOT u hfo hbl
     | some u' =>
       simp only [Option.getD_some]
-      have := symbolicTerminal_transfer_unmoved_of_matches s hdag order hord u hfo hbl hstep
+      have := symbolicTerminal_transfer_unmoved_of_matches s order hord u hfo hbl hstep
       exact ih hOT u' (fun n => (this.1 n).trans (hfo n)) (fun n => (this.2 n).trans (hbl n))
 
 /-- Point 6. `dueTotal` never rises along a list of real transfer calls:
@@ -5896,11 +5849,11 @@ theorem Ahead_right_congr {sp sg sg' : Adjudicator E}
     finalized channel
     case. Other addresses have no allocation, so `chainPay` keeps the full
     value. -/
-theorem Adjudicator.symbolicTerminal_conservation (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) (m : Address E) :
+theorem Adjudicator.symbolicTerminal_conservation (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) (m : Address E) :
     (s.symbolicTerminal order).balances.get m + s.dueTotal m =
       s.turboValueAlong order m + (s.symbolicTerminal order).dueTotal m := by
-  rw [s.symbolicTerminal_balances_get hdag order hord m]
+  rw [s.symbolicTerminal_balances_get order hord m]
   unfold Adjudicator.symbolicLeftover
   cases m with
   | external e =>
@@ -5973,8 +5926,8 @@ theorem Adjudicator.symbolicTerminal_owedBy_le (s : Adjudicator E) (order : List
     algorithm's credits to `d`". `symbolicTerminal_owedBy_le` bounds each
     channel, and `sum_le_sum_of_support_subset` bounds the sum by the sum
     along `order` (`turboValueAlong_eq_add_credits`). -/
-theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
-    (order : List (Address E)) (hord : s.IsTopologicalOrder order) :
+theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (order : List (Address E))
+    (hord : s.IsTopologicalOrder order) :
     s.Ahead (s.symbolicTerminal order) := by
   set sg := s.symbolicTerminal order with hsg
   refine ⟨fun c => ?_, fun d L hL => ?_⟩
@@ -5988,7 +5941,7 @@ theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
       rw [hfo]
       simp only [Option.isSome_some, if_true]
       refine .some ?_
-      rw [hsg, s.symbolicTerminal_balances_get hdag order hord]
+      rw [hsg, s.symbolicTerminal_balances_get order hord]
       exact s.symbolicAlloc_AheadOf order c o hf
   · let g : Address E → Coins := fun m =>
       if s.CreditsTo m d then (s.allocationOf m).paidTo (s.turboValueAlong order m) d else 0
@@ -6010,8 +5963,8 @@ theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
       congr 1
       refine List.map_congr_left fun m hm => ?_
       (simp? [g, (List.mem_filter.mp hm).2] says simp only [(List.mem_filter.mp hm).2, ↓reduceIte, g])
-    have htv := turboValueAlong_eq_add_credits s hdag order hord d
-    have hcons := s.symbolicTerminal_conservation hdag order hord d
+    have htv := turboValueAlong_eq_add_credits s hord.isDAG order hord d
+    have hcons := s.symbolicTerminal_conservation order hord d
     rw [← hsg] at hcons
     unfold Coins at *
     omega
@@ -6022,7 +5975,7 @@ theorem Adjudicator.symbolicTerminal_Ahead (s : Adjudicator E) (hdag : s.IsDAG)
     the state after a deposit is not reachable in the transfer-only game,
     and `deposit_bounds_value` reads its value. -/
 theorem turboValueAlong_upper_bound (apps : Apps E) {p : Participant} (T : Threat E p)
-    (hT : T.TransfersOnly) (net : NetworkState E p) (hdag : net.chain.IsDAG) (n : Address E)
+    (hT : T.TransfersOnly) (net : NetworkState E p) (n : Address E)
     {order : List (Address E)} (hord : net.chain.IsTopologicalOrder order) {x : Coins}
     (h : UnbeatableIn apps T HonestMove.IsTransfer (fun net' => x ≤ net'.chain.balances.get n)
       net) :
@@ -6034,13 +5987,13 @@ theorem turboValueAlong_upper_bound (apps : Apps E) {p : Participant} (T : Threa
   -- (`dueTotal_applyAll_le`). At the end, `Ahead.flow` at `n` with
   -- `symbolicTerminal_conservation` bounds the balance by the value.
   set sg := net.chain.symbolicTerminal order with hsg
-  have hcons := net.chain.symbolicTerminal_conservation hdag order hord n
+  have hcons := net.chain.symbolicTerminal_conservation order hord n
   rw [← hsg] at hcons
   suffices hsuff : ∀ {net2 : NetworkState E p},
       UnbeatableIn apps T HonestMove.IsTransfer (fun net' => x ≤ net'.chain.balances.get n) net2 →
       net2.chain.Ahead sg → net2.chain.dueTotal n ≤ net.chain.dueTotal n →
       x ≤ net.chain.turboValueAlong order n from
-    hsuff h (net.chain.symbolicTerminal_Ahead hdag order hord) le_rfl
+    hsuff h (net.chain.symbolicTerminal_Ahead order hord) le_rfl
   intro net2 h2
   induction h2 with
   | @done net2 hgoal =>
@@ -6065,7 +6018,7 @@ theorem turboValueAlong_upper_bound (apps : Apps E) {p : Participant} (T : Threa
       rw [hm, NetworkState.applyHonest_chain] at hih
       rw [hm] at hround
       obtain ⟨ops, hall, -, hchain⟩ := hround.transfer_applyAll hT
-      have hmatch := symbolicTerminal_applyAll_unmoved net.chain hdag order hord apps _ hall sg
+      have hmatch := symbolicTerminal_applyAll_unmoved net.chain order hord apps _ hall sg
         (fun _ => rfl) (fun _ => rfl)
       rw [hchain] at hih
       exact hih (Ahead_right_congr hmatch.1 hmatch.2
@@ -6082,7 +6035,7 @@ theorem turbo_value_upper_bound (apps : Apps E) {p : Participant} (T : Threat E 
     (hv : net.state.chain.TurboValue n v)
     (h : CanObtainIn apps T HonestMove.IsTransfer n x net.state) : x ≤ v := by
   obtain ⟨order, hord, rfl⟩ := hv
-  exact turboValueAlong_upper_bound apps T hT net.state hdag n hord h
+  exact turboValueAlong_upper_bound apps T hT net.state n hord h
 
 /-- The Turbo Value Algorithm, run as transfers. Paying every node of a node
     list, in list order, to each destination of its own allocation gives
@@ -6337,7 +6290,7 @@ theorem turboValueAlong_valueIn (apps : Apps E) {p : Participant} (T : Threat E 
     TurboOutcomeNetwork.transfers_reach_turboValues ⟨⟨_, hturbo.1⟩, hturbo.2⟩ apps p order hord
   exact ⟨turbo_replay_unbeatable apps T hT d _ ops hops net.chain net (Adjudicator.Ahead.refl _)
       (hres d).ge,
-    fun _ hz => turboValueAlong_upper_bound apps T hT net hturbo.1 _ hord hz⟩
+    fun _ hz => turboValueAlong_upper_bound apps T hT net _ hord hz⟩
 
 /-- Nitro-33, Nitro-35, Nitro-18. Nitro:837-839: "It is also not hard to construct a
     strategy for a node to obtain the value allocated by the algorithm, if
