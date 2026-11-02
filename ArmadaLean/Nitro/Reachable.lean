@@ -457,7 +457,7 @@ theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Thr
         · have hs0 := hP s hold
           refine ⟨fun ⟨t, ht, hc, hslot, hne⟩ => ?_, hs0.guaranteesExternal,
             fun V hV hf => hheld V (hs0.fundsCommitted V hV hf), fun hn => hsup _ (hs0.movesFrom hn),
-            fun ⟨t, ht, hc, htn, hne⟩ => ?_⟩
+            fun ⟨t, ht, hc, htn, hne⟩ => ?_, fun ⟨t, ht, hc, hfb⟩ => ?_⟩
           · rcases List.mem_append.mp ht with htnew | htold
             · obtain ⟨st, hst, rfl⟩ := List.mem_map.mp htnew
               exact hne ((hsends st hst).outcome_eq _ hs hc.symm hslot.symm).symm
@@ -466,6 +466,10 @@ theorem Nitro.participant_sent_honest {apps : Apps E} {p : Participant} {T : Thr
             · obtain ⟨st, hst, rfl⟩ := List.mem_map.mp htnew
               exact (hsends st hst).oneState ⟨s, hs, hc.symm, htn.symm, Ne.symm hne⟩
             · exact hs0.oneState ⟨t, htold, hc, htn, hne⟩
+          · rcases List.mem_append.mp ht with htnew | htold
+            · obtain ⟨st, hst, rfl⟩ := List.mem_map.mp htnew
+              exact (hsends st hst).finalLast ⟨s, hs, hc.symm, hfb.symm⟩
+            · exact hs0.finalLast ⟨t, htold, hc, hfb⟩
       | wait dt => exact keep _ rfl (fun _ hx => hx)
     · exact keep _ (NetworkState.applyAdv_sent_received apps net (.land op)).1
         (NetworkState.applyAdv_sent_received apps net (.land op)).2

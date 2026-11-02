@@ -133,7 +133,7 @@ theorem net2_reach : (Nitro.participant apps0 (turboT p0)).Reachable net2 := by
     (Or.inl ⟨HonestMove.send stL, (HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
       fundsCommitted_one myV (by decide)
         ⟨ssV, holds_intro _ _ (by decide) (fun _ h => by cases h), by decide, rfl, rfl⟩,
-      fun h => absurd h (by decide), by decide⟩, rfl⟩)
+      fun h => absurd h (by decide), by decide, by decide⟩, rfl⟩)
 
 -- Step 4: `p0` lands `conclude myL ssL`, alone (`myL.participants = [p0]`).
 def opConL : Op Nat := .conclude myL ssL

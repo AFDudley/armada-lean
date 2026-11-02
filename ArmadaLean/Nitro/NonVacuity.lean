@@ -928,7 +928,7 @@ theorem network_reachable_deposit {apps : Apps E} {Ts : Threats E apps} {n : Net
 macro "honest_send" : tactic =>
   `(tactic| exact (HonestMove.Feasible_send _ _ _).mpr
     ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
-      fun h => absurd h (by decide), by decide⟩)
+      fun h => absurd h (by decide), by decide, by decide⟩)
 
 end Reachability
 
@@ -1137,7 +1137,7 @@ theorem netO_reach : (Nitro.participant apps0 (canon p0)).Reachable netO :=
           simp only [List.mem_singleton] at h; subst h
           exact holds_intro _ _ (fun q hq => .inl ⟨List.mem_singleton.1 hq, ssO0,
             List.mem_singleton_self _, rfl⟩) (fun _ h => by cases h), rfl, rfl, rfl⟩,
-          [ssO], fun ss h => .inr (by rw [List.mem_singleton.1 h]; rfl), rfl⟩, by decide⟩)
+          [ssO], fun ss h => .inr (by rw [List.mem_singleton.1 h]; rfl), rfl⟩, by decide, by decide⟩)
 
 /-- `late_observer_can_checkpoint`. -/
 theorem late_observer_can_checkpoint.nonvacuity : ∃ (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (ss : SignedState Nat)
@@ -2065,13 +2065,13 @@ def nPWF : Network Nat := nTwoCh nLWF1 stPWLF stPWLF'
 theorem nPWF_reach : (Nitro.network apps0 (Ts apps0)).Reachable nPWF :=
   nTwoCh_reach nLWF1_reach stPWLF_voucher stPWLF'_voucher
     (by rw [nLWF1_sent_p0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
-      fun h => absurd h (by decide), by decide⟩)
+      fun h => absurd h (by decide), by decide, by decide⟩)
     (by rw [nLWF1_sent_q0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
-      fun h => absurd h (by decide), by decide⟩)
+      fun h => absurd h (by decide), by decide, by decide⟩)
     (by rw [nLWF1_sent_p0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
-      fun h => absurd h (by decide), by decide⟩)
+      fun h => absurd h (by decide), by decide, by decide⟩)
     (by rw [nLWF1_sent_q0]; exact ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide),
-      fun h => absurd h (by decide), by decide⟩)
+      fun h => absurd h (by decide), by decide, by decide⟩)
 
 theorem ledger_partial_withdrawal.nonvacuity : ∃ (v : Views Nat) (n : Network Nat) (A B : Participant) (dA dB : Nat)
     (L L' : LedgerChannel) (hL'c : (L' : FixedPart).RunsConsensus apps0) (χ : FixedPart)
@@ -2300,10 +2300,10 @@ theorem net3R_reach : (Nitro.participant apps2 (canon q0)).Reachable net3R :=
             (fun op h => by cases h))
           (.send Sp) ((HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
             fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide)),
-            fun h => absurd h (by decide), by decide⟩))
+            fun h => absurd h (by decide), by decide, by decide⟩))
         (.send Sm) ((HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
           fundsCommitted_one V3 (by decide) (prefund_V3 (by decide) (by decide)),
-          fun h => absurd h (by decide), by decide⟩))
+          fun h => absurd h (by decide), by decide, by decide⟩))
       (.deliver ⟨Sp, [w0]⟩)
       (⟨fun h => absurd h (by decide), fun v h => by cases h⟩ : NetworkState.Unforged _ ⟨Sp, [w0]⟩)
       (fun op h => by cases h))
@@ -2420,7 +2420,7 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
           (.send S0) ((HonestMove.Feasible_send _ _ _).mpr ⟨by decide, by decide,
             fundsCommitted_one Vr (by decide)
               ⟨⟨V0r, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h; rfl), by decide,
-                rfl, rfl⟩, fun h => absurd h (by decide), by decide⟩))
+                rfl, rfl⟩, fun h => absurd h (by decide), by decide, by decide⟩))
         (.deliver ⟨S0, [q0]⟩) (by
           refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
           cases h) (fun op h => by cases h))

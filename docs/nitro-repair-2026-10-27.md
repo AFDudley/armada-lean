@@ -985,6 +985,14 @@ Operator rulings of 2026-11-01 and 2026-11-02 apply to Nitro-24 (Nitro:653-658):
    one turn. Without it both statements fail, with `hpend` (`final_branch.lean`): `p0` signs a final state and a
    non-final state at one turn, the play goes on from the non-final state, and the adversary can conclude with
    the final state at any time.
+8. Final states last (Main's decision, 2026-11-02; a participant rule): after the honest participant signs a final
+   state of a channel, it signs only final states of that channel (`HonestSend.finalLast`). An honest party that
+   agreed to close does not continue the game; go-nitro concludes after a final state. The model reads "after" by
+   turn number: every non-final state of the channel that the participant signs has a lower turn than every final
+   state of the channel that it signs. The rule binds the honest participant only. Without it
+   `finalizable_or_two_enabled` fails, with `hpend` and rule 7 (`final_proposal.lean`): `q0` proposes a final
+   state, `p0` countersigns it, `q0` also signs a non-final state at that turn, and the play goes on from the
+   non-final state.
 
 The rule binds both sides:
 
@@ -1003,10 +1011,10 @@ The rule binds both sides:
   `hpend : net.state.DeadlineAfter (c : FixedPart) T.ε` (rule 6).
 - `funding_point_universally_finalizable`: doc comment only. Its type changes through `HonestSend`.
 - `participant_sent_honest`, `participant_holds_honest` (`ArmadaLean/Nitro/Reachable.lean`): no text change.
-  Their types change through `HonestSend`: the third argument is `net.CanMoveTo apps`, and rule 7 adds the
-  field `oneState`.
+  Their types change through `HonestSend`: the third argument is `net.CanMoveTo apps`, and rules 7 and 8 add
+  the fields `oneState` and `finalLast`.
 
-Rules 5 and 7 change the meaning of every statement over the honest machines. `HonestMove.Feasible` now takes `apps`
+Rules 5, 7 and 8 change the meaning of every statement over the honest machines. `HonestMove.Feasible` now takes `apps`
 and checks `movesFrom`, so `Nitro.participant` and `Nitro.network` reach fewer states, and `p` has fewer moves
 in `Unbeatable`, `UnbeatableIn` and `Prevents`. The Spec text does not change. These Spec statements
 (`ArmadaLean/Spec/Nitro/Liveness.lean`) change meaning through the type: `directly_funded_pays`,
@@ -1040,7 +1048,8 @@ desirable: `TakeOut.consensus_desirable` (a consensus support holds one state, s
 | Minting | `strict_premise_mint.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
 | Zero-entry tag | `zero_entry_tag.lean` | yes | no (`appsS_not_desirable`, a move changes a destination) | no | failure test |
 | `SingleAssetPayments`, pending challenge | `pending_deadline.lean` | yes | yes (`appsS_desirable`) | — | refutes the form without `hpend` (`NoDeadline_*`), against `T.noOwnViolation`; `net` breaks `DeadlineAfter` (`net_not_deadlineAfter`) |
-| `SingleAssetPayments`, final branch | `final_branch.lean` | yes | yes (`appsS_desirable`) | — | refuted both Spec statements with `hpend` before rule 7 (commit `40e75719`); now `net` is not honest-reachable (`net_not_honest`), and the game at `net` keeps one enabled outcome and none finalizable |
+| `SingleAssetPayments`, final branch | `final_branch.lean` | yes | yes (`appsS_desirable`) | — | refuted both Spec statements with `hpend` before rule 7 (commit `40e75719`); now `net` is not honest-reachable (`net_not_honest`) |
+| `SingleAssetPayments`, final proposal | `final_proposal.lean` | yes | yes (`appsS_desirable`) | — | refuted `finalizable_or_two_enabled` with `hpend` before rule 8 (commit `cf6ffe15`); now `net` is not honest-reachable (`net_not_honest`) |
 
 `consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
 
@@ -1052,4 +1061,4 @@ the final state `stF` moved from turn 2 to the setup turn 1 for this reason; the
 
 ### 7.3 Status
 
-Both statements stay `sorry`. With rules 1-7, no counterexample is known.
+Both statements stay `sorry`. With rules 1-8, no counterexample is known.

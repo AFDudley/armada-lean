@@ -239,7 +239,7 @@ theorem unforged_r0 (n : NetworkState Nat p0) : n.Unforged r0 :=
 theorem send_feasible :
     (HonestMove.send (st 1 O1)).Feasible appsS (⟨sF, [r0], []⟩ : NetworkState Nat p0) :=
   (HonestMove.Feasible_send _ _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide⟩
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide, by decide⟩
 
 theorem net1_reachable : (Nitro.participant appsS T1).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
@@ -1339,7 +1339,7 @@ theorem send_ansP_feasible {n : NetworkState Nat p0} {t : Nat} {ch : Challenge N
   obtain ⟨ht, he, -, hf, hc, hv, ⟨x, hx, hxs, hxq⟩, hsup⟩ := hinfo
   refine (HonestMove.Feasible_send appsS n (ansP t)).mpr
     ⟨fun ⟨s, hs, hc, _, hne⟩ => ?_, ?_, ?_, fun _ => ⟨hsup, [x, ⟨ansP t, [p0]⟩], fun ss hss => ?_,
-      supports_ansP hxs hxq ⟨ht, he, hf, hc, hv⟩⟩, fun ⟨s, hs, hc, htn, hne⟩ => ?_⟩
+      supports_ansP hxs hxq ⟨ht, he, hf, hc, hv⟩⟩, fun ⟨s, hs, hc, htn, hne⟩ => ?_, fun ⟨s, hs, hc, hfb⟩ => ?_⟩
   · rcases List.mem_cons.1 hs with rfl | hs
     · exact hne rfl
     · exact hne (hS s hs hc).1
@@ -1353,6 +1353,12 @@ theorem send_ansP_feasible {n : NetworkState Nat p0} {t : Nat} {ch : Challenge N
   · rcases List.mem_cons.1 hs with rfl | hs
     · exact hne rfl
     · exact hne (by rw [(hS s hs hc).2.2.2, htn]; rfl)
+  · rcases List.mem_cons.1 hs with rfl | hs
+    · rcases hfb with ⟨h1, h2, -⟩ | ⟨h1, h2, -⟩ <;> rw [h1] at h2 <;> cases h2
+    · have hnf := (hS s hs hc).2.1
+      rcases hfb with ⟨h1, -, -⟩ | ⟨h1, -, -⟩
+      · rw [hnf] at h1; cases h1
+      · exact absurd h1 (by simp [ansP, st])
 
 theorem holds_ansP {n : NetworkState Nat p0} {t : Nat} (h : ∃ s ∈ n.sent, s.state = ansP t) :
     n.Holds ⟨ansP t, [p0]⟩ := by

@@ -52,6 +52,16 @@
     and a non-final state at one turn break Nitro-24
     (`docs/counterexamples/final_branch.lean`). The rule binds the honest
     participant only; the adversary may sign two states at one turn.
+  * `finalLast` (Main's decision, 2026-11-02): after the participant signs
+    a final state of a channel, it signs only final states of that channel.
+    An honest party that agreed to close does not continue the game; go-nitro
+    concludes after a final state. The rule reads "after" by turn number:
+    every non-final state of the channel that the participant signs has a
+    lower turn than every final state of the channel that it signs. Without
+    it, a final proposal that the participant countersigns, followed by play
+    from another state at that turn, breaks Nitro-24
+    (`docs/counterexamples/final_proposal.lean`). The rule binds the honest
+    participant only.
 
   The type takes the signer's record as three arguments, not a
   `NetworkState`: `Strategy.lean` (which defines `NetworkState`) imports this
@@ -105,6 +115,24 @@ instance (signed : List (SignedState E)) (st : State E) :
     Decidable (HonestSend.TwoAtTurn signed st) :=
   inferInstanceAs (Decidable (∃ s ∈ signed, _))
 
+/-- `a` is a final state at a turn no later than the non-final state `b`. -/
+def HonestSend.FinalBefore (a b : State E) : Prop :=
+  a.isFinal = true ∧ b.isFinal = false ∧ a.turnNum ≤ b.turnNum
+
+instance (a b : State E) : Decidable (HonestSend.FinalBefore a b) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _))
+
+/-- The rule `HonestSend.finalLast` fails: `signed` holds a state of the
+    channel of `st` that is final at a turn no later than the non-final `st`,
+    or non-final at a turn no earlier than the final `st`. -/
+def HonestSend.AfterFinal (signed : List (SignedState E)) (st : State E) : Prop :=
+  ∃ s ∈ signed, s.state.channel = st.channel ∧
+    (HonestSend.FinalBefore s.state st ∨ HonestSend.FinalBefore st s.state)
+
+instance (signed : List (SignedState E)) (st : State E) :
+    Decidable (HonestSend.AfterFinal signed st) :=
+  inferInstanceAs (Decidable (∃ s ∈ signed, _))
+
 /-- **The signing rules for one state `st` that the honest participant
     sends.** `signed` is every state the participant has signed, `st`'s own
     send included. `prefundHeld V` says that the participant holds an
@@ -136,6 +164,10 @@ structure HonestSend (signed : List (SignedState E)) (prefundHeld : FixedPart �
       (ForceMove: a participant never signs two different states with the
       same turn number; Main's decision 2026-11-02). -/
   oneState : ¬ HonestSend.TwoAtTurn signed st
+  /-- After the participant signs a final state of a channel, it signs only
+      final states of that channel, by turn number (Main's decision
+      2026-11-02). -/
+  finalLast : ¬ HonestSend.AfterFinal signed st
 
 namespace HonestSend
 
@@ -157,7 +189,7 @@ theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Pro
     HonestSend signed held sup st := by
   refine ⟨fun ⟨s, hs, hc, hslot, hne⟩ => ?_, hst.guaranteesExternal,
     fun V hV hf => (hst.fundsCommitted V hV hf).elim, hst.movesFrom,
-    fun ⟨s, hs, hc, ht, hne⟩ => ?_⟩
+    fun ⟨s, hs, hc, ht, hne⟩ => ?_, fun ⟨s, hs, hc, hfb⟩ => ?_⟩
   · rcases hcover s hs with h | ⟨s', hs', heq⟩
     · exact hne (by rw [h])
     · rw [← heq] at hc hslot hne
@@ -166,15 +198,20 @@ theorem of_prior {prior signed : List (SignedState E)} {held : FixedPart → Pro
     · exact hne h
     · rw [← heq] at hc ht hne
       exact hst.oneState ⟨s', hs', hc, ht, hne⟩
+  · rcases hcover s hs with h | ⟨s', hs', heq⟩
+    · rw [h] at hfb
+      rcases hfb with ⟨h1, h2, -⟩ | ⟨h1, h2, -⟩ <;> rw [h1] at h2 <;> cases h2
+    · rw [← heq] at hc hfb
+      exact hst.finalLast ⟨s', hs', hc, hfb⟩
 
 end HonestSend
 
 namespace HonestSend
 
 /-- The rules survive a smaller signed record and larger sets of held
-    pre-fund states and of possible moves: `noConflict` and `oneState` read
-    `signed` only under `∃`, and `fundsCommitted` and `movesFrom` conclude
-    `prefundHeld` and `canMove`. -/
+    pre-fund states and of possible moves: `noConflict`, `oneState` and
+    `finalLast` read `signed` only under `∃`, and `fundsCommitted` and
+    `movesFrom` conclude `prefundHeld` and `canMove`. -/
 theorem mono {signed signed' : List (SignedState E)} {held held' : FixedPart → Prop}
     {sup sup' : State E → Prop}
     {st : State E} (hsigned : ∀ s ∈ signed', s ∈ signed) (hheld : ∀ V, held V → held' V)
@@ -182,7 +219,8 @@ theorem mono {signed signed' : List (SignedState E)} {held held' : FixedPart →
     (h : HonestSend signed held sup st) : HonestSend signed' held' sup' st :=
   ⟨fun ⟨s, hs, hrest⟩ => h.noConflict ⟨s, hsigned s hs, hrest⟩, h.guaranteesExternal,
     fun V hV hf => hheld V (h.fundsCommitted V hV hf), fun hn => hsup _ (h.movesFrom hn),
-    fun ⟨s, hs, hrest⟩ => h.oneState ⟨s, hsigned s hs, hrest⟩⟩
+    fun ⟨s, hs, hrest⟩ => h.oneState ⟨s, hsigned s hs, hrest⟩,
+    fun ⟨s, hs, hrest⟩ => h.finalLast ⟨s, hsigned s hs, hrest⟩⟩
 
 /-- A state whose allocation names no virtual channel (every destination is
     `Address.fundable`: external, or a ledger channel) funds no virtual

@@ -121,7 +121,7 @@ theorem unforged_ssQ (n : NetworkState Unit p0) : n.Unforged ssQ :=
 theorem send_feasible :
     (HonestMove.send (stAt 0)).Feasible appsU (⟨Adjudicator.genesis, [], []⟩ : NetworkState Unit p0) :=
   (HonestMove.Feasible_send _ _ _).mpr
-    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide⟩
+    ⟨by decide, by decide, HonestSend.fundsCommitted_of_fundable (by decide), fun h => absurd h (by decide), by decide, by decide⟩
 
 theorem net1_reachable : (Nitro.participant appsU T0).Reachable net1 := by
   refine ⟨⟨Adjudicator.genesis, [], []⟩, rfl, ?_⟩
