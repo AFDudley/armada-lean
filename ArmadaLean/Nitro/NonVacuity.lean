@@ -1373,7 +1373,9 @@ theorem consensus_enabled_outcomes.nonvacuity : ∃ (net : NetworkState Nat p0) 
   refine ⟨netC2, ⟨c2, by decide⟩, ⟨stF2, [p0, q0]⟩, .allocation o1, .allocation o1,
     .allocation o1, canon_ok _ _, netC2_reach, rfl, by decide,
     holds_intro _ _ (by decide) (fun _ h => by cases h), by decide,
-    rfl, rfl, by decide, .inl ⟨0, rfl, le_rfl⟩, ?_⟩
+    rfl, rfl, (fun t h _ => by
+      simp only [netC2, List.mem_singleton] at h; subst h
+      exact ⟨Or.inr (Or.inl rfl), fun _ => Or.inl rfl⟩), .inl ⟨0, rfl, le_rfl⟩, ?_⟩
   rintro ⟨σ, hfeas, hσ⟩
   have hmC2feas : (canon p0).feasible netC2 mC2 :=
     ⟨by decide, fun ss hss => by
