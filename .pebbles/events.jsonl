@@ -1925,3 +1925,9 @@
 {"type":"comment","timestamp":"2026-11-02T15:43:10.368738Z","issue_id":"aln-784","payload":{"body":"gate-verdict: 7c85dc7f5bebf7ca653532ab789273704eee72cb passed 0.2.1+bc90e882","build":"0.2.1+bc90e882","outcome":"passed","sha":"7c85dc7f5bebf7ca653532ab789273704eee72cb","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T15:43:10.389589Z","issue_id":"aln-784","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T15:43:10.398530Z","issue_id":"aln-784","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-02T16:21:54.998069Z","issue_id":"aln-3c4","payload":{"description":"Operator-authored branch `draft/witness-nitro`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/witness-nitro","type":"task"}}
+{"type":"comment","timestamp":"2026-11-02T16:21:55.025807Z","issue_id":"aln-3c4","payload":{"body":"branch-identity: draft/witness-nitro"}}
+{"type":"comment","timestamp":"2026-11-02T16:33:33.837481Z","issue_id":"aln-3c4","payload":{"body":"exophial-integration-attempt-started: at 5e0b01d3a6d8abe47ee29d2dae87fe401a6adcfb"}}
+{"type":"comment","timestamp":"2026-11-02T16:33:36.573703Z","issue_id":"aln-3c4","payload":{"body":"gate-verdict: 46233ee6025786939d68899a78354afb919cfb6b passed 0.2.1+80b2d709","build":"0.2.1+80b2d709","outcome":"passed","sha":"46233ee6025786939d68899a78354afb919cfb6b","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-02T16:33:36.600462Z","issue_id":"aln-3c4","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-02T16:33:36.609904Z","issue_id":"aln-3c4","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
