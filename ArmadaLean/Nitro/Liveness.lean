@@ -5064,9 +5064,7 @@ theorem Threat.RoundSeq.transfers {apps : Apps E} {p : Participant} {T : Threat 
       rcases List.mem_cons.1 he with rfl | he
       · exact ⟨a, b, rfl⟩
       · exact hA e he
-    · rw [heq]
-      simp only [NetworkState.applyAdv]
-      cases hap : n.chain.apply apps caller (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
+    · rw [heq, NetworkState.applyAdv_chain_chain]; rfl
 
 /-- A round of `p`'s one-transfer move against a transfer-only adversary
     (`Threat.TransfersOnly`, Nitro:779-781) is one `applyAll` of transfers
@@ -5082,10 +5080,6 @@ theorem Threat.Round.transfer_applyAll {apps : Apps E} {p : Participant} {T : Th
   obtain ⟨n1, h1, h2⟩ := Threat.Round.single h
   obtain ⟨A1, hA1, e1⟩ := h1.transfers hT
   obtain ⟨A2, hA2, e2⟩ := h2.transfers hT
-  have hland : (n1.applyAdv apps (.land (.transfer a b))).chain =
-      Adjudicator.applyAll apps [(p, .transfer a b)] n1.chain := by
-    simp only [NetworkState.applyAdv]
-    cases hap : n1.chain.apply apps p (.transfer a b) <;> simp [Adjudicator.applyAll, hap]
   refine ⟨A1 ++ (p, .transfer a b) :: A2, fun e he => ?_,
     List.mem_append_right _ List.mem_cons_self, ?_⟩
   · rcases List.mem_append.1 he with he | he
@@ -5093,8 +5087,7 @@ theorem Threat.Round.transfer_applyAll {apps : Apps E} {p : Participant} {T : Th
     · rcases List.mem_cons.1 he with rfl | he
       · exact ⟨a, b, rfl⟩
       · exact hA2 e he
-  · rw [e2, hland, e1, ← Adjudicator.applyAll_append, ← Adjudicator.applyAll_append]
-    rfl
+  · rw [e2, NetworkState.applyAdv_land_chain, e1, Adjudicator.applyAll_append]; rfl
 
 /-- Nitro:842-843: "calling transfers out of order does not affect the
     ultimate result", in the form the strategy needs. When `L` is a
