@@ -2366,9 +2366,24 @@ theorem netE_reach : (Nitro.participant apps2 (canon p0)).Reachable netE :=
             (.deliver ⟨V0r, [q0]⟩) (by
               refine ⟨fun h => absurd h (by decide), fun v h hp => ?_⟩
               cases h; exact absurd hp (by decide)) (fun op h => by cases h))
-          (.send S0) ((HonestMove.Feasible_send _ _).mpr ⟨by decide, by decide,
+          (.send S0) ((HonestMove.Feasible_send _ _).mpr ⟨(by
+              intro hlt s hs hc ht
+              -- `s` ranges over the two-element `signed` list `[⟨S0, [p0]⟩, ⟨V0r, [p0]⟩]`;
+              -- only `S0` has channel `Lr`, so the `V0r` case is vacuous via `hc`.
+              cases hs with
+              | head => rfl
+              | tail _ hs' =>
+                cases hs' with
+                | head => exact absurd hc (by decide)
+                | tail _ hs'' => exact absurd hs'' List.not_mem_nil),
+              by decide,
             fundsCommitted_one Vr (by decide)
-              ⟨⟨V0r, [p0, q0]⟩, holds_intro _ _ (by decide) (fun _ h => by cases h; rfl), by decide,
+              ⟨⟨V0r, [p0, q0]⟩, holds_intro _ _ (fun q hq => by
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+                rcases hq with rfl | rfl
+                · exact .inl ⟨rfl, _, List.mem_cons_self, rfl⟩
+                · exact .inr ⟨_, List.mem_cons_self, rfl, List.mem_cons_self⟩)
+                (fun _ h => by cases h; rfl), by decide,
                 rfl, rfl⟩⟩))
         (.deliver ⟨S0, [q0]⟩) (by
           refine ⟨fun h => absurd h (by decide), fun v h => ?_⟩
