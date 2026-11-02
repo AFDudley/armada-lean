@@ -19,13 +19,14 @@ Lean and proved the properties that the internal security review
 |---|---|
 | `rangeCheck120_sound` | The circuit's 120-bit range check really does bound every note value below 2¹²⁰. |
 | `no_wraparound_minting` | Because all values are < 2¹²⁰ and a transaction has ≤ 8 inputs / ≤ 4 outputs, "sum of inputs equals sum of outputs" holds as ordinary integers — not just modulo the field prime. **Value cannot be created by wrapping around the field modulus.** (Formalizes the fix for Finding 1.) |
-| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions guarantees all nullifiers in a proof are distinct (assuming Poseidon is collision-resistant). **The same note can never be spent twice in one proof.** (Formalizes the fix for Finding 2.) |
+| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions (commit `e79919d`, branch `feat/public-ceremony`; upstream `main` lacks it) makes all nullifiers in one proof distinct (Poseidon is modeled symbolically, so collision resistance holds by construction — see below). **One proof cannot list the same note twice.** The circuit has no input that holds earlier spends, so it cannot stop a note spent in an earlier transaction. Only the contract's spent map does (`pool_no_double_spend`). |
 | `merkleRoot_inj_leaf` | A Merkle membership proof binds exactly *one* leaf to the tree root — a proof for one commitment cannot be repurposed for another. |
 | `transact_public_outputs_determined` | Given the private witness, the public outputs (nullifiers, output commitments) are fully determined — no hidden degrees of freedom in the security-critical signals. |
-| `transact_no_double_spend` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. |
-| `inflation_attack_profitable` | On the *current* yield vault share math, the first-depositor inflation attack (issue #365) is provably profitable — the vulnerability is real, not theoretical. |
-| `mitigated_attack_unprofitable` | With the standard virtual-shares fix, the same attack is provably *un*profitable — the fix is mathematically sufficient. |
-| `fee_*` | The 50 bps shield fee formula conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a machine-checked reference spec to reconcile the contract↔SDK↔spec mismatch (audit C-3). |
+| `transact_inputs_distinct_nullifiers` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. The first is about one proof only; it is not a no-double-spend theorem. |
+| `locked_shares_set_at_first_deposit` / `locked_shares_supply_invariant` | The deployed yield vault **already carries the first-depositor inflation fix** (issue #365, PR #631): the first deposit locks `LOCKED_SHARES` shares to a dead address, and total supply never drops below `LOCKED_SHARES` afterward. |
+| `round_trip_loss_le` / `donation_loss_bound` | The exact rounding loss a depositor can suffer from a donation, as a closed integer bound — sharper than the contract's own `~donation / LOCKED_SHARES` NatSpec estimate. |
+| `donation_attack_unprofitable_post_fix` | With the fix in place, the donation (first-depositor inflation) attack **cannot profit**, for any donation or victim deposit. |
+| `fee_*` | The shield fee, a ratio fixed at deployment with floor division, conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). |
 
 ## The trust base — what you are trusting when you trust these proofs
 
@@ -37,13 +38,17 @@ Lean and proved the properties that the internal security review
    Lean. This is why the model is deliberately small and auditable (~a page
    per component), and why this complements rather than replaces Ecne/Picus
    and an external circuit audit.
-3. **Explicit cryptographic assumptions** — Poseidon is modeled as an abstract
-   collision-resistant hash (`poseidon2_inj`, `poseidon3_inj` axioms), and
-   EdDSA signature unforgeability is assumed (`EdDSAVerify` axiom). These are
-   standard assumptions — every security argument about the system makes them,
-   we just make them *visible*. Run `#print axioms <theorem>` to see exactly
-   which assumptions any theorem depends on; they are also listed in
-   `docs/axioms-*.txt`.
+3. **Explicit cryptographic assumptions.** Poseidon and Keccak are both modeled
+   symbolically (Dolev-Yao style): a hash output is a term built by an inductive
+   type (`ArmadaLean.Poseidon.Term`), tagged with which hash function produced
+   it, never a raw number, so collision resistance, domain separation and
+   cross-function separation (a Keccak output — a contract address — can never
+   equal a Poseidon output) hold *by construction* — no Poseidon or Keccak axiom
+   exists in this project. EdDSA signature unforgeability is still assumed
+   (`EdDSAVerify` axiom). These are standard assumptions — every security
+   argument about the system makes them, we just make them *visible*. Run
+   `#print axioms <theorem>` to see exactly which assumptions any theorem
+   depends on; they are also listed in `docs/axioms-*.txt`.
 
 ## What is NOT covered
 
@@ -59,9 +64,12 @@ Lean and proved the properties that the internal security review
 ## Reproduce
 
 ```bash
-git clone https://github.com/ship-armada/armada-lean && cd armada-lean
-lake build        # needs an elan-managed Lean toolchain (see lean-toolchain)
-grep -rn sorry ArmadaLean/   # → nothing
+git clone https://github.com/AFDudley/armada-lean && cd armada-lean
+# ship-armada's own main is the older 2026-09-14 tree; AFDudley's fork is current.
+lake exe cache get   # downloads the prebuilt Mathlib
+lake build           # needs an elan-managed Lean toolchain (see lean-toolchain)
+scripts/check.sh     # PASS on every check; one `SORRY <name>` line per theorem
+                      # that still waits for a proof, then `SORRY_COUNT <n>`
 ```
 
 Full walkthrough, including how to audit the assumptions with `#print axioms`
