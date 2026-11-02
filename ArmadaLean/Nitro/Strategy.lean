@@ -943,6 +943,50 @@ def Enabled (apps : Apps E) {p : Participant} (T : Threat E p) (c : FixedPart) (
     (net : NetworkState E p) : Prop :=
   ¬ Prevents apps T (fun net' => net'.Finalized c Ω) net
 
+/-- `p` reaches `G` by playing the one strategy `σ`, against every feasible
+    adversary play: `UnbeatableIn` with each move fixed to `σ`'s choice. -/
+inductive UnbeatableBy (apps : Apps E) {p : Participant} (T : Threat E p) (σ : Strategy E p)
+    (G : NetworkState E p → Prop) : NetworkState E p → Prop
+  | done {net} : G net → UnbeatableBy apps T σ G net
+  | move {net} : (σ net).Feasible apps net →
+      (∀ net', T.Round apps (σ net) net net' → UnbeatableBy apps T σ G (net'.applyHonest (σ net))) →
+      UnbeatableBy apps T σ G net
+
+/-- The outcomes that some play of `σ` finalizes: the enabled outcomes of
+    Nitro:641-652, measured against `p`'s own strategy `σ` and not against
+    every strategy at once. Against every strategy, each outcome can need a
+    different strategy to prevent it, and no single strategy then prevents
+    them all (`docs/counterexamples/proposal_escape.lean`). -/
+def EnabledBy (apps : Apps E) {p : Participant} (T : Threat E p) (σ : Strategy E p) (c : FixedPart)
+    (Ω : Outcome E) (net : NetworkState E p) : Prop :=
+  ∃ n, Run apps T σ net n ∧ n.Finalized c Ω
+
+/-- A play of `σ` after its first round is a play of `σ` from the start. -/
+theorem Run.cons {apps : Apps E} {p : Participant} {T : Threat E p} {σ : Strategy E p}
+    {net n' n : NetworkState E p} (hr : T.Round apps (σ net) net n')
+    (h : Run apps T σ (n'.applyHonest (σ net)) n) : Run apps T σ net n := by
+  generalize hx : n'.applyHonest (σ net) = x at h
+  induction h with
+  | refl => subst hx; exact .round .refl hr
+  | round _ h2 ih => exact .round ih h2
+
+/-- What `σ` reaching `G` gives: some play of `σ` reaches `G` (every round
+    has a play, `Threat.Round.exists`), and `σ` is one unbeatable strategy
+    for every goal `G'` that holds wherever a play of `σ` reaches `G`. -/
+theorem UnbeatableBy.sound {apps : Apps E} {p : Participant} {T : Threat E p}
+    {σ : Strategy E p} {G : NetworkState E p → Prop} {net : NetworkState E p}
+    (h : UnbeatableBy apps T σ G net) :
+    (∃ n, Run apps T σ net n ∧ G n) ∧
+    ∀ G' : NetworkState E p → Prop, (∀ n, Run apps T σ net n → G n → G' n) →
+      Unbeatable apps T G' net := by
+  induction h with
+  | done hg => exact ⟨⟨_, .refl, hg⟩, fun _ hG' => .done (hG' _ .refl hg)⟩
+  | move hf _ ih =>
+    obtain ⟨n', hr⟩ := Threat.Round.exists T hf
+    obtain ⟨n, hrun, hg⟩ := (ih n' hr).1
+    exact ⟨⟨n, hrun.cons hr, hg⟩, fun G' hG' => .move _ trivial hf fun n1 hr1 =>
+      (ih n1 hr1).2 G' fun n hrun hg => hG' n (hrun.cons hr1) hg⟩
+
 /-- Nitro:480-481: "A channel χ is funded for participant A with x coins, if A
     has an unbeatable strategy for obtaining a state where χ is directly
     funded with x coins." -/

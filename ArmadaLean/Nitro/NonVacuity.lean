@@ -815,22 +815,13 @@ theorem finalizedWith_applyHonest (apps : Apps E) {p : Participant} (m : HonestM
   | react r => (simpa? [NetworkState.applyHonest] using hf says simpa only [NetworkState.applyHonest, FixedPart.address_eq, Adjudicator.finalizedWith_channel] using hf)
   | wait dt => exact finalizedWith_apply (show n.chain.apply apps p (.tick dt) = _ from rfl) hf
 
-/-- A channel finalized with `Ω` is never finalized with another outcome:
-    `p` prevents it by waiting. -/
-theorem prevents_other_outcome (apps : Apps E) {p : Participant} (T : Threat E p)
-    (net : NetworkState E p) (c : FixedPart) (Ω Ω' : Outcome E) (hf : net.Finalized c Ω)
-    (hne : Ω' ≠ Ω) : Prevents apps T (fun n => n.Finalized c Ω') net := by
-  refine ⟨fun _ => .wait 0, fun _ => trivial, fun n1 n2 hrun hround => ?_⟩
-  have h1 : n1.Finalized c Ω := by
-    clear hround
-    induction hrun with
-    | refl => exact hf
-    | round _ hr ih => exact finalizedWith_applyHonest apps _ _ (hr.1.finalizedWith_mono ih)
-  have h2 := hround.1.finalizedWith_mono h1
-  intro h3
-  simp only [NetworkState.Finalized] at h2 h3
-  rw [h2] at h3
-  exact hne (Option.some.inj h3).symm
+/-- A channel finalized with `Ω` stays finalized with `Ω` along every play. -/
+theorem Run.finalized {apps : Apps E} {p : Participant} {T : Threat E p} {σ : Strategy E p}
+    {net n : NetworkState E p} {c : FixedPart} {Ω : Outcome E} (hf : net.Finalized c Ω)
+    (hrun : Run apps T σ net n) : n.Finalized c Ω := by
+  induction hrun with
+  | refl => exact hf
+  | round _ hr ih => exact finalizedWith_applyHonest apps _ _ (hr.1.finalizedWith_mono ih)
 
 end Game
 
@@ -1216,74 +1207,43 @@ theorem channel_finalizability_cases.nonvacuity : ∃ (v : Views Nat) (n : Netwo
     network_reachable_init apps0 (Ts apps0) noDeposits, rfl⟩
 
 
-/-- `netF` is reachable against the threat without own-violations: its one
-    adversary move is a deposit, with no proof state. -/
-theorem netF_reach_noOwnViolation (dest : Participant → Nat) :
-    (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable netF :=
-  participant_reachable_honest
-    (participant_reachable_adv (participant_reachable_init apps0 ((canon p0).noOwnViolation dest))
-      (.chain q0 (.deposit c1.address 0 1))
-      ⟨⟨by decide, fun ss h => absurd h List.not_mem_nil⟩, fun ss h => absurd h List.not_mem_nil⟩
-      (fun op h => by cases h))
-    (.send stF) (by honest_send)
-
-/-- `finalizable_or_two_enabled`. `apps0` runs the consensus app, which is
-    desirable for every destination map (`TakeOut.consensus_desirable`). -/
-theorem finalizable_or_two_enabled.nonvacuity : ∃ (dest : Participant → Nat) (net : NetworkState Nat p0)
-    (c : TimedChannel (canon p0).ε),
-    Assumptions apps0 p0 (canon p0) ∧
-    (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable net ∧
+/-- `finalizable_or_two_enabled`: `p0` holds `ssF`, a consensus support of
+    `stF` at turn 0, and `c1` is open at turn 0. -/
+theorem finalizable_or_two_enabled.nonvacuity : ∃ (net : NetworkState Nat p0)
+    (c : TimedChannel (canon p0).ε) (proof : SupportProof Nat) (cand : State Nat),
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     ((∃ vt, apps0 (c : FixedPart).appDef = forceMoveRules vt) ∨
-      apps0 (c : FixedPart).appDef = consensusRules) ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
-    p0 ∈ (c : FixedPart).participants ∧
-    (∃ proof candidate, (∀ ss ∈ proof, net.Holds ss) ∧
-      (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
-      candidate.channel = (c : FixedPart)) ∧
-    net.DeadlineAfter (c : FixedPart) (canon p0).ε :=
-  ⟨fun _ => 0, netF, ⟨c1, by decide⟩, canon_ok _ _, netF_reach_noOwnViolation _,
-    Or.inr rfl, TakeOut.consensus_desirable _, by decide,
-    ⟨[ssF], stF, fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds,
-      by decide, rfl⟩, deadlineAfter_open (t := 0) rfl _⟩
+      apps0 (c : FixedPart).appDef = consensusRules) ∧
+    p0 ∈ (c : FixedPart).participants ∧ TakeOut.ExitReady apps0 (canon p0) net c proof cand :=
+  ⟨netF, ⟨c1, by decide⟩, [ssF], stF, canon_ok _ _, netF_reach, Or.inr rfl, by decide,
+    fun ss h => by rw [List.mem_singleton] at h; subst h; exact netF_holds, by decide, rfl,
+    by decide, deadlineAfter_open (t := 0) rfl _⟩
 
-/-- `single_enabled_is_finalizable`: `c1` is finalized with `o1`, so `o1`
-    is enabled and is the only enabled outcome. `net` is `⟨sCon, [ssF], [ssF]⟩`: `p0`'s
-    own conclude lands after `netF_reach_noOwnViolation`.
-    `apps0` runs the consensus app, which is desirable for every destination
-    map (`TakeOut.consensus_desirable`). -/
-theorem single_enabled_is_finalizable.nonvacuity : ∃ (dest : Participant → Nat)
-    (net : NetworkState Nat p0) (c : TimedChannel (canon p0).ε) (Ω : Outcome Nat),
-    Assumptions apps0 p0 (canon p0) ∧
-    (Nitro.participant apps0 ((canon p0).noOwnViolation dest)).Reachable net ∧
+/-- `single_enabled_is_finalizable`: `c1` is finalized with `o1` after
+    `p0`'s own conclude lands, so every play of the exit strategy keeps
+    `o1` (`Run.finalized`). -/
+theorem single_enabled_is_finalizable.nonvacuity : ∃ (net : NetworkState Nat p0)
+    (c : TimedChannel (canon p0).ε) (proof : SupportProof Nat) (cand : State Nat) (Ω : Outcome Nat),
+    Assumptions apps0 p0 (canon p0) ∧ (Nitro.participant apps0 (canon p0)).Reachable net ∧
     ((∃ vt, apps0 (c : FixedPart).appDef = forceMoveRules vt) ∨
-      apps0 (c : FixedPart).appDef = consensusRules) ∧ Desirable apps0 (c : FixedPart).appDef dest ∧
-    p0 ∈ (c : FixedPart).participants ∧
-    (∀ t ∈ net.sent, t.state.channel = (c : FixedPart) →
-      ∃ proof, (∀ ss ∈ proof, net.Holds ss) ∧
-      (apps0 (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true) ∧
-    net.DeadlineAfter (c : FixedPart) (canon p0).ε ∧
-    Enabled apps0 ((canon p0).noOwnViolation dest) (c : FixedPart) Ω net ∧
-    (∀ Ω', Enabled apps0 ((canon p0).noOwnViolation dest) (c : FixedPart) Ω' net → Ω' = Ω) :=
-  ⟨fun _ => 0, ⟨sCon, [ssF], [ssF]⟩, ⟨c1, by decide⟩, .allocation o1, canon_ok _ _,
-    participant_reachable_land (netF_reach_noOwnViolation _) (.conclude c1 ssF)
+      apps0 (c : FixedPart).appDef = consensusRules) ∧
+    p0 ∈ (c : FixedPart).participants ∧ TakeOut.ExitReady apps0 (canon p0) net c proof cand ∧
+    (∀ Ω', EnabledBy apps0 (canon p0) (TakeOut.exitStrategy apps0 c proof cand) (c : FixedPart) Ω'
+      net → Ω' = Ω) :=
+  ⟨⟨sCon, [ssF], [ssF]⟩, ⟨c1, by decide⟩, [ssF], stF, .allocation o1, canon_ok _ _,
+    participant_reachable_land netF_reach (.conclude c1 ssF)
       (fun ss h => by
         simp only [Op.proofStates, List.mem_singleton] at h; subst h; exact netF_holds),
-    Or.inr rfl, TakeOut.consensus_desirable _, by decide,
-    (fun t h _ => by
+    Or.inr rfl, by decide,
+    ⟨fun ss h => by
       rw [List.mem_singleton] at h; subst h
-      exact ⟨[ssF], fun ss h' => by
-        rw [List.mem_singleton] at h'; subst h'
-        exact holds_intro _ _ (by decide) (fun _ h => by cases h),
-        by decide⟩),
-    (fun _ _ h' => by
-      cases (show sCon.statusOf c1 = .finalized 0 (.allocation o1) (.allocation o1)
-        from by decide).symm.trans h'),
-    fun ⟨σ, hfeas, hσ⟩ => by
-      obtain ⟨n2, hround⟩ := Threat.Round.exists ((canon p0).noOwnViolation fun _ => 0)
-        (hfeas (⟨sCon, [ssF], [ssF]⟩ : NetworkState Nat p0))
-      exact hσ _ n2 .refl hround (hround.1.finalizedWith_mono rfl),
-    fun Ω' hen => by
-      by_contra hne
-      exact hen (prevents_other_outcome _ _ _ _ _ _ rfl hne)⟩
+      exact holds_intro _ _ (by decide) (fun _ h => by cases h),
+      by decide, rfl, by decide,
+      fun _ _ h' => by
+        cases (show sCon.statusOf c1 = .finalized 0 (.allocation o1) (.allocation o1)
+          from by decide).symm.trans h'⟩,
+    fun Ω' ⟨_, hrun, hf⟩ => Option.some.inj
+      (hf.symm.trans (Run.finalized (net := ⟨sCon, [ssF], [ssF]⟩) (Ω := .allocation o1) rfl hrun))⟩
 
 /-- `funding_point_universally_finalizable`: `c1` (one participant) under the
     ForceMove rules; `p0` signed the turn-0 state, reached by `p0`'s own

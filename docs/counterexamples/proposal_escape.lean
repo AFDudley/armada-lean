@@ -1,5 +1,6 @@
 /-
-  Counterexample to `Spec.finalizable_or_two_enabled` (Nitro:653-656), with
+  Counterexample to the literal reading of Nitro:653-656 (`Enabled` against
+  every strategy at once, `Literal_finalizable_or_two_enabled` below), with
   every honest rule of `HonestSend` (`noConflict`, `movesFrom`, `oneState`,
   `finalLast`), the premise `hpend`, and the adversary threat
   `T0.noOwnViolation destS`.
@@ -35,9 +36,10 @@
       rules, and the only support it holds is `h`.
 
   So `p0` has exactly one enabled outcome, `OH`, and no finalizable outcome.
-  `Spec.single_enabled_is_finalizable` keeps its premise that `p0` holds a
-  support of every state it signed, and `p0` holds no support of `S'`, so
-  this play does not refute it.
+  The operator ruling of 2026-11-02 measures the enabled outcomes against
+  `p`'s own strategy (`EnabledBy`, `TakeOut.exitStrategy`); this play is the
+  reason. The prevention of `OS` and the prevention of the other outcomes
+  are two different strategies, and no single strategy does both.
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/proposal_escape.lean`.
@@ -1218,7 +1220,26 @@ theorem enabled_eq {Ω : Outcome Nat} (hE : Enabled appsC TN c0 Ω net) : Ω = O
 
 /-! ## The statement fails -/
 
-theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
+/-- `Spec.finalizable_or_two_enabled` before the operator ruling of
+    2026-11-02: the enabled outcomes against every strategy at once. -/
+def Literal_finalizable_or_two_enabled : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (A : Assumptions apps p T) (dest : Participant → Nat)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
+    (c : TimedChannel T.ε)
+    (hrules : (∃ vt, apps (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps (c : FixedPart).appDef = consensusRules)
+    (hdes : Desirable apps (c : FixedPart).appDef dest)
+    (hp : p ∈ (c : FixedPart).participants)
+    (hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
+      candidate.channel = (c : FixedPart))
+    (hpend : net.state.DeadlineAfter (c : FixedPart) T.ε),
+    (∃ Ω, Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω1 net.state ∧
+      Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω2 net.state)
+
+theorem finalizable_or_two_enabled_false : ¬ Literal_finalizable_or_two_enabled := by
   intro h
   rcases h appsC T0 A0 destS ⟨net, net_reachable⟩ tc0 (Or.inr rfl) appsC_desirable
       (by decide) ⟨[both (st 1 OH)], st 1 OH, holds_hh, by decide, rfl⟩ net_deadlineAfter with

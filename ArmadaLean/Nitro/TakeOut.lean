@@ -27,14 +27,14 @@ def SignedIn (sent : List (SignedState E)) (p : Participant) (proof : SupportPro
   ∀ ss ∈ proof, p ∈ ss.signers → ∃ s ∈ sent, s.state = ss.state
 
 /-- The facts of the take-out strategy: `p` signed `sent0` only, every state
-    of `c` in it is at most at turn `Th`, every support of `c` with `p`'s
-    signatures from `sent0` is below the turn bound `M` (the support window),
-    `Th < M`, and every support of `c` at a turn from `Th` on, and every
-    conclusion proof, pays `d` at least `x`. -/
+    of `c` in it is below the turn bound `M`, every support of `c` with `p`'s
+    signatures from `sent0` is below `M` (the support window), `Th < M`, and
+    every support of `c` at a turn from `Th` on, and every conclusion proof,
+    pays `d` at least `x`. -/
 structure Ctx (apps : Apps E) (p : Participant) (c : FixedPart) (d : E) (x Th M : Nat)
     (sent0 : List (SignedState E)) : Prop where
   hp : p ∈ c.participants
-  sentTurn : ∀ s ∈ sent0, s.state.channel = c → s.state.turnNum ≤ Th
+  sentTurn : ∀ s ∈ sent0, s.state.channel = c → s.state.turnNum < M
   thLt : Th < M
   turnLt : ∀ proof cand, SignedIn sent0 p proof → (apps c.appDef).supports c proof cand = true →
     cand.turnNum < M
@@ -278,8 +278,7 @@ theorem K.stepInv {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedP
         obtain ⟨s, hs, hse⟩ := hpss
         have := C.sentTurn s hs (by rw [hse]; exact hcp.1)
         rw [hse] at this
-        have := C.thLt
-        omega
+        exact this
       refine ⟨hRecU, hK.sent, le_trans hK.now0 hnow', fun r hr => hrec r (hK.recv0 r hr), fun ss hss => hheld (hK.held0 ss hss),
         fun t ht => (by rw [hst] at ht; cases ht), fun t ch hc => (by rw [hst] at hc; cases hc),
         fun t f o hc => ?_, by rw [hst]; exact hlt', fun t ch hc => (by rw [hst] at hc; cases hc),
@@ -542,48 +541,41 @@ theorem challenge_round {apps : Apps E} {p : Participant} {T : Threat E p} {c : 
   exact ⟨hK1.toTI hdur hbound (fun h => by rw [h] at hlt1; exact lt_irrefl _ hlt1), hlt1⟩
 
 
-/-- An app whose supports from the held turn on pay `p` at least `x` lets `p`
-    take out `x`. **The take-out strategy:** from a state with `TI`, `p`
-    challenges an open `c` with a support it holds, answers a challenge below
-    `Th` with its own support at `Th`, and waits for a challenge at `Th` or
-    above to end. Each round lowers the rank `rk` or reaches the goal. -/
-theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
-    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε)
-    {d : E} {x : Coins} (hp : p ∈ (c : FixedPart).participants)
-    (hsw : (apps (c : FixedPart).appDef).SupportWindow)
-    (hpay : ∀ Th proof cand, SentBelow net.state.sent c d x Th → SignedIn net.state.sent p proof →
-      (apps (c : FixedPart).appDef).supports c proof cand = true → Th ≤ cand.turnNum →
-      x ≤ share cand.outcome d)
-    (hH : HoldsShare apps net.state c d x) : CanTakeOut apps T c d x net.state := by
-  have hU0 := Nitro.participant_received_unforged A.toBounds net
-  obtain ⟨proof0, cand0, hH0, hsup0, hch0, -, hB, t0, hst, hle⟩ := hH
-  obtain ⟨net, hr⟩ := net
-  obtain ⟨c, hdur⟩ := c
-  replace hdur : 2 * T.ε ≤ c.challengeDuration := hdur
-  dsimp only at hp hsw hpay hH0 hsup0 hch0 hB hst hU0 ⊢
-  obtain ⟨Th, hturn0⟩ : ∃ Th, cand0.turnNum = Th := ⟨_, rfl⟩
-  rw [hturn0] at hB hle
-  obtain ⟨sent0, hs0⟩ : ∃ sent0, net.sent = sent0 := ⟨_, rfl⟩
-  rw [hs0] at hB hpay
-  have hn : 0 < c.n := List.length_pos_of_mem hp
-  obtain ⟨M, hM⟩ : ∃ M, Th + c.n = M := ⟨_, rfl⟩
-  have C : Ctx apps p c d x Th M sent0 := by
-    refine ⟨hp, fun s hs hc => (hB s hs hc).1, by omega, fun proof cand hS h => ?_,
-      fun pr cd hS hsu _ hTh => hpay _ pr cd hB hS hsu hTh, fun ss hcp hs => ?_⟩
-    · obtain ⟨ss, hss, hps, hch, -, hlt⟩ := hsw c proof cand h p hp
-      obtain ⟨s, hs, hse⟩ := hS ss hss hps
-      have := (hB s hs (by rw [hse]; exact hch)).1
-      rw [hse] at this
-      omega
-    · obtain ⟨s, hs, hse⟩ := hs
-      have := (hB s hs (by rw [hse]; exact hcp.1)).2 (Or.inr (by rw [hse]; exact hcp.2.1))
-      rwa [hse] at this
-  have hI : TI apps T.ε c d x Th M sent0 proof0 net := by
-    refine ⟨hU0, hs0, hH0, fun t' ht' => (by rw [hst] at ht'; cases ht'; exact Or.inl hle),
-      fun _ _ h => (by rw [hst] at h; cases h), fun _ _ _ h => (by rw [hst] at h; cases h),
-      (by rw [hst]; simp only [ChannelStatus.turnNumRecord_open]; omega),
-      fun _ _ h => (by rw [hst] at h; cases h)⟩
-  clear hle hst hB hpay hU0 hH0 hs0 hM hn
+open Classical in
+/-- **The exit strategy** of `p` for `c`, with the held support `proof0` of
+    `cand0`: challenge an open `c` with a held support at a turn no lower than
+    the recorded one, answer a challenge below the turn of `cand0` with
+    `proof0`, and wait for a challenge at that turn or above to end. -/
+noncomputable def exitStrategy (apps : Apps E) {p : Participant} (c : FixedPart)
+    (proof0 : SupportProof E) (cand0 : State E) : Strategy E p := fun n =>
+  match n.chain.statusOf c with
+  | .open t =>
+    if h : ∃ P cand, (∀ ss ∈ P, n.Holds ss) ∧ (apps c.appDef).supports c P cand = true ∧
+        cand.channel = c ∧ t ≤ cand.turnNum then
+      .chain (.challenge c h.choose h.choose_spec.choose)
+    else .chain (.challenge c proof0 cand0)
+  | .challenged t ch =>
+    if t < cand0.turnNum then .chain (.challenge c proof0 cand0) else .wait (ch.deadline - n.chain.now)
+  | .finalized .. => .wait 1
+
+/-- The held support of the exit strategy: `proof0` supports `cand0`, a
+    state of `c` at the turn `Th`. -/
+structure Held0 (apps : Apps E) (c : FixedPart) (Th : Nat) (proof0 : SupportProof E)
+    (cand0 : State E) : Prop where
+  sup : (apps c.appDef).supports c proof0 cand0 = true
+  ch : cand0.channel = c
+  turn : cand0.turnNum = Th
+
+/-- The exit strategy reaches the goal from every state with `TI`: each
+    round lowers the rank `rk` or reaches the goal. -/
+theorem exit_by {apps : Apps E} {p : Participant} {T : Threat E p} {c : FixedPart} {d : E}
+    {x Th M : Nat} {sent0 : List (SignedState E)} {proof0 : SupportProof E} {cand0 : State E}
+    (C : Ctx apps p c d x Th M sent0) (A : Assumptions apps p T)
+    (hdur : 2 * T.ε ≤ c.challengeDuration) (H : Held0 apps c Th proof0 cand0) {net : NetworkState E p}
+    (hI : TI apps T.ε c d x Th M sent0 proof0 net) :
+    UnbeatableBy apps T (exitStrategy apps c proof0 cand0) (Goal c d x) net := by
+  obtain ⟨hsup0, hch0, hturn0⟩ := H
+  have hp := C.hp
   have challenge_apply : ∀ {s : Adjudicator E} {P : SupportProof E} {cand : State E},
       (apps c.appDef).supports c P cand = true → cand.channel = c →
       ((s.mode c = .open ∧ (s.statusOf c).turnNumRecord ≤ cand.turnNum) ∨
@@ -595,28 +587,28 @@ theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
     unfold Adjudicator.challenge
     rw [if_pos ⟨hp, hsup, hcc, hmode⟩]
   have takeout : ∀ μ (n : NetworkState E p), TI apps T.ε c d x Th M sent0 proof0 n →
-      rk M (n.chain.statusOf c) ≤ μ → UnbeatableIn apps T (fun _ => True) (Goal c d x) n := by
+      rk M (n.chain.statusOf c) ≤ μ → UnbeatableBy apps T (exitStrategy apps c proof0 cand0) (Goal c d x) n := by
     intro μ
     induction μ using Nat.strong_induction_on with
     | _ μ ih =>
     intro n hI hμ
     -- one challenge round, then the induction
-    have hround : ∀ {P : SupportProof E} {cand : State E}, (∀ ss ∈ P, n.Holds ss) →
-        (∀ ss ∈ P, n.Holds ss → True) →
+    have hround : ∀ {P : SupportProof E} {cand : State E},
+        exitStrategy apps c proof0 cand0 n = .chain (.challenge c P cand) → (∀ ss ∈ P, n.Holds ss) →
         (∀ s : Adjudicator E, s.statusOf c = n.chain.statusOf c → s.now < n.chain.now + T.ε →
           ∃ s', s.apply apps p (.challenge c P cand) = some s' ∧
             rk M (s'.statusOf c) < rk M (n.chain.statusOf c)) →
         0 < rk M (n.chain.statusOf c) →
-        UnbeatableIn apps T (fun _ => True) (Goal c d x) n := by
-      intro P cand hH _ hok hpos
-      refine UnbeatableIn.move (.chain (.challenge c P cand)) trivial
-        ((HonestMove.Feasible_chain _ _ _).2 hH) fun n1 hr => ?_
+        UnbeatableBy apps T (exitStrategy apps c proof0 cand0) (Goal c d x) n := by
+      intro P cand hσ hH hok hpos
+      refine .move (by rw [hσ]; exact (HonestMove.Feasible_chain _ _ _).2 hH) fun n1 hr => ?_
+      rw [hσ] at hr ⊢
       rw [NetworkState.applyHonest_chain]
       obtain ⟨hI1, hlt⟩ := challenge_round C A hdur hI hH hok hpos hr
       exact ih _ (lt_of_lt_of_le hlt hμ) n1 hI1 (le_refl _)
     cases hs : n.chain.statusOf c with
     | finalized t f o =>
-      apply UnbeatableIn.done
+      apply UnbeatableBy.done
       refine ⟨f, ?_, hI.finPay t f o hs⟩
       simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hs,
         ChannelStatus.finalizedWith_finalized]
@@ -633,14 +625,20 @@ theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
           by rw [hss]; exact hle⟩), ?_⟩
         simp only [Adjudicator.statusOf_setStatus, if_true, rk]
         omega
-      rcases hI.openW t hs with hle | ⟨P, cand, hH, hsup, hcc, hle⟩
-      · exact hround hI.held0 (fun _ _ _ => trivial) (hok hsup0 hch0 (by rw [hturn0]; exact hle)) hpos
-      · exact hround hH (fun _ _ _ => trivial) (hok hsup hcc hle) hpos
+      have hex : ∃ P cand, (∀ ss ∈ P, n.Holds ss) ∧ (apps c.appDef).supports c P cand = true ∧
+          cand.channel = c ∧ t ≤ cand.turnNum := by
+        rcases hI.openW t hs with hle | h
+        · exact ⟨proof0, cand0, hI.held0, hsup0, hch0, by rw [hturn0]; exact hle⟩
+        · exact h
+      obtain ⟨hH, hsup, hcc, hle⟩ := hex.choose_spec.choose_spec
+      exact hround (by simp only [exitStrategy, hs, dif_pos hex]) hH (hok hsup hcc hle) hpos
     | challenged t ch =>
       have hpos : 0 < rk M (n.chain.statusOf c) := by rw [hs]; simp only [rk]; omega
       by_cases hlow : t < Th
       · -- answer with the own support at `Th`
-        refine hround (cand := cand0) hI.held0 (fun _ _ _ => trivial) (fun s hss hsnow => ?_) hpos
+        refine hround (P := proof0) (cand := cand0)
+          (by simp only [exitStrategy, hs, if_pos (show t < cand0.turnNum by rw [hturn0]; exact hlow)])
+          hI.held0 (fun s hss hsnow => ?_) hpos
         rw [hs] at hss ⊢
         have hdl := hI.chLow t ch hs hlow
         have hmode : s.mode c = .challenge := by
@@ -653,11 +651,14 @@ theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
       · -- wait for the challenge to end
         have hpay := hI.chPay t ch hs (by omega)
         by_cases hexp : ch.deadline ≤ n.chain.now
-        · apply UnbeatableIn.done
+        · apply UnbeatableBy.done
           refine ⟨ch.state.outcome, ?_, hpay⟩
           simp only [NetworkState.Finalized, FixedPart.address_eq, Adjudicator.finalizedWith_channel, hs,
             ChannelStatus.finalizedWith_challenged, if_pos hexp]
-        · refine UnbeatableIn.move (.wait (ch.deadline - n.chain.now)) trivial trivial fun n1 hr => ?_
+        · have hσ : exitStrategy apps c proof0 cand0 n = .wait (ch.deadline - n.chain.now) := by
+            simp only [exitStrategy, hs, if_neg (show ¬ t < cand0.turnNum by rw [hturn0]; exact hlow)]
+          refine .move (by rw [hσ]; trivial) fun n1 hr => ?_
+          rw [hσ] at hr ⊢
           have hbound : n1.chain.now < n.chain.now + T.ε := hr.2
           have hE0 : n.chain.now + T.ε ≤ n.chain.now + c.challengeDuration :=
             Nat.add_le_add_left (le_trans (Nat.le_mul_of_pos_left T.ε (by decide)) hdur) _
@@ -688,7 +689,7 @@ theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
           · refine ih _ (lt_of_lt_of_le ?_ hμ) _ hTI (le_refl _)
             simpa? [NetworkState.applyHonest] using hlt says
               simpa only [NetworkState.applyHonest, Adjudicator.tick_statusOf] using hlt
-          · apply UnbeatableIn.done
+          · apply UnbeatableBy.done
             refine ⟨ch.state.outcome, ?_, hpay⟩
             have hle : n.chain.now ≤ n1.chain.now := hr.1.now_le
             have key : ∀ a b k : Nat, a ≤ b → k ≤ b + (k - a) := fun a b k h => by omega
@@ -698,6 +699,149 @@ theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
               ChannelStatus.finalizedWith_challenged, if_pos hge]
 
   exact takeout _ net hI (le_refl _)
+
+/-- An app whose supports from the held turn on pay `p` at least `x` lets `p`
+    take out `x`. **The take-out strategy:** from a state with `TI`, `p`
+    challenges an open `c` with a support it holds, answers a challenge below
+    `Th` with its own support at `Th`, and waits for a challenge at `Th` or
+    above to end. Each round lowers the rank `rk` or reaches the goal. -/
+theorem canTakeOut_of {apps : Apps E} {p : Participant} {T : Threat E p}
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε)
+    {d : E} {x : Coins} (hp : p ∈ (c : FixedPart).participants)
+    (hsw : (apps (c : FixedPart).appDef).SupportWindow)
+    (hpay : ∀ Th proof cand, SentBelow net.state.sent c d x Th → SignedIn net.state.sent p proof →
+      (apps (c : FixedPart).appDef).supports c proof cand = true → Th ≤ cand.turnNum →
+      x ≤ share cand.outcome d)
+    (hH : HoldsShare apps net.state c d x) : CanTakeOut apps T c d x net.state := by
+  have hU0 := Nitro.participant_received_unforged A.toBounds net
+  obtain ⟨proof0, cand0, hH0, hsup0, hch0, -, hB, t0, hst, hle⟩ := hH
+  obtain ⟨net, hr⟩ := net
+  obtain ⟨c, hdur⟩ := c
+  replace hdur : 2 * T.ε ≤ c.challengeDuration := hdur
+  dsimp only at hp hsw hpay hH0 hsup0 hch0 hB hst hU0 ⊢
+  obtain ⟨Th, hturn0⟩ : ∃ Th, cand0.turnNum = Th := ⟨_, rfl⟩
+  rw [hturn0] at hB hle
+  obtain ⟨sent0, hs0⟩ : ∃ sent0, net.sent = sent0 := ⟨_, rfl⟩
+  rw [hs0] at hB hpay
+  have hn : 0 < c.n := List.length_pos_of_mem hp
+  obtain ⟨M, hM⟩ : ∃ M, Th + c.n = M := ⟨_, rfl⟩
+  have C : Ctx apps p c d x Th M sent0 := by
+    refine ⟨hp, fun s hs hc => by have := (hB s hs hc).1; omega, by omega, fun proof cand hS h => ?_,
+      fun pr cd hS hsu _ hTh => hpay _ pr cd hB hS hsu hTh, fun ss hcp hs => ?_⟩
+    · obtain ⟨ss, hss, hps, hch, -, hlt⟩ := hsw c proof cand h p hp
+      obtain ⟨s, hs, hse⟩ := hS ss hss hps
+      have := (hB s hs (by rw [hse]; exact hch)).1
+      rw [hse] at this
+      omega
+    · obtain ⟨s, hs, hse⟩ := hs
+      have := (hB s hs (by rw [hse]; exact hcp.1)).2 (Or.inr (by rw [hse]; exact hcp.2.1))
+      rwa [hse] at this
+  have hI : TI apps T.ε c d x Th M sent0 proof0 net := by
+    refine ⟨hU0, hs0, hH0, fun t' ht' => (by rw [hst] at ht'; cases ht'; exact Or.inl hle),
+      fun _ _ h => (by rw [hst] at h; cases h), fun _ _ _ h => (by rw [hst] at h; cases h),
+      (by rw [hst]; simp only [ChannelStatus.turnNumRecord_open]; omega),
+      fun _ _ h => (by rw [hst] at h; cases h)⟩
+  exact (exit_by C A hdur ⟨hsup0, hch0, hturn0⟩ hI).sound.2 _ fun _ _ h => h
+
+/-- `p`'s position for the exit strategy: `p` holds a support of `cand`, a
+    state of `c` at a turn no lower than the turn the chain records, and a
+    running challenge of `c` ends no sooner than `ε` from now. -/
+structure ExitReady (apps : Apps E) {p : Participant} (T : Threat E p) (net : NetworkState E p)
+    (c : FixedPart) (proof : SupportProof E) (cand : State E) : Prop where
+  held : ∀ ss ∈ proof, net.Holds ss
+  supports : (apps c.appDef).supports c proof cand = true
+  channel : cand.channel = c
+  record : (net.chain.statusOf c).turnNumRecord ≤ cand.turnNum
+  pending : net.DeadlineAfter c T.ε
+
+/-- The ForceMove rules and the consensus rules meet `Rules.SupportWindow`. -/
+theorem supportWindow_of_rules {apps : Apps E} {a : AppId}
+    (h : (∃ vt, apps a = forceMoveRules vt) ∨ apps a = consensusRules) : (apps a).SupportWindow := by
+  rcases h with ⟨vt, h⟩ | h <;> rw [h]
+  · exact forceMoveRules_supportWindow vt
+  · exact consensusRules_supportWindow
+
+/-- **The exit strategy finalizes `c`** from every reachable state where
+    `p` is ready to exit (`ExitReady`). -/
+theorem exit_finalizes [Inhabited E] {apps : Apps E} {p : Participant} {T : Threat E p}
+    (A : Assumptions apps p T) (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε)
+    (hp : p ∈ (c : FixedPart).participants)
+    (hrules : (∃ vt, apps (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps (c : FixedPart).appDef = consensusRules)
+    {proof : SupportProof E} {cand : State E} (R : ExitReady apps T net.state c proof cand) :
+    UnbeatableBy apps T (exitStrategy apps c proof cand) (Goal c default 0) net.state := by
+  have hsw := supportWindow_of_rules hrules
+  have hU0 := Nitro.participant_received_unforged A.toBounds net
+  obtain ⟨net, _hr⟩ := net
+  obtain ⟨c, hdur⟩ := c
+  dsimp only at hp hsw hU0 R ⊢
+  obtain ⟨S, hS⟩ : ∃ S, ∀ s ∈ net.sent, s.state.turnNum ≤ S :=
+    ⟨(net.sent.map (·.state.turnNum)).sum, fun s hs =>
+      List.le_sum_of_mem (List.mem_map_of_mem (f := (·.state.turnNum)) hs)⟩
+  have hn : 0 < c.n := List.length_pos_of_mem hp
+  have C : Ctx apps p c default 0 cand.turnNum (max cand.turnNum S + c.n) net.sent := by
+    refine ⟨hp, fun s hs _ => by have := hS s hs; omega, by omega, fun proof' cand' hSg h => ?_,
+      fun _ _ _ _ _ _ => Nat.zero_le _, fun _ _ _ => Nat.zero_le _⟩
+    obtain ⟨ss, hss, hps, -, -, hlt⟩ := hsw c proof' cand' h p hp
+    obtain ⟨s, hs, hse⟩ := hSg ss hss hps
+    have := hS s hs
+    rw [hse] at this
+    omega
+  refine exit_by C A hdur ⟨R.supports, R.channel, rfl⟩ ⟨hU0, rfl, R.held, fun t ht => .inl ?_,
+    fun _ _ _ _ => Nat.zero_le _, fun _ _ _ _ => Nat.zero_le _, ?_, fun t ch h _ => R.pending t ch h⟩
+  · have := R.record
+    rwa [ht, ChannelStatus.turnNumRecord_open] at this
+  · have := R.record
+    omega
+
+/-- Nitro-24. Nitro:653-656: "For any participant, p, in a channel, χ, exactly one
+    of the following statements is true at a given point in time: 1. p has at
+    least one finalizable outcome. 2. p has at least two enabled outcomes."
+    Operator ruling 2026-11-02: the enabled outcomes are measured against
+    `p`'s own strategy, the exit strategy (`EnabledBy`, `exitStrategy`).
+    Measured against every strategy at once (`Enabled`), each outcome can
+    need a different strategy to prevent it, and the claim fails
+    (`docs/counterexamples/proposal_escape.lean`). The claim has the paper's
+    scope, a ForceMove app or the consensus app (Nitro:633 "for a ForceMove
+    channel"; Nitro:662-664). `p` holds a support of `c` at least as new as
+    the chain's record, and a running challenge ends no sooner than `ε`
+    (`ExitReady`; `docs/counterexamples/pending_deadline.lean`). -/
+theorem _root_.ArmadaLean.Nitro.finalizable_or_two_enabled [Inhabited E] (apps : Apps E)
+    {p : Participant} (T : Threat E p) (A : Assumptions apps p T)
+    (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε)
+    (hrules : (∃ vt, apps (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps (c : FixedPart).appDef = consensusRules)
+    (hp : p ∈ (c : FixedPart).participants) (proof : SupportProof E) (cand : State E)
+    (R : ExitReady apps T net.state c proof cand) :
+    (∃ Ω, Finalizable apps T (c : FixedPart) Ω net.state) ∨
+    ∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧
+      EnabledBy apps T (exitStrategy apps c proof cand) (c : FixedPart) Ω1 net.state ∧
+      EnabledBy apps T (exitStrategy apps c proof cand) (c : FixedPart) Ω2 net.state := by
+  obtain ⟨⟨n, hrun, Ω, hf, -⟩, hU⟩ := (exit_finalizes A net c hp hrules R).sound
+  by_cases hall : ∀ Ω', EnabledBy apps T (exitStrategy apps c proof cand) (c : FixedPart) Ω' net.state →
+      Ω' = Ω
+  · exact .inl ⟨Ω, hU _ fun n' hr ⟨Ω', hf', _⟩ => hall Ω' ⟨n', hr, hf'⟩ ▸ hf'⟩
+  · push Not at hall
+    obtain ⟨Ω', hen, hne⟩ := hall
+    exact .inr ⟨Ω', Ω, hne, hen, n, hrun, hf⟩
+
+/-- Nitro-24. Nitro:657-658: "if a participant has only enabled a single outcome,
+    that outcome must be finalizable for them." Operator ruling 2026-11-02:
+    the enabled outcomes are measured against `p`'s own strategy, the exit
+    strategy (`EnabledBy`, `exitStrategy`); against every strategy at once
+    the claim fails (`docs/counterexamples/proposal_escape.lean`). The scope
+    and `ExitReady` are those of `finalizable_or_two_enabled`. -/
+theorem _root_.ArmadaLean.Nitro.single_enabled_is_finalizable [Inhabited E] (apps : Apps E)
+    {p : Participant} (T : Threat E p) (A : Assumptions apps p T)
+    (net : Nitro.ReachableParticipant apps T) (c : TimedChannel T.ε)
+    (hrules : (∃ vt, apps (c : FixedPart).appDef = forceMoveRules vt) ∨
+      apps (c : FixedPart).appDef = consensusRules)
+    (hp : p ∈ (c : FixedPart).participants) (proof : SupportProof E) (cand : State E)
+    (R : ExitReady apps T net.state c proof cand) (Ω : Outcome E)
+    (huniq : ∀ Ω', EnabledBy apps T (exitStrategy apps c proof cand) (c : FixedPart) Ω' net.state →
+      Ω' = Ω) :
+    Finalizable apps T (c : FixedPart) Ω net.state :=
+  (exit_finalizes A net c hp hrules R).sound.2 _ fun n hr ⟨Ω', hf, _⟩ => huniq Ω' ⟨n, hr, hf⟩ ▸ hf
 
 
 /-- **ForceMove apps whose game library takes nothing from a non-mover are
