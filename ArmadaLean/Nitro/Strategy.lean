@@ -402,16 +402,30 @@ def HonestMove.calls : HonestMove E → List (Op E)
   | .react r => r.calls
   | .wait _ => []
 
+/-- A run of the round from `net` to `net'` (`Threat.RoundSeq`, `pending` issued at time `t`)
+    that ends before `T.ε` has passed on `net`'s clock. The rest of a round, from any state
+    inside it, is one too; the round lemmas of `Liveness.lean` take it. -/
+structure Threat.TimedRun (apps : Apps E) {p : Participant} (T : Threat E p) (t : Time)
+    (pending : List (Op E)) (net net' : NetworkState E p) : Prop where
+  seq : Threat.RoundSeq apps T t pending net net'
+  within : net'.chain.now < net.chain.now + T.ε
+
 /-- One round: `p`'s move `m`, issued at `net`'s clock, has every one of its
-    calls landed (`Threat.RoundSeq`), and the round itself ends before
+    calls landed (`Threat.TimedRun`), and the round itself ends before
     `t + T.ε` has passed (Nitro:537-539, "before time t + ε") — the same
     bound `Threat.Round` always had, now read against the round's start
     rather than against a single call in isolation. `Threat.Round.single`
     shows the one-call case is exactly the old bound. -/
 def Threat.Round (apps : Apps E) {p : Participant} (T : Threat E p) (m : HonestMove E)
     (net net' : NetworkState E p) : Prop :=
-  Threat.RoundSeq apps T net.chain.now m.calls net net' ∧
-  net'.chain.now < net.chain.now + T.ε
+  Threat.TimedRun apps T net.chain.now m.calls net net'
+
+/-- `Threat.Round` is the run of `m`'s calls and the time bound, the two facts it held
+    before `Threat.TimedRun` carried them. -/
+theorem Threat.Round_iff (apps : Apps E) {p : Participant} (T : Threat E p) (m : HonestMove E)
+    (net net' : NetworkState E p) : Threat.Round apps T m net net' ↔
+      Threat.RoundSeq apps T net.chain.now m.calls net net' ∧ net'.chain.now < net.chain.now + T.ε :=
+  ⟨fun h => ⟨h.seq, h.within⟩, fun h => ⟨h.1, h.2⟩⟩
 
 /-- A reaction with one call and no sends — today's single on-chain move. -/
 def Reaction.one (op : Op E) : Reaction E := ⟨[op], []⟩
