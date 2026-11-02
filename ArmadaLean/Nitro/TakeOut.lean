@@ -930,20 +930,57 @@ theorem paymentRules_noTake {vt : State E → State E → Bool} {dest : Particip
   by_contra hlt
   exact ((h.valid_iff s s').1 hv).2.2 (dest q) (Nat.lt_of_not_le hlt) |>.2 q hq rfl
 
-/-- The go-nitro payment rules let the mover keep the state. -/
-theorem paymentRules_stay {vt : State E → State E → Bool} {dest : Participant → E}
-    (h : PaymentRules vt dest) :
-    ∀ s s', vt s s' = true → vt s' { s' with turnNum := s'.turnNum + 1 } = true :=
-  fun _ _ _ => (h.valid_iff _ _).2 ⟨rfl, rfl, fun _ hk => absurd hk (lt_irrefl _)⟩
+/-- **A ForceMove app conserves value** when every valid transition of its
+    game library keeps the total and lowers only the mover's own entry. A
+    final move keeps the outcome (`ConclusionTransition`). -/
+theorem forceMove_conserving {vt : State E → State E → Bool} {dest : Participant → E}
+    (hv : ∀ s s' q, vt s s' = true → s'.mover = some q →
+      s'.outcome.entries.total = s.outcome.entries.total ∧
+      ∀ k, share s'.outcome k < share s.outcome k → k = dest q)
+    (a : AppId) : Conserving (fun _ => forceMoveRules vt) a dest := by
+  refine ⟨fun c proof cand _ hsup i m1 m2 q h1 h2 hq => ?_⟩
+  have hsup' := hsup
+  simp only [forceMoveRules, Bool.and_eq_true] at hsup'
+  obtain ⟨-, hfin, hvt, -⟩ := (validMove_iff vt m1 m2).1 (validRun_getElem? hsup'.1.1.2 h1 h2)
+  cases hf : m2.state.isFinal with
+  | true =>
+    rw [hfin.1 hf]
+    exact ⟨rfl, fun _ hk => absurd hk (lt_irrefl _)⟩
+  | false => exact hv _ _ q (hvt hf) hq
 
-/-- **A ForceMove app with the go-nitro payment rules is desirable.** -/
+/-- **The consensus app conserves value**: a consensus support holds one
+    state, so no transition. -/
+theorem consensus_conserving {dest : Participant → E} (a : AppId) :
+    Conserving (fun _ => consensusRules) a dest := by
+  refine ⟨fun c proof cand _ hsup i m1 m2 q h1 h2 _ => ?_⟩
+  match proof, hsup with
+  | [m], _ =>
+    have hlen : [m].length ≤ i + 1 := by
+      simp only [List.length_singleton]; omega
+    rw [List.getElem?_eq_none hlen] at h2
+    cases h2
+  | [], h => (simp? [consensusRules] at h says simp only [consensusRules, Bool.false_eq_true] at h)
+  | _ :: _ :: _, h =>
+    (simp? [consensusRules] at h says simp only [consensusRules, Bool.false_eq_true] at h)
+
+/-- **A ForceMove app with the go-nitro payment rules is desirable.** The
+    mover may keep the state (IC), and every valid move keeps the total and
+    lowers only the mover's own entry (value conservation). -/
 theorem paymentRules_desirable {vt : State E → State E → Bool} {dest : Participant → E}
-    (h : PaymentRules vt dest) (a : AppId) : Desirable (fun _ => forceMoveRules vt) a dest :=
-  ⟨forceMove_IR rfl (paymentRules_noTake h), forceMove_IC (paymentRules_stay h) a⟩
+    (h : PaymentRules vt dest) (a : AppId) : Desirable (fun _ => forceMoveRules vt) a dest := by
+  refine ⟨forceMove_IR rfl (paymentRules_noTake h),
+    forceMove_IC (fun _ s' _ => (h.valid_iff s' { s' with turnNum := s'.turnNum + 1 }).2
+      ⟨rfl, rfl, fun _ hk => absurd hk (lt_irrefl _)⟩) a,
+    forceMove_conserving (fun s s' q hv hq => ?_) a⟩
+  obtain ⟨-, htot, hlow⟩ := (h.valid_iff s s').1 hv
+  refine ⟨htot, fun k hk => ?_⟩
+  obtain ⟨q', hq', hk'⟩ := (hlow k hk).1
+  rw [hq] at hq'
+  rw [← hk', Option.some.inj hq']
 
 /-- **The consensus app is desirable.** -/
 theorem consensus_desirable {dest : Participant → E} (a : AppId) :
     Desirable (fun _ => consensusRules) a dest :=
-  ⟨consensus_IR rfl, consensus_IC a⟩
+  ⟨consensus_IR rfl, consensus_IC a, consensus_conserving a⟩
 
 end ArmadaLean.Nitro.TakeOut

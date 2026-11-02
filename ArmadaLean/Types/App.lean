@@ -1,6 +1,8 @@
 /-
-  Desirable apps (`Desirable`): individual rationality (IR) and incentive
-  compatibility (IC) of an app at every state (`AppIR`, `AppIC`).
+  Desirable apps (`Desirable`): individual rationality (IR), incentive
+  compatibility (IC) and value conservation of an app at every state
+  (`AppIR`, `AppIC`, `Conserving`; operator rulings 2026-11-01 and
+  2026-11-02).
 
   armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2 (operator,
   2026-10-30): a desirable app is a compliant app that is incentive
@@ -120,11 +122,29 @@ structure AppIC (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop wh
     ∃ proof' cand', RulesMove (apps a) c proof cand proof' cand' ∧
       share cand.outcome (dest q) ≤ share cand'.outcome (dest q)
 
-/-- A desirable app: IR and IC at every state, for the destination map
-    `dest`. -/
+/-- Value conservation of the app `a`, for the destination map `dest`
+    (operator ruling 2026-11-02; SATP §2.2 footnote 7: "Care must be taken
+    to ensure application rules encode the fair distribution of assets";
+    go-nitro `SingleAssetPayments.sol`: "Total allocated cannot change").
+    A transition of the app is a consecutive pair of states of a support
+    proof (ForceMove:744-778: a support is a run of valid moves). Every such
+    transition keeps the total allocated, and lowers no entry except one
+    owned by the mover `q` of the new state, the entry of `dest q`. A
+    one-state support (the consensus app) holds no transition. -/
+structure Conserving (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop where
+  conserve : ∀ (c : FixedPart) (proof : SupportProof E) (cand : State E), c.appDef = a →
+    (apps a).supports c proof cand = true →
+    ∀ (i : Nat) (m1 m2 : SignedState E) (q : Participant), proof[i]? = some m1 →
+      proof[i + 1]? = some m2 → m2.state.mover = some q →
+      m2.state.outcome.entries.total = m1.state.outcome.entries.total ∧
+      ∀ k, share m2.state.outcome k < share m1.state.outcome k → k = dest q
+
+/-- A desirable app: IR, IC and value conservation at every state, for the
+    destination map `dest`. -/
 structure Desirable (apps : Apps E) (a : AppId) (dest : Participant → E) : Prop where
   ir : AppIR apps a dest
   ic : AppIC apps a dest
+  conserves : Conserving apps a dest
 
 /-- A move of the go-nitro payment rules (`SingleAssetPayments.sol`,
     `_requireValidTransition`): the destinations and their order stay, the

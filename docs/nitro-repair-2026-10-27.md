@@ -939,17 +939,20 @@ theorem satp_reclaim_credits_intermediary (s : Adjudicator E) (r : Route E) (ali
 - A search of `ArmadaLean/Nitro/` and `docs/` for the renamed constructor's earlier spelling, concatenated,
   hyphenated or spaced, finds nothing.
 
-## 7. Nitro-24 with `Desirable` and own-violations, 2026-11-01
+## 7. Nitro-24 with `Desirable` and own-violations, 2026-11-01 and 2026-11-02
 
-Two operator rulings of 2026-11-01 apply to Nitro-24 (Nitro:653-658):
+Operator rulings of 2026-11-01 and 2026-11-02 apply to Nitro-24 (Nitro:653-658):
 
 1. The papers assume desirable apps. The class is defined first, and independently of the theorems:
-   `Desirable apps a dest` (`ArmadaLean/Types/App.lean`) is `AppIR` and `AppIC`, from armada-laconic
-   `labbook/2026-10-30-app-classes-ic-ir.md` §2. IR: "from any state, an online honest participant can enforce at
-   least what its holdings give it" (ForceMove:410-416, 125-130). IC: "at no state does a participant gain by
-   deviating from the rules or by aborting" (ForceMove:339-347). `AppIC`: at every supported non-final state, when
-   the rules let the game go on, the mover of the next turn has a move by the rules (`RulesMove`) that pays it at
-   least the current resolution. Both statements take `Desirable`, next to `SupportWindow`.
+   `Desirable apps a dest` (`ArmadaLean/Types/App.lean`) is `AppIR`, `AppIC` and `Conserving`. IR and IC come from
+   armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2. IR: "from any state, an online honest participant
+   can enforce at least what its holdings give it" (ForceMove:410-416, 125-130). IC: "at no state does a participant
+   gain by deviating from the rules or by aborting" (ForceMove:339-347). `AppIC`: at every supported non-final
+   state, when the rules let the game go on, the mover of the next turn has a move by the rules (`RulesMove`) that
+   pays it at least the current resolution. Value conservation (ruling 2026-11-02; SATP §2.2 footnote 7, go-nitro
+   "Total allocated cannot change"): every consecutive pair of states of a support proof keeps the total allocated
+   and lowers no entry except the one of the mover of the second state. Both statements take `Desirable`, next to
+   `SupportWindow`.
 2. Own-violation is one rule for every participant (`ArmadaLean/Types/OwnViolation.lean`). A signer `q` commits an
    own-violation with a state `st` when (a) `q` already signed a state of the same channel and slot with another
    outcome (`OwnViolation.Conflict`; every setup turn is slot 0, `State.signSlot`), or (b) `st` pays `q`, at
@@ -976,7 +979,7 @@ The payout forms `FinalizableFor` and `EnabledFor` are removed.
 The go-nitro payment rules are not a premise. `PaymentRules vt dest` (a transition is valid exactly when it keeps
 the destinations, their order and the total, and lowers an amount only at the mover's own destination) is a
 sufficient condition: `TakeOut.paymentRules_desirable`. The consensus app is desirable:
-`TakeOut.consensus_desirable`.
+`TakeOut.consensus_desirable` (a consensus support holds one state, so it holds no transition).
 
 ### 7.2 Classification of the counterexample apps
 
@@ -987,15 +990,18 @@ sufficient condition: `TakeOut.paymentRules_desirable`. The consensus app is des
 | `appsΩ` | `single_enabled_is_finalizable_stall.lean` | no (`appsΩ_not_supportWindow`) | no (`appsΩ_not_desirable`, fails IR) | — | failure test |
 | Game B | `ir_game_rewrites_share.lean` | yes | no (`appsB_not_desirable`, fails IR) | no (`vtAll_not_noTake`) | failure test |
 | `SingleAssetPayments` | `single_asset_payments_ir.lean` | yes | yes (`appsS_desirable`) | — | refutes only the full-threat form; its play is an own-violation (`gift_is_ownViolation`) |
-| Unowned pool | `unowned_pool_take.lean` | yes | yes (`appsS_desirable`) | no (`appsS_not_paymentRules`) | refutes both current statements |
-| Minting | `strict_premise_mint.lean` | yes | yes (`appsS_desirable`) | no (`appsS_not_paymentRules`) | refutes both current statements |
+| Unowned pool | `unowned_pool_take.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
+| Minting | `strict_premise_mint.lean` | yes | no (`appsS_not_desirable`, fails conservation) | no | failure test |
+| Zero-entry tag | `zero_entry_tag.lean` | yes | yes (`appsS_desirable`) | no (`appsS_not_paymentRules`) | refutes both current statements |
 
 `consensus_double_sign.lean` tests the honest rule `HonestSend.noConflict`, not an app.
 
 ### 7.3 Status
 
-Both statements stay `sorry`. They are false for desirable apps: `unowned_pool_take.lean` and
-`strict_premise_mint.lean` refute them with an app that meets `SupportWindow` and `Desirable`, against the threat
-without own-violations. In both files, the honest `p0` restores its outcome `O1` after each move of `q0`, so only
-`O1` is enabled, and `q0` answers each challenge by a new outcome that pays `p0` more, so no outcome is
-finalizable. Neither app is a go-nitro app, and neither has the go-nitro payment rules.
+Both statements stay `sorry`. They are false for desirable apps: `zero_entry_tag.lean` refutes them with an app
+that meets `SupportWindow` and `Desirable`, against the threat without own-violations. Its outcomes pay 5 to each
+side and carry a zero entry for a destination of no participant. Every move keeps every amount, and any mover may
+change the destination of the zero entry. The honest `p0` restores its outcome `O1` after each move of `q0`, so only
+`O1` is enabled, and `q0` answers each challenge with a new destination for the zero entry, so no outcome is
+finalizable. No value moves. The statements fail because they speak of one exact outcome. go-nitro
+`SingleAssetPayments.sol` refuses the move ("Destinations may not change"), so the app is not a go-nitro app.

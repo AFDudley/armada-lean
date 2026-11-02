@@ -1,19 +1,19 @@
 /-
-  Counterexample to both Nitro-24 statements in their current form
-  (Nitro:653-658; `Spec.finalizable_or_two_enabled`,
-  `Spec.single_enabled_is_finalizable`, `ArmadaLean/Spec/Nitro/Liveness.lean`):
-  the threat is `Threat.noOwnViolation`, with the premises `SupportWindow`
-  and `Desirable`.
+  Failure test: an app that is IR and IC but not desirable, because it
+  takes value out of an entry that no participant owns (operator ruling
+  2026-11-02, value conservation). Nitro-24 (Nitro:653-658) with `AppIR`
+  and `AppIC` in place of `Desirable` fails for it
+  (`Old_finalizable_or_two_enabled`, `Old_single_enabled_is_finalizable`),
+  against the threat `Threat.noOwnViolation`.
 
   The app is a three-slot variant of go-nitro `SingleAssetPayments.sol` on a
   two-party ledger channel `c0` (`[q0, p0]`, `n = 2`): `q0`'s slot is fixed
   at 5, `p0`'s slot drops only on a move of `p0`, a pool slot (destination
   `0`, the destination of no participant) drops only on a move of `q0`, and
-  the total is conserved. The app meets every premise of both statements:
+  the total is conserved. The app meets every premise of the old forms:
   * `Rules.SupportWindow` (`appsS_supportWindow`);
-  * `Desirable` (`appsS_desirable`): IR (`appsS_IR`, from `noTake_vtS` and
-    `TakeOut.forceMove_IR`) and IC (`appsS_IC`, from `stay_vtS` and
-    `TakeOut.forceMove_IC`).
+  * IR (`appsS_IR`, from `noTake_vtS` and `TakeOut.forceMove_IR`) and IC
+    (`appsS_IC`, from `stay_vtS` and `TakeOut.forceMove_IC`).
   The adversary is the threat `T1 = T0.noOwnViolation destS`. Its answers
   move one pool coin to `p0`. That is no gift (`q0`'s own slot stays 5) and
   no conflict (one answer per slot), so it is no own-violation
@@ -27,13 +27,13 @@
     from every move of `q0` from `O1`.
   * No outcome is finalizable (`not_finalizable`): the adversary answers
     every challenge with the target `Ω` by a pool coin to `p0` (`ansQ`).
-  Both statements fail (`finalizable_or_two_enabled_false`,
+  Both old forms fail (`finalizable_or_two_enabled_false`,
   `single_enabled_is_finalizable_false`).
 
-  The value in the pool belongs to no participant, and `q0` takes it
-  (`pool_take`). So the app does not have the go-nitro payment rules
-  (`appsS_not_paymentRules`). It is still desirable: the class `Desirable`
-  is defined first, from labbook §2, and it does not exclude this app.
+  The value in the pool belongs to no participant, and `q0` takes it. So
+  the app fails value conservation (`appsS_not_conserving`), and it is not
+  desirable (`appsS_not_desirable`). It also lacks the go-nitro payment
+  rules (`appsS_not_paymentRules`).
 
   This file is not part of the `ArmadaLean` library. Check it with
   `lake env lean docs/counterexamples/unowned_pool_take.lean`.
@@ -1627,9 +1627,17 @@ theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.
 theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IC stay_vtS _
 
-/-- The app is desirable: IR and IC at every state. -/
-theorem appsS_desirable : Desirable appsS (tc0 : FixedPart).appDef destS :=
-  ⟨appsS_IR, appsS_IC⟩
+/-- The app is not desirable: it fails value conservation (operator ruling
+    2026-11-02). The answer of `q0` lowers the pool, an entry
+    that `q0` does not own. -/
+theorem appsS_not_conserving : ¬ Conserving appsS (tc0 : FixedPart).appDef destS := by
+  intro h
+  have := h.conserve c0 [s1, ⟨st 2 (pay 6 4), [q0]⟩] (st 2 (pay 6 4)) rfl (by decide) 0 s1
+    ⟨st 2 (pay 6 4), [q0]⟩ q0 rfl rfl (by decide)
+  exact absurd (this.2 0 (by decide)) (by decide)
+
+theorem appsS_not_desirable : ¬ Desirable appsS (tc0 : FixedPart).appDef destS :=
+  fun h => appsS_not_conserving h.conserves
 
 /-- The app does not have the go-nitro payment rules: the answer of `q0`
     lowers the pool, which is not the mover's own destination
@@ -1640,10 +1648,45 @@ theorem appsS_not_paymentRules : ¬ PaymentRules vtS destS := by
   obtain ⟨q, -, hq⟩ := (((h.valid_iff _ _).1 hv).2.2 0 hlt).1
   exact hd q hq
 
-theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E := Nat) := by
+/-- `Spec.finalizable_or_two_enabled` with `AppIR` and `AppIC` in place of
+    `Desirable` (the form before the operator ruling of 2026-11-02 added
+    value conservation). -/
+def Old_finalizable_or_two_enabled : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (_A : Assumptions apps p T) (dest : Participant → Nat)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
+    (c : TimedChannel T.ε)
+    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (_hir : AppIR apps (c : FixedPart).appDef dest) (_hic : AppIC apps (c : FixedPart).appDef dest)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∃ proof candidate, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof candidate = true ∧
+      candidate.channel = (c : FixedPart)),
+    (∃ Ω, Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state) ∨
+    (∃ Ω1 Ω2, Ω1 ≠ Ω2 ∧ Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω1 net.state ∧
+      Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω2 net.state)
+
+/-- `Spec.single_enabled_is_finalizable` with `AppIR` and `AppIC` in place
+    of `Desirable` (the form before the operator ruling of 2026-11-02). -/
+def Old_single_enabled_is_finalizable : Prop :=
+  ∀ (apps : Apps Nat) {p : Participant} (T : Threat Nat p)
+    (_A : Assumptions apps p T) (dest : Participant → Nat)
+    (net : Nitro.ReachableParticipant apps (T.noOwnViolation dest))
+    (c : TimedChannel T.ε)
+    (_happ : (apps (c : FixedPart).appDef).SupportWindow)
+    (_hir : AppIR apps (c : FixedPart).appDef dest) (_hic : AppIC apps (c : FixedPart).appDef dest)
+    (_hp : p ∈ (c : FixedPart).participants)
+    (_hsupp : ∀ t ∈ net.state.sent, t.state.channel = (c : FixedPart) →
+      ∃ proof, (∀ ss ∈ proof, net.state.Holds ss) ∧
+      (apps (c : FixedPart).appDef).supports (c : FixedPart) proof t.state = true)
+    (Ω : Outcome Nat) (_hΩ : Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state)
+    (_huniq : ∀ Ω', Enabled apps (T.noOwnViolation dest) (c : FixedPart) Ω' net.state → Ω' = Ω),
+    Finalizable apps (T.noOwnViolation dest) (c : FixedPart) Ω net.state
+
+theorem finalizable_or_two_enabled_false : ¬ Old_finalizable_or_two_enabled := by
   intro h
-  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_desirable
-      (by decide)
+  rcases h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow appsS_IR
+      appsS_IC (by decide)
       ⟨[r0, s1], st 1 O1, holds_r0s1, supports_r0s1, rfl⟩ with
     ⟨Ω, hΩ⟩ | ⟨Ω1, Ω2, hne, hE1, hE2⟩
   · exact not_finalizable Ω hΩ
@@ -1651,16 +1694,16 @@ theorem finalizable_or_two_enabled_false : ¬ Spec.finalizable_or_two_enabled (E
     · exact hE2 (prevents_other Ω2 (fun h2 => hne (h1.trans h2.symm)))
     · exact hE1 (prevents_other Ω1 h1)
 
-theorem single_enabled_is_finalizable_false : ¬ Spec.single_enabled_is_finalizable (E := Nat) := by
+theorem single_enabled_is_finalizable_false : ¬ Old_single_enabled_is_finalizable := by
   intro h
   refine not_finalizable O1 (h appsS T0 A0 destS ⟨net1, net1_reachable⟩ tc0 appsS_supportWindow
-    appsS_desirable (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
+    appsS_IR appsS_IC (by decide) (fun t ht _ => ?_) O1 enabled_O1 (fun Ω' hE => ?_))
   · rw [List.mem_singleton.1 ht]
     exact ⟨[r0, s1], holds_r0s1, supports_r0s1⟩
   · by_contra hne
     exact hE (prevents_other Ω' hne)
 
-#print axioms appsS_desirable
+#print axioms appsS_not_desirable
 #print axioms finalizable_or_two_enabled_false
 #print axioms single_enabled_is_finalizable_false
 

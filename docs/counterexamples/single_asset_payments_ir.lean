@@ -1515,10 +1515,41 @@ theorem stay_vtS : ∀ s s', vtS s s' = true → vtS s' { s' with turnNum := s'.
 theorem appsS_IC : AppIC appsS (tc0 : FixedPart).appDef destS :=
   TakeOut.forceMove_IC stay_vtS _
 
-/-- `SingleAssetPayments` is desirable: IR and IC at every state. Its
-    failure test is the own-violation rule, not the class `Desirable`. -/
+/-- A valid move of `SingleAssetPayments` keeps the total ("Total allocated
+    cannot change") and lowers only the mover's balance ("Nonmover balance
+    decreased"). -/
+theorem conserve_vtS : ∀ s s' q, vtS s s' = true → s'.mover = some q →
+    s'.outcome.entries.total = s.outcome.entries.total ∧
+    ∀ k, share s'.outcome k < share s.outcome k → k = destS q := by
+  intro s s' q h hq
+  obtain ⟨a, b, a', b', h0, h1, hsum, hb, ha⟩ := (vtS_iff _ _).1 h
+  rw [decode_eq_some.1 h0, decode_eq_some.1 h1]
+  refine ⟨?_, fun k hk => ?_⟩
+  · simp only [pay, Outcome.entries, Allocation.total, alloc, List.map_cons, List.map_nil,
+      List.sum_cons, List.sum_nil, Entry.amount, Item.amount]
+    show (b' + (a' + 0) : Nat) = b + (a + 0)
+    omega
+  · rw [share_pay, share_pay] at hk
+    rcases k with _ | _ | k
+    · have hlt : b' < b := by simpa using hk
+      rcases hb with h | h
+      · rw [hq] at h; obtain rfl := Option.some.inj h; rfl
+      · omega
+    · have hlt : a' < a := by simpa using hk
+      rcases ha with h | h
+      · rw [hq] at h; obtain rfl := Option.some.inj h; rfl
+      · omega
+    · simp at hk
+
+/-- The app conserves value (`TakeOut.forceMove_conserving`). -/
+theorem appsS_conserving : Conserving appsS (tc0 : FixedPart).appDef destS :=
+  TakeOut.forceMove_conserving conserve_vtS _
+
+/-- `SingleAssetPayments` is desirable: IR, IC and value conservation at
+    every state. Its failure test is the own-violation rule, not the class
+    `Desirable`. -/
 theorem appsS_desirable : Desirable appsS (tc0 : FixedPart).appDef destS :=
-  ⟨appsS_IR, appsS_IC⟩
+  ⟨appsS_IR, appsS_IC, appsS_conserving⟩
 
 /-- `Spec.finalizable_or_two_enabled` read against the full threat `T`, not
     against `T.noOwnViolation dest` (the form before the operator ruling of

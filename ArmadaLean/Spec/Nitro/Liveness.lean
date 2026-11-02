@@ -236,9 +236,10 @@ def Spec.channel_finalizability_cases : Prop :=
     `docs/counterexamples/finalizable_or_two_enabled_happ.lean`). Operator
     ruling 2026-11-01: the papers assume desirable apps and do not state it.
     The app must be `Desirable` for a destination map `dest`, a class defined
-    first and independently of the claim: IR and IC at every state
-    (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2;
-    ForceMove:410-416, 125-130, 339-347). Game B fails `AppIR`
+    first and independently of the claim: IR, IC and value conservation at
+    every state (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md`
+    §2; ForceMove:410-416, 125-130, 339-347; operator ruling 2026-11-02,
+    SATP §2.2 footnote 7). Game B fails `AppIR`
     (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
     2026-11-01: own-violation is one rule for every participant; a state
     signed against the signer's own interest costs only the signer. The claim
@@ -246,11 +247,12 @@ def Spec.channel_finalizability_cases : Prop :=
     participants (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the
     honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
     The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
-    (`docs/counterexamples/single_asset_payments_ir.lean`). The claim fails
-    as stated: `docs/counterexamples/unowned_pool_take.lean` (a desirable
-    app that moves value out of the entry of no participant) and
-    `docs/counterexamples/strict_premise_mint.lean` (a desirable app that
-    mints). -/
+    (`docs/counterexamples/single_asset_payments_ir.lean`). The pool and
+    mint apps fail value conservation
+    (`docs/counterexamples/unowned_pool_take.lean`,
+    `docs/counterexamples/strict_premise_mint.lean`). The claim fails as
+    stated: `docs/counterexamples/zero_entry_tag.lean` (a desirable app whose
+    moves change a zero entry and no amount). -/
 def Spec.finalizable_or_two_enabled : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
@@ -276,9 +278,10 @@ def Spec.finalizable_or_two_enabled : Prop :=
     (`docs/counterexamples/single_enabled_is_finalizable_stall.lean`). Operator
     ruling 2026-11-01: the papers assume desirable apps and do not state it.
     The app must be `Desirable` for a destination map `dest`, a class defined
-    first and independently of the claim: IR and IC at every state
-    (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md` §2;
-    ForceMove:410-416, 125-130, 339-347). Game B fails `AppIR`
+    first and independently of the claim: IR, IC and value conservation at
+    every state (armada-laconic `labbook/2026-10-30-app-classes-ic-ir.md`
+    §2; ForceMove:410-416, 125-130, 339-347; operator ruling 2026-11-02,
+    SATP §2.2 footnote 7). Game B fails `AppIR`
     (`docs/counterexamples/ir_game_rewrites_share.lean`). Operator ruling
     2026-11-01: own-violation is one rule for every participant; a state
     signed against the signer's own interest costs only the signer. The claim
@@ -286,11 +289,12 @@ def Spec.finalizable_or_two_enabled : Prop :=
     participants (`Threat.noOwnViolation`, ForceMove §4.5 griefing); the
     honest `p` signs no two outcomes at one slot (`HonestSend.noConflict`).
     The gift play of go-nitro `SingleAssetPayments.sol` is such a violation
-    (`docs/counterexamples/single_asset_payments_ir.lean`). The claim fails
-    as stated: `docs/counterexamples/unowned_pool_take.lean` (a desirable
-    app that moves value out of the entry of no participant) and
-    `docs/counterexamples/strict_premise_mint.lean` (a desirable app that
-    mints). -/
+    (`docs/counterexamples/single_asset_payments_ir.lean`). The pool and
+    mint apps fail value conservation
+    (`docs/counterexamples/unowned_pool_take.lean`,
+    `docs/counterexamples/strict_premise_mint.lean`). The claim fails as
+    stated: `docs/counterexamples/zero_entry_tag.lean` (a desirable app whose
+    moves change a zero entry and no amount). -/
 def Spec.single_enabled_is_finalizable : Prop :=
   ∀ (apps : Apps E) {p : Participant} (T : Threat E p)
     (A : Assumptions apps p T) (dest : Participant → E)
