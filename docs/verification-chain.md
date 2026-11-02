@@ -30,8 +30,10 @@ The specification omits the concrete forms because they are already known:
 Step 1 maps each symbolic term to its concrete value through a typed decoder
 per ABI position: a word that the run computed as a hash decodes to that hash
 term, and any other word decodes to `val` in its range. The step-1 theorem names
-collision freedom of Keccak-256 and of its 160-bit truncation; Poseidon stays
-trusted (ruling of 2026-10-28). The current Solidity is not authoritative: the
+collision freedom of Keccak-256, of its 160-bit truncation, and between Poseidon
+and Keccak outputs (no Poseidon output that a run uses equals a Keccak output
+that it uses). Poseidon stays trusted (ruling of 2026-10-28). The current
+Solidity is not authoritative: the
 rewrite chooses encodings that need no other assumption. Rulings and decisions:
 armada-laconic `labbook/2026-11-02-refinement-risks.md` §7.
 
