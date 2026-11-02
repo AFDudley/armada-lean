@@ -1897,3 +1897,9 @@
 {"type":"comment","timestamp":"2026-11-02T14:29:54.101932Z","issue_id":"aln-938","payload":{"body":"gate-verdict: 90448b0c41104e55f5a935101c50600ebfefadcb passed 0.2.1+bc90e882","build":"0.2.1+bc90e882","outcome":"passed","sha":"90448b0c41104e55f5a935101c50600ebfefadcb","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T14:29:54.128550Z","issue_id":"aln-938","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T14:29:54.138368Z","issue_id":"aln-938","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-02T14:30:21.828585Z","issue_id":"aln-7bf","payload":{"description":"Operator-authored branch `draft/docs-witness-rules`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/docs-witness-rules","type":"task"}}
+{"type":"comment","timestamp":"2026-11-02T14:30:21.853806Z","issue_id":"aln-7bf","payload":{"body":"branch-identity: draft/docs-witness-rules"}}
+{"type":"comment","timestamp":"2026-11-02T14:41:34.273856Z","issue_id":"aln-7bf","payload":{"body":"exophial-integration-attempt-started: at 371e96adfba72a04315cf81e398f5db16c20ff1c"}}
+{"type":"comment","timestamp":"2026-11-02T14:41:37.383496Z","issue_id":"aln-7bf","payload":{"body":"gate-verdict: 745c75793f5ce9bbbf673a1038b3adcc0f0619e3 passed 0.2.1+bc90e882","build":"0.2.1+bc90e882","outcome":"passed","sha":"745c75793f5ce9bbbf673a1038b3adcc0f0619e3","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-02T14:41:37.405102Z","issue_id":"aln-7bf","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-02T14:41:37.418590Z","issue_id":"aln-7bf","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
