@@ -9416,18 +9416,9 @@ theorem satp_peers_can_finalize (apps : Apps E) {p : Participant} (T : Threat E 
           have hgt1 : candidate.turnNum < t1a := by
             by_contra hcon
             rw [not_lt] at hcon
-            have hcond : p ∈ r.V.participants ∧
-                (apps r.V.appDef).supports r.V proof candidate = true ∧ candidate.channel = r.V ∧
-                ((net1a.chain.mode r.V = .open ∧
-                    (net1a.chain.statusOf r.V).turnNumRecord ≤ candidate.turnNum) ∨
-                 (net1a.chain.mode r.V = .challenge ∧
-                    (net1a.chain.statusOf r.V).turnNumRecord < candidate.turnNum)) := by
-              refine ⟨hpV, by rw [hV]; exact hsup, hchanc, Or.inl ⟨?_, ?_⟩⟩
-              · rw [Adjudicator.mode_eq, hstatus1a]; rfl
-              · rw [hstatus1a, ChannelStatus.turnNumRecord_open]; exact hcon
-            rw [Adjudicator.apply_challenge] at hstep
-            unfold Adjudicator.challenge at hstep
-            rw [if_pos hcond] at hstep
+            rw [Adjudicator.apply_challenge, challenge_can_happen apps _ p r.V proof candidate hpV
+              (by rw [hV]; exact hsup) hchanc (Or.inl ⟨by rw [Adjudicator.mode_eq, hstatus1a]; rfl,
+                by rw [hstatus1a, ChannelStatus.turnNumRecord_open]; exact hcon⟩)] at hstep
             cases hstep
           rcases turnNumRecord_mono_roundSeq hseq2 r.V hckV with hle | hfinr
           · rw [hstatus1a, ChannelStatus.turnNumRecord_open] at hle
