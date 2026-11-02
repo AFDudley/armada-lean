@@ -26,6 +26,8 @@ import Lean.Meta.Basic
 import Lean.DocString
 import Lean.Util.FoldConsts
 import Lean.Structure
+import Lean.AuxRecursor
+import Lean.Meta.Match.MatcherInfo
 import Batteries.Tactic.Lint.Basic
 
 open Lean Meta Batteries.Tactic.Lint
@@ -505,24 +507,134 @@ def poolCitation (doc : String) : Bool :=
   hasMarkerDigit doc ".sol:" || hasMarkerDigit doc ".circom:" ||
     (doc.splitOn "operator ruling").length > 1
 
-/-- `layerDiscipline`: every spec-level declaration (its doc comment
-    cites a source) whose proof term names one of its layer's base
-    operations, EXCLUDING a base operation that the declaration's own
-    TYPE (its statement) already names
-    (`ConstantInfo.value?.getUsedConstants` minus
-    `ConstantInfo.type.getUsedConstants`). A base operation the
-    statement itself names is not a layer violation: for a theorem whose
-    conclusion is an equation about a base operation (for example
-    `s.apply apps caller (.deposit …) = X`), every Lean4 proof of that
-    conclusion embeds the base operation as a subterm of the compiled
-    proof term, whatever the proof technique (`rw`, `simp`, `Eq.trans`,
-    even a bare `rfl`, confirmed by `.pebbles/handoffs/aln-17c.yaml`'s
-    11 scratch proofs). Flagging such a theorem would punish the layer
-    rule it already follows: the proof only re-proves what the
-    STATEMENT, not the proof's own reasoning, already names. Only a base
-    operation that occurs in the proof and NOT in the statement is a
-    genuine violation (an unfold or a case split the proof chose, not
-    one the conclusion forced). -/
+/-- For each argument position of the constant `c`, `true` when
+    `valueConstants` does not enter an argument at that position:
+    - an implicit or instance-implicit argument (`Eq.mpr`'s `α β`, a
+      `casesOn`/`rec` motive, `id`'s type in a `show` ascription);
+    - for a matcher, also its motive (`Lean.Meta.MatcherInfo.numParams`),
+      an explicit argument; its discriminants and alternatives count;
+    - for any other constant except a recursor, an explicit DATA argument
+      that the constant's result type names (`Eq.refl a : a = a`,
+      `congrArg f h : f a₁ = f a₂`, the motive of every `rw` step). Lean
+      fills such an argument in from the goal, so it is a copy of a term
+      of a type. An explicit proof argument always counts. -/
+def skippedArgs (c : Name) : StateT (Std.HashMap Name (Array Bool)) MetaM (Array Bool) := do
+  if let some s := (← get)[c]? then return s
+  let env ← getEnv
+  let motive := (← getMatcherInfo? c).map (·.numParams)
+  let recursor := isAuxRecursor env c || (env.find? c matches some (.recInfo _))
+  let s ← forallTelescope (← getConstInfo c).type fun xs body => do
+    let mut out := #[]
+    for h : i in [0:xs.size] do
+      let d ← xs[i].fvarId!.getDecl
+      out := out.push <| ← do
+        if !d.binderInfo.isExplicit then pure true
+        else if let some m := motive then pure (i == m)
+        else if recursor then pure false
+        else pure (body.containsFVar d.fvarId && !(← isProp d.type))
+    return out
+  modify (·.insert c s)
+  return s
+
+/-- The constants `e` names in a VALUE position: the positions the proof's
+    author chose, as opposed to the positions Lean fills in from a type.
+    The walk does not enter the binder type of a `fun`, `∀` or `let`, nor
+    an argument `skippedArgs` excludes. A constant that enters the proof
+    only through one of these is named by a type: a constructor's field
+    type (destructuring `Nitro.Step.mk` gives `h : s.apply … = some s'`), a
+    lemma's instantiated statement (`obtain ⟨spent', h⟩ :=
+    markSpent_succeeds …`), or a rewrite motive. Every other position
+    counts, including a case-split discriminant (`cases h : s.apply apps
+    caller op`) and an explicit witness. -/
+partial def valueConstants (e : Expr) (acc : NameSet) :
+    StateT (Std.HashMap Name (Array Bool)) MetaM NameSet := do
+  match e with
+  | .const n _ => return acc.insert n
+  | .app .. =>
+    let args := e.getAppArgs
+    let mut acc := acc
+    let mut skip := #[]
+    if let .const n _ := e.getAppFn then
+      acc := acc.insert n
+      skip ← skippedArgs n
+    else
+      acc ← valueConstants e.getAppFn acc
+    for h : i in [0:args.size] do
+      if skip[i]?.getD false then continue
+      acc ← valueConstants args[i] acc
+    return acc
+  | .lam _ _ b _ => valueConstants b acc
+  | .letE _ _ v b _ => valueConstants b (← valueConstants v acc)
+  | .mdata _ b => valueConstants b acc
+  | .proj _ _ b => valueConstants b acc
+  | _ => return acc
+
+/-- `c` is an unfolding auxiliary of `op`: an equation lemma (`op.eq_<n>`,
+    `op.eq_def`), a matcher compiled from `op`'s body or one of its lemmas
+    (`op.match_<n>`, `op.match_<n>.splitter`, `op.match_<n>.eq_<k>`), or
+    `op`'s functional induction principle (`op.induct`). A proof term that
+    names one of these unfolded `op` (`type-doctrine.md` §4a: "its proof
+    term names the operation's equation or match lemmas"), wherever the
+    name sits in the term. -/
+def isUnfoldAux (op c : Name) : Bool :=
+  c != op && op.isPrefixOf c &&
+    match (c.replacePrefix op .anonymous).components.head? with
+    | some (.str _ s) => "eq_".isPrefixOf s || "match_".isPrefixOf s || s == "induct"
+    | _ => false
+
+/-- The constants a declaration's statement names, directly or through an
+    `ArmadaLean` inductive type it names: that type's constructor field
+    types, its `casesOn` and its `rec`. A statement about `Step s s'` is a
+    step lemma; `Step`'s constructors are defined by the base operations, so
+    a proof about one step names them (the Pool's `insertLeaves` in the post
+    state of `Step.shield`, Nitro's `apply` in the field of `Step.mk`). One
+    level only: `Reachable` names `Step` through its `step` constructor,
+    and that does not make `Step.casesOn` a constant of a statement about
+    `Reachable`. -/
+def statementConstants (env : Environment) (type : Expr) : MetaM NameSet := do
+  let direct := type.getUsedConstants
+  let mut out : NameSet := direct.foldl (init := {}) NameSet.insert
+  for c in direct do
+    let some m := declModule env c | continue
+    if !(`ArmadaLean).isPrefixOf m then continue
+    let some (.inductInfo ii) := env.find? c | continue
+    out := (out.insert (c ++ `casesOn)).insert (c ++ `rec)
+    for k in ii.ctors do
+      for d in (← getConstInfo k).type.getUsedConstants do
+        out := out.insert d
+  return out
+
+/-- The base operations of `baseOps` that the proof of `n` names directly
+    or unfolds, and that `n`'s statement does not name
+    (`statementConstants`). A base operation counts when its own name is in
+    a value position of the proof term (`valueConstants`), or when any
+    unfolding auxiliary of it occurs anywhere in the proof term
+    (`isUnfoldAux`). A base operation the statement names is not a layer
+    violation: an equation about `s.apply …` embeds `apply` in every proof
+    of it, whatever the technique (`.pebbles/handoffs/aln-17c.yaml`'s 11
+    scratch proofs), and such a theorem is the per-call lemma itself.
+
+    Measured on `integrated` `0b933ad9`: the earlier check, which counted
+    every constant of the proof term, reported 15 theorems. This measure
+    reports 5. The other 10 named a base operation only through a type.
+
+    Not detected: an unfolding by definitional equality alone (`dsimp only
+    [op]`, `show`, `rfl`, or `simp only [op]` with an `rfl` equation lemma,
+    which `simp` applies with no proof step). Such an unfolding leaves no
+    constant in the proof term. Sealing the base operations
+    (`type-doctrine.md` §4a rule 4) makes it fail to elaborate. -/
+def layerHits (env : Environment) (n : Name) (baseOps : Array Name) : MetaM (Array Name) := do
+  let info ← getConstInfo n
+  let some val := info.value? (allowOpaque := true) | return #[]
+  let named ← statementConstants env info.type
+  let used := val.getUsedConstants
+  let direct ← (valueConstants val {}).run' {}
+  return baseOps.filter fun op => !named.contains op &&
+    (direct.contains op || used.any (isUnfoldAux op))
+
+/-- `layerDiscipline`: every spec-level declaration (its doc comment cites
+    a source) with a `layerHits` finding against its own layer's base
+    operations. -/
 def layerFindings (env : Environment) (names : Array Name) : MetaM (Array (Name × Bool × Array Name)) := do
   let mut out := #[]
   for n in names do
@@ -530,12 +642,7 @@ def layerFindings (env : Environment) (names : Array Name) : MetaM (Array (Name 
     let isNitro := isNitroModule env n
     let cited := if isNitro then nitroCitation doc else poolCitation doc
     if !cited then continue
-    let info ← getConstInfo n
-    let some val := info.value? (allowOpaque := true) | continue
-    let used := val.getUsedConstantsAsSet
-    let inStatement := info.type.getUsedConstantsAsSet
-    let baseOps := if isNitro then nitroBaseOps else poolBaseOps
-    let hit := baseOps.filter fun op => used.contains op && !inStatement.contains op
+    let hit ← layerHits env n (if isNitro then nitroBaseOps else poolBaseOps)
     if !hit.isEmpty then
       out := out.push (n, isNitro, hit)
   return out

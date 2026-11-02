@@ -194,11 +194,12 @@ def compute_baseline(root: Path) -> dict:
 
 
 def run_type_lint(root: Path) -> dict:
-    """Build the default target and `ArmadaLean.Lint.TypeDoctrine`
-    (`scripts/type_lint.lean` imports both), run the driver, and return
-    its `{"summary":true,...}` line."""
+    """Build the default target, `ArmadaLean.Lint.TypeDoctrine` and its
+    failure tests `ArmadaLean.Lint.TypeDoctrineTest` (a failed test fails
+    the build), run the driver `scripts/type_lint.lean`, and return its
+    `{"summary":true,...}` line."""
     _lake_build(root)
-    _lake_build(root, "ArmadaLean.Lint.TypeDoctrine")
+    _lake_build(root, "ArmadaLean.Lint.TypeDoctrine", "ArmadaLean.Lint.TypeDoctrineTest")
     proc = _run([LAKE, "env", "lean", "scripts/type_lint.lean"], root)
     lines = [ln for ln in proc.stdout.splitlines() if ln.startswith('{"summary"')]
     if proc.returncode != 0 or not lines:
