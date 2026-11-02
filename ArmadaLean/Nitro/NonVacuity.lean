@@ -2299,7 +2299,7 @@ theorem satp_theorem_3_2.nonvacuity : ∃ (r : Route Nat) (alice bob P Pprev Pne
     net3R, canon_ok _ _, r3_wf, rfl, rfl, rfl, le_rfl, by decide, rfl, rfl, rfl, rfl, rfl, by decide,
     net3R_reach, net3R_latest_m, net3R_latest_p, net3R_virtualSetup,
     ⟨deadlineAfter_open (t := 0) rfl _, deadlineAfter_open (t := 0) rfl _,
-      deadlineAfter_open (t := 0) rfl _⟩, by decide⟩
+      deadlineAfter_open (t := 0) rfl _⟩, by decide, by decide, by decide⟩
 
 /-- `satp_intermediary_before_round2`. `netB` is reachable the same way `net3R` is, with two
     sends and two delivers instead of three and three. -/
