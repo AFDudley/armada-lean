@@ -1903,3 +1903,9 @@
 {"type":"comment","timestamp":"2026-11-02T14:41:37.383496Z","issue_id":"aln-7bf","payload":{"body":"gate-verdict: 745c75793f5ce9bbbf673a1038b3adcc0f0619e3 passed 0.2.1+bc90e882","build":"0.2.1+bc90e882","outcome":"passed","sha":"745c75793f5ce9bbbf673a1038b3adcc0f0619e3","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T14:41:37.405102Z","issue_id":"aln-7bf","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T14:41:37.418590Z","issue_id":"aln-7bf","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-02T14:48:53.128949Z","issue_id":"aln-388","payload":{"description":"Operator-authored branch `draft/witness-circuit`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/witness-circuit","type":"task"}}
+{"type":"comment","timestamp":"2026-11-02T14:48:53.170238Z","issue_id":"aln-388","payload":{"body":"branch-identity: draft/witness-circuit"}}
+{"type":"comment","timestamp":"2026-11-02T15:00:37.736787Z","issue_id":"aln-388","payload":{"body":"exophial-integration-attempt-started: at 913d8efc9f340b821be1eb1f4b31403563025131"}}
+{"type":"comment","timestamp":"2026-11-02T15:00:40.324664Z","issue_id":"aln-388","payload":{"body":"gate-verdict: e3df75485526f992905701964c942d9c89776d56 passed 0.2.1+bc90e882","build":"0.2.1+bc90e882","outcome":"passed","sha":"e3df75485526f992905701964c942d9c89776d56","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-02T15:00:40.359343Z","issue_id":"aln-388","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-02T15:00:40.374196Z","issue_id":"aln-388","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
