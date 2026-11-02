@@ -251,8 +251,9 @@ structure ConjunctInfo where
   /-- User names of the free binders this conjunct mentions, in order of
       first occurrence. -/
   freeVars : Array Name
-  /-- `some fieldVar` when this conjunct's only free variable is the one
-      data binder `fieldVar` (rule 2's single-input case). -/
+  /-- `some fieldVar` when this conjunct's only free variable, apart from
+      type parameters and instances, is the one data binder `fieldVar`
+      (rule 2's single-input case). -/
   singleDataVar : Option Name
   /-- `some (binderName, rhsPretty)` when this conjunct is
       `binderName = rhsPretty` (or the symmetric form), `binderName` one
@@ -396,16 +397,21 @@ def premiseExcluded (env : Environment) (e : Expr) : MetaM Bool := do
 
 /-- Analyze one in-scope declaration: its data/hypothesis binders, and
     every normalized hypothesis conjunct. `none` only when `n`'s type is
-    not a `∀`-telescope of ordinary binders (none observed in scope). -/
+    not a `∀`-telescope of ordinary binders (none observed in scope).
+    A type parameter (`E : Type`) or an instance binder is not an input:
+    `s.IsDAG` with `s : Adjudicator E` mentions `E` and `DecidableEq E`,
+    and still constrains the one input `s` (rule 2). -/
 def analyzeDecl (env : Environment) (n : Name) : MetaM DeclInfo := do
   let info ← getConstInfo n
   forallTelescope info.type fun args _ => do
     let mut dataB : Array FVarId := #[]
     let mut hypB : Array FVarId := #[]
+    let mut typeB : Array FVarId := #[]
     for a in args do
       let ldecl ← a.fvarId!.getDecl
-      if ldecl.binderInfo.isInstImplicit then continue
-      if ← Meta.isProp ldecl.type then
+      if ldecl.binderInfo.isInstImplicit || ldecl.type.isSort then
+        typeB := typeB.push a.fvarId!
+      else if ← Meta.isProp ldecl.type then
         hypB := hypB.push a.fvarId!
       else
         dataB := dataB.push a.fvarId!
@@ -422,9 +428,10 @@ def analyzeDecl (env : Environment) (n : Name) : MetaM DeclInfo := do
         let refs ← fieldRefsM e
         let ordered := collectOrderedFVars e
         let freeVars ← ordered.mapM (·.getUserName)
+        let inputs := ordered.filter (!typeB.contains ·)
         let singleDataVar ←
-          if ordered.size == 1 && dataB.contains ordered[0]! then
-            some <$> ordered[0]!.getUserName
+          if inputs.size == 1 && dataB.contains inputs[0]! then
+            some <$> inputs[0]!.getUserName
           else
             pure none
         let aliasInfo ← aliasCandidate allBinders e

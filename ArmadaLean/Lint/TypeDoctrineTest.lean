@@ -91,4 +91,14 @@ def expectConjuncts (n : Name) (kept : Array String) (aliases : Array Name) : Me
 #eval expectConjuncts ``premiseCases #["_root_.Reachable s"] #[]
 #eval expectConjuncts ``aliasCases #["o = o.dedup", "tn = insertTree trees k"] #[`tn]
 
+/-- A condition on one input of a parametric type: `s.IsDAG` mentions `E`
+    and `DecidableEq E` too. -/
+theorem singleInputCase (s : Adjudicator E) (_h : s.IsDAG) : s = s := rfl
+
+#eval show MetaM Unit from do
+  let d ← analyzeDecl (← getEnv) ``singleInputCase
+  let got := d.conjuncts.map (·.singleDataVar)
+  unless got == #[some `s] do
+    throwError "analyzeDecl singleInputCase: expected #[some s], got {got}"
+
 end ArmadaLean.Lint.TypeDoctrineTest
