@@ -27,8 +27,13 @@ The specification omits the concrete forms because they are already known:
 - 20-byte addresses, `uint256` amounts, `uint120` note values;
 - the Solidity ABI and storage-layout rules.
 
-Step 1 maps each symbolic term to its concrete value under one named
-assumption: no Keccak or Poseidon collision among the values a run uses.
+Step 1 maps each symbolic term to its concrete value under a named
+assumption: no Keccak or Poseidon collision among the values a run uses. That
+assumption does not cover a raw value that equals a hash output, address
+truncation to 160 bits, Keccak reduced modulo the field, or SHA-256. Two
+contract rules allow more than the model. The scope of the hypothesis and the
+form of the run-relative map wait for operator rulings Q1.1-Q1.3 in
+armada-laconic `labbook/2026-11-02-refinement-risks.md`.
 
 ## What this asks of the specification
 
@@ -62,5 +67,8 @@ Operator rulings and findings on this chain. Source: armada-laconic
   relation. The certificate preserves safety theorems. It does not preserve
   "can happen" theorems or liveness theorems. The design for these two
   classes of theorem is in armada-laconic
-  `labbook/2026-10-28-liveness-refinement-design.md`. That design states
-  seven open questions. The open questions wait for the operator.
+  `labbook/2026-10-28-liveness-refinement-design.md`. The operator answered
+  O1 and O4-O7 on 2026-10-28, and the coordinator corrected O2 and O3 the same
+  day. Approval of the design, and the owner of the EquiVM and EVMLean work,
+  wait for operator rulings Q2.1-Q2.2 in armada-laconic
+  `labbook/2026-11-02-refinement-risks.md`.
