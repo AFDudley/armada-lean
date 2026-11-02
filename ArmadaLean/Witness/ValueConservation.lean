@@ -8,10 +8,13 @@
 import ArmadaLean.Spec.ValueConservation
 import ArmadaLean.SpecTools
 
-/-- The witness of `Spec.listSum_lt_p`: open. -/
+/-- The witness of `Spec.listSum_lt_p`: the empty list. -/
 theorem Spec.listSum_lt_p.witness : spec_premise% Spec.listSum_lt_p := by
-  sorry
+  refine ⟨[], by decide, fun v hv => absurd hv (List.not_mem_nil), trivial⟩
 
-/-- The witness of `Spec.no_wraparound_minting`: open. -/
+/-- The witness of `Spec.no_wraparound_minting`: the empty list on each side;
+    `fieldEq 0 0` is `rfl`. -/
 theorem Spec.no_wraparound_minting.witness : spec_premise% Spec.no_wraparound_minting := by
-  sorry
+  refine ⟨[], [], by decide, by decide,
+    fun v hv => absurd hv (List.not_mem_nil), fun v hv => absurd hv (List.not_mem_nil),
+    rfl, trivial⟩

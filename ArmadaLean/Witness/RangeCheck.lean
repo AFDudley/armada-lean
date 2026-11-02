@@ -7,7 +7,10 @@
 -/
 import ArmadaLean.Spec.RangeCheck
 import ArmadaLean.SpecTools
+import ArmadaLean.Witness.CircuitValues
 
-/-- The witness of `Spec.rangeCheck120_sound`: open. -/
+open ArmadaLean.Witness.CircuitValues
+
+/-- The witness of `Spec.rangeCheck120_sound`: `v = 0`, with `bits0_range`. -/
 theorem Spec.rangeCheck120_sound.witness : spec_premise% Spec.rangeCheck120_sound := by
-  sorry
+  refine ⟨0, bits0_range, trivial⟩

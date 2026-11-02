@@ -80,9 +80,10 @@
     "ArmadaLean/ValueConservation.lean": "107f5b141d2151134af04e6f302edff45001e402c29ed71cf699a033afd18490",
     "ArmadaLean/Vault.lean": "9e7b1c5ba1c9873c8f03b04ae519ac193e4946d64accafad0e772f92704d8a41",
     "ArmadaLean/Witness.lean": "31090fdadbb0f10fa2f93cb1a01261c7ed5cf8f908344ec9750aa6cbf3a7c26c",
-    "ArmadaLean/Witness/BoundParams.lean": "745f94ac678bcf1e2f8af545860653c771094d15b328d28c5f0562dfb3875002",
-    "ArmadaLean/Witness/Fee.lean": "32d8b8ffe63d1834b3a1914bd7ff2a2c10d12ea6c867f9e3df65fcb26618cdf9",
-    "ArmadaLean/Witness/Merkle.lean": "d14c5d321294876edc8c8e805923ef8c76e2084b3b06d0c66aed899836f92cb1",
+    "ArmadaLean/Witness/BoundParams.lean": "809180b340ca11064ddf7c8aaef8326b6e859d10926825009b842da48b8f0026",
+    "ArmadaLean/Witness/CircuitValues.lean": "ee6b13a436650b92de47889bb4202a0ee14c248aca1fee793def2d4eec418a54",
+    "ArmadaLean/Witness/Fee.lean": "9a737e922bd4728384a1f58c42ddf716aca8fe65d4a66abb8c54f3ba47e2d140",
+    "ArmadaLean/Witness/Merkle.lean": "ce4dc154a0af7bc031b1760770f9f488de9f8539982cb61295a9bc400da4a3ac",
     "ArmadaLean/Witness/Nitro/Lemmas.lean": "6ece98f55c846fb66b19c8115adf01abfa17849cb35efa230749f2a9aab5a943",
     "ArmadaLean/Witness/Nitro/Liveness.lean": "802734d9b6943de9422e6ea2cc38a17584024c77ddafcee221cd08798e8c7ec2",
     "ArmadaLean/Witness/Nitro/Reachable.lean": "8d512a4f351be723df0d4f527099382df9d24bd61b7a57d628933060fac7094c",
@@ -90,12 +91,12 @@
     "ArmadaLean/Witness/Nitro/Safety.lean": "3e5ac961790d6d82ff609002d7c7f195de05ae9c15e20add2ce1fd3dbfcd62c9",
     "ArmadaLean/Witness/Nitro/Strategy.lean": "092a675968fad702243aca7abfc916edd02c73063d83560176ef4d9529de5070",
     "ArmadaLean/Witness/Nitro/Value.lean": "407f09154818b063341109677b901648edba72b7a2470084ae474e3b9be81b66",
-    "ArmadaLean/Witness/Nullifier.lean": "daf2be7a22c928112542dcced95d72a4cdc1d76093d17dc8fad8af7592ecb878",
+    "ArmadaLean/Witness/Nullifier.lean": "3b5815610da1b1c6d5578022b32babd828a4360108d714f024a751d202cafbed",
     "ArmadaLean/Witness/PoolOwned.lean": "fd57a58b958592eb4d7c6c75f319381e60b0a7ccf1120b9b6d40fb373cb45c12",
     "ArmadaLean/Witness/PoolSafety.lean": "321bf64321cb1bcd166c08050011697a4a5b309e58adf71c7814bb77eade0a4c",
-    "ArmadaLean/Witness/RangeCheck.lean": "34b67a64f21eb8ff95af5b3a3002d08d701cb4dd8425863b440942c4a0fd2c0e",
+    "ArmadaLean/Witness/RangeCheck.lean": "7268fceaa020662161a590d52a70b9f9385d2899030ae1dcd1fad61b03eaef63",
     "ArmadaLean/Witness/Transact.lean": "c4dfcc4a42ea3a9032a598c5215735cbd2018ba461a7d11526eb640ec2643afa",
-    "ArmadaLean/Witness/TransactOwned.lean": "f3f715b844b31d85ff56df33bf0e268acf1cb5e833f4ed7f14854081837829e6",
-    "ArmadaLean/Witness/ValueConservation.lean": "b63070c83a86936dfd0b094a3f8af542608a32531a72d10a9e7549718764e1c1"
+    "ArmadaLean/Witness/TransactOwned.lean": "ef0450c6a4ca70154399be9f9fde5a9fcd2e0a8afd07f11e834f4f21a0f33f27",
+    "ArmadaLean/Witness/ValueConservation.lean": "1872baa962433db6cd4ce34735ab434461a0cf0ba4610c98ed59ab302f890282"
   }
 }

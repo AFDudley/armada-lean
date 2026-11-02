@@ -7,7 +7,12 @@
 -/
 import ArmadaLean.Spec.Nullifier
 import ArmadaLean.SpecTools
+import ArmadaLean.Witness.CircuitValues
 
-/-- The witness of `Spec.distinct_leaves_distinct_nullifiers`: open. -/
-theorem Spec.distinct_leaves_distinct_nullifiers.witness : spec_premise% Spec.distinct_leaves_distinct_nullifiers := by
-  sorry
+open ArmadaLean.Witness.CircuitValues
+
+/-- The witness of `Spec.distinct_leaves_distinct_nullifiers`: the empty leaf
+    list, pairwise-distinct vacuously. -/
+theorem Spec.distinct_leaves_distinct_nullifiers.witness :
+    spec_premise% Spec.distinct_leaves_distinct_nullifiers := by
+  refine ⟨t0, [], List.Pairwise.nil, trivial⟩

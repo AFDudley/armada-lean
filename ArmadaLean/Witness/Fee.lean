@@ -7,15 +7,19 @@
 -/
 import ArmadaLean.Spec.Fee
 import ArmadaLean.SpecTools
+import ArmadaLean.Witness.CircuitValues
 
-/-- The witness of `Spec.fee_monotone`: open. -/
+open ArmadaLean.Witness.CircuitValues
+
+/-- The witness of `Spec.fee_monotone`: `feeRatio0`, `a = 0 ≤ b = 1`. -/
 theorem Spec.fee_monotone.witness : spec_premise% Spec.fee_monotone := by
-  sorry
+  refine ⟨feeRatio0, 0, 1, by decide, trivial⟩
 
-/-- The witness of `Spec.fee_zero_below_threshold`: open. -/
+/-- The witness of `Spec.fee_zero_below_threshold`: `feeRatio0.num = 0`, so
+    `amount * 0 < 1` holds for every `amount`. -/
 theorem Spec.fee_zero_below_threshold.witness : spec_premise% Spec.fee_zero_below_threshold := by
-  sorry
+  refine ⟨feeRatio0, 0, by decide, trivial⟩
 
-/-- The witness of `Spec.shieldBase_pos`: open. -/
+/-- The witness of `Spec.shieldBase_pos`: `x = 1`. -/
 theorem Spec.shieldBase_pos.witness : spec_premise% Spec.shieldBase_pos := by
-  sorry
+  refine ⟨feeRatio0, 1, by decide, trivial⟩

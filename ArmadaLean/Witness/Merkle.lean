@@ -7,11 +7,17 @@
 -/
 import ArmadaLean.Spec.Merkle
 import ArmadaLean.SpecTools
+import ArmadaLean.Witness.CircuitValues
 
-/-- The witness of `Spec.merkleRoot_inj_leaf`: open. -/
+open ArmadaLean.Witness.CircuitValues
+
+/-- The witness of `Spec.merkleRoot_inj_leaf`: the empty path, `t0` against
+    itself. -/
 theorem Spec.merkleRoot_inj_leaf.witness : spec_premise% Spec.merkleRoot_inj_leaf := by
-  sorry
+  refine ⟨[], t0, t0, rfl, trivial⟩
 
-/-- The witness of `Spec.treePath_correct_of_getElem?`: open. -/
-theorem Spec.treePath_correct_of_getElem?.witness : spec_premise% Spec.treePath_correct_of_getElem? := by
-  sorry
+/-- The witness of `Spec.treePath_correct_of_getElem?`: depth `0`, the
+    one-leaf list `[t0]`, position `0`. -/
+theorem Spec.treePath_correct_of_getElem?.witness :
+    spec_premise% Spec.treePath_correct_of_getElem? := by
+  refine ⟨0, [t0], 0, by decide, t0, rfl, trivial⟩

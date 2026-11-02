@@ -7,11 +7,25 @@
 -/
 import ArmadaLean.Spec.TransactOwned
 import ArmadaLean.SpecTools
+import ArmadaLean.Witness.CircuitValues
 
-/-- The witness of `Spec.transactOwned_value_conserved`: open. -/
-theorem Spec.transactOwned_value_conserved.witness : spec_premise% Spec.transactOwned_value_conserved := by
-  sorry
+open ArmadaLean.Witness.CircuitValues
 
-/-- The witness of `Spec.commitment_owner_inj`: open. -/
+/-- The witness of `Spec.transactOwned_value_conserved`: `N = M = 0`, so
+    every per-input and per-output field of `OwnedConstrained` is vacuous
+    and the balance check is `fieldEq 0 0`, `rfl`. -/
+theorem Spec.transactOwned_value_conserved.witness :
+    spec_premise% Spec.transactOwned_value_conserved := by
+  refine ⟨0, 0,
+    ⟨token0, fun i => i.elim0, fun i => i.elim0, fun i => i.elim0, fun i => i.elim0,
+      fun j => j.elim0, fun j => j.elim0⟩,
+    ⟨t0, t0, fun i => i.elim0, fun j => j.elim0, t0⟩,
+    by decide, by decide,
+    ⟨fun i => i.elim0, fun i => i.elim0, fun i => i.elim0, fun j => j.elim0,
+      fun i => i.elim0, fun j => j.elim0, rfl⟩,
+    trivial⟩
+
+/-- The witness of `Spec.commitment_owner_inj`: `t0` against itself, randomness
+    `0`, value `0`. -/
 theorem Spec.commitment_owner_inj.witness : spec_premise% Spec.commitment_owner_inj := by
-  sorry
+  refine ⟨t0, t0, 0, 0, 0, token0, rfl, trivial⟩
