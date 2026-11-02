@@ -12136,17 +12136,21 @@ theorem Route.IntermediaryInv.step {apps : Apps E} {r : Route E} {Pprev P Pnext 
     intro k dflt oV hf hx
     unfold satpShare
     simp only [hf, Outcome.entries, hx, ↓reduceIte]
-  obtain ⟨hAm, hFm, hBm, hCm⟩ := ledger_held_step h Lm (r.dest P) w.heldm hIm 1
-    (satpShare r s 1 r.b0) (Or.inr ⟨rfl, w.destPrev, rfl⟩) hspec
-  obtain ⟨hAp, hFp, hBp, hCp⟩ := ledger_held_step h Lp (r.dest P) w.heldp hIp 0
-    (satpShare r s 0 r.a0) (Or.inl ⟨rfl, w.destNext, rfl⟩) hspec
-  have hbal : s.balances.get (.external (r.dest P)) ≤ s'.balances.get (.external (r.dest P)) :=
-    paid_out_monotone apps s s' (Step.mk caller o s s' h) (r.dest P)
+  have hAm : r.LedgerHeldInv Pprev P Lm om s' :=
+      (ledger_held_step h Lm (r.dest P) w.heldm hIm 1 (satpShare r s 1 r.b0)
+        (Or.inr ⟨rfl, w.destPrev, rfl⟩) hspec).1
+  have hAp : r.LedgerHeldInv P Pnext Lp op s' :=
+      (ledger_held_step h Lp (r.dest P) w.heldp hIp 0 (satpShare r s 0 r.a0)
+        (Or.inl ⟨rfl, w.destNext, rfl⟩) hspec).1
   have hmid : total ≤ (ledgerCur s' Lm om).owed (.external (r.dest P)) +
       ledgerPend r Pprev P s' Lm om (satpShare r s 1 r.b0) +
       ((ledgerCur s' Lp op).owed (.external (r.dest P)) +
         ledgerPend r P Pnext s' Lp op (satpShare r s 0 r.a0)) +
       s'.balances.get (.external (r.dest P)) := by
+    obtain ⟨_, hFm, hBm, hCm⟩ := ledger_held_step h Lm (r.dest P) w.heldm hIm 1
+      (satpShare r s 1 r.b0) (Or.inr ⟨rfl, w.destPrev, rfl⟩) hspec
+    obtain ⟨_, hFp, hBp, hCp⟩ := ledger_held_step h Lp (r.dest P) w.heldp hIp 0
+      (satpShare r s 0 r.a0) (Or.inl ⟨rfl, w.destNext, rfl⟩) hspec
     rcases hBm with hm | ⟨b, hb⟩
     · rcases hBp with hp | ⟨b', hb'⟩
       · unfold Coins at *; omega
@@ -12163,6 +12167,10 @@ theorem Route.IntermediaryInv.step {apps : Apps E} {r : Route E} {Pprev P Pnext 
   have hkeep : s.finalizedWith r.V.address = none →
       (ledgerCur s' Lm om).find r.V.address = some (r.guarantee Pprev P) ∧
       (ledgerCur s' Lp op).find r.V.address = some (r.guarantee P Pnext) := by
+    obtain ⟨_, hFm, hBm, hCm⟩ := ledger_held_step h Lm (r.dest P) w.heldm hIm 1
+      (satpShare r s 1 r.b0) (Or.inr ⟨rfl, w.destPrev, rfl⟩) hspec
+    obtain ⟨_, hFp, hBp, hCp⟩ := ledger_held_step h Lp (r.dest P) w.heldp hIp 0
+      (satpShare r s 0 r.a0) (Or.inl ⟨rfl, w.destNext, rfl⟩) hspec
     intro hs
     obtain ⟨hpm, hpp⟩ := hpres hs
     refine ⟨?_, ?_⟩
