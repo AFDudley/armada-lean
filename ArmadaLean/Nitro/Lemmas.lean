@@ -2510,9 +2510,12 @@ theorem Ahead.chan_mono {sp sg sg' : Adjudicator E} {c : FixedPart}
   | none => exact .none
   | some hrel => exact .some (hrel.mono hle)
 
-/-- One transfer by the adversary alone keeps `sg` ahead of `sp`. -/
-theorem Ahead.transfer_right {sp sg sg' : Adjudicator E} {a : FixedPart} {b : Address E}
-    (h : sp.Ahead sg) (ht : sg.transfer a b = some sg') : sp.Ahead sg' := by
+/-- One transfer by the adversary alone, reverted or not, keeps `sg` ahead of `sp`. -/
+theorem Ahead.transfer_right {sp sg : Adjudicator E} (h : sp.Ahead sg) (a : FixedPart)
+    (b : Address E) : sp.Ahead ((sg.transfer a b).getD sg) := by
+  rcases ht : sg.transfer a b with _ | sg'
+  · exact h
+  rw [Option.getD_some]
   obtain ⟨og, amt, x, hf, hfind, -, -, hx, hfo, hget, hdt, hsum⟩ := transfer_effect ht
   refine ⟨fun c => ?_, fun d L hL => ?_⟩
   · have hgc := hget c.address

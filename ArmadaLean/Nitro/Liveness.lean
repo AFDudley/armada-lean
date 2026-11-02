@@ -5109,10 +5109,7 @@ theorem Adjudicator.Ahead.applyAll_sublist (apps : Apps E) {L L' : List (Partici
     simp only at he
     subst he
     simp only [Adjudicator.applyAll, Adjudicator.apply_transfer]
-    refine ih (fun e' he' => hL' e' (List.mem_cons_of_mem _ he')) ?_
-    cases ht : sg.transfer a b with
-    | none => exact h
-    | some sg' => exact h.transfer_right ht
+    exact ih (fun e' he' => hL' e' (List.mem_cons_of_mem _ he')) (h.transfer_right a b)
   | @cons_cons l1 l2 e _ ih =>
     intro sp sg h
     obtain ⟨a, b, he⟩ := hL' e List.mem_cons_self
