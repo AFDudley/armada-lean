@@ -25,6 +25,12 @@ from the checked environment on each run.
   `theorem_witness_open` says whether that theorem's witness is open: one boolean,
   so an acceptance oracle can compare it with `eq` (the oracle grammar has no
   list-membership comparison).
+- witness_blocked: an open witness whose premise reaches a declared primitive (an
+  axiom that is not a proposition, such as `EdDSAVerify` or `VerifyAccepts`). No
+  concrete value proves a hypothesis about an uninterpreted primitive
+  (`docs/spec-module-design.md` §5), so the witness waits on the primitive, not on
+  work. It maps the theorem to the primitives; it is not in `witness_open`.
+  `theorem_witness_blocked` answers for a THEOREM_NAME.
 - sorry: the spec theorems whose axioms include `sorryAx`.
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
 """
@@ -67,6 +73,7 @@ def main() -> int:
     helpers: list[dict] = []
     sorry: list[str] = []
     witness_open: list[str] = []
+    witness_blocked: dict[str, list[str]] = {}
     every_state: list[str] = []
     vacuous: list[str] = []
     if build_ok:
@@ -118,7 +125,13 @@ def main() -> int:
                         fails["nonvacuity"].append(f"{w['name']} depends on the axiom {a}, "
                                                    "which asserts a property")
                     if "sorryAx" in w["axioms"]:
-                        witness_open.append(name)
+                        prims = sorted(a for a in spec.get("premise_axioms", [])
+                                       if a != "sorryAx" and not ax_info[a]["core"]
+                                       and not ax_info[a]["prop"])
+                        if prims:
+                            witness_blocked[name] = prims
+                        else:
+                            witness_open.append(name)
         for d in report["spec_defs"]:
             if d not in member_specs:
                 fails["signatures"].append(f"{d} belongs to no spec theorem")
@@ -193,6 +206,8 @@ def main() -> int:
     say(json_mode, f"SORRY_COUNT {len(sorry)}")
     for n in sorted(witness_open):
         say(json_mode, f"WITNESS_OPEN {n}")
+    for n in sorted(witness_blocked):
+        say(json_mode, f"WITNESS_BLOCKED {n} on {', '.join(witness_blocked[n])}")
     runtime = round(time.monotonic() - t0, 1)
     say(json_mode, f"RUNTIME {runtime}s")
 
@@ -216,6 +231,9 @@ def main() -> int:
             "spec_count": len(members),
             "helper_count": len(helpers),
             "witness_open": sorted(witness_open),
+            "witness_blocked": {n: witness_blocked[n] for n in sorted(witness_blocked)},
+            "theorem_witness_blocked": bool(theorem) and any(
+                n == theorem or n.endswith("." + theorem) for n in witness_blocked),
             "every_state": sorted(every_state),
             "vacuous_defs": vacuous,
             "failures": {k: v for k, v in fails.items() if v},

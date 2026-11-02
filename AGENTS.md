@@ -106,6 +106,8 @@ defect and the counts before and after (coordinator decision
 **A spec theorem is finished** when `scripts/check.sh --json NAME`
 prints both `theorem_in_sorry` false and `theorem_witness_open` false.
 `sorry_count` counts proofs only; an open non-vacuity witness is listed
-in `witness_open`.
+in `witness_open`. A witness in `witness_blocked` waits on a trusted
+primitive (`EdDSAVerify`, `VerifyAccepts`, `VerifyOwnedAccepts`), not
+on work: its theorem is finished as far as the model can go.
 ## Repair pass
 A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.6, in the order R.6 gives; each operation equation is proved against its Spec statement.

@@ -191,6 +191,13 @@ New fields: `spec_count`, `helper_count`, `witness_open`, `theorem_witness_open`
 `vacuous_defs`, `failures`, `runtime_seconds`. `theorem_witness_open` answers, for the theorem
 named on the command line, whether its witness is in `witness_open`. It is one boolean because
 the acceptance-oracle grammar compares scalars only and has no list membership.
+`witness_blocked` maps each open witness whose premise needs a declared primitive (an axiom
+that is not a proposition: `EdDSAVerify`, `VerifyAccepts`, `VerifyOwnedAccepts`) to those
+primitives; such a witness is not in `witness_open`, and `theorem_witness_blocked` answers for
+a named theorem. The primitives a premise needs are found from its binder types: the walk
+follows definitions and structure fields (every field must hold) and does not follow the
+constructors of an inductive (one constructor suffices, so a reachable pool state needs no
+transact step). Measured at `13cd2e50`: 11 blocked witnesses, 0 open outside Nitro.
 
 A pebble that reads `theorem_in_sorry` reads the same answer for a spec theorem. A helper is
 not in `sorry` any more: an open helper shows in `sorry` through the spec theorems that use it.

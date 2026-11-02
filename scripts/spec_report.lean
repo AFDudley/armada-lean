@@ -70,6 +70,32 @@ def binderFacts (heads preds : NameSet) (xs : Array Expr) : MetaM (Array Json) :
       ("reach_of", toJson reachOf)]
   return out
 
+/-- The `ArmadaLean` axioms that every value of the binder types `tys` must supply.
+    The walk follows a definition's type and value and a structure's field types,
+    because every field must hold. It does not follow an inductive's constructors:
+    one constructor suffices (a reachable pool state needs no transact step). -/
+def requiredAxioms (tys : List Expr) : MetaM (List Name) := do
+  let env ← getEnv
+  let inModel (c : Name) : Bool := (moduleOf? env c).any (`ArmadaLean).isPrefixOf
+  let mut todo : List Name := tys.foldl (fun acc t => t.getUsedConstants.toList ++ acc) []
+  let mut seen : NameSet := {}
+  let mut out : List Name := []
+  while !todo.isEmpty do
+    let c := todo.head!
+    todo := todo.tail!
+    if seen.contains c || !inModel c then continue
+    seen := seen.insert c
+    match env.find? c with
+    | some (.axiomInfo _) => out := c :: out
+    | some (.defnInfo v) =>
+      todo := v.type.getUsedConstants.toList ++ v.value.getUsedConstants.toList ++ todo
+    | some (.inductInfo v) =>
+      if isStructure env c then
+        for k in v.ctors do
+          if let some kci := env.find? k then todo := kci.type.getUsedConstants.toList ++ todo
+    | _ => pure ()
+  return out
+
 /-- The facts of a spec definition `d`. -/
 def specFacts (heads : NameSet) (d : Name) : MetaM Json := do
   let env ← getEnv
@@ -81,6 +107,12 @@ def specFacts (heads : NameSet) (d : Name) : MetaM Json := do
     let reach ← xs.anyM fun x => do isReachSubtype heads (← inferType x)
     return (raw, reach)
   let needs ← needsWitness d
+  -- The axioms that a value of every premise binder must supply. A witness whose
+  -- premise needs a declared primitive (an axiom that is not a proposition, such as
+  -- `EdDSAVerify`) has no concrete proof (`docs/spec-module-design.md` §5).
+  let premiseAxioms ← withSpecTelescope d fun xs _ => do
+    let tys ← xs.toList.mapM fun x => do instantiateMVars (← inferType x)
+    return (← requiredAxioms tys).map toString
   let w := witnessNameOf d
   let witness ← match env.find? w with
     | none => pure Json.null
@@ -93,7 +125,7 @@ def specFacts (heads : NameSet) (d : Name) : MetaM Json := do
   return Json.mkObj [("name", toJson d.toString), ("doc", toJson doc),
     ("module", toJson ((moduleOf? env d).map toString)),
     ("binding_error", toJson err), ("raw_state", toJson raw), ("reach_state", toJson reach),
-    ("needs_witness", toJson needs), ("witness", witness)]
+    ("needs_witness", toJson needs), ("premise_axioms", toJson premiseAxioms), ("witness", witness)]
 
 #eval show MetaM Unit from do
   let env ← getEnv
