@@ -1,14 +1,14 @@
 {
   "lint_summary": {
     "aliasHypothesis_findings": 53,
-    "decls_scanned": 1668,
+    "decls_scanned": 1669,
     "layerDiscipline_nitro_hits": 0,
     "layerDiscipline_nitro_spec_total": 97,
     "layerDiscipline_pool_hits": 0,
-    "layerDiscipline_pool_spec_total": 47,
-    "looseHypothesis_findings": 218,
+    "layerDiscipline_pool_spec_total": 53,
+    "looseHypothesis_findings": 219,
     "nitro_decls": 1269,
-    "pool_decls": 399,
+    "pool_decls": 400,
     "premiseVariant_groups": 9,
     "repeatedPremise_groups": 223,
     "summary": true
@@ -45,7 +45,7 @@
     "ArmadaLean/PoolSafety.lean": "1f641ef12c54d29d3d867d05796cddc321a72efe8893a7310b39b0f88a67805b",
     "ArmadaLean/Poseidon.lean": "5937ccc90b889e3848b6f20c2a672f54c8f636c45142e9fbb475eb6b6851db31",
     "ArmadaLean/RangeCheck.lean": "a8ddb070f80fe0923bbce7361de110ee8dd5fd31fadc5c7499dc506d2554dcbf",
-    "ArmadaLean/Spec.lean": "4306862a225121c99bbcc9d57600e5ab2f32c34ee0947cedc73de19b59a751b3",
+    "ArmadaLean/Spec.lean": "74a3d79c7f1670900813ea29ee6be2c1df5843c80e081fa76a0b83a3d2d962c7",
     "ArmadaLean/Spec/BoundParams.lean": "4bb856c68b1bd51ae18a389a4919299e4a3167631f34b6f02d2c108c061b6a99",
     "ArmadaLean/Spec/Fee.lean": "1794a118b69005b4b8a2dfd55d48229be3dbc742c4a28fbf2be8252bc8efeecd",
     "ArmadaLean/Spec/Field.lean": "a7e6b60e1772c15efb99367d251f7185d4a45640a23342671b4a0c9d5de82765",
@@ -67,7 +67,7 @@
     "ArmadaLean/Spec/Transact.lean": "5c50cf6d92d7443352dc8fb1df3b92e66b3a01e1a38a60e2a6837cc5ab25710f",
     "ArmadaLean/Spec/TransactOwned.lean": "befbf111cbdf5e2ee266bf84261cd5762ce95357577e8360b26d6ea20421a684",
     "ArmadaLean/Spec/ValueConservation.lean": "2207e1864402b422033aa1fa2c0a7c9be5957ad3159f2b172e9ac5c6dab2c1e1",
-    "ArmadaLean/Spec/Vault.lean": "b282935378c3b3fa59dc821d3235a79b561f5dce32294a52945034146f5ba5e2",
+    "ArmadaLean/Spec/Yield/Vault.lean": "c8c1402d77fe9511627f023315646d17195369f3054e948cdfdd27a70eead13c",
     "ArmadaLean/SpecTools.lean": "93a4ffbaae69da35fb56ab01489d514603be4157d80fb0286a26780bda55abde",
     "ArmadaLean/Token.lean": "d3a80f397601119dadf7f29ac771bee3beaf760f5c33308aee14a44e9b1092e3",
     "ArmadaLean/Transact.lean": "b6c8499fac2d40ca25549a53b99ab1cb4de5893ef30667f1869223de72f78a44",
@@ -80,8 +80,7 @@
     "ArmadaLean/Types/Reachable.lean": "d40268cd8f2b88a8efbdb6ce7c2ab49fb77588365190fcaf65633e9354024cdd",
     "ArmadaLean/Types/Satp.lean": "a076899ec1ebe026a0ed121005eddde1f1fc48880e2fb31e32c7e33d5ff6eef2",
     "ArmadaLean/ValueConservation.lean": "107f5b141d2151134af04e6f302edff45001e402c29ed71cf699a033afd18490",
-    "ArmadaLean/Vault.lean": "9e7b1c5ba1c9873c8f03b04ae519ac193e4946d64accafad0e772f92704d8a41",
-    "ArmadaLean/Witness.lean": "ad9c2c49fb52b6bab87704b9c0eac75eb264d2662906daee0749fbd73379ec8d",
+    "ArmadaLean/Witness.lean": "1da5c411824e4f888baf588cd09d00229072ee525b8f1254d0cb145a7e71be66",
     "ArmadaLean/Witness/BoundParams.lean": "809180b340ca11064ddf7c8aaef8326b6e859d10926825009b842da48b8f0026",
     "ArmadaLean/Witness/CircuitValues.lean": "ee6b13a436650b92de47889bb4202a0ee14c248aca1fee793def2d4eec418a54",
     "ArmadaLean/Witness/Fee.lean": "9a737e922bd4728384a1f58c42ddf716aca8fe65d4a66abb8c54f3ba47e2d140",
@@ -100,6 +99,8 @@
     "ArmadaLean/Witness/RangeCheck.lean": "7268fceaa020662161a590d52a70b9f9385d2899030ae1dcd1fad61b03eaef63",
     "ArmadaLean/Witness/Transact.lean": "c4dfcc4a42ea3a9032a598c5215735cbd2018ba461a7d11526eb640ec2643afa",
     "ArmadaLean/Witness/TransactOwned.lean": "ef0450c6a4ca70154399be9f9fde5a9fcd2e0a8afd07f11e834f4f21a0f33f27",
-    "ArmadaLean/Witness/ValueConservation.lean": "1872baa962433db6cd4ce34735ab434461a0cf0ba4610c98ed59ab302f890282"
+    "ArmadaLean/Witness/ValueConservation.lean": "1872baa962433db6cd4ce34735ab434461a0cf0ba4610c98ed59ab302f890282",
+    "ArmadaLean/Witness/Yield/Vault.lean": "ed2c8e1a02d1239a6c04ce46215512c987043da836754698c1792bd576e4db40",
+    "ArmadaLean/Yield/Vault.lean": "24b4e0b80b69c4c917f88d943d892be132f4267415d7fd83fb437e207a3c4cea"
   }
 }
