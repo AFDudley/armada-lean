@@ -55,6 +55,30 @@ def ofFixedPart? (c : FixedPart) (ε : Time) : Option (TimedChannel ε) :=
 
 end TimedChannel
 
+/-! ## `ConsensusMember`: `p` takes part in a channel that runs the consensus app -/
+
+/-- `p` is a participant of `c`, and `c` runs the consensus app. The consensus round
+    lemmas of `Liveness.lean` need the two facts together. -/
+structure ConsensusMember (apps : Apps E) (p : Participant) (c : FixedPart) : Prop where
+  app : apps c.appDef = consensusRules
+  mem : p ∈ c.participants
+
+/-- Under the consensus app, a candidate that a support proof of `c` accepts is the one
+    state of the proof, and every participant signed it. So when each state of the proof
+    that `p` signed is a state of `sent`, the candidate is a state of `c` in `sent`. -/
+theorem ConsensusMember.sent_cand {apps : Apps E} {p : Participant} {c : FixedPart}
+    (hC : ConsensusMember apps p c) {sent : List (SignedState E)} {proof : SupportProof E}
+    {cand : State E} (hU : ∀ ss ∈ proof, p ∈ ss.signers → ∃ x ∈ sent, x.state = ss.state)
+    (hs : (apps c.appDef).supports c proof cand = true) :
+    ∃ x ∈ sent, x.state = cand ∧ cand.channel = c := by
+  rw [hC.app] at hs
+  match proof, hs with
+  | [ss], hs =>
+    simp only [consensusRules, Bool.and_eq_true, decide_eq_true_eq] at hs
+    obtain ⟨⟨hss, hch⟩, hall⟩ := hs
+    obtain ⟨x, hx, hxs⟩ := hU ss (List.mem_singleton_self _) (hall p (hch ▸ hC.mem))
+    exact ⟨x, hx, hxs.trans hss, hss ▸ hch⟩
+
 /-! ## `LedgerChannel`: the channel's own `kind`, not the app it runs -/
 
 /-
