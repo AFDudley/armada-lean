@@ -21,3 +21,5 @@ signatures; every set it reports is computed on each run.
 - `declsizes.py` — docs/lean/verification.md section 1's declaration-size
   script (`worker-briefs.md` design check D5).
 - `git-hooks/` — the pre-commit hook scripts; see its own `CLAUDE.md`.
+- `oracles/` — committed acceptance oracles that pebble specs run (Lean
+  probes); see its own `CLAUDE.md`.
