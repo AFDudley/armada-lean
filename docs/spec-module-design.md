@@ -237,6 +237,16 @@ A worker branch from before the cutover:
 | "Every state" entries | 86 TSV rows | 56 (14 with a generated reason) |
 | Witnesses | 149 entries need one: 81 proved by `spec_witness`, 68 open |
 
+**The `scripts/check.sh --json` wall-time row above is stale.** It
+measures only `lake build` plus `spec_report.lean`, at commit `5e5ce55`.
+Commit `c0af16a2` (2026-11-01), a child of `5e5ce55`, added the
+`gate_extra.check_lint`, `check_decision_scope`, and
+`check_counterexamples` checks that `scripts/check.sh --json` now runs on
+every call. Commit `88d4ab9a` on branch `perf/counterexamples-pool`
+(2026-11-03) pools the `check_counterexamples` file loop in a
+`ThreadPoolExecutor`. Measured on a `.scratch` worktree at that branch:
+`scripts/check.sh --json`, warm build, 3 runs, wall time 53.9-57.4 s.
+
 **No compatibility helper (decision 3 restated).** The first cutover
 (`draft/spec-module-2`/`-3`) gave each converted theorem `foo` a
 `foo.of_reachable` theorem — the pre-conversion header, proved by `foo` — and
