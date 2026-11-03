@@ -1,0 +1,74 @@
+status: completed
+pebble_id: aln-fe8
+summary: >
+  Added `Pool.ContractState` to ArmadaLean/Pool.lean: a six-field structure
+  holding exactly the state a real pool contract stores on-chain (trees,
+  spent, held, preimageOf, treasuryFees, feeRatio — Merkle trees, the
+  nullifier set of each tree, token custody, the preimage registry, treasury
+  fees, and the fee rate), with field order matching the committed probe's
+  anonymous-constructor shape. Added `PoolState.contract : PoolState ->
+  Pool.ContractState`, mapping a full model state to those same six fields by
+  `rfl`, dropping the ghost fields `live`, `published` and `payouts`. No
+  existing declaration, signature, or statement was touched. Refreshed
+  scripts/gate-baseline.json via `scripts/update_gate_baseline.py` (full,
+  non-hashes-only run) to pick up the new file hash and the +1
+  decls_scanned/pool_decls denominators; no LINT_REGRESSION_FIELDS count
+  moved and decisionScope findings stayed at 0. Verified end to end: `lake
+  build` succeeds (1066/1066 jobs); `scripts/check.sh --json` (full gate)
+  exits 0 with every _ok field true (build_ok, axioms_ok, signatures_ok,
+  nonvacuity_ok, reach_ok, lint_ok, decision_ok, counterexamples_ok) in
+  128.97s; `python3 scripts/oracles/lean_probe.py
+  scripts/oracles/pool_exec/PE1.lean` elaborates with zero errors and reports
+  `PoolState.contract`'s only axioms as propext/Classical.choice/Quot.sound
+  (none of EdDSAVerify/VerifyAccepts/VerifyOwnedAccepts, since `.contract` is
+  a plain field projection) — exactly the spec's acceptance predicates. Ran
+  `pre-commit run --all-files --hook-stage manual --verbose` (the merge
+  boundary's own command, AGENTS.md "Lean work: standing rules"); all 8 hooks
+  passed, including gate-baseline-fresh against the refreshed baseline.
+cost: "~95k tokens"
+commits:
+  - "9b8968b8a740ff98730de347d6e26ec31b9814d3"
+verify_transcript:
+  hooks:
+    - name: "lake build (full project)"
+      outcome: passed
+      duration_s: 274.68
+    - name: "scripts/check.sh --json (full gate)"
+      outcome: passed
+      duration_s: 128.97
+    - name: "scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE1.lean"
+      outcome: passed
+      duration_s: 5.5
+    - name: claude-md-coverage
+      outcome: passed
+      duration_s: 0.04
+    - name: gate-baseline-fresh
+      outcome: passed
+      duration_s: 0.07
+    - name: trailing-whitespace
+      outcome: passed
+      duration_s: 0.08
+    - name: end-of-file-fixer
+      outcome: passed
+      duration_s: 0.06
+    - name: check-yaml
+      outcome: passed
+      duration_s: 0.05
+    - name: check-added-large-files
+      outcome: passed
+      duration_s: 0.08
+    - name: check-merge-conflict
+      outcome: passed
+      duration_s: 0.08
+    - name: check-case-conflict
+      outcome: passed
+      duration_s: 0.07
+    - name: mixed-line-ending
+      outcome: passed
+      duration_s: 0.07
+e2e_gate:
+  spec: contracts/specs/derived-aln-fe8.spec.json
+  command: "python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE1.lean"
+  result: passed
+  ran_at_sha: "9b8968b8a740ff98730de347d6e26ec31b9814d3"
+  mocks_in_path: false
