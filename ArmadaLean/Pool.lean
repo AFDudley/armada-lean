@@ -961,6 +961,25 @@ structure PoolState where
   feeRatio : FeeRatio
   treasuryFees : Token → Nat
 
+/-- The pool contract's own on-chain storage (docs/pool-executable.md, rule PE1):
+    the six fields of `PoolState` a real pool contract actually keeps — the Merkle
+    trees, the nullifier set of each tree, the custody of each token, the preimage
+    registry, the treasury fees of each token and the fee rate — and nothing else.
+    `live`, `published` and `payouts` are the model's own ghost bookkeeping
+    (`PoolState` docstring above); no contract storage slot backs them. -/
+structure Pool.ContractState where
+  trees : List TreeState
+  spent : Nat → NullifierSet
+  held : Token → Nat
+  preimageOf : PreimageRegistry
+  treasuryFees : Token → Nat
+  feeRatio : FeeRatio
+
+/-- The contract state a `PoolState` reduces to: its six `Pool.ContractState`
+    fields, dropping the ghost fields `live`, `published` and `payouts` (PE1). -/
+def PoolState.contract (s : PoolState) : Pool.ContractState :=
+  ⟨s.trees, s.spent, s.held, s.preimageOf, s.treasuryFees, s.feeRatio⟩
+
 /-- The root history of tree `treeNumber`. -/
 def PoolState.rootsAt' (s : PoolState) (treeNumber : Nat) : List Term :=
   rootsAt s.trees treeNumber
