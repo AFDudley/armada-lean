@@ -82,10 +82,10 @@ DECISION_MAX_OMEGA_HYPS = 13
 DECISION_MAX_DECIDE_SIZE = 300
 
 # The host rule (`AGENTS.md` "Lean work: standing rules"): at most 4 Lean
-# processes run at once. The decisionScope scan runs each changed file
-# through its own `lake env lean` process, in a `ThreadPoolExecutor`
-# capped at this count.
-DECISION_SCOPE_MAX_WORKERS = 4
+# processes run at once. The decisionScope scan and the counterexample
+# build each run their own `lake env lean` processes, in a
+# `ThreadPoolExecutor` capped at this count.
+LEAN_PROCESS_MAX_WORKERS = 4
 
 _OMEGA_RE = re.compile(r"omega call in (\S+) \(line (\d+)\) consumes (\d+) hypotheses")
 _DECIDE_SIZE_RE = re.compile(r"decide call in (\S+) \(line (\d+)\): goal size (\d+)")
@@ -291,7 +291,7 @@ def run_decision_scope(root: Path, files: list[Path]) -> list[dict]:
     """Every `decisionScope` finding over `files`, at the committed
     bounds (`maxOmegaHyps = 13`, `maxDecideSize = 300`). An empty
     `files` list skips the build and returns no findings: nothing
-    changed, so there is nothing to scan. `DECISION_SCOPE_MAX_WORKERS`
+    changed, so there is nothing to scan. `LEAN_PROCESS_MAX_WORKERS`
     caps the concurrent `lake env lean` processes at the host's
     4-process Lean limit (`AGENTS.md`)."""
     if not files:
@@ -302,7 +302,7 @@ def run_decision_scope(root: Path, files: list[Path]) -> list[dict]:
     if tmp_root.exists():
         shutil.rmtree(tmp_root)
     findings: list[dict] = []
-    workers = min(DECISION_SCOPE_MAX_WORKERS, len(files))
+    workers = min(LEAN_PROCESS_MAX_WORKERS, len(files))
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(_scan_decision_file, root, f, tmp_root): f for f in files}
         for fut in as_completed(futures):
@@ -367,23 +367,34 @@ def check_counterexamples(root: Path) -> dict:
     """`counterexamples_ok`: every `docs/counterexamples/*.lean` builds
     (`lake env lean`, exit 0), and none has `sorryAx` in its own
     `#print axioms` output (an open proof the file already names, not a
-    finished counterexample)."""
+    finished counterexample). Each file runs through its own `lake env
+    lean` process, in a `ThreadPoolExecutor` capped at
+    `LEAN_PROCESS_MAX_WORKERS`, the same pattern `run_decision_scope`
+    uses for the host's 4-process Lean limit (`AGENTS.md`)."""
     t0 = time.monotonic()
     files = sorted((root / "docs" / "counterexamples").glob("*.lean"))
-    results = []
-    ok = True
-    for f in files:
+
+    def check_one(f: Path) -> dict:
         rel = str(f.relative_to(root))
         proc = _run([LAKE, "env", "lean", rel], root)
         has_sorry = "sorryAx" in proc.stdout
         passed = proc.returncode == 0 and not has_sorry
-        ok = ok and passed
-        results.append({
+        return {
             "file": rel,
             "exit_code": proc.returncode,
             "sorryAx": has_sorry,
             "ok": passed,
-        })
+        }
+
+    results: list[dict] = []
+    if files:
+        workers = min(LEAN_PROCESS_MAX_WORKERS, len(files))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(check_one, f): f for f in files}
+            for fut in as_completed(futures):
+                results.append(fut.result())
+        results.sort(key=lambda r: r["file"])
+    ok = all(r["ok"] for r in results)
     return {
         "counterexamples_ok": ok,
         "counterexamples": results,
