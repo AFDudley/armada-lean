@@ -2025,3 +2025,9 @@
 {"type":"comment","timestamp":"2026-11-02T20:17:05.866671Z","issue_id":"aln-4a3","payload":{"body":"gate-verdict: 938d1d8d2af578afd00bed0e2055d97977482618 passed 0.2.1+f2395f0b","build":"0.2.1+f2395f0b","outcome":"passed","sha":"938d1d8d2af578afd00bed0e2055d97977482618","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-02T20:17:05.892851Z","issue_id":"aln-4a3","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-02T20:17:05.902648Z","issue_id":"aln-4a3","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-03T01:47:07.286644Z","issue_id":"aln-07f9","payload":{"description":"Operator-authored branch `perf/counterexamples-pool`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: perf/counterexamples-pool","type":"task"}}
+{"type":"comment","timestamp":"2026-11-03T01:47:07.317267Z","issue_id":"aln-07f9","payload":{"body":"branch-identity: perf/counterexamples-pool"}}
+{"type":"comment","timestamp":"2026-11-03T01:59:08.966611Z","issue_id":"aln-07f9","payload":{"body":"exophial-integration-attempt-started: at ed2e9447d24e8277994db3cf495ff80410d68e47"}}
+{"type":"comment","timestamp":"2026-11-03T01:59:11.726048Z","issue_id":"aln-07f9","payload":{"body":"gate-verdict: 99ef6c4287a1b46cb3f0a6809d3a68b87a54d6ff passed 0.2.1+f2395f0b","build":"0.2.1+f2395f0b","outcome":"passed","sha":"99ef6c4287a1b46cb3f0a6809d3a68b87a54d6ff","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-03T01:59:11.750346Z","issue_id":"aln-07f9","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-03T01:59:11.759958Z","issue_id":"aln-07f9","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
