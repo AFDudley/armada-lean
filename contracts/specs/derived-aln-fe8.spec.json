@@ -1,0 +1,153 @@
+{
+  "id": "derived-aln-fe8",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. Pool.ContractState holds the Merkle trees, the nullifier set of each tree, the custody of each token, the preimage registry, the treasury fees of each token and the fee rate, and nothing else. PoolState.contract maps a PoolState to a Pool.ContractState and drops the fields live, published and payouts.\nWhat holds now? Describe the current, observed state. At integrated cb9d5a91, ArmadaLean declares no constant named Pool.ContractState and none named PoolState.contract.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Through /home/rix/bin/lean-run, run `lake env lean` on a file that holds `import ArmadaLean` and `#check @Pool.ContractState`; Lean prints an unknown-identifier error.\nWhat constraints apply? State them in plain prose. No approved statement changes: scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes about 110 to 150 seconds on this host. No new axiom, sorry, admit, native_decide or #exit. No type-doctrine linter count rises above scripts/gate-baseline.json. When a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch. No new file outside ArmadaLean/. A bare `lake clean` is never run. In docs/pool-executable.md, `Pool.Step` names the root-level inductive `Step` of ArmadaLean/Pool.lean.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean pool model (ArmadaLean/Pool.lean and the modules that import it)",
+  "restatement": "In the ArmadaLean Lean formalization of the pool protocol, add a definition `Pool.ContractState` that holds exactly the fields a real pool contract would store on-chain: the Merkle trees, the nullifier set for each tree, the custody balance of each token, the preimage registry, the treasury fees of each token, and the fee rate \u2014 and no other fields. Add a function `PoolState.contract` that maps a full model `PoolState` down to a `Pool.ContractState` by dropping the ghost fields `live`, `published`, and `payouts`. This must be done without changing any already-approved pool statement, without adding any new axiom/sorry/admit/native_decide/#exit, without adding files outside ArmadaLean/, and without raising any type-doctrine linter count above the gate baseline, while scripts/check.sh --json continues to report every _ok field (including signatures_ok) true, and `Pool.Step` in docs/pool-executable.md still names the root-level inductive `Step` in ArmadaLean/Pool.lean.",
+  "restatement_clauses": [
+    {
+      "id": "c4+c5+c7",
+      "text": "scripts/check.sh --json reports signatures_ok true, meaning no approved statement changed. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json. No type-doctrine linter count rises above scripts/gate-baseline.json (and if a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch)."
+    },
+    {
+      "id": "c1+c2+c3+c6+c9",
+      "text": "Pool.ContractState holds the Merkle trees, the nullifier set of each tree, the custody of each token, the preimage registry, the treasury fees of each token and the fee rate, and nothing else. PoolState.contract maps a PoolState to a Pool.ContractState and drops the fields live, published and payouts. Running `lake env lean` (via /home/rix/bin/lean-run) on a file that imports ArmadaLean and contains `#check @Pool.ContractState` succeeds with no unknown-identifier error. No new axiom, sorry, admit, native_decide or #exit is introduced. In docs/pool-executable.md, `Pool.Step` still names the root-level inductive `Step` of ArmadaLean/Pool.lean."
+    }
+  ],
+  "goal": "Make the Lean proof files define a 'ContractState' that lists only the data a real pool smart contract would actually store (trees, nullifiers, custody, preimages, fees), and a function that strips the extra bookkeeping fields from the full model state down to that contract state \u2014 all while keeping every existing check and proof passing exactly as before.",
+  "acceptance_criteria": [
+    "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+    "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE1.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE1 (docs/pool-executable.md) with no error, and prints `#print axioms` for `PoolState.contract`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+      "restatement_clause_id": "c4+c5+c7"
+    },
+    {
+      "id": "c2",
+      "text": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE1.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE1 (docs/pool-executable.md) with no error, and prints `#print axioms` for `PoolState.contract`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "restatement_clause_id": "c1+c2+c3+c6+c9"
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+      "proves": "No approved statement changes (signatures_ok), the build and every spec check pass, and no type-doctrine linter count or decisionScope finding rises above scripts/gate-baseline.json (lint_ok, decision_ok).",
+      "restatement_clause_id": "c4+c5+c7",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "nonvacuity_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "reach_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "counterexamples_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE1.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE1 (docs/pool-executable.md) with no error, and prints `#print axioms` for `PoolState.contract`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "proves": "Pool.ContractState holds the Merkle trees, the nullifier set of each tree, the custody of each token, the preimage registry, the treasury fees of each token and the fee rate, and nothing else. PoolState.contract maps a PoolState to a Pool.ContractState and drops the fields live, published and payouts. Running `lake env lean` (via /home/rix/bin/lean-run) on a file that imports ArmadaLean and contains `#check @Pool.ContractState` succeeds with no unknown-identifier error. No new axiom, sorry, admit, native_decide or #exit is introduced. In docs/pool-executable.md, `Pool.Step` still names the root-level inductive `Step` of ArmadaLean/Pool.lean.",
+      "restatement_clause_id": "c1+c2+c3+c6+c9",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracles/lean_probe.py",
+        "args": [
+          "scripts/oracles/pool_exec/PE1.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "elaborates",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "error_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.0.decl",
+          "op": "eq",
+          "value": "PoolState.contract"
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": []
+}

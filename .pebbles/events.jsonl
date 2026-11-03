@@ -2097,3 +2097,4 @@
 {"type":"comment","timestamp":"2026-11-03T16:52:40.754407Z","issue_id":"aln-42c","payload":{"body":"gate-verdict: 415378427554df679348f72090db1c9fc8160d27 passed 0.2.1+d6e5065d","build":"0.2.1+d6e5065d","outcome":"passed","sha":"415378427554df679348f72090db1c9fc8160d27","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-03T16:52:40.792172Z","issue_id":"aln-42c","payload":{"body":"exophiald: merged (merged_after_rebase).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-03T16:52:40.808193Z","issue_id":"aln-42c","payload":{"outcome":"merged_after_rebase","reason":"main had advanced since the branch was cut; the branch was rebased then fast-forwarded"}}
+{"type":"comment","timestamp":"2026-11-03T16:53:39.309046053Z","issue_id":"aln-dde","payload":{"body":"spec: contracts/specs/derived-aln-dde.spec.json"}}
