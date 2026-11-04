@@ -31,13 +31,20 @@ doctrine above: a subagent starts blank and will not read it otherwise.
 Every exophial-dispatched worker that edits Lean code in this repo
 follows these rules.
 
-**Setup.** Create a branch and a worktree from `integrated`. Put the
-worktree under `.scratch/` in this repo. Symlink `.lake/packages` from
-the main checkout. Never copy `.lake/build`.
+**Setup.** In a worker container (your checkout is `/work`): nothing to
+set up. `lake` on `PATH` is the image's wrapper; its first call links
+`/work/.lake/packages` to the image's Mathlib packages and copies the
+image's prebuilt `.lake/build`. On the host: create a branch and a
+worktree from `integrated`, put the worktree under `.scratch/` in this
+repo, and symlink `.lake/packages` from the main checkout. Never copy
+`.lake/build` on the host.
 
-**Lean commands.** Run every Lean command through
-`/home/rix/bin/lean-run`. Run at most 4 `lean-run` commands at once. Use
-absolute paths only. Put scratch files under `<worktree>/.scratch/`.
+**Lean commands.** In a worker container, run `lake` directly:
+`/home/rix/bin/lean-run` does not exist there (worker aln-fe8,
+2026-11-03: "command not found: /home/rix/bin/lean-run"). On the host,
+run every Lean command through `/home/rix/bin/lean-run`, at most 4 at
+once. Use absolute paths only. Put scratch files under
+`<worktree>/.scratch/`.
 
 **Never run a bare `lake clean`.** Every worktree in this repo symlinks
 the same `.lake/packages` directory. A bare `lake clean` run from one
@@ -58,13 +65,13 @@ leave a bare non-terminal `simp`. Call `omega` on a small context.
 **Commits.** Commit once per step, with a message.
 
 **Acceptance.** Every task meets this before it is done:
-`lean-run scripts/check.sh --json` gives `true` for every `_ok` field,
+`scripts/check.sh --json` (through `lean-run` on the host) gives `true` for every `_ok` field,
 and the type-doctrine linter summary (`lint_ok`) and the decisionScope
 findings (`decision_ok`) are no worse than `scripts/gate-baseline.json`
 (`docs/lean/type-doctrine.md`, `armada-laconic`).
 
 **Pre-merge gate-quality check.** Before a merge, run
-`lean-run python3 scripts/gate_extra.py --json` on the branch's own
+`python3 scripts/gate_extra.py --json` (through `lean-run` on the host) on the branch's own
 worktree. This runs the lint, decisionScope, and counterexample checks
 alone, with no full `spec_check.py` build report needed. The
 decisionScope check scans only the `ArmadaLean/**/*.lean` files whose
@@ -91,8 +98,8 @@ tree against this FILE, not a live `git merge-base`: exophial's gate
 container ships the judged tree as a single commit with no other ref,
 so it cannot run `git merge-base` against `integrated`. When a task
 lowers a `gate_extra.LINT_REGRESSION_FIELDS` count or fixes a
-`decisionScope` finding, run `lean-run python3
-scripts/update_gate_baseline.py` and commit the updated
+`decisionScope` finding, run `python3
+scripts/update_gate_baseline.py` (through `lean-run` on the host) and commit the updated
 `scripts/gate-baseline.json` in the SAME branch. Never run it to raise
 a count or add a finding without a fix: the gate refuses a raised
 baseline the same way it refuses a raised count, by comparing the tree
