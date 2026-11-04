@@ -1256,16 +1256,20 @@ structure Pool.Verifier where
   owned : ∀ {N M : Nat}, TransactOwnedPublic N M → Term → Bool
 
 /-- The precondition of a `shield` call: the gross amount is positive (`hValue` of
-    `Step.shield`) and fits the ABI's `uint120 value` (PoolTypes.sol:82), which bounds
-    the note's value below it (`shieldBase_pos`, `shieldBase ≤ x`) the way
-    `Step.shield`'s `hSpendable` needs. -/
-def Pool.ContractState.ShieldPre (_s : Pool.ContractState) (_token : Token) (x : Nat)
+    `Step.shield`) and the note's value after the shield fee is below `2 ^ 120`, the
+    circuit's input range check (`Spendable`/`RangeChecked120`, `Step.shield`'s
+    `hSpendable`; `rangeCheck120_sound` turns `hSpendable` straight into this bound).
+    Stated over the computed note value, not the ABI bound on `x` directly: a gross
+    amount can exceed `2 ^ 120` while its fee-reduced note value still passes the range
+    check, so `x < 2 ^ 120` alone is not implied by `hSpendable` — `PE4`'s forward
+    refinement needs the weaker bound this precondition states. -/
+def Pool.ContractState.ShieldPre (s : Pool.ContractState) (_token : Token) (x : Nat)
     (_npk : Term) : Prop :=
-  0 < x ∧ x < 2 ^ 120
+  0 < x ∧ shieldBase s.feeRatio x < 2 ^ 120
 
 instance (s : Pool.ContractState) (token : Token) (x : Nat) (npk : Term) :
     Decidable (s.ShieldPre token x npk) :=
-  inferInstanceAs (Decidable (0 < x ∧ x < 2 ^ 120))
+  inferInstanceAs (Decidable (0 < x ∧ shieldBase s.feeRatio x < 2 ^ 120))
 
 /-- The effect of a `shield` call (`Step.shield`): the note gets `shieldBase`, the
     treasury gets `shieldFee`, and custody grows by the note value only. -/
@@ -1309,8 +1313,11 @@ instance (s : Pool.ContractState) (verify : Pool.Verifier) (caller : Term) {N M 
     unshieldCommitted pub.commitmentsOut unshieldToken bp.unshield = true))
 
 /-- The effect of a `transact` call (`Step.transact`): the proof's own output
-    commitments become the new leaves, the nullifiers are marked spent, custody falls by
-    the unshield amount of its token, and the disclosed records are recorded. -/
+    commitments become the new leaves — except the last one when there is an unshield,
+    the unshield's virtual commitment (`unshieldCommitted`), which `Step.transact` never
+    inserts as a leaf (its `trees` field uses `newNotes`, not `transactAllOutputs w`) —
+    the nullifiers are marked spent, custody falls by the unshield amount of its token,
+    and the disclosed records are recorded. -/
 def Pool.ContractState.transactEffect (s : Pool.ContractState) (verify : Pool.Verifier)
     (caller : Term) {N M : Nat} (pub : TransactPublic N M) (bp : BoundParams) (proof : Term)
     (unshieldToken : Option Token) (records : List (Term × CommitmentPreimage))
@@ -1319,8 +1326,11 @@ def Pool.ContractState.transactEffect (s : Pool.ContractState) (verify : Pool.Ve
     Pool.ContractState :=
   let spent' :=
     (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD (s.spent bp.treeNumber)
+  let newLeaves := match unshieldToken with
+    | some _ => (List.ofFn pub.commitmentsOut).dropLast
+    | none => List.ofFn pub.commitmentsOut
   { s with
-      trees := insertLeaves s.trees (List.ofFn pub.commitmentsOut),
+      trees := insertLeaves s.trees newLeaves,
       spent := fun n => if n = bp.treeNumber then spent' else s.spent n,
       held := match unshieldToken with
         | some tok => fun t => if t = tok then s.held t - withdrawn bp.unshield else s.held t

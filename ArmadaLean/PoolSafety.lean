@@ -2342,3 +2342,135 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
     rw [hone]
     unfold withTreePositionsFrom withPositionsFrom
     (simp? says simp only [List.length_cons, List.length_nil, Nat.zero_add, List.map_cons, List.mem_cons, List.mem_map, Prod.mk.injEq, true_and, Prod.exists, exists_eq_right_right, exists_eq_right, true_or])
+
+/-! ### Forward refinement: `Pool.apply` simulates every `Step` (docs/pool-executable.md,
+rule PE4)
+
+For every reachable state and every model transition, some call makes `Pool.apply`
+compute the contract state the transition reaches. The hypothesis — `verify` accepts
+every proof for public inputs a witness satisfies — is the completeness of the trusted
+verifier: `TransactProofCompleteness`/`OwnedProofCompleteness` give that a `Constrained`/
+`OwnedConstrained` witness's public input is accepted by the model's own
+`VerifyAccepts`/`VerifyOwnedAccepts`, and `Pool.Verifier.Realizes` carries that over to
+`verify` itself. The shield case reuses `Step.shield`'s own hypotheses directly
+(`ShieldPre` is stated to match them exactly); the transact cases reuse `Step.transact`'s/
+`Step.transactOwned`'s `Constrained`/`OwnedConstrained` witness to pick the call's proof,
+unshield token and disclosed records. -/
+theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hT : TransactProofCompleteness) (hO : OwnedProofCompleteness)
+    (rs : ReachableState Pool.machine) {s' : PoolState} (h : Step rs.state s') :
+    ∃ c : Pool.Call, Pool.apply verify rs.state.contract c = some s'.contract := by
+  cases h with
+  | shield token x npk hValue hSpendable =>
+    refine ⟨.shield token x npk, ?_⟩
+    have hPre : rs.state.contract.ShieldPre token x npk :=
+      ⟨hValue, rangeCheck120_sound _ hSpendable⟩
+    rw [Pool.apply_shield_equation, dif_pos hPre]
+    rfl
+  | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent'
+      records openings hRoot hRemove hNullify hRecords =>
+    obtain ⟨proof, hproof⟩ := (hReal.transact pub).mp (hT.complete hC)
+    have hCommitmentsOut :
+        List.ofFn pub.commitmentsOut = (transactAllOutputs w).map hashCommitment := by
+      rw [transactAllOutputs, List.map_ofFn]
+      exact congrArg List.ofFn (funext fun j => hC.outputs j)
+    have hRecordsMatch : recordsMatch pub.commitmentsOut records = true := by
+      unfold recordsMatch
+      rw [List.all_eq_true]
+      rintro ⟨c1, c2⟩ hcp
+      obtain ⟨j, hj⟩ := List.mem_ofFn.mp (hRecords.subset hcp)
+      injection hj with hj1 hj2
+      subst hj1; subst hj2
+      simp only [Bool.and_eq_true, decide_eq_true_eq]
+      exact ⟨(hC.outputs j).symm, List.elem_eq_true_of_mem (List.mem_ofFn.mpr ⟨j, rfl⟩)⟩
+    have hIsSome :
+        (markSpent (rs.state.contract.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome
+          = true := by
+      show (markSpent (rs.state.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome = true
+      rw [hNullify]; rfl
+    have hSpent :
+        (fun n => if n = bp.treeNumber then
+            (markSpent (rs.state.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD
+              (rs.state.spent bp.treeNumber)
+          else rs.state.spent n) = (fun n => if n = bp.treeNumber then spent' else rs.state.spent n) := by
+      funext n
+      simp only [hNullify, Option.getD_some]
+    rcases hu : bp.unshield with _ | u
+    · refine ⟨.transact caller pub bp proof none records openings, ?_⟩
+      have hNoneOutputs : transactAllOutputs w = newNotes := by
+        unfold UnshieldRefines at hOutputs; rw [hu] at hOutputs; exact hOutputs
+      have hTrees : insertLeaves rs.state.trees (List.ofFn pub.commitmentsOut) =
+          insertLeaves rs.state.trees (newNotes.map hashCommitment) := by
+        rw [hCommitmentsOut, hNoneOutputs]
+      have hPre : rs.state.contract.TransactPre verify caller pub bp proof none records openings :=
+        ⟨hN, hM, hproof, hBound, hAdapt, hRoot, hIsSome, hRecordsMatch, by
+          simp [unshieldCommitted, hu]⟩
+      rw [Pool.apply_transact_equation, dif_pos hPre]
+      congr 1
+      unfold Pool.ContractState.transactEffect PoolState.contract
+      simp [hTrees, hSpent, withdrawn]
+    · refine ⟨.transact caller pub bp proof (some w.token) records openings, ?_⟩
+      have hSomeOutputs :
+          transactAllOutputs w = newNotes ++ [(⟨u.recipient, w.token, u.value⟩ : CommitmentPreimage)] := by
+        unfold UnshieldRefines at hOutputs; rw [hu] at hOutputs; exact hOutputs
+      have hLast :
+          (List.ofFn pub.commitmentsOut).getLast? =
+            some (hashCommitment ⟨u.recipient, w.token, u.value⟩) := by
+        rw [hCommitmentsOut, hSomeOutputs, List.map_append, List.map_singleton]
+        exact List.getLast?_concat
+      have hTrees : insertLeaves rs.state.trees ((List.ofFn pub.commitmentsOut).dropLast) =
+          insertLeaves rs.state.trees (newNotes.map hashCommitment) := by
+        rw [hCommitmentsOut, hSomeOutputs, List.map_append, List.map_singleton, List.dropLast_concat]
+      have hPre :
+          rs.state.contract.TransactPre verify caller pub bp proof (some w.token) records openings :=
+        ⟨hN, hM, hproof, hBound, hAdapt, hRoot, hIsSome, hRecordsMatch, by
+          simp only [unshieldCommitted, hu, decide_eq_true_eq]; exact hLast⟩
+      rw [Pool.apply_transact_equation, dif_pos hPre]
+      congr 1
+      unfold Pool.ContractState.transactEffect PoolState.contract
+      dsimp only
+      rw [hTrees, hSpent, hu]
+  | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
+      openings hRoot hRemove hNullify =>
+    obtain ⟨proof, hproof⟩ := (hReal.owned pub).mp (hO.complete hC)
+    refine ⟨.transactOwned caller pub bp proof (ownedOutputRecords w pub) openings, ?_⟩
+    have hCommitmentsOut :
+        List.ofFn pub.commitmentsOut = (ownedNewNotes w).map hashCommitment := by
+      rw [ownedNewNotes, List.map_ofFn]
+      exact congrArg List.ofFn (funext fun j => hC.outputs j)
+    have hRecordsComplete :
+        recordsComplete pub.commitmentsOut (ownedOutputRecords w pub) = true := by
+      unfold recordsComplete ownedOutputRecords outputRecords
+      rw [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true]
+      constructor
+      · rw [List.map_ofFn]
+        exact congrArg List.ofFn (funext fun _ => rfl)
+      · rintro ⟨c1, c2⟩ hcp
+        obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
+        injection hj with hj1 hj2
+        subst hj1; subst hj2
+        exact decide_eq_true (hC.outputs j).symm
+    have hIsSome :
+        (markSpent (rs.state.contract.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome
+          = true := by
+      show (markSpent (rs.state.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome = true
+      rw [hNullify]; rfl
+    have hSpent :
+        (fun n => if n = bp.treeNumber then
+            (markSpent (rs.state.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD
+              (rs.state.spent bp.treeNumber)
+          else rs.state.spent n) = (fun n => if n = bp.treeNumber then spent' else rs.state.spent n) := by
+      funext n
+      simp only [hNullify, Option.getD_some]
+    have hTrees : insertLeaves rs.state.trees (List.ofFn pub.commitmentsOut) =
+        insertLeaves rs.state.trees ((ownedNewNotes w).map hashCommitment) := by
+      rw [hCommitmentsOut]
+    have hPre :
+        rs.state.contract.TransactOwnedPre verify caller pub bp proof
+          (ownedOutputRecords w pub) openings :=
+      ⟨hN, hM, hCaller, hproof, hBound, hAdapt, hNoUnshield, hRoot, hIsSome, hRecordsComplete⟩
+    rw [Pool.apply_transactOwned_equation, dif_pos hPre]
+    congr 1
+    unfold Pool.ContractState.transactOwnedEffect PoolState.contract
+    dsimp only
+    rw [hTrees, hSpent]
