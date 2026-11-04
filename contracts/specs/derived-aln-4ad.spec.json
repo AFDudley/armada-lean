@@ -1,0 +1,224 @@
+{
+  "id": "derived-aln-4ad",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. For every reachable pool state s and every Step s s', some call c gives Pool.apply verify s.contract c = some s'.contract, under the hypothesis that verify accepts every proof for public inputs that a witness satisfies.\nWhat holds now? Describe the current, observed state. At integrated cb9d5a91, ArmadaLean has no theorem that relates Step to an executable operation; ArmadaLean declares no constant named Pool.apply.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Through /home/rix/bin/lean-run, list the theorems that mention Pool.apply with `lake env lean` on a file that holds `import ArmadaLean` and `#check @Pool.apply`; Lean prints an unknown-identifier error.\nWhat constraints apply? State them in plain prose. No approved statement changes: scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes about 110 to 150 seconds on this host. No new axiom, sorry, admit, native_decide or #exit. No type-doctrine linter count rises above scripts/gate-baseline.json. When a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch. No new file outside ArmadaLean/. A bare `lake clean` is never run. In docs/pool-executable.md, `Pool.Step` names the root-level inductive `Step` of ArmadaLean/Pool.lean.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean pool model (ArmadaLean/Pool.lean, ArmadaLean/PoolSafety.lean)",
+  "restatement": "Add to the ArmadaLean pool model a computable function Pool.apply that takes a proof-verification predicate and executes a pool contract call against a contract state (per Rule PE3), and prove the forward-refinement theorem (Rule PE4): for every reachable pool state s and every model transition Step s s', there exists some call c such that Pool.apply verify s.contract c equals some s'.contract, under the hypothesis that verify accepts every proof whose public inputs a witness satisfies. This must be done without changing any already-approved statement, without introducing axioms, sorry, admit, native_decide, or #exit, without raising any type-doctrine linter count above the recorded baseline, and without adding files outside the ArmadaLean/ directory.",
+  "restatement_clauses": [
+    {
+      "id": "C3+C5",
+      "text": "scripts/check.sh --json reports signatures_ok true and keeps every _ok field true against scripts/gate-baseline.json. No type-doctrine linter count rises above scripts/gate-baseline.json (and if a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch)."
+    },
+    {
+      "id": "C2+C4",
+      "text": "For every reachable pool state s and every Step s s', some call c gives Pool.apply verify s.contract c = some s'.contract, under the hypothesis that verify accepts every proof for public inputs that a witness satisfies (Rule PE4), proven as a theorem. No new axiom, sorry, admit, native_decide or #exit is introduced."
+    },
+    {
+      "id": "C1",
+      "text": "Pool.apply verify is a computable function from Pool.ContractState and Pool.Call to Option Pool.ContractState, stating each call as 'if h : Pre then some (Effect \u27e8_, h\u27e9) else none' per Rule PE3."
+    }
+  ],
+  "goal": "Make it possible to run the pool contract's logic as code and prove that this code faithfully carries out every state change the pool's mathematical model allows, without weakening any of the project's existing proof guarantees or introducing shortcuts.",
+  "acceptance_criteria": [
+    "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+    "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE4.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE4 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.apply_forward_refinement`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+    "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE3.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE3 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.apply`, `Pool.apply_shield_equation`, `Pool.apply_transact_equation`, `Pool.apply_transactOwned_equation`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+      "restatement_clause_id": "C3+C5"
+    },
+    {
+      "id": "c2",
+      "text": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE4.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE4 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.apply_forward_refinement`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "restatement_clause_id": "C2+C4"
+    },
+    {
+      "id": "c3",
+      "text": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE3.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE3 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.apply`, `Pool.apply_shield_equation`, `Pool.apply_transact_equation`, `Pool.apply_transactOwned_equation`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "restatement_clause_id": "C1"
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+      "proves": "No approved statement changes (signatures_ok), the build and every spec check pass, and no type-doctrine linter count or decisionScope finding rises above scripts/gate-baseline.json (lint_ok, decision_ok).",
+      "restatement_clause_id": "C3+C5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "nonvacuity_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "reach_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "counterexamples_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE4.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE4 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.apply_forward_refinement`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "proves": "For every reachable pool state s and every Step s s', some call c gives Pool.apply verify s.contract c = some s'.contract, under the hypothesis that verify accepts every proof for public inputs that a witness satisfies (Rule PE4), proven as a theorem. No new axiom, sorry, admit, native_decide or #exit is introduced.",
+      "restatement_clause_id": "C2+C4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracles/lean_probe.py",
+        "args": [
+          "scripts/oracles/pool_exec/PE4.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "elaborates",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "error_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.0.decl",
+          "op": "eq",
+          "value": "Pool.apply_forward_refinement"
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE3.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE3 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.apply`, `Pool.apply_shield_equation`, `Pool.apply_transact_equation`, `Pool.apply_transactOwned_equation`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "proves": "Pool.apply verify is a computable function from Pool.ContractState and Pool.Call to Option Pool.ContractState, stating each call as 'if h : Pre then some (Effect \u27e8_, h\u27e9) else none' per Rule PE3.",
+      "restatement_clause_id": "C1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracles/lean_probe.py",
+        "args": [
+          "scripts/oracles/pool_exec/PE3.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "elaborates",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "error_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.0.decl",
+          "op": "eq",
+          "value": "Pool.apply"
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.1.decl",
+          "op": "eq",
+          "value": "Pool.apply_shield_equation"
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.2.decl",
+          "op": "eq",
+          "value": "Pool.apply_transact_equation"
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.3.decl",
+          "op": "eq",
+          "value": "Pool.apply_transactOwned_equation"
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c3"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": []
+}
