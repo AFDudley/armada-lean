@@ -980,6 +980,32 @@ structure Pool.ContractState where
 def PoolState.contract (s : PoolState) : Pool.ContractState :=
   ⟨s.trees, s.spent, s.held, s.preimageOf, s.treasuryFees, s.feeRatio⟩
 
+/-- A call a caller sends to the pool (docs/pool-executable.md, rule PE2): only
+    calldata, never a circuit witness and never the model's own ghost state.
+    `Pool.apply` (a later rule) reads one of these against a `Pool.ContractState`.
+    * `shield`: local `ShieldModule.shield` (ShieldModule.sol:45-90) — the token,
+      the gross amount and the note key the shielder names.
+    * `transact`: local `TransactModule.transact` (TransactModule.sol:43-96) — the
+      caller, the proof's public inputs, the bound parameters, the proof itself
+      (a `Term`: the model holds no Groth16 proof objects, the same way
+      `VerifyAccepts` is left abstract over the public inputs alone), the token of
+      the unshield if the bound parameters name one (read from calldata and
+      checked against the last output commitment, `UnshieldRefines`; `Unshield`
+      itself carries no token), the disclosed records (a sublist of the output
+      batch a caller chooses to reveal, `_validatePublicOutputs (requireAll =
+      false)`) and the published owned-note openings (decision 11).
+    * `transactOwned`: `TransactModule.transactOwned` (TransactModule.sol:488-519)
+      — the same data as `transact`, with no unshield token (`transactOwned`
+      never unshields, TransactModule.sol:619-623). -/
+inductive Pool.Call where
+  | shield (token : Token) (x : Nat) (npk : Term)
+  | transact {N M : Nat} (caller : Term) (pub : TransactPublic N M) (bp : BoundParams)
+      (proof : Term) (unshieldToken : Option Token)
+      (records : List (Term × CommitmentPreimage)) (openings : List (Term × OwnedOpening))
+  | transactOwned {N M : Nat} (caller : Term) (pub : TransactOwnedPublic N M)
+      (bp : BoundParams) (proof : Term) (records : List (Term × CommitmentPreimage))
+      (openings : List (Term × OwnedOpening))
+
 /-- The root history of tree `treeNumber`. -/
 def PoolState.rootsAt' (s : PoolState) (treeNumber : Nat) : List Term :=
   rootsAt s.trees treeNumber
