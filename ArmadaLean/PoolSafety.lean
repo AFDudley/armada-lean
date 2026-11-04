@@ -587,6 +587,19 @@ structure TransactProofCompleteness where
   complete : ∀ {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M},
     Constrained w pub → VerifyAccepts pub
 
+/-- `verify` (`Pool.Verifier`, `ArmadaLean/Pool.lean`, rule PE3) realizes the model's
+    trusted verifier: for each circuit, `verify`'s check accepts some proof over a public
+    input exactly when the model's own `VerifyAccepts`/`VerifyOwnedAccepts` does. Restates
+    their doc comments with `verify` standing for `PrivacyPool.verify`/`verifyOwned`.
+    `Pool.apply` does not take this as a hypothesis; `Pool.apply_shield_equation`,
+    `Pool.apply_transact_equation` and `Pool.apply_transactOwned_equation` (rule PE4,
+    PE5) do. -/
+structure Pool.Verifier.Realizes (verify : Pool.Verifier) : Prop where
+  transact : ∀ {N M : Nat} (pub : TransactPublic N M),
+    VerifyAccepts pub ↔ ∃ proof, verify.transact pub proof = true
+  owned : ∀ {N M : Nat} (pub : TransactOwnedPublic N M),
+    VerifyOwnedAccepts pub ↔ ∃ proof, verify.owned pub proof = true
+
 /-- "An honest key holder's signature verifies" — the brief's `can-happen`-only
     assumption, named as an explicit hypothesis: a signer who holds the private key
     behind `pk` can produce, for any message, a signature `EdDSAVerify` accepts.

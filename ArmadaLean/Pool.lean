@@ -1209,3 +1209,206 @@ inductive Reachable : PoolState → Prop where
     fees are set once at deployment). -/
 theorem step_feeRatio {s s' : PoolState} (h : Step s s') : s'.feeRatio = s.feeRatio := by
   cases h <;> rfl
+
+/-! ### The pool as an executable operation (docs/pool-executable.md, rule PE3)
+
+`Pool.Step` stays exactly as it is (rule PE6): the definitions below read only a
+`Pool.ContractState` and a `Pool.Call`, never a circuit witness and never `live`,
+`published` or `payouts`. Each precondition is `Decidable`, so `Pool.apply` is a plain
+computable function, in the dependent-`if` form of `ArmadaLean/Nitro/OpEquations.lean`:
+`if h : Pre then some (Effect ⟨_, h⟩) else none`. `Pool.Verifier.Realizes`
+(`ArmadaLean/PoolSafety.lean`, next to `VerifyAccepts`) ties the `verify` parameter back
+to the model's trusted verifier; `Pool.apply` itself takes no such hypothesis. -/
+
+/-- The token of an unshield, checked against the last output commitment the way the
+    contract does: it reads the token from calldata (`unshieldToken`) and recomputes the
+    commitment `UnshieldRefines` expects, matching it against `commitmentsOut`'s last
+    entry (TransactModule.sol:313-331, "Hash must match last commitment"). No unshield
+    needs no token. -/
+def unshieldCommitted {M : Nat} (commitmentsOut : Fin M → Term) (unshieldToken : Option Token)
+    (unshield : Option Unshield) : Bool :=
+  match unshield, unshieldToken with
+  | none, none => true
+  | some u, some token =>
+      decide ((List.ofFn commitmentsOut).getLast? = some (hashCommitment ⟨u.recipient, token, u.value⟩))
+  | _, _ => false
+
+/-- A disclosed record is valid when its hash matches its commitment and that commitment
+    is one of the proof's own output commitments (`_recordPreimages`,
+    TransactModule.sol:544-604). A plain transact discloses any sublist. -/
+def recordsMatch {M : Nat} (commitmentsOut : Fin M → Term)
+    (records : List (Term × CommitmentPreimage)) : Bool :=
+  records.all fun cp => decide (hashCommitment cp.2 = cp.1) && (List.ofFn commitmentsOut).elem cp.1
+
+/-- An owned transact discloses every output, in order (`_validatePublicOutputs
+    (requireAll = true)`, TransactModule.sol:630-634): the disclosed commitments are
+    exactly the proof's output commitments, and every hash matches. -/
+def recordsComplete {M : Nat} (commitmentsOut : Fin M → Term)
+    (records : List (Term × CommitmentPreimage)) : Bool :=
+  decide (records.map Prod.fst = List.ofFn commitmentsOut) &&
+    records.all fun cp => decide (hashCommitment cp.2 = cp.1)
+
+/-- The pool's two proof checks, handed to `Pool.apply` rather than fixed inside it: the
+    proof check is a parameter, not an axiom (rule PE3). `PrivacyPool.verify` and
+    `PrivacyPool.verifyOwned`. -/
+structure Pool.Verifier where
+  transact : ∀ {N M : Nat}, TransactPublic N M → Term → Bool
+  owned : ∀ {N M : Nat}, TransactOwnedPublic N M → Term → Bool
+
+/-- The precondition of a `shield` call: the gross amount is positive (`hValue` of
+    `Step.shield`) and fits the ABI's `uint120 value` (PoolTypes.sol:82), which bounds
+    the note's value below it (`shieldBase_pos`, `shieldBase ≤ x`) the way
+    `Step.shield`'s `hSpendable` needs. -/
+def Pool.ContractState.ShieldPre (_s : Pool.ContractState) (_token : Token) (x : Nat)
+    (_npk : Term) : Prop :=
+  0 < x ∧ x < 2 ^ 120
+
+instance (s : Pool.ContractState) (token : Token) (x : Nat) (npk : Term) :
+    Decidable (s.ShieldPre token x npk) :=
+  inferInstanceAs (Decidable (0 < x ∧ x < 2 ^ 120))
+
+/-- The effect of a `shield` call (`Step.shield`): the note gets `shieldBase`, the
+    treasury gets `shieldFee`, and custody grows by the note value only. -/
+def Pool.ContractState.shieldEffect (s : Pool.ContractState) (token : Token) (x : Nat)
+    (npk : {t : Term // s.ShieldPre token x t}) : Pool.ContractState :=
+  let note : CommitmentPreimage := ⟨npk.1, token, shieldBase s.feeRatio x⟩
+  { s with
+      held := fun t => if t = token then s.held t + note.value else s.held t,
+      trees := insertLeaves s.trees [hashCommitment note],
+      preimageOf := recordStep s.preimageOf (hashCommitment note) note,
+      treasuryFees := fun t => if t = token
+        then s.treasuryFees t + shieldFee s.feeRatio x else s.treasuryFees t }
+
+/-- The precondition of a `transact` call: every check a contract with no witness can
+    perform (`Step.transact`'s `hN`, `hM`, `hBound`, `hAdapt`, `hRoot`, `hNullify`), the
+    proof check `verify.transact`, the disclosed records (`recordsMatch`), and the
+    unshield token (`unshieldCommitted`). `Step.transact`'s `hRemove` reads `live`, which
+    `Pool.ContractState` does not carry; nullifier freshness and the Merkle root take its
+    place (`docs/pool-executable.md`, "Notes for the work"). -/
+def Pool.ContractState.TransactPre (s : Pool.ContractState) (verify : Pool.Verifier)
+    (caller : Term) {N M : Nat} (pub : TransactPublic N M) (bp : BoundParams) (proof : Term)
+    (unshieldToken : Option Token) (records : List (Term × CommitmentPreimage))
+    (_openings : List (Term × OwnedOpening)) : Prop :=
+  N ≤ 8 ∧ M ≤ 4 ∧ verify.transact pub proof = true ∧
+    pub.boundParamsHash = hashBoundParams bp ∧ AdaptAllows bp caller ∧
+    pub.merkleRoot ∈ rootsAt s.trees bp.treeNumber ∧
+    (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome = true ∧
+    recordsMatch pub.commitmentsOut records = true ∧
+    unshieldCommitted pub.commitmentsOut unshieldToken bp.unshield = true
+
+instance (s : Pool.ContractState) (verify : Pool.Verifier) (caller : Term) {N M : Nat}
+    (pub : TransactPublic N M) (bp : BoundParams) (proof : Term)
+    (unshieldToken : Option Token) (records : List (Term × CommitmentPreimage))
+    (openings : List (Term × OwnedOpening)) :
+    Decidable (s.TransactPre verify caller pub bp proof unshieldToken records openings) :=
+  inferInstanceAs (Decidable (N ≤ 8 ∧ M ≤ 4 ∧ verify.transact pub proof = true ∧
+    pub.boundParamsHash = hashBoundParams bp ∧ AdaptAllows bp caller ∧
+    pub.merkleRoot ∈ rootsAt s.trees bp.treeNumber ∧
+    (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome = true ∧
+    recordsMatch pub.commitmentsOut records = true ∧
+    unshieldCommitted pub.commitmentsOut unshieldToken bp.unshield = true))
+
+/-- The effect of a `transact` call (`Step.transact`): the proof's own output
+    commitments become the new leaves, the nullifiers are marked spent, custody falls by
+    the unshield amount of its token, and the disclosed records are recorded. -/
+def Pool.ContractState.transactEffect (s : Pool.ContractState) (verify : Pool.Verifier)
+    (caller : Term) {N M : Nat} (pub : TransactPublic N M) (bp : BoundParams) (proof : Term)
+    (unshieldToken : Option Token) (records : List (Term × CommitmentPreimage))
+    (_openings : {o : List (Term × OwnedOpening) //
+      s.TransactPre verify caller pub bp proof unshieldToken records o}) :
+    Pool.ContractState :=
+  let spent' :=
+    (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD (s.spent bp.treeNumber)
+  { s with
+      trees := insertLeaves s.trees (List.ofFn pub.commitmentsOut),
+      spent := fun n => if n = bp.treeNumber then spent' else s.spent n,
+      held := match unshieldToken with
+        | some tok => fun t => if t = tok then s.held t - withdrawn bp.unshield else s.held t
+        | none => s.held,
+      preimageOf := applyRecords s.preimageOf records }
+
+/-- The precondition of a `transactOwned` call: the same as `TransactPre`, with the
+    owner-binding check (`Step.transactOwned`'s `hCaller`), no unshield
+    (`hNoUnshield`), `verify.owned` in place of `verify.transact`, and full disclosure
+    (`recordsComplete`) in place of a sublist. -/
+def Pool.ContractState.TransactOwnedPre (s : Pool.ContractState) (verify : Pool.Verifier)
+    (caller : Term) {N M : Nat} (pub : TransactOwnedPublic N M) (bp : BoundParams)
+    (proof : Term) (records : List (Term × CommitmentPreimage))
+    (_openings : List (Term × OwnedOpening)) : Prop :=
+  N ≤ 8 ∧ M ≤ 4 ∧ caller = pub.ownerField ∧ verify.owned pub proof = true ∧
+    pub.boundParamsHash = hashBoundParams bp ∧ AdaptAllows bp caller ∧ bp.unshield = none ∧
+    pub.merkleRoot ∈ rootsAt s.trees bp.treeNumber ∧
+    (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome = true ∧
+    recordsComplete pub.commitmentsOut records = true
+
+instance (s : Pool.ContractState) (verify : Pool.Verifier) (caller : Term) {N M : Nat}
+    (pub : TransactOwnedPublic N M) (bp : BoundParams) (proof : Term)
+    (records : List (Term × CommitmentPreimage)) (openings : List (Term × OwnedOpening)) :
+    Decidable (s.TransactOwnedPre verify caller pub bp proof records openings) :=
+  inferInstanceAs (Decidable (N ≤ 8 ∧ M ≤ 4 ∧ caller = pub.ownerField ∧
+    verify.owned pub proof = true ∧ pub.boundParamsHash = hashBoundParams bp ∧
+    AdaptAllows bp caller ∧ bp.unshield = none ∧
+    pub.merkleRoot ∈ rootsAt s.trees bp.treeNumber ∧
+    (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).isSome = true ∧
+    recordsComplete pub.commitmentsOut records = true))
+
+/-- The effect of a `transactOwned` call (`Step.transactOwned`): the same as
+    `transactEffect`, with no unshield and the whole output batch recorded. -/
+def Pool.ContractState.transactOwnedEffect (s : Pool.ContractState) (verify : Pool.Verifier)
+    (caller : Term) {N M : Nat} (pub : TransactOwnedPublic N M) (bp : BoundParams)
+    (proof : Term) (records : List (Term × CommitmentPreimage))
+    (_openings : {o : List (Term × OwnedOpening) //
+      s.TransactOwnedPre verify caller pub bp proof records o}) :
+    Pool.ContractState :=
+  let spent' :=
+    (markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD (s.spent bp.treeNumber)
+  { s with
+      trees := insertLeaves s.trees (List.ofFn pub.commitmentsOut),
+      spent := fun n => if n = bp.treeNumber then spent' else s.spent n,
+      preimageOf := applyRecords s.preimageOf records }
+
+/-- The pool contract as a computable function (rule PE3): it reads only its call and
+    its state, takes the proof check as the parameter `verify`, and states each call in
+    the dependent-`if` form of `ArmadaLean/Nitro/OpEquations.lean`. -/
+def Pool.apply (verify : Pool.Verifier) (s : Pool.ContractState) :
+    Pool.Call → Option Pool.ContractState
+  | .shield token x npk =>
+    if h : s.ShieldPre token x npk then some (s.shieldEffect token x ⟨npk, h⟩) else none
+  | .transact caller pub bp proof unshieldToken records openings =>
+    if h : s.TransactPre verify caller pub bp proof unshieldToken records openings then
+      some (s.transactEffect verify caller pub bp proof unshieldToken records ⟨openings, h⟩)
+    else none
+  | .transactOwned caller pub bp proof records openings =>
+    if h : s.TransactOwnedPre verify caller pub bp proof records openings then
+      some (s.transactOwnedEffect verify caller pub bp proof records ⟨openings, h⟩)
+    else none
+
+/-- The `shield` equation: `Pool.apply` is already in the dependent-`if` form, so this
+    holds by `rfl`. -/
+theorem Pool.apply_shield_equation (verify : Pool.Verifier) (s : Pool.ContractState)
+    (token : Token) (x : Nat) (npk : Term) :
+    Pool.apply verify s (.shield token x npk) =
+      if h : s.ShieldPre token x npk then some (s.shieldEffect token x ⟨npk, h⟩) else none :=
+  rfl
+
+/-- The `transact` equation, by `rfl` (as `Pool.apply_shield_equation`). -/
+theorem Pool.apply_transact_equation (verify : Pool.Verifier) (s : Pool.ContractState)
+    {N M : Nat} (caller : Term) (pub : TransactPublic N M) (bp : BoundParams) (proof : Term)
+    (unshieldToken : Option Token) (records : List (Term × CommitmentPreimage))
+    (openings : List (Term × OwnedOpening)) :
+    Pool.apply verify s (.transact caller pub bp proof unshieldToken records openings) =
+      if h : s.TransactPre verify caller pub bp proof unshieldToken records openings then
+        some (s.transactEffect verify caller pub bp proof unshieldToken records ⟨openings, h⟩)
+      else none :=
+  rfl
+
+/-- The `transactOwned` equation, by `rfl` (as `Pool.apply_shield_equation`). -/
+theorem Pool.apply_transactOwned_equation (verify : Pool.Verifier) (s : Pool.ContractState)
+    {N M : Nat} (caller : Term) (pub : TransactOwnedPublic N M) (bp : BoundParams)
+    (proof : Term) (records : List (Term × CommitmentPreimage))
+    (openings : List (Term × OwnedOpening)) :
+    Pool.apply verify s (.transactOwned caller pub bp proof records openings) =
+      if h : s.TransactOwnedPre verify caller pub bp proof records openings then
+        some (s.transactOwnedEffect verify caller pub bp proof records ⟨openings, h⟩)
+      else none :=
+  rfl

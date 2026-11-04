@@ -107,3 +107,24 @@ def AdaptAllows (bp : BoundParams) (caller : Term) : Prop :=
 def withdrawn : Option Unshield → Nat
   | none => 0
   | some u => u.value
+
+/-- `AdaptAllows` as a computable check: no constraint when there is no adapt contract,
+    else the caller must be the named one. The contract performs exactly this check
+    (`_validateCommonContext`, TransactModule.sol:530-532). -/
+def AdaptAllowsB (bp : BoundParams) (caller : Term) : Bool :=
+  match bp.adaptContract with
+  | none => true
+  | some a => decide (caller = a)
+
+theorem AdaptAllows_iff (bp : BoundParams) (caller : Term) :
+    AdaptAllows bp caller ↔ AdaptAllowsB bp caller = true := by
+  unfold AdaptAllows AdaptAllowsB
+  cases bp.adaptContract with
+  | none => simp
+  | some a => simp [eq_comm]
+
+/-- `AdaptAllows` is decidable: `Pool.apply` (docs/pool-executable.md, rule PE3) needs this
+    to compute `TransactPre`/`TransactOwnedPre`. -/
+instance instDecidableAdaptAllows (bp : BoundParams) (caller : Term) :
+    Decidable (AdaptAllows bp caller) :=
+  decidable_of_iff _ (AdaptAllows_iff bp caller).symm
