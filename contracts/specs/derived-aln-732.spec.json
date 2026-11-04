@@ -1,0 +1,153 @@
+{
+  "id": "derived-aln-732",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. Pool.Call has one constructor for each pool entry point: a shield carries the token, the gross amount and the note key; a transact carries the caller, the public inputs, the bound parameters, the proof, the token of the unshield if there is one, the disclosed records and the published openings; an owned transact carries the same data with no unshield. No constructor carries a circuit witness.\nWhat holds now? Describe the current, observed state. At integrated cb9d5a91, ArmadaLean declares no constant named Pool.Call. Each constructor of Step takes a circuit witness (TransactWitness or TransactOwnedWitness) for the transact cases.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. Through /home/rix/bin/lean-run, run `lake env lean` on a file that holds `import ArmadaLean` and `#check @Pool.Call`; Lean prints an unknown-identifier error. Read ArmadaLean/Pool.lean lines 1049-1154 for the arguments of each Step constructor.\nWhat constraints apply? State them in plain prose. No approved statement changes: scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json; a full run takes about 110 to 150 seconds on this host. No new axiom, sorry, admit, native_decide or #exit. No type-doctrine linter count rises above scripts/gate-baseline.json. When a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch. No new file outside ArmadaLean/. A bare `lake clean` is never run. In docs/pool-executable.md, `Pool.Step` names the root-level inductive `Step` of ArmadaLean/Pool.lean.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean pool model (ArmadaLean/Pool.lean and the modules that import it)",
+  "restatement": "In the ArmadaLean Lean 4 pool model, define a new constant Pool.Call as an inductive/structure with exactly the constructors required by Rule PE2: a shield constructor carrying the token, the gross amount and the note key; a transact constructor carrying the caller, the public inputs, the bound parameters, the proof, the optional unshield token, the disclosed records and the published openings; and an owned-transact constructor carrying the same fields as transact but with no unshield token. None of these constructors may carry a circuit witness (TransactWitness or TransactOwnedWitness). This must be achieved without changing any already-approved pool statement, without adding any new axiom, sorry, admit, native_decide, or #exit, without adding any file outside ArmadaLean/, without a bare lake clean, and without increasing any type-doctrine linter count above the gate baseline, while keeping scripts/check.sh --json fully passing.",
+  "restatement_clauses": [
+    {
+      "id": "c6+c7",
+      "text": "scripts/check.sh --json reports signatures_ok true, showing no approved statement changed. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json, and no type-doctrine linter count rises above the baseline."
+    },
+    {
+      "id": "c1+c2+c3+c4+c5+c8",
+      "text": "Pool.Call exists as a declared constant, with #check @Pool.Call succeeding (no unknown-identifier error) when run via lake env lean on a file importing ArmadaLean. Pool.Call has a shield constructor carrying exactly the token, the gross amount, and the note key. Pool.Call has a transact constructor carrying exactly the caller, the public inputs, the bound parameters, the proof, the token of the unshield if there is one, the disclosed records, and the published openings. Pool.Call has an owned-transact constructor carrying the same data as transact but with no unshield. No constructor of Pool.Call carries a circuit witness (TransactWitness or TransactOwnedWitness). No new axiom, sorry, admit, native_decide, or #exit is introduced anywhere in the touched code."
+    }
+  ],
+  "goal": "Make a Lean definition called Pool.Call actually exist in the ArmadaLean project, shaped exactly as the documentation already describes it, while making sure nothing else in the proof project breaks or weakens.",
+  "acceptance_criteria": [
+    "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+    "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE2.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE2 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.Call`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+      "restatement_clause_id": "c6+c7"
+    },
+    {
+      "id": "c2",
+      "text": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE2.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE2 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.Call`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "restatement_clause_id": "c1+c2+c3+c4+c5+c8"
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "Run `scripts/check.sh --json` from the repo root. It runs `lake build`, so it runs first and builds the tree that the Lean probe below reads. Every `_ok` field is true and the exit code is 0. A full run takes about 110 to 150 seconds on this host.",
+      "proves": "No approved statement changes (signatures_ok), the build and every spec check pass, and no type-doctrine linter count or decisionScope finding rises above scripts/gate-baseline.json (lint_ok, decision_ok).",
+      "restatement_clause_id": "c6+c7",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "build_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "nonvacuity_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "reach_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "lint_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "decision_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "counterexamples_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c1"
+    },
+    {
+      "description": "Run `python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE2.lean` from the repo root, after the check above built the tree. Lean elaborates the committed probe of rule PE2 (docs/pool-executable.md) with no error, and prints `#print axioms` for `Pool.Call`. The probe fails when one of them depends on an axiom outside propext, Classical.choice, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts and VerifyOwnedAccepts.",
+      "proves": "Pool.Call exists as a declared constant, with #check @Pool.Call succeeding (no unknown-identifier error) when run via lake env lean on a file importing ArmadaLean. Pool.Call has a shield constructor carrying exactly the token, the gross amount, and the note key. Pool.Call has a transact constructor carrying exactly the caller, the public inputs, the bound parameters, the proof, the token of the unshield if there is one, the disclosed records, and the published openings. Pool.Call has an owned-transact constructor carrying the same data as transact but with no unshield. No constructor of Pool.Call carries a circuit witness (TransactWitness or TransactOwnedWitness). No new axiom, sorry, admit, native_decide, or #exit is introduced anywhere in the touched code.",
+      "restatement_clause_id": "c1+c2+c3+c4+c5+c8",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracles/lean_probe.py",
+        "args": [
+          "scripts/oracles/pool_exec/PE2.lean"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "elaborates",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "error_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axioms.0.decl",
+          "op": "eq",
+          "value": "Pool.Call"
+        },
+        {
+          "observe": "exit_code",
+          "field": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 600,
+      "clause_id": "c2"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": []
+}
