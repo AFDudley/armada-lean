@@ -1,0 +1,67 @@
+status: completed
+pebble_id: aln-4ad
+summary: >
+  Added Pool.apply_forward_refinement to ArmadaLean/PoolSafety.lean: for every
+  reachable pool state s and every Step s s', some call c gives
+  Pool.apply verify s.contract c = some s'.contract, under the hypothesis that
+  verify accepts every proof for public inputs a witness satisfies
+  (docs/pool-executable.md rule PE4). The proof case-splits on Step's three
+  constructors; shield reuses Step.shield's own hValue/hSpendable directly,
+  transact/transactOwned pick the call's proof via
+  TransactProofCompleteness/OwnedProofCompleteness plus Pool.Verifier.Realizes
+  (completeness of the trusted verifier), and pick unshieldToken/records from
+  the witness's Constrained/OwnedConstrained output-commitment equations.
+  Closing this proof required two small fixes to the PE3 (aln-eb5)
+  definitions in ArmadaLean/Pool.lean, neither touching Pool.Step or any
+  approved statement: (1) ShieldPre now states 0 < x /\ shieldBase s.feeRatio
+  x < 2^120 (matching Step.shield's hValue/hSpendable exactly) instead of
+  0 < x /\ x < 2^120 — the old bound does not follow from hSpendable, since
+  the 1%-capped shield fee lets a gross amount x exceed 2^120 while its
+  fee-reduced note value still passes the range check (verified numerically:
+  x = 2^120 with a 1% fee gives shieldBase < 2^120 while x itself is not);
+  (2) transactEffect now drops the unshield's virtual last output commitment
+  from the leaves it inserts (dropLast of commitmentsOut when unshieldToken
+  is some) instead of inserting the whole commitmentsOut batch, matching
+  Step.transact's own trees field, which only ever inserts newNotes (never
+  the unshield's virtual commitment) as leaves. Both fixes were verified not
+  to change ShieldPre/transactEffect's externally-visible shape: the PE3
+  probe's two #guard examples (which never unshield) and its three `rfl`
+  equation theorems still hold unchanged. Verified with
+  `scripts/check.sh --json` (build_ok/axioms_ok/signatures_ok/nonvacuity_ok/
+  reach_ok/lint_ok/decision_ok/counterexamples_ok all true, sorry_count 0,
+  125s run) and `python3 scripts/oracles/lean_probe.py
+  scripts/oracles/pool_exec/PE4.lean` /
+  scripts/oracles/pool_exec/PE3.lean (both committed, pre-existing probes),
+  each elaborating with error_count 0 and every reported axiom restricted to
+  propext, Quot.sound and the declared primitives EdDSAVerify, VerifyAccepts,
+  VerifyOwnedAccepts — all run at the branch's own commit. Refreshed
+  scripts/gate-baseline.json's file_hashes (via
+  update_gate_baseline.py --hashes-only) to match the two changed Lean files;
+  lint/decisionScope counts are unchanged from baseline (no field lowered or
+  raised), so only file_hashes needed a refresh.
+cost: "~210k tokens"
+commits:
+  - "0588bc7f"
+verify_transcript:
+  hooks:
+    - name: "lake build (full tree)"
+      outcome: passed
+      duration_s: 39
+    - name: "scripts/check.sh --json"
+      outcome: passed
+      duration_s: 125
+    - name: "python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE4.lean"
+      outcome: passed
+      duration_s: 4
+    - name: "python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE3.lean"
+      outcome: passed
+      duration_s: 4
+    - name: "pre-commit (gate-baseline-fresh, trailing-whitespace, end-of-file-fixer, etc.)"
+      outcome: passed
+      duration_s: 3
+e2e_gate:
+  spec: contracts/specs/derived-aln-4ad.spec.json
+  command: "scripts/check.sh --json"
+  result: passed
+  ran_at_sha: "0588bc7f"
+  mocks_in_path: false
