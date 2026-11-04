@@ -1,0 +1,45 @@
+status: completed
+pebble_id: aln-eb5
+summary: >
+  Added Pool.apply verify : Pool.ContractState -> Pool.Call -> Option Pool.ContractState
+  as a computable definition in ArmadaLean/Pool.lean (docs/pool-executable.md rule PE3).
+  Pool.apply reads only its call and its state; the proof check is the parameter
+  Pool.Verifier (two Bool fields, transact/owned), not an axiom. Pool.apply is defined
+  directly in the dependent-if form "if h : Pre then some (Effect <_, h>) else none" for
+  each call (the style of ArmadaLean/Nitro/OpEquations.lean), so the three equation
+  lemmas (Pool.apply_shield_equation, Pool.apply_transact_equation,
+  Pool.apply_transactOwned_equation) hold by rfl. ShieldPre/shieldEffect,
+  TransactPre/transactEffect and TransactOwnedPre/transactOwnedEffect translate
+  Pool.Step's checks onto the six Pool.ContractState fields only (no live/published/
+  payouts, no circuit witness): nullifier freshness and Merkle root membership stand in
+  for Step.transact's live-set removal, per the doc's "Notes for the work". Added the
+  computable helpers unshieldCommitted/recordsMatch/recordsComplete to Pool.lean and an
+  AdaptAllows Decidable instance to BoundParams.lean so every precondition reduces.
+  Pool.Verifier.Realizes (PoolSafety.lean, next to the VerifyAccepts axiom it needs,
+  since Pool.lean cannot import PoolSafety.lean) ties verify back to the model's trusted
+  verifier for the later PE4/PE5 refinement rules; Pool.apply itself takes no such
+  hypothesis. Pool.Step and every other approved statement are unchanged; no new axiom,
+  sorry, admit, native_decide or #exit; no new file outside ArmadaLean/; no bare lake
+  clean was run. Verified by running scripts/check.sh --json (every _ok field true,
+  including signatures_ok, lint_ok and decision_ok against scripts/gate-baseline.json,
+  exit 0, ~105s) and python3 scripts/oracles/lean_probe.py
+  scripts/oracles/pool_exec/PE3.lean (elaborates true, error_count 0, axioms list exactly
+  Pool.apply/apply_shield_equation/apply_transact_equation/apply_transactOwned_equation,
+  each depending only on propext and Quot.sound, exit 0).
+cost: "~160k tokens"
+commits:
+  - "aac94f370d2e0fefaa695a662c92e69d41ecf5fd"
+verify_transcript:
+  hooks:
+    - name: scripts/check.sh --json
+      outcome: passed
+      duration_s: 105
+    - name: python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE3.lean
+      outcome: passed
+      duration_s: 4
+e2e_gate:
+  spec: contracts/specs/derived-aln-eb5.spec.json
+  command: "scripts/check.sh --json && python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE3.lean"
+  result: passed
+  ran_at_sha: "aac94f370d2e0fefaa695a662c92e69d41ecf5fd"
+  mocks_in_path: false
