@@ -52,7 +52,7 @@ theorem nitroLocalImplicitOnly (s : Adjudicator E) (a : FixedPart) (b : Address 
     constant. -/
 theorem poolSkip {s : PoolState} (h : Reachable s) : s.feeRatio = s.feeRatio := by
   cases h with
-  | genesis r => rfl
+  | genesis r _ _ => rfl
   | step _ hstep => cases hstep <;> rfl
 
 /-- Names `markSpent` only through the statement of `markSpent_succeeds`,

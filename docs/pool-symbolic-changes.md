@@ -218,10 +218,13 @@ Changes:
   this branch said the fee leg never passes through the pool and took the net amount;
   that was wrong for the cross-chain path, and the ruling puts the fee in the step on
   both paths.
-- `PoolState.feeRatio : FeeRatio` is set at genesis (`genesis r`) and no step changes
-  it (`step_feeRatio`, proved: `cases h <;> rfl`). `Reachable` starts from
-  `genesis r` for some `r`. `PoolState.treasuryFees : Token → Nat` is the ghost record
-  of fees paid to the treasury.
+- `PoolState.feeRatio : FeeRatio` is set at genesis. `PoolState.treasuryFees : Token → Nat`
+  is the ghost record of fees paid to the treasury. Operator ruling 2026-11-06 changed the
+  rest of this item: `genesis r feeAdmin treasury` also fixes the fee-admin address and the
+  treasury address, and `Reachable` starts from `genesis r feeAdmin treasury`. The step
+  `Step.setFeeRatio`, called by `feeAdmin`, is the only step that changes `feeRatio`
+  (`step_feeRatio_frame`, which replaces the earlier theorem that no step changes it). No
+  step changes `feeAdmin` or `treasury` (`step_feeAdmin`, `step_treasury`).
 - `Step.shield (token : Token) (x : Nat) (npk : Term) (hValue : 0 < x)
   (hSpendable : Spendable (shieldBase s.feeRatio x))`. `x` is the gross amount. The note
   is `⟨npk, token, shieldBase s.feeRatio x⟩`; `held` grows by `shieldBase s.feeRatio x`;
@@ -272,7 +275,7 @@ Changes:
 
 - `PoolState.trees : List TreeState` replaces `closedTrees`, `leaves`, `roots`. The last
   tree is the one that receives leaves. `genesisTrees = [⟨[], [treeRoot TreeDepth []]⟩]`
-  and `(genesis r).trees = genesisTrees`.
+  and `(genesis r feeAdmin treasury).trees = genesisTrees`.
 - `transact_root_was_produced` and its helper `rootsAt_grounded`: `genesis.rootsAt' tn`
   became `rootsAt genesisTrees tn`, because `genesis` now takes the fee rate (P-9).
   Proofs repaired.
@@ -450,7 +453,9 @@ Helpers with a new or changed type, proved: `tokenId_inj`, `hashBoundParams_inj`
 lemmas, `step_live_leaf_matches`, `reachable_live_leaf_matches`,
 `genesis_live_values_spendable`, `step_preserves_live_values_spendable`,
 `genesis_invariant`, `genesis_live_spent_invariant`, `rootsAt_grounded` (all now take or
-use the fee rate of `genesis r`), `step_feeRatio` (new).
+use the fee rate of `genesis r`; operator ruling 2026-11-06 added the fee-admin and
+treasury addresses as `genesis r feeAdmin treasury`). The P-9 theorem that no step
+changes the fee rate is replaced by `step_feeRatio_frame` (operator ruling 2026-11-06).
 
 ## Removed theorems
 

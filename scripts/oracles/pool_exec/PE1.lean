@@ -5,10 +5,11 @@
     python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE1.lean
 
   The interface it fixes:
-  * `Pool.ContractState`: a structure with exactly six fields, in this order:
+  * `Pool.ContractState`: a structure with exactly eight fields, in this order:
     `trees : List TreeState`, `spent : Nat → NullifierSet`, `held : Token → Nat`,
-    `preimageOf : PreimageRegistry`, `treasuryFees : Token → Nat`, `feeRatio : FeeRatio`.
-  * `PoolState.contract : PoolState → Pool.ContractState`, which keeps those six fields
+    `preimageOf : PreimageRegistry`, `treasuryFees : Token → Nat`, `feeRatio : FeeRatio`,
+    `feeAdmin : Term`, `treasury : Term` (the two addresses: operator ruling 2026-11-06).
+  * `PoolState.contract : PoolState → Pool.ContractState`, which keeps those eight fields
     of the state and drops `live`, `published` and `payouts`.
 -/
 import ArmadaLean
@@ -16,24 +17,28 @@ import ArmadaLean
 -- An unknown name in a binder must be an error, not a new variable.
 set_option autoImplicit false
 
-/-- The six fields, in this order and with these types, and no other field: an anonymous
-    constructor with six arguments elaborates only for a six-field structure, and each
+/-- The eight fields, in this order and with these types, and no other field: an anonymous
+    constructor with eight arguments elaborates only for an eight-field structure, and each
     projection gives back its own argument. -/
 example (trees : List TreeState) (spent : Nat → NullifierSet) (held : Token → Nat)
-    (preimageOf : PreimageRegistry) (treasuryFees : Token → Nat) (feeRatio : FeeRatio) :
-    let c : Pool.ContractState := ⟨trees, spent, held, preimageOf, treasuryFees, feeRatio⟩
+    (preimageOf : PreimageRegistry) (treasuryFees : Token → Nat) (feeRatio : FeeRatio)
+    (feeAdmin treasury : Term) :
+    let c : Pool.ContractState :=
+      ⟨trees, spent, held, preimageOf, treasuryFees, feeRatio, feeAdmin, treasury⟩
     c.trees = trees ∧ c.spent = spent ∧ c.held = held ∧ c.preimageOf = preimageOf ∧
-      c.treasuryFees = treasuryFees ∧ c.feeRatio = feeRatio :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+      c.treasuryFees = treasuryFees ∧ c.feeRatio = feeRatio ∧ c.feeAdmin = feeAdmin ∧
+      c.treasury = treasury :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The type of `PoolState.contract`. -/
 example : PoolState → Pool.ContractState := PoolState.contract
 
 /-- The field equations of `PoolState.contract`, by `rfl`: the contract state of `s` is the
-    six contract fields of `s`. No other field of `s` reaches it, so `live`, `published` and
+    eight contract fields of `s`. No other field of `s` reaches it, so `live`, `published` and
     `payouts` are dropped. -/
 example (s : PoolState) :
-    s.contract = ⟨s.trees, s.spent, s.held, s.preimageOf, s.treasuryFees, s.feeRatio⟩ :=
+    s.contract = ⟨s.trees, s.spent, s.held, s.preimageOf, s.treasuryFees, s.feeRatio,
+      s.feeAdmin, s.treasury⟩ :=
   rfl
 
 /-- `Pool.Step` in `docs/pool-executable.md` is the root-level `Step` of

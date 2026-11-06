@@ -14,7 +14,8 @@ import Mathlib.Tactic.Says
 def HeldInvariant (s : PoolState) : Prop :=
   ∀ t, s.held t = listSum ((s.live t).map (fun p => p.2.value))
 
-theorem genesis_invariant (r : FeeRatio) : HeldInvariant (genesis r) := by
+theorem genesis_invariant (r : FeeRatio) (feeAdmin treasury : Term) :
+    HeldInvariant (genesis r feeAdmin treasury) := by
   intro t
   (simp? [genesis, listSum] says simp only [genesis, List.map_nil, listSum])
 
@@ -113,6 +114,7 @@ theorem transactOwned_balance {N M : Nat} {w : TransactOwnedWitness N M}
 theorem step_preserves_invariant {s s' : PoolState} (hinv : HeldInvariant s)
     (hstep : Step s s') : HeldInvariant s' := by
   cases hstep with
+  | setFeeRatio => exact hinv
   | shield token x npk hValue hSpendable =>
     intro t
     by_cases ht : t = token
@@ -189,7 +191,7 @@ theorem core_invariant (s : ReachableState Pool.machine) :
     HeldInvariant s.state := by
   obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
-  | genesis r => exact genesis_invariant r
+  | genesis r a b => exact genesis_invariant r a b
   | step _ hstep ih => exact step_preserves_invariant ih hstep
 
 /-! ### Ownership: a spend can only touch notes its spender derives keys for -/
@@ -286,6 +288,7 @@ theorem markSpent_superset {spent spent' : NullifierSet} {ns : List Term}
 theorem spent_monotone {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
     ∀ n ∈ s.spent tn, n ∈ s'.spent tn := by
   cases hstep with
+  | setFeeRatio => exact fun n hn => hn
   | shield token x npk hValue hSpendable =>
     exact fun n hn => hn
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
@@ -470,6 +473,7 @@ theorem shield_creates_exactly {s : PoolState} (token : Token) (x : Nat) (npk : 
 theorem step_rootsAt_shape {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
     s'.rootsAt' tn = s.rootsAt' tn ∨ ∃ r, s'.rootsAt' tn = r :: s.rootsAt' tn := by
   cases hstep with
+  | setFeeRatio => exact Or.inl rfl
   | shield token x npk hValue hSpendable =>
     exact insertLeaves_rootsAt_shape s.trees
       [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
@@ -486,7 +490,7 @@ theorem step_rootsAt_shape {s s' : PoolState} (hstep : Step s s') (tn : Nat) :
 theorem rootsAt_grounded {s : PoolState} (h : Reachable s) (tn : Nat) :
     ∃ pushed : List Term, s.rootsAt' tn = pushed ++ rootsAt genesisTrees tn := by
   induction h with
-  | genesis r => exact ⟨[], rfl⟩
+  | genesis _ _ _ => exact ⟨[], rfl⟩
   | step _ hstep ih =>
     obtain ⟨pushed, hpushed⟩ := ih
     rcases step_rootsAt_shape hstep tn with heq | ⟨r, heq⟩
@@ -520,6 +524,7 @@ theorem transact_root_was_produced (s : ReachableState Pool.machine)
 theorem step_preimageOf_consistent {s s' : PoolState} (hstep : Step s s')
     (h : RegistryConsistent s.preimageOf) : RegistryConsistent s'.preimageOf := by
   cases hstep with
+  | setFeeRatio => exact h
   | shield => exact recordStep_preserves_consistency h rfl
   | transact _ _ _ _ _ _ hC _ _ _ _ _ _ _ _ _ _ _ hRecords =>
     exact applyRecords_preserves_consistency h fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp)
@@ -536,7 +541,7 @@ theorem pool_preimageOf_consistent (s : ReachableState Pool.machine)
     : RegistryConsistent s.state.preimageOf := by
   obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
-  | genesis r => intro c pre hc; (simp? [genesis] at hc says simp only [genesis, reduceCtorEq] at hc)
+  | genesis _ _ _ => intro c pre hc; (simp? [genesis] at hc says simp only [genesis, reduceCtorEq] at hc)
   | step _ hstep ih => exact step_preimageOf_consistent hstep ih
 
 /--
@@ -683,6 +688,14 @@ theorem shield_can_happen (s : ReachableState Pool.machine) (token : Token)
     (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.state.feeRatio x)) :
     ∃ s', Step s.state s' := obtain_reach% ⟨s, _hr⟩ := s;
   let H := shield_creates_exactly token x npk hValue hSpendable; ⟨H.choose, H.choose_spec.1⟩
+
+/-- **Can happen: the fee admin changes the fee rate.** From every reachable state, the
+    fee admin's setter call with any rate `r` is a step to a state with fee rate `r`
+    (operator ruling 2026-11-06, item (d)). The one check is the caller: the fee admin
+    `s.feeAdmin` passes it. -/
+theorem setFeeRatio_can_happen (s : ReachableState Pool.machine) (r : FeeRatio) :
+    ∃ s', Step s.state s' ∧ s'.feeRatio = r :=
+  ⟨_, .setFeeRatio s.state.feeAdmin rfl r, rfl⟩
 
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` live notes in tree `bp.treeNumber`, re-minting them into `M` new
@@ -906,6 +919,7 @@ theorem step_leavesAt_rootsAt_matches {s s' : PoolState} (hstep : Step s s') (tn
     (s'.leavesAt' tn = s.leavesAt' tn ∧ s'.rootsAt' tn = s.rootsAt' tn) ∨
       s'.rootsAt' tn = treeRoot TreeDepth (s'.leavesAt' tn) :: s.rootsAt' tn := by
   cases hstep with
+  | setFeeRatio => exact Or.inl ⟨rfl, rfl⟩
   | shield token x npk hValue hSpendable =>
     exact insertLeaves_rootsAt_matches_leavesAt s.trees
       [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
@@ -929,7 +943,7 @@ theorem step_leavesAt_rootsAt_matches {s s' : PoolState} (hstep : Step s s') (tn
 theorem reachable_rootAt_matches_leavesAt {s : PoolState} (h : Reachable s) (tn : Nat) :
     s.leavesAt' tn = [] ∨ treeRoot TreeDepth (s.leavesAt' tn) ∈ s.rootsAt' tn := by
   induction h with
-  | genesis r =>
+  | genesis _ _ _ =>
     left; cases tn <;> simp [genesis, genesisTrees, PoolState.leavesAt', leavesAt]
   | step _ hstep ih =>
     rcases step_leavesAt_rootsAt_matches hstep tn with ⟨hl, hr⟩ | hr
@@ -945,6 +959,7 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
     (hOldCap : ∀ k, (s.leavesAt' k).length ≤ 2 ^ TreeDepth) (tn : Nat) :
     (s'.leavesAt' tn).length ≤ 2 ^ TreeDepth := by
   cases hstep with
+  | setFeeRatio => exact hOldCap tn
   | shield token x npk hValue hSpendable =>
     exact insertLeaves_leavesAt_capacity s.trees
       [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)] tn
@@ -973,7 +988,7 @@ theorem step_leavesAt_capacity_preserved {s s' : PoolState} (hstep : Step s s')
 theorem reachable_leavesAt_capacity {s : PoolState} (h : Reachable s) :
     ∀ tn, (s.leavesAt' tn).length ≤ 2 ^ TreeDepth := by
   induction h with
-  | genesis r =>
+  | genesis _ _ _ =>
     intro tn
     cases tn <;> simp [genesis, genesisTrees, PoolState.leavesAt', leavesAt]
   | step _ hstep ih =>
@@ -1033,6 +1048,7 @@ theorem step_leavesAt_stable {s s' : PoolState} (hstep : Step s s') (tn pos : Na
     · rw [if_pos h, List.getElem?_append_left hpos']
     · rw [if_neg h]
   cases hstep with
+  | setFeeRatio => exact ⟨hpos, rfl⟩
   | shield token x npk hValue hSpendable => exact key _
   | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
       openings hRoot hRemove hNullify hRecords => exact key _
@@ -1133,7 +1149,8 @@ def LiveSpentInvariant (s : PoolState) : Prop :=
   (∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t → ∀ nk, nullifier nk pos ∉ s.spent tn) ∧
   (∀ t, (s.live t).Nodup)
 
-theorem genesis_live_spent_invariant (r : FeeRatio) : LiveSpentInvariant (genesis r) := by
+theorem genesis_live_spent_invariant (r : FeeRatio) (feeAdmin treasury : Term) :
+    LiveSpentInvariant (genesis r feeAdmin treasury) := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> intro <;> simp [genesis]
 
 theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentInvariant s)
@@ -1141,6 +1158,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
   obtain ⟨ih1, ih2, ih3, ih4, ih5⟩ := ih
   simp only [PoolState.leavesAt'] at ih1 ih3
   cases hstep with
+  | setFeeRatio => exact ⟨ih1, ih2, ih3, ih4, ih5⟩
   | shield token x npk hValue hSpendable =>
     have hpos0eq := insertStart_eq s.trees 1
     have hlenge := fun tn => insertLeaves_leavesAt_length_ge s.trees
@@ -1699,7 +1717,7 @@ theorem step_preserves_live_spent_invariant {s s' : PoolState} (ih : LiveSpentIn
 theorem reachable_live_spent_invariant {s : PoolState} (h : Reachable s) :
     LiveSpentInvariant s := by
   induction h with
-  | genesis r => exact genesis_live_spent_invariant r
+  | genesis r a b => exact genesis_live_spent_invariant r a b
   | step _ hstep ih => exact step_preserves_live_spent_invariant ih hstep
 
 /--
@@ -1736,6 +1754,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
     ∀ t tn pos pre, ((tn, pos), pre) ∈ s'.live t →
       (s'.leavesAt' tn).getD pos emptyLeaf = hashCommitment pre := by
   cases hstep with
+  | setFeeRatio => exact ihmatch
   | shield token x npk hValue hSpendable =>
     intro t tn pos pre hmem
     by_cases ht : t = token
@@ -1850,7 +1869,7 @@ theorem reachable_live_leaf_matches {s : PoolState} (h : Reachable s) :
     ∀ t tn pos pre, ((tn, pos), pre) ∈ s.live t →
       (s.leavesAt' tn).getD pos emptyLeaf = hashCommitment pre := by
   induction h with
-  | genesis r => intro t tn pos pre hmem; (simp? [genesis] at hmem says simp only [genesis, List.not_mem_nil] at hmem)
+  | genesis _ _ _ => intro t tn pos pre hmem; (simp? [genesis] at hmem says simp only [genesis, List.not_mem_nil] at hmem)
   | step hs hstep ih =>
     exact step_live_leaf_matches hstep ih (reachable_live_spent_invariant hs).1
 
@@ -1879,14 +1898,15 @@ theorem live_leaf_matches (s : ReachableState Pool.machine) (t : Token) (tn pos 
 def LiveValuesSpendable (s : PoolState) : Prop :=
   ∀ t p, p ∈ s.live t → Spendable p.2.value
 
-theorem genesis_live_values_spendable (r : FeeRatio) :
-    LiveValuesSpendable (genesis r) := by
+theorem genesis_live_values_spendable (r : FeeRatio) (feeAdmin treasury : Term) :
+    LiveValuesSpendable (genesis r feeAdmin treasury) := by
   intro t p hp
   (simp? [genesis] at hp says simp only [genesis, List.not_mem_nil] at hp)
 
 theorem step_preserves_live_values_spendable {s s' : PoolState} (ih : LiveValuesSpendable s)
     (hstep : Step s s') : LiveValuesSpendable s' := by
   cases hstep with
+  | setFeeRatio => exact ih
   | shield token x npk hValue hSpendable =>
     intro t p hp
     by_cases ht : t = token
@@ -1947,7 +1967,7 @@ theorem live_values_spendable (s : ReachableState Pool.machine) :
     LiveValuesSpendable s.state := by
   obtain_reach ⟨s, h : Reachable s⟩ := s
   induction h with
-  | genesis r => exact genesis_live_values_spendable r
+  | genesis r a b => exact genesis_live_values_spendable r a b
   | step _ hstep ih => exact step_preserves_live_values_spendable ih hstep
 
 /-! ### No step blocks a pending spend (theorem 1 of the channel design)
@@ -2115,6 +2135,7 @@ theorem step_preserves_live_token {s s' : PoolState}
     (ih : ∀ t p, p ∈ s.live t → p.2.token = t) (hstep : Step s s') :
     ∀ t p, p ∈ s'.live t → p.2.token = t := by
   cases hstep with
+  | setFeeRatio => exact ih
   | shield token x npk' hValue hSpendable =>
     intro t p hp
     by_cases ht : t = token
@@ -2162,7 +2183,7 @@ theorem step_preserves_live_token {s s' : PoolState}
 theorem reachable_live_token {s : PoolState} (h : Reachable s) :
     ∀ t p, p ∈ s.live t → p.2.token = t := by
   induction h with
-  | genesis r => intro t p hp; (simp? [genesis] at hp says simp only [genesis, List.not_mem_nil] at hp)
+  | genesis _ _ _ => intro t p hp; (simp? [genesis] at hp says simp only [genesis, List.not_mem_nil] at hp)
   | step _ hstep ih => exact step_preserves_live_token ih hstep
 
 /-! ### An owned merge (theorem 3 of the channel design) -/
@@ -2474,3 +2495,8 @@ theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.R
     unfold Pool.ContractState.transactOwnedEffect PoolState.contract
     dsimp only
     rw [hTrees, hSpent]
+  | setFeeRatio caller hCaller r =>
+    refine ⟨.setFeeRatio caller r, ?_⟩
+    rw [Pool.apply_setFeeRatio_equation,
+      dif_pos (show rs.state.contract.SetFeeRatioPre caller r from hCaller)]
+    rfl

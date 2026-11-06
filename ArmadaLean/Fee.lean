@@ -26,7 +26,8 @@
     one place that sets the cap's value. `shieldBase_pos` needs `maxFeePercent < 100`. -/
 def maxFeePercent : Nat := 1
 
-/-- A fee rate fixed at deployment: the fraction `num / den`, with `den > 0`,
+/-- A fee rate (the deployment sets it; only the fee admin changes it, operator ruling
+    2026-11-06): the fraction `num / den`, with `den > 0`,
     `num ≤ den` (a fee never exceeds the amount) and the hard cap `fee_capped`:
     `num / den ≤ maxFeePercent / 100` (operator ruling, 2026-10-27). -/
 structure FeeRatio where

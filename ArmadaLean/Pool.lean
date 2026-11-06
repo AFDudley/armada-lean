@@ -944,12 +944,18 @@ structure Payout where
     * `published`: ghost record of the owned-note openings that transactions
       published (`ArmadaLean.PoolOwned.OwnedOpening`, decision 11).
     * `payouts`: ghost record of unshield payouts (`Payout`).
-    * `feeRatio`: the shield fee rate, set once at deployment (decision 7 of labbook
-      `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`). No step changes it
-      (`step_feeRatio`).
+    * `feeRatio`: the shield fee rate. The deployment sets it (decision 7 of labbook
+      `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`). Only `Step.setFeeRatio`,
+      called by `feeAdmin`, changes it (operator ruling 2026-11-06;
+      `step_feeRatio_frame`).
     * `treasuryFees t`: ghost record of the shield fees of token `t` paid to the
       treasury (`_transferTokenIn`, ShieldModule.sol:324-340; `_applyShieldFee`,
-      ShieldModule.sol:209-218). -/
+      ShieldModule.sol:209-218).
+    * `feeAdmin`: the one address that can change `feeRatio` (operator ruling
+      2026-11-06). The deployment fixes it: no step changes it (`step_feeAdmin`).
+    * `treasury`: the treasury address (operator ruling 2026-11-06). The deployment
+      fixes it: no step changes it (`step_treasury`). No step reads it; the model does
+      not model treasury behaviour. -/
 structure PoolState where
   live : Token → List ((Nat × Nat) × CommitmentPreimage)
   spent : Nat → NullifierSet
@@ -960,11 +966,14 @@ structure PoolState where
   payouts : List Payout
   feeRatio : FeeRatio
   treasuryFees : Token → Nat
+  feeAdmin : Term
+  treasury : Term
 
 /-- The pool contract's own on-chain storage (docs/pool-executable.md, rule PE1):
-    the six fields of `PoolState` a real pool contract actually keeps — the Merkle
+    the eight fields of `PoolState` a real pool contract actually keeps — the Merkle
     trees, the nullifier set of each tree, the custody of each token, the preimage
-    registry, the treasury fees of each token and the fee rate — and nothing else.
+    registry, the treasury fees of each token, the fee rate, the fee-admin address and
+    the treasury address — and nothing else.
     `live`, `published` and `payouts` are the model's own ghost bookkeeping
     (`PoolState` docstring above); no contract storage slot backs them. -/
 structure Pool.ContractState where
@@ -974,11 +983,14 @@ structure Pool.ContractState where
   preimageOf : PreimageRegistry
   treasuryFees : Token → Nat
   feeRatio : FeeRatio
+  feeAdmin : Term
+  treasury : Term
 
-/-- The contract state a `PoolState` reduces to: its six `Pool.ContractState`
+/-- The contract state a `PoolState` reduces to: its eight `Pool.ContractState`
     fields, dropping the ghost fields `live`, `published` and `payouts` (PE1). -/
 def PoolState.contract (s : PoolState) : Pool.ContractState :=
-  ⟨s.trees, s.spent, s.held, s.preimageOf, s.treasuryFees, s.feeRatio⟩
+  ⟨s.trees, s.spent, s.held, s.preimageOf, s.treasuryFees, s.feeRatio, s.feeAdmin,
+    s.treasury⟩
 
 /-- A call a caller sends to the pool (docs/pool-executable.md, rule PE2): only
     calldata, never a circuit witness and never the model's own ghost state.
@@ -996,7 +1008,9 @@ def PoolState.contract (s : PoolState) : Pool.ContractState :=
       false)`) and the published owned-note openings (decision 11).
     * `transactOwned`: `TransactModule.transactOwned` (TransactModule.sol:488-519)
       — the same data as `transact`, with no unshield token (`transactOwned`
-      never unshields, TransactModule.sol:619-623). -/
+      never unshields, TransactModule.sol:619-623).
+    * `setFeeRatio`: the fee-admin setter (operator ruling 2026-11-06) — the caller
+      and the new fee rate. -/
 inductive Pool.Call where
   | shield (token : Token) (x : Nat) (npk : Term)
   | transact {N M : Nat} (caller : Term) (pub : TransactPublic N M) (bp : BoundParams)
@@ -1005,6 +1019,7 @@ inductive Pool.Call where
   | transactOwned {N M : Nat} (caller : Term) (pub : TransactOwnedPublic N M)
       (bp : BoundParams) (proof : Term) (records : List (Term × CommitmentPreimage))
       (openings : List (Term × OwnedOpening))
+  | setFeeRatio (caller : Term) (r : FeeRatio)
 
 /-- The root history of tree `treeNumber`. -/
 def PoolState.rootsAt' (s : PoolState) (treeNumber : Nat) : List Term :=
@@ -1019,13 +1034,14 @@ def PoolState.leavesAt' (s : PoolState) (treeNumber : Nat) : List Term :=
     (`treeRoot TreeDepth []`, computed). -/
 def genesisTrees : List TreeState := [⟨[], [treeRoot TreeDepth []]⟩]
 
-/-- The state right after deployment with fee rate `r` (`PrivacyPool.initialize`,
-    PrivacyPool.sol:81-127): the genesis trees, no spent nullifiers, no custody, an empty
-    registry, no published openings, no payouts and no fees paid. -/
-def genesis (r : FeeRatio) : PoolState :=
+/-- The state right after deployment with fee rate `r`, fee admin `feeAdmin` and treasury
+    address `treasury` (`PrivacyPool.initialize`, PrivacyPool.sol:81-127; operator ruling
+    2026-11-06 for the two addresses): the genesis trees, no spent nullifiers, no custody,
+    an empty registry, no published openings, no payouts and no fees paid. -/
+def genesis (r : FeeRatio) (feeAdmin treasury : Term) : PoolState :=
   { live := fun _ => [], spent := fun _ => [], trees := genesisTrees,
     held := fun _ => 0, preimageOf := fun _ => none, published := [], payouts := [],
-    feeRatio := r, treasuryFees := fun _ => 0 }
+    feeRatio := r, treasuryFees := fun _ => 0, feeAdmin := feeAdmin, treasury := treasury }
 
 /-! ### Deriving notes from a witness
 
@@ -1197,22 +1213,53 @@ inductive Step : PoolState → PoolState → Prop where
             trees := insertLeaves s.trees ((ownedNewNotes w).map hashCommitment),
             preimageOf := applyRecords s.preimageOf (ownedOutputRecords w pub),
             published := s.published ++ openings })
+  /-- The fee-admin setter (operator ruling 2026-11-06). `hCaller` is the one check: the
+      caller is the fee admin that the deployment fixes (`s.feeAdmin`). The step sets the
+      fee rate to `r` and changes no other field. -/
+  | setFeeRatio {s : PoolState} (caller : Term) (hCaller : caller = s.feeAdmin)
+      (r : FeeRatio) : Step s { s with feeRatio := r }
 
-/-- Every state the pool can reach from deployment with some fee rate `r`, by any
-    sequence of calls from any caller. -/
+/-- Every state the pool can reach from deployment with some fee rate `r`, fee admin
+    `feeAdmin` and treasury address `treasury`, by any sequence of calls from any caller. -/
 inductive Reachable : PoolState → Prop where
-  | genesis (r : FeeRatio) : Reachable (genesis r)
+  | genesis (r : FeeRatio) (feeAdmin treasury : Term) : Reachable (genesis r feeAdmin treasury)
   | step {s s' : PoolState} (hs : Reachable s) (hstep : Step s s') :
       Reachable s'
 
-/-- **The fee rate never changes after deployment.** No step writes `feeRatio` (decision 7:
-    fees are set once at deployment). -/
-theorem step_feeRatio {s s' : PoolState} (h : Step s s') : s'.feeRatio = s.feeRatio := by
+/-- **The fee admin's setter changes only the fee rate.** The setter call of the fee admin
+    `s.feeAdmin` with rate `r` is a step from `s` to `{ s with feeRatio := r }`: every
+    other field, the fee admin and the treasury address included, keeps its value
+    (operator ruling 2026-11-06, item (a)). The caller is `s.feeAdmin` itself, not a
+    caller binder with an equation (armada-laconic `docs/lean/type-doctrine.md` §3,
+    rule 3). -/
+theorem step_setFeeRatio_frame {s : PoolState} (r : FeeRatio) : Step s { s with feeRatio := r } :=
+  .setFeeRatio s.feeAdmin rfl r
+
+/-- **No other step changes the fee rate.** For every step, the fee rate stays the same,
+    or the post-state is the pre-state with only the fee rate replaced. Only
+    `Step.setFeeRatio` gives the second case (operator ruling 2026-11-06, item (c)). -/
+theorem step_feeRatio_frame {s s' : PoolState} (h : Step s s') :
+    s'.feeRatio = s.feeRatio ∨ s' = { s with feeRatio := s'.feeRatio } := by
+  cases h with
+  | shield => exact Or.inl rfl
+  | transact => exact Or.inl rfl
+  | transactOwned => exact Or.inl rfl
+  | setFeeRatio => exact Or.inr rfl
+
+/-- **The deployment fixes the fee admin.** No step changes `feeAdmin` (operator ruling
+    2026-11-06). -/
+theorem step_feeAdmin {s s' : PoolState} (h : Step s s') : s'.feeAdmin = s.feeAdmin := by
+  cases h <;> rfl
+
+/-- **The deployment fixes the treasury address.** No step changes `treasury` (operator
+    ruling 2026-11-06). -/
+theorem step_treasury {s s' : PoolState} (h : Step s s') : s'.treasury = s.treasury := by
   cases h <;> rfl
 
 /-! ### The pool as an executable operation (docs/pool-executable.md, rule PE3)
 
-`Pool.Step` stays exactly as it is (rule PE6): the definitions below read only a
+`Pool.Step` stays as it is (rule PE6), with one addition: the fee-admin setter
+`Step.setFeeRatio` (operator ruling 2026-11-06). The definitions below read only a
 `Pool.ContractState` and a `Pool.Call`, never a circuit witness and never `live`,
 `published` or `payouts`. Each precondition is `Decidable`, so `Pool.apply` is a plain
 computable function, in the dependent-`if` form of `ArmadaLean/Nitro/OpEquations.lean`:
@@ -1377,6 +1424,22 @@ def Pool.ContractState.transactOwnedEffect (s : Pool.ContractState) (verify : Po
       spent := fun n => if n = bp.treeNumber then spent' else s.spent n,
       preimageOf := applyRecords s.preimageOf records }
 
+/-- The precondition of a `setFeeRatio` call: the caller is the fee admin that the
+    deployment fixes (`Step.setFeeRatio`'s `hCaller`). -/
+def Pool.ContractState.SetFeeRatioPre (s : Pool.ContractState) (caller : Term)
+    (_r : FeeRatio) : Prop :=
+  caller = s.feeAdmin
+
+instance (s : Pool.ContractState) (caller : Term) (r : FeeRatio) :
+    Decidable (s.SetFeeRatioPre caller r) :=
+  inferInstanceAs (Decidable (caller = s.feeAdmin))
+
+/-- The effect of a `setFeeRatio` call (`Step.setFeeRatio`): the fee rate becomes `r`,
+    and no other field changes. -/
+def Pool.ContractState.setFeeRatioEffect (s : Pool.ContractState) (caller : Term)
+    (r : {r : FeeRatio // s.SetFeeRatioPre caller r}) : Pool.ContractState :=
+  { s with feeRatio := r.1 }
+
 /-- The pool contract as a computable function (rule PE3): it reads only its call and
     its state, takes the proof check as the parameter `verify`, and states each call in
     the dependent-`if` form of `ArmadaLean/Nitro/OpEquations.lean`. -/
@@ -1392,6 +1455,8 @@ def Pool.apply (verify : Pool.Verifier) (s : Pool.ContractState) :
     if h : s.TransactOwnedPre verify caller pub bp proof records openings then
       some (s.transactOwnedEffect verify caller pub bp proof records ⟨openings, h⟩)
     else none
+  | .setFeeRatio caller r =>
+    if h : s.SetFeeRatioPre caller r then some (s.setFeeRatioEffect caller ⟨r, h⟩) else none
 
 /-- The `shield` equation: `Pool.apply` is already in the dependent-`if` form, so this
     holds by `rfl`. -/
@@ -1422,3 +1487,37 @@ theorem Pool.apply_transactOwned_equation (verify : Pool.Verifier) (s : Pool.Con
         some (s.transactOwnedEffect verify caller pub bp proof records ⟨openings, h⟩)
       else none :=
   rfl
+
+/-- The `setFeeRatio` equation, by `rfl` (as `Pool.apply_shield_equation`). -/
+theorem Pool.apply_setFeeRatio_equation (verify : Pool.Verifier) (s : Pool.ContractState)
+    (caller : Term) (r : FeeRatio) :
+    Pool.apply verify s (.setFeeRatio caller r) =
+      if h : s.SetFeeRatioPre caller r then some (s.setFeeRatioEffect caller ⟨r, h⟩)
+      else none :=
+  rfl
+
+/-- **An accepted fee-admin call changes only the fee rate.** If `Pool.apply` accepts the
+    call `setFeeRatio caller r`, the result is `{ s with feeRatio := r }`: every other
+    contract field, the fee admin and the treasury address included, keeps its value
+    (operator ruling 2026-11-06, item (a)). -/
+theorem Pool.apply_setFeeRatio_frame (verify : Pool.Verifier) (s : Pool.ContractState)
+    (caller : Term) (r : FeeRatio) {t : Pool.ContractState}
+    (h : Pool.apply verify s (.setFeeRatio caller r) = some t) :
+    t = { s with feeRatio := r } := by
+  rw [Pool.apply_setFeeRatio_equation] at h
+  by_cases hc : s.SetFeeRatioPre caller r
+  · rw [dif_pos hc] at h
+    exact (Option.some.inj h).symm
+  · rw [dif_neg hc] at h
+    exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+
+/-- **No other caller can change the fee rate.** If the caller is not the fee admin
+    `s.feeAdmin`, `Pool.apply` rejects the call `setFeeRatio caller r` (operator ruling
+    2026-11-06, item (b)). The model `Step` keeps no caller identity in its states, so
+    this contract-level statement is where item (b) has content: at the model level,
+    `Step.setFeeRatio` takes `caller = s.feeAdmin` as its hypothesis. -/
+theorem Pool.apply_setFeeRatio_not_admin (verify : Pool.Verifier) (s : Pool.ContractState)
+    (caller : Term) (r : FeeRatio) (hne : caller ≠ s.feeAdmin) :
+    Pool.apply verify s (.setFeeRatio caller r) = none := by
+  rw [Pool.apply_setFeeRatio_equation]
+  exact dif_neg hne

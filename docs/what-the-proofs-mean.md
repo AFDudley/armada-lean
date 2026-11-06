@@ -26,7 +26,7 @@ Lean and proved the properties that the internal security review
 | `locked_shares_set_at_first_deposit` / `locked_shares_supply_invariant` | The deployed yield vault **already carries the first-depositor inflation fix** (issue #365, PR #631): the first deposit locks `LOCKED_SHARES` shares to a dead address, and total supply never drops below `LOCKED_SHARES` afterward. |
 | `round_trip_loss_le` / `donation_loss_bound` | The exact rounding loss a depositor can suffer from a donation, as a closed integer bound — sharper than the contract's own `~donation / LOCKED_SHARES` NatSpec estimate. |
 | `donation_attack_unprofitable_post_fix` | With the fix in place, the donation (first-depositor inflation) attack **cannot profit**, for any donation or victim deposit. |
-| `fee_*` | The shield fee, a ratio fixed at deployment with floor division, conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). |
+| `fee_*` | The shield fee, a ratio with floor division that the deployment sets and only the fee admin changes (operator ruling 2026-11-06), conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). |
 
 ## The trust base — what you are trusting when you trust these proofs
 

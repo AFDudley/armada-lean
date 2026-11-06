@@ -27,12 +27,14 @@ So the executable form works on the state that a contract can store, and a refin
 ## Rules
 
 **Rule PE1 (contract state).** `Pool.ContractState` holds only what the pool contract stores: the Merkle trees, the
-nullifier set of each tree, the custody of each token, the preimage registry, the treasury fees of each token and the
-fee rate, and `PoolState.contract` maps a model state to it by dropping `live`, `published` and `payouts`.
+nullifier set of each tree, the custody of each token, the preimage registry, the treasury fees of each token, the
+fee rate, the fee-admin address and the treasury address, and `PoolState.contract` maps a model state to it by
+dropping `live`, `published` and `payouts`.
 
 **Rule PE2 (calls).** `Pool.Call` holds only what a caller sends: for a shield, the token, the gross amount and the
 note key; for a transact, the caller, the public inputs, the bound parameters, the proof, the token of the unshield if
-there is one, the disclosed records and the published openings; for an owned transact, the same with no unshield.
+there is one, the disclosed records and the published openings; for an owned transact, the same with no unshield; for
+the fee-admin setter `setFeeRatio`, the caller and the new fee rate.
 
 **Rule PE3 (executable operation).** `Pool.apply verify : Pool.ContractState → Pool.Call → Option Pool.ContractState`
 is a computable function that reads only its call and its state, takes the proof check as the parameter `verify`, and
@@ -47,7 +49,8 @@ inputs that a witness satisfies.
 has a witness that satisfies the circuit.
 
 **Rule PE6 (no statement change).** The pool-execution work changes no approved statement, adds no axiom, and raises no
-type-doctrine linter count above `scripts/gate-baseline.json`.
+type-doctrine linter count above `scripts/gate-baseline.json`. The one exception is the fee-admin setter of operator
+ruling 2026-11-06 (see the notes).
 
 ## Notes for the work
 
@@ -63,3 +66,13 @@ type-doctrine linter count above `scripts/gate-baseline.json`.
   (`UnshieldRefines`). That is why PE2 names the token of the unshield.
 - Order: PE1 and PE2, then PE3, then PE4, then PE5. Each later rule uses the definitions of the earlier ones.
 - The vault (ship-armada/armada-poc#651) gets the same form later, by the same pattern.
+- Operator ruling 2026-11-06: one named address, the fee admin, can change the fee rate. `Pool.Step` has the
+  constructor `setFeeRatio`. Its caller must equal `feeAdmin`, an address that the deployment fixes. Its effect changes
+  only `feeRatio`. `Pool.apply` accepts the call `setFeeRatio caller r` only when `caller = s.feeAdmin`
+  (`SetFeeRatioPre`, `setFeeRatioEffect`, `Pool.apply_setFeeRatio_equation`).
+- The theorems of that ruling: (a) `step_setFeeRatio_frame` and `Pool.apply_setFeeRatio_frame`; (b)
+  `Pool.apply_setFeeRatio_not_admin`; (c) `step_feeRatio_frame`; (d) `setFeeRatio_can_happen`. `step_feeAdmin` and
+  `step_treasury` show that no step changes the two addresses. The model `Step` keeps no caller identity in its
+  states, so (b) has its content at the contract level.
+- `treasury` is an address only. No step reads it or writes it. The model does not model treasury behaviour.
+  Governance and other permissioned features are out of scope (operator ruling 2026-11-06).

@@ -77,10 +77,17 @@ def tok0 : Token := ⟨Term.val 100⟩
 /-- A contract-owner address term (module comment, `ArmadaLean.PoolOwned`). -/
 def ownerA : Term := Term.keccak [Term.val 42]
 
-/-- The genesis state, with `r0`'s fee rate. -/
-def g0 : PoolState := genesis r0
+/-- The fee-admin address of every fixture below. -/
+def feeAdmin0 : Term := Term.keccak [Term.val 7]
 
-theorem g0_reach : Reachable g0 := .genesis r0
+/-- The treasury address of every fixture below. -/
+def treasury0 : Term := Term.keccak [Term.val 8]
+
+/-- The genesis state, with `r0`'s fee rate, fee admin `feeAdmin0` and treasury
+    `treasury0`. -/
+def g0 : PoolState := genesis r0 feeAdmin0 treasury0
+
+theorem g0_reach : Reachable g0 := .genesis r0 feeAdmin0 treasury0
 
 /-! ## A standalone owned witness/public pair
 

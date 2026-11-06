@@ -23,9 +23,10 @@
     of `ArmadaLean/Nitro/Adjudicator.lean`, "One precondition and one effect per
     operation"). A precondition of a transact call also takes `verify`.
     `ShieldPre`/`shieldEffect`, `TransactPre`/`transactEffect`,
-    `TransactOwnedPre`/`transactOwnedEffect`, each precondition `Decidable`.
-  * The equations `Pool.apply_shield_equation`, `Pool.apply_transact_equation` and
-    `Pool.apply_transactOwned_equation`, each with the arguments `verify`, the state and
+    `TransactOwnedPre`/`transactOwnedEffect`, `SetFeeRatioPre`/`setFeeRatioEffect`, each
+    precondition `Decidable`.
+  * The equations `Pool.apply_shield_equation`, `Pool.apply_transact_equation`,
+    `Pool.apply_transactOwned_equation` and `Pool.apply_setFeeRatio_equation`, each with the arguments `verify`, the state and
     the call arguments, in that order.
 -/
 import ArmadaLean
@@ -79,14 +80,31 @@ example : Pool.Verifier → Pool.ContractState → Pool.Call → Option Pool.Con
   let r : FeeRatio := ⟨1, 100, by decide, by decide, by decide⟩
   let v : Pool.Verifier := ⟨fun _ _ => true, fun _ _ => true⟩
   let tok : Token := ⟨.val 1⟩
-  (Pool.apply v (genesis r).contract (.shield tok 1000 (.val 7))).map
+  (Pool.apply v (genesis r (.val 3) (.val 4)).contract (.shield tok 1000 (.val 7))).map
       (fun t => (t.held tok, t.treasuryFees tok, t.held ⟨.val 2⟩)) == some (990, 10, 0)
 
 /- A shield of 0 fails (`hValue` of `Step.shield`). -/
 #guard
   let r : FeeRatio := ⟨1, 100, by decide, by decide, by decide⟩
   let v : Pool.Verifier := ⟨fun _ _ => true, fun _ _ => true⟩
-  (Pool.apply v (genesis r).contract (.shield ⟨.val 1⟩ 0 (.val 7))).isNone
+  (Pool.apply v (genesis r (.val 3) (.val 4)).contract (.shield ⟨.val 1⟩ 0 (.val 7))).isNone
+
+/- The fee admin `.val 3` sets the fee rate to 0.5 %: the result has the new rate and the
+    same custody. -/
+#guard
+  let r : FeeRatio := ⟨1, 100, by decide, by decide, by decide⟩
+  let r' : FeeRatio := ⟨1, 200, by decide, by decide, by decide⟩
+  let v : Pool.Verifier := ⟨fun _ _ => true, fun _ _ => true⟩
+  (Pool.apply v (genesis r (.val 3) (.val 4)).contract (.setFeeRatio (.val 3) r')).map
+      (fun t => (t.feeRatio.num, t.feeRatio.den, t.feeAdmin == .val 3, t.held ⟨.val 1⟩)) ==
+    some (1, 200, true, 0)
+
+/- Another caller fails (operator ruling 2026-11-06, item (b)). -/
+#guard
+  let r : FeeRatio := ⟨1, 100, by decide, by decide, by decide⟩
+  let r' : FeeRatio := ⟨1, 200, by decide, by decide, by decide⟩
+  let v : Pool.Verifier := ⟨fun _ _ => true, fun _ _ => true⟩
+  (Pool.apply v (genesis r (.val 3) (.val 4)).contract (.setFeeRatio (.val 4) r')).isNone
 
 /-! ### One equation per call -/
 
@@ -117,6 +135,13 @@ example (verify : Pool.Verifier) (s : Pool.ContractState) {N M : Nat} (caller : 
       else none :=
   Pool.apply_transactOwned_equation verify s caller pub bp proof records openings
 
+/-- The fee-admin setter equation. -/
+example (verify : Pool.Verifier) (s : Pool.ContractState) (caller : Term) (r : FeeRatio) :
+    Pool.apply verify s (.setFeeRatio caller r) =
+      if h : s.SetFeeRatioPre caller r then some (s.setFeeRatioEffect caller ⟨r, h⟩)
+      else none :=
+  Pool.apply_setFeeRatio_equation verify s caller r
+
 /-! ### Axioms
 
 `lean_probe.py` reports each `#print axioms` line. The check after them fails the probe
@@ -127,13 +152,14 @@ model's three declared primitives (PE6: no new axiom; `sorryAx` is not allowed).
 #print axioms Pool.apply_shield_equation
 #print axioms Pool.apply_transact_equation
 #print axioms Pool.apply_transactOwned_equation
+#print axioms Pool.apply_setFeeRatio_equation
 
 open Lean Elab Command in
 #eval show CommandElabM Unit from do
   let allowed := [``propext, ``Classical.choice, ``Quot.sound,
     ``EdDSAVerify, ``VerifyAccepts, ``VerifyOwnedAccepts]
   for d in [``Pool.apply, ``Pool.apply_shield_equation, ``Pool.apply_transact_equation,
-      ``Pool.apply_transactOwned_equation] do
+      ``Pool.apply_transactOwned_equation, ``Pool.apply_setFeeRatio_equation] do
     for a in (← collectAxioms d) do
       unless allowed.contains a do
         throwError m!"{d} depends on the axiom {a}, which is not allowed"

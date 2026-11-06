@@ -4,7 +4,7 @@
 
     python3 scripts/oracles/lean_probe.py scripts/oracles/pool_exec/PE2.lean
 
-  The interface it fixes: `Pool.Call` is an inductive type with exactly three
+  The interface it fixes: `Pool.Call` is an inductive type with exactly four
   constructors, each with exactly the calldata arguments below, in this order. No argument
   is a circuit witness. The proof is a `Term`: the model holds no Groth16 proof objects,
   and a proof is calldata, a symbolic message like every other value a caller sends.
@@ -16,6 +16,8 @@
   * `transactOwned {N M : Nat} (caller : Term) (pub : TransactOwnedPublic N M)
     (bp : BoundParams) (proof : Term) (records : List (Term × CommitmentPreimage))
     (openings : List (Term × OwnedOpening))`: the same, with no unshield.
+  * `setFeeRatio (caller : Term) (r : FeeRatio)`: the fee-admin setter (operator ruling
+    2026-11-06), the caller and the new fee rate.
 -/
 import ArmadaLean
 
@@ -40,12 +42,17 @@ example {N M : Nat} (caller : Term) (pub : TransactOwnedPublic N M) (bp : BoundP
     (openings : List (Term × OwnedOpening)) : Pool.Call :=
   .transactOwned caller pub bp proof records openings
 
-/-- Exactly three constructors: a fourth makes this match incomplete. -/
-example (c : Pool.Call) : Fin 3 :=
+/-- A fee-admin setter call: the caller and the new fee rate, and nothing else. -/
+example (caller : Term) (r : FeeRatio) : Pool.Call :=
+  .setFeeRatio caller r
+
+/-- Exactly four constructors: a fifth makes this match incomplete. -/
+example (c : Pool.Call) : Fin 4 :=
   match c with
   | .shield .. => 0
   | .transact .. => 1
   | .transactOwned .. => 2
+  | .setFeeRatio .. => 3
 
 /-! ### Axioms
 

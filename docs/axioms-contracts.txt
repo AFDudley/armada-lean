@@ -49,8 +49,8 @@ the fix.)
 
 == fee_conservation ==
 (ShieldModule.sol:353-371, audit C-3: the inclusive fee split is exact —
-base + fee = amount. Branch pool-symbolic: the fee is a ratio fixed at deployment
-(finding P-9).)
+base + fee = amount. Branch pool-symbolic: the fee is a ratio (finding P-9). The
+deployment sets it; only the fee admin changes it (operator ruling 2026-11-06).)
 'fee_conservation' depends on axioms: [propext, Quot.sound]
 
 == fee_zero_below_threshold ==

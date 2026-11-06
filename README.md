@@ -129,9 +129,12 @@ The model follows the fixed contract: `armada-poc` `origin/main` `64436c14`
 
 ### Shield fee (`armada-poc/contracts/privacy-pool/modules/ShieldModule.sol`, audit C-3)
 
-The fee is a ratio `num / den` fixed at deployment (`PoolState.feeRatio`), with floor
-division (P-9). The contract's basis-point rate is the case `den = 10000`. The shield
-step applies it to the gross amount (operator ruling, 2026-10-27).
+The fee is a ratio `num / den` (`PoolState.feeRatio`), with floor division (P-9). The
+deployment sets it. Only the fee admin `PoolState.feeAdmin`, an address that the
+deployment fixes, can change it with the step `Step.setFeeRatio` (operator ruling
+2026-11-06; `step_feeRatio_frame`, `Pool.apply_setFeeRatio_not_admin`). The contract's
+basis-point rate is the case `den = 10000`. The shield step applies it to the gross
+amount (operator ruling, 2026-10-27).
 
 | Lean theorem | Module | Property | Contract code |
 |---|---|---|---|

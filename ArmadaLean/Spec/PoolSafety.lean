@@ -333,6 +333,15 @@ def Spec.shield_can_happen : Prop :=
     Claim <|
     ∃ s', Step s.state s'
 
+/-- **Can happen: the fee admin changes the fee rate.** From every reachable state, the
+    fee admin's setter call with any rate `r` is a step to a state with fee rate `r`
+    (operator ruling 2026-11-06, item (d)). The one check is the caller: the fee admin
+    `s.feeAdmin` passes it. -/
+def Spec.setFeeRatio_can_happen : Prop :=
+  ∀ (s : ReachableState Pool.machine) (r : FeeRatio),
+    Claim <|
+    ∃ s', Step s.state s' ∧ s'.feeRatio = r
+
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` live notes in tree `bp.treeNumber`, re-minting them into `M` new
     notes of equal total value, clears every check of `Step.transact`: the witness is
