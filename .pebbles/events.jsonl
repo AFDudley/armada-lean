@@ -2148,3 +2148,9 @@
 {"type":"comment","timestamp":"2026-11-06T03:32:12.480299Z","issue_id":"aln-d9f","payload":{"body":"gate-verdict: 2c120b0718991e40cf7e8ff8903411647668d4a8 passed 0.2.1+ee8a10d6","build":"0.2.1+ee8a10d6","outcome":"passed","sha":"2c120b0718991e40cf7e8ff8903411647668d4a8","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-06T03:32:12.507492Z","issue_id":"aln-d9f","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-06T03:32:12.517760Z","issue_id":"aln-d9f","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-06T05:04:12.860840Z","issue_id":"aln-274","payload":{"description":"Operator-authored branch `draft/root-namespace`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/root-namespace","type":"task"}}
+{"type":"comment","timestamp":"2026-11-06T05:04:12.886383Z","issue_id":"aln-274","payload":{"body":"branch-identity: draft/root-namespace"}}
+{"type":"comment","timestamp":"2026-11-06T05:24:20.400603Z","issue_id":"aln-274","payload":{"body":"exophial-integration-attempt-started: at 1f918442c800333e8f330b4fb784ebe6554a086d"}}
+{"type":"comment","timestamp":"2026-11-06T05:24:23.082909Z","issue_id":"aln-274","payload":{"body":"gate-verdict: af10f173c5abce77f2b9fce1c9809fceb953fd6a passed 0.2.1+23d1d5b2","build":"0.2.1+23d1d5b2","outcome":"passed","sha":"af10f173c5abce77f2b9fce1c9809fceb953fd6a","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-06T05:24:23.113239Z","issue_id":"aln-274","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-06T05:24:23.123867Z","issue_id":"aln-274","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
