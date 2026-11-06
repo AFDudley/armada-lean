@@ -67,6 +67,8 @@
 import ArmadaLean.TransactOwned
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-- The data committed into a Merkle leaf (`PoolTypes.sol:79-83`, `struct
     CommitmentPreimage`). `npk` is a term (a note public key); `token` is a symbolic
     `Token` (`ArmadaLean.Token`), the same as `TransactOwnedWitness.token`; `value` is
@@ -86,7 +88,7 @@ def hashCommitment (pre : CommitmentPreimage) : Term := commitment pre.npk pre.t
 /- An output that stays ciphertext-only has no disclosed preimage. The contract encodes
    "no preimage" as an all-zero `publicOutputs` entry (`_isZeroPreimage`,
    TransactModule.sol:582-585). This model has no such sentinel: a disclosure is a list
-   of the outputs that are disclosed (`ArmadaLean.Pool.Step.transact`, `records`), and
+   of the outputs that are disclosed (`ArmadaLean.Step.transact`, `records`), and
    the owned path discloses every output. Audit finding P-4 records the removal of the
    earlier `isZeroPreimage`. -/
 
@@ -297,7 +299,7 @@ publishes the opening in the creating transaction, inside `adaptParams`, and the
 adjudicator checks it against the proof's output commitment. An off-chain indexer
 extracts it. The pool keeps no storage for it.
 
-This model puts the opening in the step's public data (`ArmadaLean.Pool.Step.transact`
+This model puts the opening in the step's public data (`ArmadaLean.Step.transact`
 and `.transactOwned`, argument `openings`). The ghost record `PoolState.published`
 keeps every opening that a step carried. The pool does not check an opening; a reader
 checks it against the note's `npk` (`ArmadaLean.PoolSafety.owned_spend_witness_exists`).
@@ -376,3 +378,5 @@ theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
       exact hFresh i
   exact ⟨w, pub, hConstrained, hComplete.complete hConstrained, rfl, hCaller,
     fun _ => rfl, spent', hNullify⟩
+
+end ArmadaLean

@@ -8,10 +8,9 @@
 
   Scope (§1, §4 decision 1): every `def`/`theorem` declared in a module
   whose own path starts with `ArmadaLean`, selected by MODULE, not
-  namespace — a namespace filter on `ArmadaLean` misses the Pool (its
-  theorems sit at the root namespace) and names such as
-  `Nitro.network_received_voucher_signers` (module
-  `ArmadaLean.Nitro.Reachable`, name `Nitro.…`). A module under
+  namespace. Every armada-lean declaration is under the root namespace
+  `ArmadaLean` (draft/root-namespace, 2026-11-06); the module test stays
+  because it needs no rule about names. A module under
   `ArmadaLean.Spec` or `ArmadaLean.Witness` is out of scope: the spec
   module (`docs/spec-module-design.md`) generates these from a cited
   theorem's own header, so a finding on one is a finding on that header,
@@ -149,7 +148,7 @@ partial def collectOrderedFVars (e : Expr) (acc : Array FVarId := #[]) : Array F
     exempted here). -/
 def stateCarrier? (e : Expr) : Option Expr :=
   match e with
-  | .app (.app (.app (.const n _) _) _) e => if n == `ReachableState.state then some e else none
+  | .app (.app (.app (.const n _) _) _) e => if n == `ArmadaLean.ReachableState.state then some e else none
   | _ => none
 
 /-- `e` with every `ReachableState.state e'` subterm replaced by
@@ -299,13 +298,12 @@ def nitroBaseOps : Array Name := #[
 /-- The Pool's base operations (`type-doctrine.md` §4a): tree insertion,
     nullifier marking, preimage records, and case analysis on `Step`. -/
 def poolBaseOps : Array Name := #[
-  `removeAll, `markSpent, `applyRecords, `recordPreimages, `insertLeaves,
-  `insertTree, `insertStart, `withTreePositionsFrom, `Step.casesOn]
+  `ArmadaLean.removeAll, `ArmadaLean.markSpent, `ArmadaLean.applyRecords,
+  `ArmadaLean.recordPreimages, `ArmadaLean.insertLeaves, `ArmadaLean.insertTree,
+  `ArmadaLean.insertStart, `ArmadaLean.withTreePositionsFrom, `ArmadaLean.Step.casesOn]
 
 /-- `n` is declared in a module under `ArmadaLean`. The test is the
-    module, not the name: the Pool's declarations sit at the root
-    namespace (`Constrained`, `Step`), so a name test misses them (the
-    module comment above). -/
+    module, not the name (the module comment above). -/
 def isArmadaConst (env : Environment) (n : Name) : Bool :=
   (declModule env n).any (`ArmadaLean).isPrefixOf
 

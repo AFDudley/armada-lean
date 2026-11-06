@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /-- The key bound: with at most 8 notes each below `2^120`, the sum is strictly
     below the field prime (Transact.circom:116-119 — "worst-case sum (8 x 2^120)
     stays far below the BN254 scalar field"). -/
@@ -35,5 +37,7 @@ def Spec.no_wraparound_minting : Prop :=
     (hsum : fieldEq (listSum ins) (listSum outs)),
     Claim <|
     listSum ins = listSum outs
+
+end ArmadaLean
 
 #check_spec_bindings

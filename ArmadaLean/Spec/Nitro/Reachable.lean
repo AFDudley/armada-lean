@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 section
 
 open ArmadaLean.Nitro
@@ -18,6 +20,8 @@ open ArmadaLean.Nitro
 variable {E : Type} [DecidableEq E]
 
 end
+
+end ArmadaLean
 
 namespace ArmadaLean.Nitro
 
@@ -38,6 +42,8 @@ def Reachable.Spec.balances_virtual_zero : Prop :=
     s.state.balances.get (.channel c) = 0
 
 end ArmadaLean.Nitro
+
+namespace ArmadaLean
 
 open ArmadaLean.Nitro
 
@@ -125,5 +131,7 @@ def Nitro.Spec.network_views_participant_reachable : Prop :=
     (n : Nitro.ReachableNetwork apps Ts) (q : Participant),
     Claim <|
     (Nitro.participant apps (Ts.T q)).Reachable (n.state.view q)
+
+end ArmadaLean
 
 #check_spec_bindings

@@ -80,6 +80,8 @@ import ArmadaLean.Nullifier
 import ArmadaLean.Merkle
 import ArmadaLean.Transact
 
+namespace ArmadaLean
+
 /-- Private witness of the TransactOwned circuit — mirrors the private
     signals (TransactOwned.circom:43-53). No `publicKey`, `signature` or
     `nullifyingKey`: the owned path carries no EdDSA witness. -/
@@ -207,3 +209,5 @@ theorem user_npk_ne_contract_npk {pk : Nat × Nat} {nk r₁ : Nat}
   intro h
   have hmpk : masterPublicKey pk nk = Term.keccak addrInputs := (Term.hash2_inj h).1
   exact Term.poseidon_ne_keccak hmpk
+
+end ArmadaLean

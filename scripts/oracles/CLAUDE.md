@@ -16,6 +16,9 @@ procedure. For a Lean rule, that is Lean elaborating a statement.
   argument types). Each probe also fails when a main declaration depends on an
   axiom outside `propext`, `Classical.choice`, `Quot.sound` and the declared
   primitives `EdDSAVerify`, `VerifyAccepts` and `VerifyOwnedAccepts` (PE6).
-  A probe holds no `sorry`, `admit`, `native_decide` or `#exit`.
+  A probe holds no `sorry`, `admit`, `native_decide` or `#exit`. Each probe
+  has `open ArmadaLean` after its import: every armada-lean declaration is
+  under the root namespace `ArmadaLean`, so the interface names in a probe's
+  header (`Pool.ContractState`, `Step`) are relative to `ArmadaLean`.
 
 A change to a probe changes the acceptance standard of every spec that runs it.

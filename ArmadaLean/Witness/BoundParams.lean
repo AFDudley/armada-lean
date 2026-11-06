@@ -13,5 +13,5 @@ open ArmadaLean.Witness.CircuitValues
 
 /-- The witness of `Spec.hashBoundParams_inj`: the hash equality is the trivial
     one, `bp0` against itself. -/
-theorem Spec.hashBoundParams_inj.witness : spec_premise% Spec.hashBoundParams_inj := by
+theorem ArmadaLean.Spec.hashBoundParams_inj.witness : spec_premise% ArmadaLean.Spec.hashBoundParams_inj := by
   refine ⟨bp0, bp0, rfl, trivial⟩

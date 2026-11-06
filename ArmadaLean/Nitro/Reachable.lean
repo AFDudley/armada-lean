@@ -27,6 +27,8 @@ import ArmadaLean.Nitro.Lemmas
 import ArmadaLean.SpecTools
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 section
 
 open ArmadaLean.Nitro
@@ -75,6 +77,8 @@ theorem Nitro.signedChain_reachable_iff {apps : Apps E} {signed : List (Particip
     exact ⟨Adjudicator.genesis, rfl, hr⟩
 
 end
+
+end ArmadaLean
 
 namespace ArmadaLean.Nitro
 
@@ -199,6 +203,8 @@ theorem Reachable.balances_virtual_zero {apps : Apps E} (s : ReachableState (Nit
 
 end ArmadaLean.Nitro
 
+namespace ArmadaLean
+
 open ArmadaLean.Nitro
 
 variable {E : Type} [DecidableEq E]
@@ -226,11 +232,11 @@ variable {E : Type} [DecidableEq E]
     over-approximation of the wallet-bounded `Nitro.network` step (this
     file's header: bare reachability over-approximates) — exactly what
     `Nitro.network_views_participant_reachable` needs at `q = p₀`.
-    Declared at the root, not inside `ArmadaLean.Nitro`
-    (which already holds `NetworkState`, `Threat`, ...), so its name is
-    `Nitro.participant`, not `ArmadaLean.Nitro.Nitro.participant`; this
-    mirrors `Pool.machine` (`PoolMachine.lean`), itself declared outside
-    `Pool.lean`'s (namespace-free) declarations. -/
+    Declared as `Nitro.…` inside `namespace ArmadaLean`, not inside
+    `namespace ArmadaLean.Nitro` (which already holds `NetworkState`,
+    `Threat`, ...), so its full name is `ArmadaLean.Nitro.participant`, not
+    `ArmadaLean.Nitro.Nitro.participant`; this mirrors
+    `ArmadaLean.Pool.machine` (`PoolMachine.lean`). -/
 def Nitro.participantWith (apps : Apps E) {p : Participant} (T : Threat E p)
     (honest : NetworkState E p → HonestMove E → Prop) : Machine (NetworkState E p) where
   init := fun net => net = ⟨Adjudicator.genesis, [], []⟩
@@ -1237,7 +1243,7 @@ theorem Nitro.network_views_consistent {apps : Apps E} {Ts : Threats E apps} {n 
     names it a recipient, batched as one list (helper for
     `Nitro.participant_reachable_deliver_sends`; a plain `def`, not an
     inline structure update, so it is one unambiguous term throughout). -/
-def ArmadaLean.Nitro.NetworkState.recvBatch {q : Participant} (base : NetworkState E q) (p₀ : Participant)
+def Nitro.NetworkState.recvBatch {q : Participant} (base : NetworkState E q) (p₀ : Participant)
     (sends : List (State E)) : NetworkState E q :=
   let batch : List (State E) := sends.filter (fun st => decide (q ∈ st.recipients p₀))
   { base with received := batch.map (fun st => (⟨st, [p₀]⟩ : SignedState E)) ++ base.received }
@@ -1510,3 +1516,5 @@ theorem Nitro.network_positive_balance_reachable {apps : Apps E} (Ts : Threats E
     (simp? [Network.deposit, Adjudicator.deposit, hck, hn0def, Adjudicator.genesis,
       Balances.add, Balances.set, Balances.get] says simp only [Balances.get, Network.deposit, Adjudicator.deposit, hck, hn0def, Adjudicator.genesis, List.lookup_nil, Option.getD_none, and_self, ↓reduceIte, Balances.add, Balances.set, zero_add, ne_eq, decide_not, List.filter_nil, Nat.sub_self, List.lookup_cons_self, Option.getD_some])
   rw [hbal]; exact hx
+
+end ArmadaLean

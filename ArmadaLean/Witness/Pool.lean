@@ -12,23 +12,23 @@ import ArmadaLean.SpecTools
 open ArmadaLean.PoolNonVacuity (g0 r0 feeAdmin0)
 
 /-- A proof check that rejects every proof. The setter call reads no proof. -/
-def Pool.Verifier.rejectAll : Pool.Verifier := ⟨fun _ _ => false, fun _ _ => false⟩
+def ArmadaLean.Pool.Verifier.rejectAll : Pool.Verifier := ⟨fun _ _ => false, fun _ _ => false⟩
 
 /-- The witness of `Spec.step_feeRatio_frame`: the fee admin's setter step from `g0`. -/
-theorem Spec.step_feeRatio_frame.witness : spec_premise% Spec.step_feeRatio_frame := by
+theorem ArmadaLean.Spec.step_feeRatio_frame.witness : spec_premise% ArmadaLean.Spec.step_feeRatio_frame := by
   exact ⟨g0, _, .setFeeRatio feeAdmin0 rfl r0, trivial⟩
 
 /-- The witness of `Spec.step_feeAdmin`: the fee admin's setter step from `g0`. -/
-theorem Spec.step_feeAdmin.witness : spec_premise% Spec.step_feeAdmin := by
+theorem ArmadaLean.Spec.step_feeAdmin.witness : spec_premise% ArmadaLean.Spec.step_feeAdmin := by
   exact ⟨g0, _, .setFeeRatio feeAdmin0 rfl r0, trivial⟩
 
 /-- The witness of `Spec.step_treasury`: the fee admin's setter step from `g0`. -/
-theorem Spec.step_treasury.witness : spec_premise% Spec.step_treasury := by
+theorem ArmadaLean.Spec.step_treasury.witness : spec_premise% ArmadaLean.Spec.step_treasury := by
   exact ⟨g0, _, .setFeeRatio feeAdmin0 rfl r0, trivial⟩
 
 /-- The witness of `Pool.Spec.apply_setFeeRatio_frame`: the fee admin's accepted
     setter call on `g0.contract`. -/
-theorem Pool.Spec.apply_setFeeRatio_frame.witness : spec_premise% Pool.Spec.apply_setFeeRatio_frame := by
+theorem ArmadaLean.Pool.Spec.apply_setFeeRatio_frame.witness : spec_premise% ArmadaLean.Pool.Spec.apply_setFeeRatio_frame := by
   refine ⟨Pool.Verifier.rejectAll, g0.contract, feeAdmin0, r0,
     { g0.contract with feeRatio := r0 }, ?_, trivial⟩
   rw [Pool.apply_setFeeRatio_equation,
@@ -37,7 +37,7 @@ theorem Pool.Spec.apply_setFeeRatio_frame.witness : spec_premise% Pool.Spec.appl
 
 /-- The witness of `Pool.Spec.apply_setFeeRatio_not_admin`: the caller `Term.val 0` is
     not the fee admin `feeAdmin0`, a Keccak term. -/
-theorem Pool.Spec.apply_setFeeRatio_not_admin.witness : spec_premise% Pool.Spec.apply_setFeeRatio_not_admin := by
+theorem ArmadaLean.Pool.Spec.apply_setFeeRatio_not_admin.witness : spec_premise% ArmadaLean.Pool.Spec.apply_setFeeRatio_not_admin := by
   refine ⟨Pool.Verifier.rejectAll, g0.contract, Term.val 0, r0, ?_, trivial⟩
   intro h
   cases h

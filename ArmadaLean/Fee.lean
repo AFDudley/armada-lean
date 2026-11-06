@@ -14,12 +14,14 @@
   verifying keys and fees once at deployment"). The contract's rate is the case
   `den = 10000`.
 
-  The pool applies the fee in the shield step (`ArmadaLean.Pool.Step.shield`, with the
+  The pool applies the fee in the shield step (`ArmadaLean.Step.shield`, with the
   deployment rate `PoolState.feeRatio`): the note gets `shieldBase`, the treasury gets
   `shieldFee` (ShieldModule.sol:324-340 local path, :209-218 cross-chain path). Audit
   finding P-9 (armada-laconic `labbook/2026-10-26-pool-layout-audit.md`) records the
   earlier per-shield basis-point argument.
 -/
+
+namespace ArmadaLean
 
 /-- The hard cap on the shield fee, in percent of the gross amount. Operator ruling,
     2026-10-27: the shield fee is never 100%; it has a hard cap, probably 1%. This is the
@@ -99,3 +101,5 @@ theorem shieldBase_pos (r : FeeRatio) {x : Nat} (hx : 0 < x) : 0 < shieldBase r 
   have h4 : shieldFee r x < x := by omega
   unfold shieldBase
   omega
+
+end ArmadaLean

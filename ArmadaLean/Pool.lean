@@ -95,6 +95,8 @@ import ArmadaLean.BoundParams
 import ArmadaLean.Fee
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-! ### Removing a sub-multiset of live notes, by key
 
 A spend names its inputs by leaf position (the model's own `live` entries are
@@ -470,13 +472,13 @@ theorem withTreePositionsFrom_snd_mem {α : Type} (treeNumber start : Nat) (l : 
 theorem List.getD_append_of_lt {α : Type} (l l' : List α) (i : Nat) (d : α)
     (h : i < l.length) : (l ++ l').getD i d = l.getD i d := by
   induction l generalizing i with
-  | nil => (simp? at h says simp only [length_nil, Nat.not_lt_zero] at h)
+  | nil => (simp? at h says simp only [List.length_nil, Nat.not_lt_zero] at h)
   | cons a rest ih =>
     cases i with
     | zero => rfl
     | succ i' =>
       simp only [List.cons_append, List.getD_cons_succ]
-      exact ih i' (by (simp? at h says simp only [length_cons, Nat.add_lt_add_iff_right] at h); omega)
+      exact ih i' (by (simp? at h says simp only [List.length_cons, Nat.add_lt_add_iff_right] at h); omega)
 
 /-! ### The on-chain preimage registry
 
@@ -709,8 +711,8 @@ theorem List.getElem?_concat_eq {α : Type} (l : List α) (x : α) (i : Nat) :
   · rw [if_pos h1, List.getElem?_append_left h1]
   · rw [if_neg h1, List.getElem?_append_right (by omega)]
     by_cases h2 : i = l.length
-    · subst h2; (simp? says simp only [Nat.sub_self, length_cons, length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, getElem_cons_zero, ↓reduceIte])
-    · rw [if_neg h2]; (simp? says simp only [_root_.getElem?_eq_none_iff, length_cons, length_nil, Nat.zero_add, Nat.lt_one_iff]); omega
+    · subst h2; (simp? says simp only [Nat.sub_self, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, List.getElem_cons_zero, ↓reduceIte])
+    · rw [if_neg h2]; (simp? says simp only [_root_.getElem?_eq_none_iff, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_one_iff]); omega
 
 theorem List.getElem?_concat2_eq {α : Type} (l : List α) (x y : α) (i : Nat) :
     (l ++ [x, y])[i]? = if i < l.length then l[i]? else if i = l.length then some x
@@ -719,11 +721,11 @@ theorem List.getElem?_concat2_eq {α : Type} (l : List α) (x y : α) (i : Nat) 
   · rw [if_pos h1, List.getElem?_append_left h1]
   · rw [if_neg h1, List.getElem?_append_right (by omega)]
     by_cases h2 : i = l.length
-    · subst h2; (simp? says simp only [Nat.sub_self, length_cons, length_nil, Nat.zero_add, Nat.reduceAdd, Nat.zero_lt_succ, getElem?_pos, getElem_cons_zero, ↓reduceIte])
+    · subst h2; (simp? says simp only [Nat.sub_self, List.length_cons, List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.zero_lt_succ, getElem?_pos, List.getElem_cons_zero, ↓reduceIte])
     · rw [if_neg h2]
       by_cases h3 : i = l.length + 1
-      · subst h3; (simp? says simp only [Nat.add_sub_cancel_left, length_cons, length_nil, Nat.zero_add, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos, getElem_cons_succ, getElem_cons_zero, Nat.add_left_cancel_iff, ↓reduceIte])
-      · rw [if_neg h3]; (simp? says simp only [_root_.getElem?_eq_none_iff, length_cons, length_nil, Nat.zero_add, Nat.reduceAdd, Nat.not_lt]); omega
+      · subst h3; (simp? says simp only [Nat.add_sub_cancel_left, List.length_cons, List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos, List.getElem_cons_succ, List.getElem_cons_zero, Nat.add_left_cancel_iff, ↓reduceIte])
+      · rw [if_neg h3]; (simp? says simp only [_root_.getElem?_eq_none_iff, List.length_cons, List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.not_lt]); omega
 
 /-- **An insertion changes only the target tree, and it extends that tree.** The one
     equation every other forest lemma below follows from. A target tree that does not
@@ -883,7 +885,7 @@ theorem List.getD_concat_length {α : Type} (l : List α) (x : α) (d : α) :
     (l ++ [x]).getD l.length d = x := by
   induction l with
   | nil => rfl
-  | cons a rest ih => (simp? says simp only [cons_append, length_cons, getD_eq_getElem?_getD, length_append, length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, getElem_cons_succ, Std.le_refl, getElem_append_right, Nat.sub_self, getElem_cons_zero, Option.getD_some])
+  | cons a rest ih => (simp? says simp only [List.cons_append, List.length_cons, List.getD_eq_getElem?_getD, List.length_append, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, List.getElem_cons_succ, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero, Option.getD_some])
 
 /-- A batch tagged by `withPositionsFrom` always lands, in the appended leaf list, at
     exactly the leaf `f` of its own preimage — no other value could appear there.
@@ -1521,3 +1523,5 @@ theorem Pool.apply_setFeeRatio_not_admin (verify : Pool.Verifier) (s : Pool.Cont
     Pool.apply verify s (.setFeeRatio caller r) = none := by
   rw [Pool.apply_setFeeRatio_equation]
   exact dif_neg hne
+
+end ArmadaLean

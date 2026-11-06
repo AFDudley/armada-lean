@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /-- **Two different bound-parameter records never give the same hash.** By
     construction of the symbolic hash (`Term.hash.inj`), not by assumption.
     Source: PrivacyPoolStorage.sol:46-57. -/
@@ -19,5 +21,7 @@ def Spec.hashBoundParams_inj : Prop :=
     (h : hashBoundParams bp₁ = hashBoundParams bp₂),
     Claim <|
     bp₁ = bp₂
+
+end ArmadaLean
 
 #check_spec_bindings

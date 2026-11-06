@@ -44,7 +44,7 @@ def isReachSubtype (heads : NameSet) (ty : Expr) : MetaM Bool := do
   let body := match p with
     | .lam _ _ b _ => b
     | e => e
-  return headConst? body == some `Machine.Reachable
+  return headConst? body == some `ArmadaLean.Machine.Reachable
 
 /-- The binder facts of a telescope. -/
 def binderFacts (heads preds : NameSet) (xs : Array Expr) : MetaM (Array Json) := do
@@ -161,7 +161,7 @@ def specFacts (heads : NameSet) (d : Name) : MetaM Json := do
   for (n, ci) in env.constants.toList do
     if n.isInternal then continue
     unless ci matches .defnInfo _ do continue
-    unless (stripForall ci.type).isAppOfArity `Machine 1 do continue
+    unless (stripForall ci.type).isAppOfArity `ArmadaLean.Machine 1 do continue
     machines := machines.push <| Json.mkObj [("name", toJson n.toString),
       ("module", toJson ((moduleOf? env n).map toString))]
   let mut iffs := #[]

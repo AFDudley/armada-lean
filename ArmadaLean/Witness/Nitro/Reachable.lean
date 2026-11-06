@@ -18,5 +18,5 @@ theorem ArmadaLean.Nitro.Reachable.Spec.balances_virtual_zero.witness : spec_pre
 
 /-- The witness of `Nitro.Spec.participant_received_unforged`: the reachable
     network state `netF`, under the canonical threat's bounds. -/
-theorem Nitro.Spec.participant_received_unforged.witness : spec_premise% Nitro.Spec.participant_received_unforged := by
+theorem ArmadaLean.Nitro.Spec.participant_received_unforged.witness : spec_premise% ArmadaLean.Nitro.Spec.participant_received_unforged := by
   refine ⟨Nat, inferInstance, apps0, p0, canon p0, (canon_ok apps0 p0).toBounds, ⟨netF, netF_reach⟩, trivial⟩

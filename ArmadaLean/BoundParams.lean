@@ -31,6 +31,8 @@
 import ArmadaLean.Poseidon
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-- An unshield: the pool pays `value` of the transaction's token to `recipient`, an
     address term. The 2021 Railgun whitepaper lists "Withdrawal amount" and "An
     address to withdraw from" as public inputs, and the contract "transfers tokens from
@@ -128,3 +130,5 @@ theorem AdaptAllows_iff (bp : BoundParams) (caller : Term) :
 instance instDecidableAdaptAllows (bp : BoundParams) (caller : Term) :
     Decidable (AdaptAllows bp caller) :=
   decidable_of_iff _ (AdaptAllows_iff bp caller).symm
+
+end ArmadaLean

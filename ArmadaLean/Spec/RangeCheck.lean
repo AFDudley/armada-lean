@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /-- Soundness of the range check: any value passing `Num2Bits(120)` is below `2^120`.
     This is what keeps the value-conservation sum from wrapping around the field
     (SECURITY_REVIEW.md Finding 1; Transact.circom:116-119). -/
@@ -18,5 +20,7 @@ def Spec.rangeCheck120_sound : Prop :=
   ∀ (v : Nat) (h : RangeChecked120 v),
     Claim <|
     v < 2 ^ 120
+
+end ArmadaLean
 
 #check_spec_bindings

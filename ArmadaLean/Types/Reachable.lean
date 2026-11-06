@@ -22,6 +22,8 @@
 -/
 import ArmadaLean.Machine
 
+namespace ArmadaLean
+
 /-- The states of `M` that some history reaches: a state together with the proof
     `M.Reachable s` (`Machine.Reachable`, `ArmadaLean/Machine.lean`). -/
 def ReachableState {S : Type} (M : Machine S) : Type := {s : S // M.Reachable s}
@@ -61,3 +63,5 @@ def step (s : ReachableState M) {s' : S} (h : M.step s.state s') : ReachableStat
     (s.step h).state = s' := rfl
 
 end ReachableState
+
+end ArmadaLean

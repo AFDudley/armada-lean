@@ -1,5 +1,7 @@
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-
   ArmadaLean.RangeCheck — Num2Bits-style range checks.
 
@@ -50,3 +52,5 @@ theorem rangeCheck120_sound (v : Nat) (h : RangeChecked120 v) : v < 2 ^ 120 := b
   subst hv
   have := bitsVal_lt_two_pow bs
   rwa [hlen] at this
+
+end ArmadaLean

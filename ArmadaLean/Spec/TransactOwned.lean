@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 **Value is conserved as an integer equality**, for the owned circuit, exactly
 as `transact_value_conserved` for Transact (SECURITY_REVIEW.md Finding 1
@@ -62,5 +64,7 @@ def Spec.user_npk_ne_contract_npk : Prop :=
     {addrInputs : List Term} {r₂ : Nat},
     Claim <|
     npk (masterPublicKey pk nk) r₁ ≠ npk (Term.keccak addrInputs) r₂
+
+end ArmadaLean
 
 #check_spec_bindings

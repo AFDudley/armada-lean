@@ -11,21 +11,21 @@ import ArmadaLean.SpecTools
 
 /-- The witness of `Spec.owned_owner_binding`, from
     `ArmadaLean.PoolNonVacuity.owned_owner_binding.nonvacuity`. -/
-theorem Spec.owned_owner_binding.witness : spec_premise% Spec.owned_owner_binding := by
+theorem ArmadaLean.Spec.owned_owner_binding.witness : spec_premise% ArmadaLean.Spec.owned_owner_binding := by
   spec_witness ArmadaLean.PoolNonVacuity.owned_owner_binding.nonvacuity
 
 /-- The witness of `Spec.owned_no_double_spend`, from
     `ArmadaLean.PoolNonVacuity.owned_no_double_spend.nonvacuity`. -/
-theorem Spec.owned_no_double_spend.witness : spec_premise% Spec.owned_no_double_spend := by
+theorem ArmadaLean.Spec.owned_no_double_spend.witness : spec_premise% ArmadaLean.Spec.owned_no_double_spend := by
   spec_witness ArmadaLean.PoolNonVacuity.owned_no_double_spend.nonvacuity
 
 /-- The witness of `Spec.preimageOf_consistent`, from
     `ArmadaLean.PoolNonVacuity.preimageOf_consistent.nonvacuity`. -/
-theorem Spec.preimageOf_consistent.witness : spec_premise% Spec.preimageOf_consistent := by
+theorem ArmadaLean.Spec.preimageOf_consistent.witness : spec_premise% ArmadaLean.Spec.preimageOf_consistent := by
   spec_witness ArmadaLean.PoolNonVacuity.preimageOf_consistent.nonvacuity
 
 /-- The witness of `Spec.owned_spend_can_happen`: open. Its hypothesis `hComplete :
     OwnedProofCompleteness` needs a concrete instance of `VerifyOwnedAccepts`
     completeness; see this file's module comment. -/
-theorem Spec.owned_spend_can_happen.witness : spec_premise% Spec.owned_spend_can_happen := by
+theorem ArmadaLean.Spec.owned_spend_can_happen.witness : spec_premise% ArmadaLean.Spec.owned_spend_can_happen := by
   sorry

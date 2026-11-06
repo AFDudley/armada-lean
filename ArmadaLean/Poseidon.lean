@@ -1,5 +1,7 @@
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-
   ArmadaLean.Poseidon — Poseidon and Keccak modeled symbolically (Dolev-Yao style).
 
@@ -163,3 +165,5 @@ theorem Term.val_ne_hash (n : Nat) (fn : HashFn) (l : List Term) : Term.val n �
 theorem Term.poseidon_ne_keccak {l1 l2 : List Term} :
     Term.hash .poseidon l1 ≠ Term.hash .keccak l2 :=
   fun h => HashFn.noConfusion (Term.hash.inj h).1
+
+end ArmadaLean

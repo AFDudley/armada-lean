@@ -26,6 +26,8 @@
 -/
 import ArmadaLean.Poseidon
 
+namespace ArmadaLean
+
 /-- The nullifier of a note at Merkle leaf index `leafIdx` spent under nullifying key
     `nk` (Transact.circom:97-101, TransactOwned.circom:89-97). `nk` is already a term
     — `Term.val` of a raw secret on the plain path, or a contract's address term on
@@ -71,3 +73,5 @@ named the exact same key and position. -/
 theorem nullifier_inj {nk1 nk2 : Term} {a b : Nat}
     (h : nullifier nk1 a = nullifier nk2 b) : nk1 = nk2 ∧ a = b :=
   ⟨(Term.hash2_inj h).1, Term.val.inj (Term.hash2_inj h).2⟩
+
+end ArmadaLean

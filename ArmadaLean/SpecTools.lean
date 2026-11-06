@@ -94,7 +94,7 @@ def reachIffs : MetaM (Array Name) := do
       unless (`ArmadaLean).isPrefixOf env.header.moduleNames[i.toNat]! do continue
     let b := stripForall ci.type
     if b.isAppOfArity ``Iff 2 then
-      if (b.getArg! 0).isAppOf `Machine.Reachable || (b.getArg! 1).isAppOf `Machine.Reachable then
+      if (b.getArg! 0).isAppOf `ArmadaLean.Machine.Reachable || (b.getArg! 1).isAppOf `ArmadaLean.Machine.Reachable then
         out := out.push n
   return out
 
@@ -241,7 +241,7 @@ partial def matchObligations (iffs : Array Name) (hyps : Array Expr) (obls : Lis
       -- the fact itself, or a native reachability fact through a proved iff
       let pf? ← if ← isDefEqI (← inferType h) oty then
           pure (some h)
-        else if oty.isAppOf `Machine.Reachable then
+        else if oty.isAppOf `ArmadaLean.Machine.Reachable then
           try some <$> castReachWith iffs h oty catch _ => pure none
         else pure none
       let some pf := pf? | continue
@@ -398,7 +398,7 @@ def stateHeads : MetaM NameSet := do
   for (n, ci) in env.constants.toList do
     if n.isInternal then continue
     unless ci matches .defnInfo _ do continue
-    unless (stripForall ci.type).isAppOfArity `Machine 1 do continue
+    unless (stripForall ci.type).isAppOfArity `ArmadaLean.Machine 1 do continue
     let h ← forallTelescope ci.type fun _ b => pure (b.getArg! 0).getAppFn
     if let some c := h.constName? then out := out.insert c
   return out
@@ -407,7 +407,7 @@ def stateHeads : MetaM NameSet := do
     every proved iff `M.Reachable s ↔ R … s` (`reachIffs`). The converter
     turns a hypothesis with such a predicate into a `ReachableState` binder. -/
 def reachPredicates : MetaM NameSet := do
-  let mut out : NameSet := ({} : NameSet).insert `Machine.Reachable
+  let mut out : NameSet := ({} : NameSet).insert `ArmadaLean.Machine.Reachable
   for n in ← reachIffs do
     let b := stripForall (← getConstInfo n).type
     for side in [b.getArg! 0, b.getArg! 1] do

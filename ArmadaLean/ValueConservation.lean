@@ -14,6 +14,8 @@
 import ArmadaLean.Field
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-- Sum of a list of naturals (the circuit's `accIn`/`accOut` accumulators,
     Transact.circom:133-140). -/
 def listSum : List Nat → Nat
@@ -78,3 +80,5 @@ theorem no_wraparound_minting (ins outs : List Nat)
   apply eq_of_fieldEq_of_lt _ _ hsum
   · exact listSum_lt_p ins hN hin
   · exact listSum_lt_p outs (Nat.le_trans hM (by decide)) hout
+
+end ArmadaLean

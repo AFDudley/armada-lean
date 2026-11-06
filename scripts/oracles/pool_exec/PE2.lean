@@ -21,6 +21,9 @@
 -/
 import ArmadaLean
 
+-- Every armada-lean declaration is under the root namespace `ArmadaLean`.
+open ArmadaLean
+
 -- An unknown name in a binder must be an error, not a new variable.
 set_option autoImplicit false
 

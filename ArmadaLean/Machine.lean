@@ -16,6 +16,8 @@
 -/
 import Mathlib.Logic.Relation
 
+namespace ArmadaLean
+
 /-- One reactive component: a predicate on initial states and a step
     relation between states (Event-B `MACHINE`). -/
 structure Machine (S : Type) where
@@ -45,3 +47,5 @@ theorem Machine.Reachable.tail {S : Type} {M : Machine S} {s s' : S}
     (h : M.Reachable s) (hstep : M.step s s') : M.Reachable s' := by
   obtain ⟨s₀, hinit, hsteps⟩ := h
   exact ⟨s₀, hinit, hsteps.tail hstep⟩
+
+end ArmadaLean

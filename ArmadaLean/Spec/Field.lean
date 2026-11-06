@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /-- Closed arithmetic fact: the 120-bit value cap is far below the field prime.
     (Justifies Transact.circom:116-119's comment that Num2Bits(120) range checks
     keep values well inside the field.) -/
@@ -24,5 +26,7 @@ def Spec.two_pow_120_lt_p : Prop :=
 def Spec.sum_bound_lt_p : Prop :=
     Claim <|
     8 * 2 ^ 120 < p
+
+end ArmadaLean
 
 #check_spec_bindings

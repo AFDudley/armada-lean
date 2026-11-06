@@ -23,26 +23,30 @@
   spec check computes the same set of state types with `ArmadaLean.SpecTools.stateHeads`
   (`scripts/spec_report.lean`, `docs/spec-module-design.md` §4).
 
-  Lists `Pool.machine`, `Nitro.chain`, `Nitro.signedChain`, `Nitro.participant`, `Nitro.network`
-  as of this writing (`ArmadaLean/PoolMachine.lean`, `ArmadaLean/Nitro/Reachable.lean`).
+  Lists `ArmadaLean.Pool.machine`, `ArmadaLean.Nitro.chain`, `ArmadaLean.Nitro.signedChain`,
+  `ArmadaLean.Nitro.participant`, `ArmadaLean.Nitro.network` as of this writing
+  (`ArmadaLean/PoolMachine.lean`, `ArmadaLean/Nitro/Reachable.lean`).
   `Nitro.signedChain` (added 2026-10-31) is the chain whose steps use only a given list of
   signatures; its reachable states are `ReachableSigned` (`Nitro.signedChain_reachable_iff`), so a
-  statement over them takes the type `ReachableState (Nitro.signedChain apps signed)`. All five are
-  declared at the root, not inside a namespace (see `Nitro.participant`'s own doc comment for why), so the scan
-  does not filter by name prefix — it inspects every `def` in the checked environment, including
-  ones outside the `ArmadaLean` namespace, and relies on `Machine` itself (unqualified, declared
-  once in `ArmadaLean/Machine.lean`) being the one marker that matters.
+  statement over them takes the type `ReachableState (Nitro.signedChain apps signed)`. Every
+  armada-lean declaration is under the root namespace `ArmadaLean` (draft/root-namespace,
+  2026-11-06). The scan does not filter by name prefix: it inspects every `def` in the checked
+  environment, and the one marker that matters is `ArmadaLean.Machine`
+  (`ArmadaLean/Machine.lean`).
 -/
 import ArmadaLean
 
 open Lean Elab Meta
+
+namespace ArmadaLean
+
 open ArmadaLean.Nitro
 
 /-- Strip a `Expr`'s leading `∀` binders without opening them (no `MetaM`
     needed): the cheap, non-meta half of the scan, run once per candidate
     `def` before the expensive `forallTelescope` + pretty-print is tried only
     on the few that pass. -/
-partial def ArmadaLean.Machines.stripForall (e : Expr) : Expr :=
+partial def Machines.stripForall (e : Expr) : Expr :=
   match e with
   | .forallE _ _ b _ => stripForall b
   | _ => e
@@ -59,7 +63,7 @@ partial def ArmadaLean.Machines.stripForall (e : Expr) : Expr :=
     if !name.isInternal then
       match info with
       | .defnInfo _ =>
-        if (ArmadaLean.Machines.stripForall info.type).isAppOfArity ``Machine 1 then
+        if (Machines.stripForall info.type).isAppOfArity ``Machine 1 then
           candidates := candidates.push name
       | _ => pure ()
   for name in candidates.qsort (fun a b => a.toString < b.toString) do
@@ -68,3 +72,5 @@ partial def ArmadaLean.Machines.stripForall (e : Expr) : Expr :=
       let fmt ← ppExpr (body.getArg! 0)
       return fmt.pretty
     IO.println s!"MACHINE {name} : {stateType}"
+
+end ArmadaLean

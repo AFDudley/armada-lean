@@ -15,6 +15,8 @@
 import ArmadaLean.Poseidon
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-- A token, identified by its contract address. The address is a symbolic term, the
     same convention as every other address in this project (`ArmadaLean.PoolOwned`,
     module comment on address terms). -/
@@ -29,3 +31,5 @@ def tokenId (t : Token) : Term := t.address
 /-- Two tokens with the same id are the same token. -/
 theorem tokenId_inj {t₁ t₂ : Token} (h : tokenId t₁ = tokenId t₂) : t₁ = t₂ := by
   cases t₁; cases t₂; (simp_all? [tokenId] says simp_all only [tokenId])
+
+end ArmadaLean

@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 **Owner binding**: no one except the owning contract can spend its note.
 
@@ -108,5 +110,7 @@ def Spec.owned_spend_can_happen : Prop :=
       caller = pub.ownerField ∧
       (∀ j, hashCommitment ⟨npkOut j, token, valueOut j⟩ = pub.commitmentsOut j) ∧
     ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent'
+
+end ArmadaLean
 
 #check_spec_bindings

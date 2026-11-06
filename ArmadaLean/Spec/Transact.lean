@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 **Public outputs are uniquely determined by the witness**: the nullifiers and
 output commitments are computed by deterministic hash chains from the witness
@@ -57,5 +59,7 @@ def Spec.transact_value_conserved : Prop :=
     (h : Constrained w pub),
     Claim <|
     listSum (List.ofFn w.valueIn) = listSum (List.ofFn w.valueOut)
+
+end ArmadaLean
 
 #check_spec_bindings

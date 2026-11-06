@@ -9,13 +9,13 @@ import ArmadaLean.Spec.Transact
 import ArmadaLean.SpecTools
 
 /-- The witness of `Spec.transact_public_outputs_determined`: open. -/
-theorem Spec.transact_public_outputs_determined.witness : spec_premise% Spec.transact_public_outputs_determined := by
+theorem ArmadaLean.Spec.transact_public_outputs_determined.witness : spec_premise% ArmadaLean.Spec.transact_public_outputs_determined := by
   sorry
 
 /-- The witness of `Spec.transact_inputs_distinct_nullifiers`: open. -/
-theorem Spec.transact_inputs_distinct_nullifiers.witness : spec_premise% Spec.transact_inputs_distinct_nullifiers := by
+theorem ArmadaLean.Spec.transact_inputs_distinct_nullifiers.witness : spec_premise% ArmadaLean.Spec.transact_inputs_distinct_nullifiers := by
   sorry
 
 /-- The witness of `Spec.transact_value_conserved`: open. -/
-theorem Spec.transact_value_conserved.witness : spec_premise% Spec.transact_value_conserved := by
+theorem ArmadaLean.Spec.transact_value_conserved.witness : spec_premise% ArmadaLean.Spec.transact_value_conserved := by
   sorry

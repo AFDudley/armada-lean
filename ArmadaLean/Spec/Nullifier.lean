@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 **Distinct leaves give distinct nullifiers.**
 
@@ -25,5 +27,7 @@ def Spec.distinct_leaves_distinct_nullifiers : Prop :=
     (h : leaves.Pairwise (· ≠ ·)),
     Claim <|
     (leaves.map (nullifier nk)).Pairwise (· ≠ ·)
+
+end ArmadaLean
 
 #check_spec_bindings

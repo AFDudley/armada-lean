@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 Honesty check for the empty-vault special case (`ArmadaYieldVault.sol:
 491-494`): the first deposit's pre-lock share count is one-for-one with the
@@ -105,5 +107,7 @@ def Spec.donation_attack_unprofitable_post_fix : Prop :=
     Claim <|
     let v := c2s S (S + X) Y
     c2a (S + v) (S + X + Y) s ≤ X + s
+
+end ArmadaLean
 
 #check_spec_bindings

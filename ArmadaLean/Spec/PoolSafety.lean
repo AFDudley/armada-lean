@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 **The core invariant, over every reachable state.** For each token, the tokens the pool
 holds equal the total value of its unspent notes. Rules out the pool ever holding tokens
@@ -672,5 +674,7 @@ def Spec.owned_merge_can_happen : Prop :=
         (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage))
           ∈ s'.live token) ∧
       s'.held token = s.state.held token
+
+end ArmadaLean
 
 #check_spec_bindings

@@ -49,6 +49,8 @@ import ArmadaLean.ValueConservation
 import ArmadaLean.Nullifier
 import ArmadaLean.Merkle
 
+namespace ArmadaLean
+
 /--
 CRYPTOGRAPHIC ASSUMPTION: EdDSA signature unforgeability is assumed, not modeled.
 
@@ -117,7 +119,7 @@ structure TransactWitness (N M : Nat) where
 /-- Public inputs of the Transact circuit (Transact.circom:35-39). Every field is a
     term. `boundParamsHash` is the hash of the transaction's bound parameters
     (`ArmadaLean.BoundParams.hashBoundParams`, symbolic); the pool checks that the
-    two agree (`ArmadaLean.Pool.Step.transact`, `hBound`). -/
+    two agree (`ArmadaLean.Step.transact`, `hBound`). -/
 structure TransactPublic (N M : Nat) where
   merkleRoot : Term
   boundParamsHash : Term
@@ -247,3 +249,5 @@ theorem commitment_mpk_inj {mpk₁ mpk₂ : Term} {r₁ r₂ value : Nat} {token
     mpk₁ = mpk₂ := by
   obtain ⟨hnpk, -, -⟩ := Term.hash3_inj h
   exact (Term.hash2_inj hnpk).1
+
+end ArmadaLean

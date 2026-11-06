@@ -157,9 +157,9 @@ unbeatable strategies and the Turbo Value Algorithm; 16 are proved, and
 ## Trust base & scope
 
 Poseidon and Keccak are both modeled symbolically (Dolev-Yao style,
-`ArmadaLean.Poseidon.Term`): a hash output is an inductive term, never a raw
+`ArmadaLean.Term`, `ArmadaLean/Poseidon.lean`): a hash output is an inductive term, never a raw
 number, tagged with the hash function that produced it
-(`ArmadaLean.Poseidon.HashFn`), so collision resistance, domain separation and
+(`ArmadaLean.HashFn`), so collision resistance, domain separation and
 cross-function separation (a Keccak output — a contract address — can never
 equal a Poseidon output — a note key, a commitment, a nullifier) hold by
 construction (the type's own constructors), not as an axiom on a concrete

@@ -57,14 +57,14 @@ theorem poolSkip {s : PoolState} (h : Reachable s) : s.feeRatio = s.feeRatio := 
 
 /-- Names `markSpent` only through the statement of `markSpent_succeeds`,
     in the motive of the `obtain`. -/
-theorem poolMotiveOnly {spent : NullifierSet} {ns : List _root_.Term}
+theorem poolMotiveOnly {spent : NullifierSet} {ns : List ArmadaLean.Term}
     (hpw : ns.Pairwise (· ≠ ·)) (hfresh : ∀ n ∈ ns, n ∉ spent) : ns.length = ns.length := by
   obtain ⟨_, _⟩ := markSpent_succeeds hpw hfresh
   rfl
 
 /-- Names the tree-insertion operations only through the type of
     `Step.shield`, which the statement names. -/
-theorem poolConstructorOnly {s : PoolState} (token : Token) (x : Nat) (npk : _root_.Term)
+theorem poolConstructorOnly {s : PoolState} (token : Token) (x : Nat) (npk : ArmadaLean.Term)
     (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio x)) : ∃ s', Step s s' :=
   ⟨_, Step.shield token x npk hValue hSpendable⟩
 
@@ -77,7 +77,7 @@ def expectHits (n : Name) (ops : Array Name) (expected : Array Name) : MetaM Uni
 #eval expectHits ``nitroSkip nitroBaseOps #[``Adjudicator.apply]
 #eval expectHits ``nitroLayered nitroBaseOps #[]
 #eval expectHits ``nitroSplitByLemma nitroBaseOps #[``Adjudicator.apply]
-#eval expectHits ``poolSkip poolBaseOps #[`Step.casesOn]
+#eval expectHits ``poolSkip poolBaseOps #[`ArmadaLean.Step.casesOn]
 #eval expectHits ``poolMotiveOnly poolBaseOps #[]
 #eval expectHits ``poolConstructorOnly poolBaseOps #[]
 #eval expectHits ``nitroLocalImplicitOnly nitroBaseOps #[]
@@ -86,7 +86,7 @@ def expectHits (n : Name) (ops : Array Name) (expected : Array Name) : MetaM Uni
     call result, a transition relation) and one they keep (`Reachable s`,
     a condition on one input that `ReachableState` types). -/
 theorem premiseCases {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M}
-    {spent spent' : NullifierSet} {ns : List _root_.Term} {s s' : PoolState}
+    {spent spent' : NullifierSet} {ns : List ArmadaLean.Term} {s s' : PoolState}
     (_hc : Constrained w pub) (_hm : markSpent spent ns = some spent') (_hs : Step s s')
     (_hr : Reachable s) : s = s := rfl
 
@@ -105,7 +105,7 @@ def expectConjuncts (n : Name) (kept : Array String) (aliases : Array Name) : Me
   unless gotKept == kept && gotAliases == aliases do
     throwError "analyzeDecl {n}: expected {kept} / {aliases}, got {gotKept} / {gotAliases}"
 
-#eval expectConjuncts ``premiseCases #["_root_.Reachable s"] #[]
+#eval expectConjuncts ``premiseCases #["Reachable s"] #[]
 #eval expectConjuncts ``aliasCases #["o = o.dedup", "tn = insertTree trees k"] #[`tn]
 
 /-- A condition on one input of a parametric type: `s.IsDAG` mentions `E`

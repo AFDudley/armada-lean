@@ -40,7 +40,7 @@ Lean and proved the properties that the internal security review
    and an external circuit audit.
 3. **Explicit cryptographic assumptions.** Poseidon and Keccak are both modeled
    symbolically (Dolev-Yao style): a hash output is a term built by an inductive
-   type (`ArmadaLean.Poseidon.Term`), tagged with which hash function produced
+   type (`ArmadaLean.Term`, `ArmadaLean/Poseidon.lean`), tagged with which hash function produced
    it, never a raw number, so collision resistance, domain separation and
    cross-function separation (a Keccak output — a contract address — can never
    equal a Poseidon output) hold *by construction* — no Poseidon or Keccak axiom

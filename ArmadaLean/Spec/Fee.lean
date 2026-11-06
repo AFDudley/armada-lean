@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /-- **The fee never exceeds the shielded amount.** `base` in `_getFee` is well defined
     and the subtraction cannot underflow.
     Source: ShieldModule.sol:353-371. -/
@@ -55,5 +57,7 @@ def Spec.shieldBase_pos : Prop :=
   ∀ (r : FeeRatio) {x : Nat} (hx : 0 < x),
     Claim <|
     0 < shieldBase r x
+
+end ArmadaLean
 
 #check_spec_bindings

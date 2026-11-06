@@ -13,53 +13,53 @@ import ArmadaLean.SpecTools
     Constrained w pub` bundles `Constrained.sig : EdDSAVerify w.publicKey w.signature
     (msgHashOf pub)` (`ArmadaLean.Transact`); `EdDSAVerify` is an opaque axiom with no
     defining equation, so no concrete `w`, `pub` satisfying `Constrained` is provable. -/
-theorem Spec.transact_spends_only_owned.witness : spec_premise% Spec.transact_spends_only_owned := by
+theorem ArmadaLean.Spec.transact_spends_only_owned.witness : spec_premise% ArmadaLean.Spec.transact_spends_only_owned := by
   sorry
 
 /-- The witness of `Spec.transactOwned_spends_only_owned`, from
     `ArmadaLean.PoolNonVacuity.transactOwned_spends_only_owned.nonvacuity`. -/
-theorem Spec.transactOwned_spends_only_owned.witness : spec_premise% Spec.transactOwned_spends_only_owned := by
+theorem ArmadaLean.Spec.transactOwned_spends_only_owned.witness : spec_premise% ArmadaLean.Spec.transactOwned_spends_only_owned := by
   spec_witness ArmadaLean.PoolNonVacuity.transactOwned_spends_only_owned.nonvacuity
 
 /-- The witness of `Spec.spent_monotone`, from
     `ArmadaLean.PoolNonVacuity.spent_monotone.nonvacuity`. -/
-theorem Spec.spent_monotone.witness : spec_premise% Spec.spent_monotone := by
+theorem ArmadaLean.Spec.spent_monotone.witness : spec_premise% ArmadaLean.Spec.spent_monotone := by
   spec_witness ArmadaLean.PoolNonVacuity.spent_monotone.nonvacuity
 
 /-- The witness of `Spec.pool_no_double_spend`, from
     `ArmadaLean.PoolNonVacuity.pool_no_double_spend.nonvacuity`. -/
-theorem Spec.pool_no_double_spend.witness : spec_premise% Spec.pool_no_double_spend := by
+theorem ArmadaLean.Spec.pool_no_double_spend.witness : spec_premise% ArmadaLean.Spec.pool_no_double_spend := by
   spec_witness ArmadaLean.PoolNonVacuity.pool_no_double_spend.nonvacuity
 
 /-- The witness of `Spec.live_positions_distinct_nullifiers`, from
     `ArmadaLean.PoolNonVacuity.live_positions_distinct_nullifiers.nonvacuity`. -/
-theorem Spec.live_positions_distinct_nullifiers.witness : spec_premise% Spec.live_positions_distinct_nullifiers := by
+theorem ArmadaLean.Spec.live_positions_distinct_nullifiers.witness : spec_premise% ArmadaLean.Spec.live_positions_distinct_nullifiers := by
   spec_witness ArmadaLean.PoolNonVacuity.live_positions_distinct_nullifiers.nonvacuity
 
 /-- The witness of `Spec.spend_live_exact`, from
     `ArmadaLean.PoolNonVacuity.spend_live_exact.nonvacuity`. -/
-theorem Spec.spend_live_exact.witness : spec_premise% Spec.spend_live_exact := by
+theorem ArmadaLean.Spec.spend_live_exact.witness : spec_premise% ArmadaLean.Spec.spend_live_exact := by
   spec_witness ArmadaLean.PoolNonVacuity.spend_live_exact.nonvacuity
 
 /-- The witness of `Spec.transact_unshield_exact`: open. Its hypothesis `hC :
     Constrained w pub` bundles `EdDSAVerify` the same way `transact_spends_only_owned`'s
     does; see this file's module comment. -/
-theorem Spec.transact_unshield_exact.witness : spec_premise% Spec.transact_unshield_exact := by
+theorem ArmadaLean.Spec.transact_unshield_exact.witness : spec_premise% ArmadaLean.Spec.transact_unshield_exact := by
   sorry
 
 /-- The witness of `Spec.shield_creates_exactly`, from
     `ArmadaLean.PoolNonVacuity.shield_creates_exactly.nonvacuity`. -/
-theorem Spec.shield_creates_exactly.witness : spec_premise% Spec.shield_creates_exactly := by
+theorem ArmadaLean.Spec.shield_creates_exactly.witness : spec_premise% ArmadaLean.Spec.shield_creates_exactly := by
   spec_witness ArmadaLean.PoolNonVacuity.shield_creates_exactly.nonvacuity
 
 /-- The witness of `Spec.transact_root_was_produced`, from
     `ArmadaLean.PoolNonVacuity.transact_root_was_produced.nonvacuity`. -/
-theorem Spec.transact_root_was_produced.witness : spec_premise% Spec.transact_root_was_produced := by
+theorem ArmadaLean.Spec.transact_root_was_produced.witness : spec_premise% ArmadaLean.Spec.transact_root_was_produced := by
   spec_witness ArmadaLean.PoolNonVacuity.transact_root_was_produced.nonvacuity
 
 /-- The witness of `Spec.transactOwned_records_all`, from
     `ArmadaLean.PoolNonVacuity.transactOwned_records_all.nonvacuity`. -/
-theorem Spec.transactOwned_records_all.witness : spec_premise% Spec.transactOwned_records_all := by
+theorem ArmadaLean.Spec.transactOwned_records_all.witness : spec_premise% ArmadaLean.Spec.transactOwned_records_all := by
   spec_witness ArmadaLean.PoolNonVacuity.transactOwned_records_all.nonvacuity
 
 /-- The witness of `Spec.transact_spend_can_happen`: open. Its hypotheses `hComplete :
@@ -69,24 +69,24 @@ theorem Spec.transactOwned_records_all.witness : spec_premise% Spec.transactOwne
     (hSig.sign pk msg) msg`. `VerifyAccepts` and `EdDSAVerify` are opaque axioms with no
     defining equation, so neither universal statement is provable; see this file's
     module comment. -/
-theorem Spec.transact_spend_can_happen.witness : spec_premise% Spec.transact_spend_can_happen := by
+theorem ArmadaLean.Spec.transact_spend_can_happen.witness : spec_premise% ArmadaLean.Spec.transact_spend_can_happen := by
   sorry
 
 /-- The witness of `Spec.shield_can_happen`, from
     `ArmadaLean.PoolNonVacuity.shield_can_happen.nonvacuity`. -/
-theorem Spec.shield_can_happen.witness : spec_premise% Spec.shield_can_happen := by
+theorem ArmadaLean.Spec.shield_can_happen.witness : spec_premise% ArmadaLean.Spec.shield_can_happen := by
   spec_witness ArmadaLean.PoolNonVacuity.shield_can_happen.nonvacuity
 
 /-- The witness of `Spec.transact_can_happen`: open. Its hypotheses `hComplete :
     TransactProofCompleteness` and `hSig : HonestSignature` are the same as
     `transact_spend_can_happen`'s; see this file's module comment. -/
-theorem Spec.transact_can_happen.witness : spec_premise% Spec.transact_can_happen := by
+theorem ArmadaLean.Spec.transact_can_happen.witness : spec_premise% ArmadaLean.Spec.transact_can_happen := by
   sorry
 
 /-- The witness of `Spec.unshield_can_happen`: open. Its hypotheses `hComplete :
     TransactProofCompleteness` and `hSig : HonestSignature` are the same as
     `transact_spend_can_happen`'s; see this file's module comment. -/
-theorem Spec.unshield_can_happen.witness : spec_premise% Spec.unshield_can_happen := by
+theorem ArmadaLean.Spec.unshield_can_happen.witness : spec_premise% ArmadaLean.Spec.unshield_can_happen := by
   sorry
 
 /-- The witness of `Spec.owned_transact_can_happen`: open. Its hypothesis `hComplete :
@@ -94,56 +94,56 @@ theorem Spec.unshield_can_happen.witness : spec_premise% Spec.unshield_can_happe
     of `∀ w pub, OwnedConstrained w pub → VerifyOwnedAccepts pub`. `VerifyOwnedAccepts`
     is an opaque axiom with no defining equation, so this universal statement is not
     provable; see this file's module comment. -/
-theorem Spec.owned_transact_can_happen.witness : spec_premise% Spec.owned_transact_can_happen := by
+theorem ArmadaLean.Spec.owned_transact_can_happen.witness : spec_premise% ArmadaLean.Spec.owned_transact_can_happen := by
   sorry
 
 /-- The witness of `Spec.leaf_has_merkle_witness`, from
     `ArmadaLean.PoolNonVacuity.leaf_has_merkle_witness.nonvacuity`. -/
-theorem Spec.leaf_has_merkle_witness.witness : spec_premise% Spec.leaf_has_merkle_witness := by
+theorem ArmadaLean.Spec.leaf_has_merkle_witness.witness : spec_premise% ArmadaLean.Spec.leaf_has_merkle_witness := by
   spec_witness ArmadaLean.PoolNonVacuity.leaf_has_merkle_witness.nonvacuity
 
 /-- The witness of `Spec.leaf_stable`, from
     `ArmadaLean.PoolNonVacuity.leaf_stable.nonvacuity`. -/
-theorem Spec.leaf_stable.witness : spec_premise% Spec.leaf_stable := by
+theorem ArmadaLean.Spec.leaf_stable.witness : spec_premise% ArmadaLean.Spec.leaf_stable := by
   spec_witness ArmadaLean.PoolNonVacuity.leaf_stable.nonvacuity
 
 /-- The witness of `Spec.owned_spend_witness_exists`, from
     `ArmadaLean.PoolNonVacuity.owned_spend_witness_exists.nonvacuity`. -/
-theorem Spec.owned_spend_witness_exists.witness : spec_premise% Spec.owned_spend_witness_exists := by
+theorem ArmadaLean.Spec.owned_spend_witness_exists.witness : spec_premise% ArmadaLean.Spec.owned_spend_witness_exists := by
   spec_witness ArmadaLean.PoolNonVacuity.owned_spend_witness_exists.nonvacuity
 
 /-- The witness of `Spec.live_note_unspent`, from
     `ArmadaLean.PoolNonVacuity.live_note_unspent.nonvacuity`. -/
-theorem Spec.live_note_unspent.witness : spec_premise% Spec.live_note_unspent := by
+theorem ArmadaLean.Spec.live_note_unspent.witness : spec_premise% ArmadaLean.Spec.live_note_unspent := by
   spec_witness ArmadaLean.PoolNonVacuity.live_note_unspent.nonvacuity
 
 /-- The witness of `Spec.live_leaf_matches`, from
     `ArmadaLean.PoolNonVacuity.live_leaf_matches.nonvacuity`. -/
-theorem Spec.live_leaf_matches.witness : spec_premise% Spec.live_leaf_matches := by
+theorem ArmadaLean.Spec.live_leaf_matches.witness : spec_premise% ArmadaLean.Spec.live_leaf_matches := by
   spec_witness ArmadaLean.PoolNonVacuity.live_leaf_matches.nonvacuity
 
 /-- The witness of `Spec.spend_not_blocked`, from
     `ArmadaLean.PoolNonVacuity.spend_not_blocked.nonvacuity`. -/
-theorem Spec.spend_not_blocked.witness : spec_premise% Spec.spend_not_blocked := by
+theorem ArmadaLean.Spec.spend_not_blocked.witness : spec_premise% ArmadaLean.Spec.spend_not_blocked := by
   spec_witness ArmadaLean.PoolNonVacuity.spend_not_blocked.nonvacuity
 
 /-- The witness of `Spec.transact_not_blocked`: open. Its hypothesis `hC : Constrained
     w pub` bundles `EdDSAVerify` the same way `transact_spends_only_owned`'s does; see
     this file's module comment. -/
-theorem Spec.transact_not_blocked.witness : spec_premise% Spec.transact_not_blocked := by
+theorem ArmadaLean.Spec.transact_not_blocked.witness : spec_premise% ArmadaLean.Spec.transact_not_blocked := by
   sorry
 
 /-- The witness of `Spec.transactOwned_not_blocked`, from
     `ArmadaLean.PoolNonVacuity.transactOwned_not_blocked.nonvacuity`. -/
-theorem Spec.transactOwned_not_blocked.witness : spec_premise% Spec.transactOwned_not_blocked := by
+theorem ArmadaLean.Spec.transactOwned_not_blocked.witness : spec_premise% ArmadaLean.Spec.transactOwned_not_blocked := by
   spec_witness ArmadaLean.PoolNonVacuity.transactOwned_not_blocked.nonvacuity
 
 /-- The witness of `Spec.spend_bound_to_adapt`, from
     `ArmadaLean.PoolNonVacuity.spend_bound_to_adapt.nonvacuity`. -/
-theorem Spec.spend_bound_to_adapt.witness : spec_premise% Spec.spend_bound_to_adapt := by
+theorem ArmadaLean.Spec.spend_bound_to_adapt.witness : spec_premise% ArmadaLean.Spec.spend_bound_to_adapt := by
   spec_witness ArmadaLean.PoolNonVacuity.spend_bound_to_adapt.nonvacuity
 
 /-- The witness of `Spec.owned_merge_can_happen`, from
     `ArmadaLean.PoolNonVacuity.owned_merge_can_happen.nonvacuity`. -/
-theorem Spec.owned_merge_can_happen.witness : spec_premise% Spec.owned_merge_can_happen := by
+theorem ArmadaLean.Spec.owned_merge_can_happen.witness : spec_premise% ArmadaLean.Spec.owned_merge_can_happen := by
   spec_witness ArmadaLean.PoolNonVacuity.owned_merge_can_happen.nonvacuity

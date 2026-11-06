@@ -9,6 +9,8 @@
 import ArmadaLean.Machine
 import ArmadaLean.Pool
 
+namespace ArmadaLean
+
 /-- The pool as a `Machine`: an initial state is `genesis r feeAdmin treasury` for some
     fee rate `r`, fee admin `feeAdmin` and treasury address `treasury` (`genesis`, one
     genesis state per deployment, not a single state); a step is `Step`. -/
@@ -30,3 +32,5 @@ theorem Pool.machine_reachable_iff {s : PoolState} : Pool.machine.Reachable s �
     | step _ hstep ih =>
       obtain ⟨s₀, hinit, hsteps⟩ := ih
       exact ⟨s₀, hinit, hsteps.tail hstep⟩
+
+end ArmadaLean

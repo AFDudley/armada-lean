@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /--
 A Merkle membership proof binds exactly one leaf to the root (Poseidon collision
 resistance, by construction — `ArmadaLean.Poseidon`). Together with the on-chain root
@@ -30,5 +32,7 @@ def Spec.treePath_correct_of_getElem? : Prop :=
     (hi : i < 2 ^ d) {leaf : Term} (hleaf : leaves[i]? = some leaf),
     Claim <|
     merkleRoot leaf (treePath d leaves i) = treeRoot d leaves
+
+end ArmadaLean
 
 #check_spec_bindings

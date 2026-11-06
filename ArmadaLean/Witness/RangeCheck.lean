@@ -12,5 +12,5 @@ import ArmadaLean.Witness.CircuitValues
 open ArmadaLean.Witness.CircuitValues
 
 /-- The witness of `Spec.rangeCheck120_sound`: `v = 0`, with `bits0_range`. -/
-theorem Spec.rangeCheck120_sound.witness : spec_premise% Spec.rangeCheck120_sound := by
+theorem ArmadaLean.Spec.rangeCheck120_sound.witness : spec_premise% ArmadaLean.Spec.rangeCheck120_sound := by
   refine ⟨0, bits0_range, trivial⟩

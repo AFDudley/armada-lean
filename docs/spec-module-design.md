@@ -59,6 +59,13 @@ Each spec theorem `N.x` has one definition `N.Spec.x : Prop` in
 conclusion of the theorem header, in the source layout, written as `∀ binders, conclusion`.
 The doc comment of the theorem is copied to the definition.
 
+Every armada-lean declaration is under the root namespace `ArmadaLean` (branch
+`draft/root-namespace`, 2026-11-06). So `N` starts with `ArmadaLean`: the theorem
+`ArmadaLean.Pool.x` has the definition `ArmadaLean.Pool.Spec.x`, and a theorem directly in
+`ArmadaLean` has `ArmadaLean.Spec.x`. A spec module wraps its definitions in the same
+`namespace` blocks as its source file. A witness module names each witness with its full
+name at the top level of the file: `theorem ArmadaLean.Pool.Spec.x.witness`.
+
 The last command of each spec module is `#check_spec_bindings`. For each `Spec` definition
 of the module, it checks that the theorem `N.x` exists and that its type is definitionally
 equal to `N.Spec.x` (with the section variables of both as leading `∀` binders). On a

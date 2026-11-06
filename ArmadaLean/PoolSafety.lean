@@ -7,6 +7,8 @@ import ArmadaLean.Types.Reachable
 import ArmadaLean.SpecTools
 import Mathlib.Tactic.Says
 
+namespace ArmadaLean
+
 /-! ### The core invariant: tokens held equal the value of unspent notes -/
 
 /-- The core invariant: for each token, the tokens the pool holds equal the total value
@@ -2500,3 +2502,5 @@ theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.R
     rw [Pool.apply_setFeeRatio_equation,
       dif_pos (show rs.state.contract.SetFeeRatioPre caller r from hCaller)]
     rfl
+
+end ArmadaLean

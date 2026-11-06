@@ -11,6 +11,8 @@ import ArmadaLean.SpecTools
 
 open ArmadaLean.SpecTools (Claim)
 
+namespace ArmadaLean
+
 /-- **The fee admin's setter changes only the fee rate.** The setter call of the fee admin
     `s.feeAdmin` with rate `r` is a step from `s` to `{ s with feeRatio := r }`: every
     other field, the fee admin and the treasury address included, keeps its value
@@ -73,5 +75,7 @@ def Pool.Spec.apply_setFeeRatio_not_admin : Prop :=
     (caller : Term) (r : FeeRatio) (hne : caller ≠ s.feeAdmin),
     Claim <|
     Pool.apply verify s (.setFeeRatio caller r) = none
+
+end ArmadaLean
 
 #check_spec_bindings

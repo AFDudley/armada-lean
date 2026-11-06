@@ -59,6 +59,8 @@
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.Ring
 
+namespace ArmadaLean
+
 /-- `LOCKED_SHARES` (`ArmadaYieldVault.sol:81`): shares the first deposit
 locks forever to the dead address `LOCKED_SHARES_HOLDER`
 (`ArmadaYieldVault.sol:85`), the defense against the first-depositor
@@ -250,3 +252,5 @@ theorem donation_attack_unprofitable_post_fix
   have hSpos : 0 < S := by unfold LOCKED_SHARES at hS; omega
   have hLpos : 0 < LOCKED_SHARES := by unfold LOCKED_SHARES; omega
   exact donation_attack_unprofitable S X Y s hSpos (by omega)
+
+end ArmadaLean
