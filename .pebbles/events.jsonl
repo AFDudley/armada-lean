@@ -2154,3 +2154,9 @@
 {"type":"comment","timestamp":"2026-11-06T05:24:23.082909Z","issue_id":"aln-274","payload":{"body":"gate-verdict: af10f173c5abce77f2b9fce1c9809fceb953fd6a passed 0.2.1+23d1d5b2","build":"0.2.1+23d1d5b2","outcome":"passed","sha":"af10f173c5abce77f2b9fce1c9809fceb953fd6a","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-06T05:24:23.113239Z","issue_id":"aln-274","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-06T05:24:23.123867Z","issue_id":"aln-274","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-07T04:57:16.336570Z","issue_id":"aln-1bf","payload":{"description":"Operator-authored branch `draft/pool-pe5-statement`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/pool-pe5-statement","type":"task"}}
+{"type":"comment","timestamp":"2026-11-07T04:57:16.402028Z","issue_id":"aln-1bf","payload":{"body":"branch-identity: draft/pool-pe5-statement"}}
+{"type":"comment","timestamp":"2026-11-07T05:11:43.144904Z","issue_id":"aln-1bf","payload":{"body":"exophial-integration-attempt-started: at 792397cbd945c3ac3b1077fd1e90fac9fed0e912"}}
+{"type":"comment","timestamp":"2026-11-07T05:11:45.663407Z","issue_id":"aln-1bf","payload":{"body":"gate-verdict: 126f9d0d44e373faf0c2bccdc243fc3cc51d4544 passed 0.2.1+c12b1143","build":"0.2.1+c12b1143","outcome":"passed","sha":"126f9d0d44e373faf0c2bccdc243fc3cc51d4544","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-07T05:11:45.685721Z","issue_id":"aln-1bf","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-07T05:11:45.695544Z","issue_id":"aln-1bf","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
