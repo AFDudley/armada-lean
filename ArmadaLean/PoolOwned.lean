@@ -95,10 +95,12 @@ def hashCommitment (pre : CommitmentPreimage) : Term := commitment pre.npk pre.t
 /-! ### `verifyOwned` acceptance (PrivacyPool.sol:562-601)
 
 Soundness — "an accepted proof's witness satisfies `OwnedConstrained`" — is
-the hypothesis every theorem below already takes directly as
-`OwnedConstrained w pub`, exactly as `ArmadaLean.Transact` takes `Constrained
-w pub`. The reverse direction, completeness, is a separate assumption used
-only by `owned_spend_can_happen`. -/
+the hypothesis every theorem below takes directly as `OwnedConstrained w
+pub`, exactly as `ArmadaLean.Transact` takes `Constrained w pub`. Rule PE5
+(`docs/pool-executable.md`, `Pool.apply_backward_refinement`) takes
+soundness as the structure `OwnedProofSoundness` instead. The reverse
+direction, completeness, is a separate assumption used only by
+`owned_spend_can_happen`. -/
 
 /-- `VerifyOwnedAccepts pub` holds iff some Groth16 proof over `pub`'s public
     inputs makes `PrivacyPool.verifyOwned` return `true`
@@ -119,6 +121,20 @@ no other theorem in this file can reach for it. -/
 structure OwnedProofCompleteness where
   complete : ∀ {N M : Nat} {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M},
     OwnedConstrained w pub → VerifyOwnedAccepts pub
+
+/--
+Groth16 knowledge soundness over the deployed verifying key, named as an
+explicit hypothesis rather than a global axiom: every public input that
+`PrivacyPool.verifyOwned` accepts has a witness that satisfies every
+TransactOwned.circom constraint (`OwnedConstrained`). This is the
+trusted-verifier assumption of armada-laconic
+`labbook/2026-10-28-verification-chain-rulings.md`, ruling 1. It is the
+converse of `OwnedProofCompleteness`. `Pool.apply_backward_refinement`
+(rule PE5) takes one instance of this record as an explicit argument, so
+the assumption is visible at its call site and nowhere else. -/
+structure OwnedProofSoundness where
+  sound : ∀ {N M : Nat} {pub : TransactOwnedPublic N M},
+    VerifyOwnedAccepts pub → ∃ w : TransactOwnedWitness N M, OwnedConstrained w pub
 
 /-! ### Owner binding (TransactModule.sol:636-639) -/
 

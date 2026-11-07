@@ -594,6 +594,17 @@ structure TransactProofCompleteness where
   complete : ∀ {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M},
     Constrained w pub → VerifyAccepts pub
 
+/-- Groth16 knowledge soundness over the deployed verifying key for the plain circuit,
+    named as an explicit hypothesis, not a global axiom, exactly as
+    `ArmadaLean.PoolOwned.OwnedProofSoundness` is for the owned circuit: every public
+    input that the trusted verifier accepts has a witness that satisfies every
+    `Transact.circom` constraint. It is the trusted-verifier assumption of armada-laconic
+    `labbook/2026-10-28-verification-chain-rulings.md`, ruling 1. It is the converse of
+    `TransactProofCompleteness`. -/
+structure TransactProofSoundness where
+  sound : ∀ {N M : Nat} {pub : TransactPublic N M},
+    VerifyAccepts pub → ∃ w : TransactWitness N M, Constrained w pub
+
 /-- `verify` (`Pool.Verifier`, `ArmadaLean/Pool.lean`, rule PE3) realizes the model's
     trusted verifier: for each circuit, `verify`'s check accepts some proof over a public
     input exactly when the model's own `VerifyAccepts`/`VerifyOwnedAccepts` does. Restates
@@ -2366,8 +2377,11 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
     unfold withTreePositionsFrom withPositionsFrom
     (simp? says simp only [List.length_cons, List.length_nil, Nat.zero_add, List.map_cons, List.mem_cons, List.mem_map, Prod.mk.injEq, true_and, Prod.exists, exists_eq_right_right, exists_eq_right, true_or])
 
-/-! ### Forward refinement: `Pool.apply` simulates every `Step` (docs/pool-executable.md,
-rule PE4)
+/-! ### Refinement between `Pool.apply` and `Step` (docs/pool-executable.md, rules PE4
+and PE5) -/
+
+/-- **Forward refinement** (rule PE4, operator ruling 2026-11-04): `Pool.apply` simulates
+every `Step`.
 
 For every reachable state and every model transition, some call makes `Pool.apply`
 compute the contract state the transition reaches. The hypothesis — `verify` accepts
@@ -2378,7 +2392,9 @@ verifier: `TransactProofCompleteness`/`OwnedProofCompleteness` give that a `Cons
 `verify` itself. The shield case reuses `Step.shield`'s own hypotheses directly
 (`ShieldPre` is stated to match them exactly); the transact cases reuse `Step.transact`'s/
 `Step.transactOwned`'s `Constrained`/`OwnedConstrained` witness to pick the call's proof,
-unshield token and disclosed records. -/
+unshield token and disclosed records.
+
+Source: docs/pool-executable.md rule PE4 (operator ruling 2026-11-04). -/
 theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.Realizes)
     (hT : TransactProofCompleteness) (hO : OwnedProofCompleteness)
     (rs : ReachableState Pool.machine) {s' : PoolState} (h : Step rs.state s') :
@@ -2502,5 +2518,26 @@ theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.R
     rw [Pool.apply_setFeeRatio_equation,
       dif_pos (show rs.state.contract.SetFeeRatioPre caller r from hCaller)]
     rfl
+
+/-- **Backward refinement** (rule PE5, operator ruling 2026-11-04): every call that
+`Pool.apply` accepts is the contract image of some `Step`.
+
+For every reachable state, when `Pool.apply` accepts a call and computes `t`, some model
+transition from that state reaches a state whose contract image is `t`. The hypothesis —
+every public input that `verify` accepts has a witness that satisfies the circuit — is
+the soundness of the trusted verifier: `TransactProofSoundness`/`OwnedProofSoundness`
+give a `Constrained`/`OwnedConstrained` witness for every public input the model's own
+`VerifyAccepts`/`VerifyOwnedAccepts` accepts, and `Pool.Verifier.Realizes` carries that
+over to `verify` itself. Reachability is needed: the contract checks nullifier freshness
+and the Merkle root, while `Step.transact` checks that the spent positions are live
+(`hRemove`); `live_note_unspent` and `live_leaf_matches` tie the two on reachable states.
+
+Source: docs/pool-executable.md rule PE5 (operator ruling 2026-11-04). -/
+theorem Pool.apply_backward_refinement (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
+    (s : ReachableState Pool.machine) {c : Pool.Call} {t : Pool.ContractState}
+    (h : Pool.apply verify s.state.contract c = some t) :
+    ∃ s' : PoolState, Step s.state s' ∧ s'.contract = t := by
+  sorry
 
 end ArmadaLean

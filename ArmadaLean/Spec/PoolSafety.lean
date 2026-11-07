@@ -675,6 +675,50 @@ def Spec.owned_merge_can_happen : Prop :=
           ∈ s'.live token) ∧
       s'.held token = s.state.held token
 
+/-- **Forward refinement** (rule PE4, operator ruling 2026-11-04): `Pool.apply` simulates
+every `Step`.
+
+For every reachable state and every model transition, some call makes `Pool.apply`
+compute the contract state the transition reaches. The hypothesis — `verify` accepts
+every proof for public inputs a witness satisfies — is the completeness of the trusted
+verifier: `TransactProofCompleteness`/`OwnedProofCompleteness` give that a `Constrained`/
+`OwnedConstrained` witness's public input is accepted by the model's own
+`VerifyAccepts`/`VerifyOwnedAccepts`, and `Pool.Verifier.Realizes` carries that over to
+`verify` itself. The shield case reuses `Step.shield`'s own hypotheses directly
+(`ShieldPre` is stated to match them exactly); the transact cases reuse `Step.transact`'s/
+`Step.transactOwned`'s `Constrained`/`OwnedConstrained` witness to pick the call's proof,
+unshield token and disclosed records.
+
+Source: docs/pool-executable.md rule PE4 (operator ruling 2026-11-04). -/
+def Pool.Spec.apply_forward_refinement : Prop :=
+  ∀ (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hT : TransactProofCompleteness) (hO : OwnedProofCompleteness)
+    (rs : ReachableState Pool.machine) {s' : PoolState} (h : Step rs.state s'),
+    Claim <|
+    ∃ c : Pool.Call, Pool.apply verify rs.state.contract c = some s'.contract
+
+/-- **Backward refinement** (rule PE5, operator ruling 2026-11-04): every call that
+`Pool.apply` accepts is the contract image of some `Step`.
+
+For every reachable state, when `Pool.apply` accepts a call and computes `t`, some model
+transition from that state reaches a state whose contract image is `t`. The hypothesis —
+every public input that `verify` accepts has a witness that satisfies the circuit — is
+the soundness of the trusted verifier: `TransactProofSoundness`/`OwnedProofSoundness`
+give a `Constrained`/`OwnedConstrained` witness for every public input the model's own
+`VerifyAccepts`/`VerifyOwnedAccepts` accepts, and `Pool.Verifier.Realizes` carries that
+over to `verify` itself. Reachability is needed: the contract checks nullifier freshness
+and the Merkle root, while `Step.transact` checks that the spent positions are live
+(`hRemove`); `live_note_unspent` and `live_leaf_matches` tie the two on reachable states.
+
+Source: docs/pool-executable.md rule PE5 (operator ruling 2026-11-04). -/
+def Pool.Spec.apply_backward_refinement : Prop :=
+  ∀ (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
+    (s : ReachableState Pool.machine) {c : Pool.Call} {t : Pool.ContractState}
+    (h : Pool.apply verify s.state.contract c = some t),
+    Claim <|
+    ∃ s' : PoolState, Step s.state s' ∧ s'.contract = t
+
 end ArmadaLean
 
 #check_spec_bindings
