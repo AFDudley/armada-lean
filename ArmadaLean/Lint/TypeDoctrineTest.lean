@@ -41,7 +41,7 @@ theorem nitroSplitByLemma (apps : Apps E) {p : Participant} (n : NetworkState E 
 
 /-- Names `transfer` only in a `have` type and in the implicit arguments
     of two local hypotheses, which unification fills in. -/
-theorem nitroLocalImplicitOnly (s : Adjudicator E) (a : FixedPart) (b : Address E)
+theorem nitroLocalImplicitOnly (s : Adjudicator E) (a : FixedPart) (b : Nitro.Address E)
     (P : Adjudicator E → Prop) (Q : Prop) (hP : ∀ {t : Adjudicator E}, P t → Q)
     (hall : ∀ {t : Adjudicator E}, P t) : Q := by
   have h : P ((s.transfer a b).getD s) := hall

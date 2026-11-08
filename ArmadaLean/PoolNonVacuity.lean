@@ -7,7 +7,7 @@
   conclusion.
 
   The owned path (`ArmadaLean.TransactOwned.OwnedConstrained`) carries no EdDSA
-  signature: authorization is the plain term equality `ownerField = caller`
+  signature: authorization is the plain term equality `pub.ownerField = caller`
   (`ArmadaLean.TransactOwned` module comment). Every fixture below that needs a spend
   uses the owned path for exactly that reason: the plain path's `Constrained` bundles
   `EdDSAVerify w.publicKey w.signature (msgHashOf pub)`
@@ -24,49 +24,6 @@ namespace ArmadaLean.PoolNonVacuity
 
 open ArmadaLean
 
-/-! ## A range-check witness for any value below `2^120`
-
-`RangeChecked120`/`Spendable` ask for a 120-bit binary decomposition
-(`ArmadaLean.RangeCheck`). `natBits n v` is that decomposition, read off by repeated
-halving; `natBits_val` shows it denotes `v` whenever `v < 2 ^ n`. Every fixture below
-that shields or spends a note needs one instance of this, for its own concrete value. -/
-
-/-- Little-endian bits of `v`, exactly `n` of them, by repeated halving. -/
-def natBits : Nat → Nat → List Bool
-  | 0, _ => []
-  | n + 1, v => (v % 2 == 1) :: natBits n (v / 2)
-
-theorem natBits_length (n v : Nat) : (natBits n v).length = n := by
-  induction n generalizing v with
-  | zero => rfl
-  | succ n ih => simp only [natBits, List.length_cons, ih]
-
-theorem natBits_val (n v : Nat) (hv : v < 2 ^ n) : bitsVal (natBits n v) = v := by
-  induction n generalizing v with
-  | zero =>
-    simp only [Nat.pow_zero] at hv
-    have hv0 : v = 0 := by omega
-    subst hv0
-    rfl
-  | succ n ih =>
-    have hdm : 2 * (v / 2) + v % 2 = v := Nat.div_add_mod v 2
-    have hr : v % 2 < 2 := Nat.mod_lt v (by decide)
-    have hq : v / 2 < 2 ^ n := by
-      simp only [Nat.pow_succ] at hv
-      omega
-    have ihq := ih (v / 2) hq
-    show ((v % 2 == 1 : Bool)).toNat + 2 * bitsVal (natBits n (v / 2)) = v
-    rw [ihq]
-    rcases (by omega : v % 2 = 0 ∨ v % 2 = 1) with h0 | h1
-    · have hb : (0 == 1 : Bool) = false := by decide
-      rw [h0, hb, Bool.toNat_false]; omega
-    · have hb : (1 == 1 : Bool) = true := by decide
-      rw [h1, hb, Bool.toNat_true]; omega
-
-/-- Every value below `2^120` is `Spendable` (and passes `RangeChecked120`): its own
-    `natBits 120` decomposition witnesses it. -/
-theorem spendable_of_lt {v : Nat} (h : v < 2 ^ 120) : Spendable v :=
-  ⟨natBits 120 v, natBits_length 120 v, (natBits_val 120 v h).symm⟩
 /-! ## Shared values -/
 
 /-- No shield fee: the deployment fee rate every fixture below uses. -/
@@ -74,8 +31,12 @@ def r0 : FeeRatio := ⟨0, 1, by decide, by decide, by decide⟩
 
 def tok0 : Token := ⟨Term.val 100⟩
 
-/-- A contract-owner address term (module comment, `ArmadaLean.PoolOwned`). -/
-def ownerA : Term := Term.keccak [Term.val 42]
+/-- A contract-owner address (`Address`, operator ruling 2026-11-08): `42`. -/
+def ownerAddr : Address := ⟨42, by decide⟩
+
+/-- The term of `ownerAddr`: the `ownerField` of every owned fixture below, and the
+    caller of every owned spend. -/
+def ownerA : Term := Term.val ownerAddr
 
 /-- The fee-admin address of every fixture below. -/
 def feeAdmin0 : Term := Term.keccak [Term.val 7]
@@ -93,12 +54,13 @@ theorem g0_reach : Reachable g0 := .genesis r0 feeAdmin0 treasury0
 
 `OwnedConstrained` never reads the pool state: its `merkle` field only asks that the
 claimed root is `merkleRoot` of the claimed leaf along the claimed path, which holds by
-`rfl` once the public root is *defined* as that value. No real Merkle tree is needed for
-a spec entry that only needs a satisfying `OwnedConstrained` pair, not a pair tied to a
-genuine reachable state's tree. -/
+`rfl` once the public root is *defined* as that value, and that the path's bits are the
+bits of the leaf index. No real Merkle tree is needed for a spec entry that only needs a
+satisfying `OwnedConstrained` pair, not a pair tied to a genuine reachable state's tree. -/
 
-/-- A fixed 16-entry path, for an `OwnedConstrained` pair that answers only to its own
-    definition of `merkleRoot`, not to a real tree. -/
+/-- A fixed 16-entry path with every direction bit `false`: the path of leaf index `0`,
+    for an `OwnedConstrained` pair that answers only to its own definition of
+    `merkleRoot`, not to a real tree. -/
 def pad16 : List (Term × Bool) := List.replicate 16 (Term.val 0, false)
 
 def w1 : TransactOwnedWitness 1 1 where
@@ -115,11 +77,13 @@ def pub1 : TransactOwnedPublic 1 1 where
   boundParamsHash := Term.val 0
   nullifiers := fun _ => nullifier ownerA 0
   commitmentsOut := fun _ => commitment (npk ownerA 1) tok0 5
-  ownerField := ownerA
+  owner := ownerAddr
 
 theorem hOC1 : OwnedConstrained w1 pub1 where
-  pathLen := fun _ => show pad16.length = 16 by decide
-  merkle := fun _ => rfl
+  merkle := fun _ =>
+    { len := show pad16.length = 16 by decide
+      bits := show bitsVal (pad16.map Prod.snd) = 0 by decide
+      root_eq := rfl }
   nullifiers := fun _ => rfl
   outputs := fun _ => rfl
   rangeIn := fun _ => spendable_of_lt (show (5 : Nat) < 2 ^ 120 by decide)
@@ -194,18 +158,18 @@ theorem preimageOf_consistent.nonvacuity :
 /-- `Spec.owned_spend_witness_exists`: `N = M = 1`, one owned preimage disclosed with
     its own opening, re-minted into one output of equal value. -/
 theorem owned_spend_witness_exists.nonvacuity :
-    ∃ (ownerField : Term) (token : Token) (boundParamsHash : Term)
+    ∃ (owner : Address) (token : Token) (boundParamsHash : Term)
       (preimages : Fin 1 → CommitmentPreimage) (leavesIndices : Fin 1 → Nat)
       (leaves : List Term) (published : List (Term × OwnedOpening)),
       (∀ i, (preimages i).token = token) ∧
-      (∀ i, ∃ r, (hashCommitment (preimages i), (⟨ownerField, r⟩ : OwnedOpening)) ∈ published ∧
-        npk ownerField r = (preimages i).npk) ∧
+      (∀ i, ∃ r, (hashCommitment (preimages i), (⟨Term.val owner, r⟩ : OwnedOpening)) ∈ published ∧
+        npk (Term.val owner) r = (preimages i).npk) ∧
       (∀ i, leavesIndices i < 2 ^ TreeDepth) ∧
       (∀ i, leaves[leavesIndices i]? = some (hashCommitment (preimages i))) ∧
       ∃ (npkOut : Fin 1 → Term) (valueOut : Fin 1 → Nat),
         (∀ i, RangeChecked120 (preimages i).value) ∧ (∀ j, RangeChecked120 (valueOut j)) ∧
         listSum (List.ofFn fun i => (preimages i).value) = listSum (List.ofFn valueOut) := by
-  refine ⟨ownerA, tok0, Term.val 0, fun _ => ⟨npk ownerA 3, tok0, 5⟩, fun _ => 0,
+  refine ⟨ownerAddr, tok0, Term.val 0, fun _ => ⟨npk ownerA 3, tok0, 5⟩, fun _ => 0,
     [hashCommitment ⟨npk ownerA 3, tok0, 5⟩], [(hashCommitment ⟨npk ownerA 3, tok0, 5⟩, ⟨ownerA, 3⟩)],
     fun _ => rfl,
     fun _ => ⟨3, show (hashCommitment (⟨npk ownerA 3, tok0, 5⟩ : CommitmentPreimage),
@@ -227,9 +191,10 @@ theorem spend_bound_to_adapt.nonvacuity :
 
 /-! ## A reachable fixture after one shield -/
 
-/-- A plain user's note key: `npk (masterPublicKey-free Term) random`. The owned path
-    needs no master public key, and this fixture needs no signature either, so a bare
-    term stands in for a spending key's hash. -/
+/-- A note key over the address `11`: `npk (Term.val 11) random`. The owned path needs no
+    master public key, and this fixture needs no signature either. `11` is a valid
+    160-bit address, so the owned pending spend `w3`/`pub3` below opens this note with
+    `owner := ⟨11, _⟩`. -/
 def npk0 : Term := npk (Term.val 11) 0
 
 /-- The note `g0`'s one shield creates: value `5`, no fee (`r0`). -/
@@ -324,15 +289,15 @@ theorem s2_note0_live : ((0, 0), note0) ∈ s2.live tok0 :=
   s2_live_tok0 ▸ List.mem_cons_of_mem _ List.mem_cons_self
 
 /-- `Spec.owned_merge_can_happen`: one live owned note of `tok0` (`noteOwned`,
-    position `(0, 1)` of `s2`), owned by `ownerA`, merged into one output. -/
+    position `(0, 1)` of `s2`), owned by `ownerAddr`, merged into one output. -/
 theorem owned_merge_can_happen.nonvacuity :
-    ∃ (s : PoolState) (hN0 : (0 : Nat) < 1) (owner : Term) (token : Token) (bp : BoundParams)
+    ∃ (s : PoolState) (hN0 : (0 : Nat) < 1) (owner : Address) (token : Token) (bp : BoundParams)
       (pos : Fin 1 → Nat) (pre : Fin 1 → CommitmentPreimage) (random : Fin 1 → Nat),
-      Reachable s ∧ bp.unshield = none ∧ AdaptAllows bp owner ∧
+      Reachable s ∧ bp.unshield = none ∧ AdaptAllows bp (Term.val owner) ∧
       (∀ i, ((bp.treeNumber, pos i), pre i) ∈ s.live token) ∧
-      (List.ofFn pos).Pairwise (· ≠ ·) ∧ (∀ i, npk owner (random i) = (pre i).npk) ∧
+      (List.ofFn pos).Pairwise (· ≠ ·) ∧ (∀ i, npk (Term.val owner) (random i) = (pre i).npk) ∧
       ∃ npkOut : Term, Spendable (listSum (List.ofFn fun i => (pre i).value)) := by
-  refine ⟨s2, by decide, ownerA, tok0, ⟨0, none, none, Term.val 0⟩, fun _ => 1,
+  refine ⟨s2, by decide, ownerAddr, tok0, ⟨0, none, none, Term.val 0⟩, fun _ => 1,
     fun _ => noteOwned, fun _ => 7, s2_reach, rfl, fun a h => by injection h,
     fun _ => s2_noteOwned_live, ?_, fun _ => rfl, ownerA,
     spendable_of_lt (show (6 : Nat) < 2 ^ 120 by decide)⟩
@@ -361,12 +326,11 @@ def pub2 : TransactOwnedPublic 1 1 where
   boundParamsHash := hashBoundParams bp0
   nullifiers := fun _ => nullifier ownerA 1
   commitmentsOut := fun _ => commitment (npk ownerA 99) tok0 6
-  ownerField := ownerA
+  owner := ownerAddr
 
 theorem hC2 : OwnedConstrained w2 pub2 where
-  pathLen := fun _ => treePath_length TreeDepth (s2.leavesAt' 0) 1
   merkle := fun _ =>
-    treePath_correct_of_getElem? TreeDepth (s2.leavesAt' 0) 1 (show (1 : Nat) < 2 ^ TreeDepth by decide)
+    treePath_merkleProof TreeDepth (s2.leavesAt' 0) 1 (show (1 : Nat) < 2 ^ TreeDepth by decide)
       (by rw [s2_leavesAt0]; rfl)
   nullifiers := fun _ => rfl
   outputs := fun _ => rfl
@@ -455,12 +419,11 @@ def pub3 : TransactOwnedPublic 1 1 where
   boundParamsHash := hashBoundParams bp0
   nullifiers := fun _ => nullifier (Term.val 11) 0
   commitmentsOut := fun _ => commitment (npk ownerA 55) tok0 5
-  ownerField := Term.val 11
+  owner := ⟨11, by decide⟩
 
 theorem hC3 : OwnedConstrained w3 pub3 where
-  pathLen := fun _ => treePath_length TreeDepth (s2.leavesAt' 0) 0
   merkle := fun _ =>
-    treePath_correct_of_getElem? TreeDepth (s2.leavesAt' 0) 0 (show (0 : Nat) < 2 ^ TreeDepth by decide)
+    treePath_merkleProof TreeDepth (s2.leavesAt' 0) 0 (show (0 : Nat) < 2 ^ TreeDepth by decide)
       (by rw [s2_leavesAt0]; rfl)
   nullifiers := fun _ => rfl
   outputs := fun _ => rfl

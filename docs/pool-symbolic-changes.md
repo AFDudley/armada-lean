@@ -180,8 +180,11 @@ Changes:
 
 ### P-8. `Term.val 0` and lookups with a default
 
-- `emptyLeaf : Term` is an `opaque` constant for `ZERO_VALUE` (Merkle.lean). It is not an
-  axiom. `treeRoot` pads with it. An `Inhabited Term` instance supports the `opaque`.
+- `emptyLeaf : Term` is the constant for `ZERO_VALUE` (Merkle.lean). It is not an
+  axiom. `treeRoot` pads with it. Until 2026-11-08 it was `opaque`; the operator ruling of
+  2026-11-08 made it the contract's real value, `Term.val 0x0488f8…9ffc`
+  (`PrivacyPoolStorage.sol:150`, `keccak256("Railgun") mod p`), so `emptyLeaf ≠
+  hashCommitment pre` holds by constructor disjointness (`emptyLeaf_ne_hashCommitment`).
 - A tree that does not exist has no leaves and no roots (`leavesAt`, `rootsAt` return
   the empty list). That is the empty collection, not a sentinel value.
 - `treePath_correct` (helper) uses `getD i emptyLeaf`: slot `i` of the tree, which is the

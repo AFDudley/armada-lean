@@ -304,12 +304,11 @@ def Spec.transact_spend_can_happen : Prop :=
     (nullifyingKey : Nat) (token : Token) (boundParamsHash : Term) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot
+      MerkleProof 16
         (commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn i)) token
           (valueIn i))
-        (pathElements i) = root)
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
@@ -364,12 +363,11 @@ def Spec.transact_can_happen : Prop :=
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
     (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot
+      MerkleProof 16
         (commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn i)) token
           (valueIn i))
-        (pathElements i) = root)
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
@@ -403,12 +401,11 @@ def Spec.unshield_can_happen : Prop :=
     (pathElements : Fin N → List (Term × Bool))
     (hN : N ≤ 8)
     (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot
+      MerkleProof 16
         (commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn i)) token
           (valueIn i))
-        (pathElements i) = root)
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i)) (hRangeOut : RangeChecked120 value)
     (hBalance : listSum (List.ofFn valueIn) = value)
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
@@ -426,36 +423,35 @@ def Spec.unshield_can_happen : Prop :=
 /-- **Can happen: an owned transact succeeds.** Wires an owned witness, built as
     `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one, into
     `Step.transactOwned`: `hLive` is the ghost liveness precondition, `hN`/`hM` the
-    registered-shape bound, `caller`/`hCaller` the authorization check
+    registered-shape bound, the caller `Term.val owner` the authorization check
     (`transactOwned_spends_only_owned` is the matching safety theorem), and `bp` the
-    bound parameters (no unshield, adapt contract `caller` or none). An owned transact
+    bound parameters (no unshield, adapt contract the owner or none). An owned transact
     can pay out to any recipient's note key; the step publishes no opening
     (`openings := []`).
     Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
 def Spec.owned_transact_can_happen : Prop :=
   ∀ (s : ReachableState Pool.machine)
     (hComplete : OwnedProofCompleteness)
-    {N M : Nat} (ownerField : Term) (token : Token) (bp : BoundParams)
+    {N M : Nat} (owner : Address) (token : Token) (bp : BoundParams)
     (hNoUnshield : bp.unshield = none) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
     (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i))
-        (pathElements i) = root)
+      MerkleProof 16 (commitment (npk (Term.val owner) (randomIn i)) token (valueIn i))
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ s.state.spent bp.treeNumber)
-    (caller : Term) (hCaller : caller = ownerField) (hAdapt : AdaptAllows bp caller)
+    (hFresh : ∀ i, nullifier (Term.val owner) (leavesIndices i) ∉ s.state.spent bp.treeNumber)
+    (hAdapt : AdaptAllows bp (Term.val owner))
     {rest : List ((Nat × Nat) × CommitmentPreimage)}
     (hLive : removeAll (s.state.live token)
         (List.ofFn fun i =>
           ((bp.treeNumber, leavesIndices i),
-            (⟨npk ownerField (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
+            (⟨npk (Term.val owner) (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
         = some rest),
     Claim <|
     ∃ s', Step s.state s'
@@ -501,20 +497,20 @@ constructible `OwnedConstrained` spend witness, built entirely from public data.
 `N` input notes whose preimages (`preimages`, what `PoolState.preimageOf` records for
 every disclosed output, PrivacyPoolStorage.sol:248) sit at known positions of a leaf
 list `leaves` (`hLeafValue`; callers instantiate `leaves := s.leavesAt' tn`), and whose
-openings `(ownerField, r)` appear in a list of published openings (`hOwned`; callers
+openings `(Term.val owner, r)` appear in a list of published openings (`hOwned`; callers
 instantiate `published := s.published`, decision 11) and match the note's `npk`, a
 satisfying `OwnedConstrained` witness/public pair exists. Its Merkle path is
 `treePath TreeDepth leaves`, computed, not chosen. The pool does not check a published
 opening; `hOwned` is the reader's own check against `npk`. -/
 def Spec.owned_spend_witness_exists : Prop :=
   ∀ {N M : Nat}
-    (ownerField : Term) (token : Token) (boundParamsHash : Term)
+    (owner : Address) (token : Token) (boundParamsHash : Term)
     (preimages : Fin N → CommitmentPreimage)
     (leavesIndices : Fin N → Nat) (leaves : List Term)
     (published : List (Term × OwnedOpening))
     (hToken : ∀ i, (preimages i).token = token)
-    (hOwned : ∀ i, ∃ r, (hashCommitment (preimages i), ⟨ownerField, r⟩) ∈ published ∧
-      npk ownerField r = (preimages i).npk)
+    (hOwned : ∀ i, ∃ r, (hashCommitment (preimages i), ⟨Term.val owner, r⟩) ∈ published ∧
+      npk (Term.val owner) r = (preimages i).npk)
     (hLeafIndex : ∀ i, leavesIndices i < 2 ^ TreeDepth)
     (hLeafValue : ∀ i, leaves[leavesIndices i]? = some (hashCommitment (preimages i)))
     (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
@@ -526,7 +522,7 @@ def Spec.owned_spend_witness_exists : Prop :=
       OwnedConstrained w pub ∧
       pub.merkleRoot = treeRoot TreeDepth leaves ∧
       pub.boundParamsHash = boundParamsHash ∧
-      pub.ownerField = ownerField ∧
+      pub.owner = owner ∧
       w.token = token ∧
       (∀ i, w.valueIn i = (preimages i).value)
 
@@ -644,8 +640,8 @@ def Spec.spend_bound_to_adapt : Prop :=
 /--
 **Can happen: an owned transact merges several notes of one owner into one note.** In a
 reachable state, take `N` (`1 ≤ N ≤ 8`) live notes of `token` at distinct positions of
-tree `bp.treeNumber`, all owned by `owner` (`hOpen`: each note's `npk` is
-`npk owner (random i)`). If the sum of their values passes the circuit's range check
+tree `bp.treeNumber`, all owned by the address `owner` (`hOpen`: each note's `npk` is
+`npk (Term.val owner) (random i)`). If the sum of their values passes the circuit's range check
 (`hSum`), the owner can spend all of them in one `Step.transactOwned` with one output
 of exactly that sum, to the note key `npkOut`. After the step none of the inputs is
 live, the output is live, and the pool's custody of `token` is unchanged: value is
@@ -659,12 +655,12 @@ Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic ty
 def Spec.owned_merge_can_happen : Prop :=
   ∀ (s : ReachableState Pool.machine) {N : Nat}
     (hN0 : 0 < N) (hN : N ≤ 8)
-    (owner : Term) (token : Token) (bp : BoundParams)
-    (hNoUnshield : bp.unshield = none) (hAdapt : AdaptAllows bp owner)
+    (owner : Address) (token : Token) (bp : BoundParams)
+    (hNoUnshield : bp.unshield = none) (hAdapt : AdaptAllows bp (Term.val owner))
     (pos : Fin N → Nat) (pre : Fin N → CommitmentPreimage) (random : Fin N → Nat)
     (hLive : ∀ i, ((bp.treeNumber, pos i), pre i) ∈ s.state.live token)
     (hDistinct : (List.ofFn pos).Pairwise (· ≠ ·))
-    (hOpen : ∀ i, npk owner (random i) = (pre i).npk)
+    (hOpen : ∀ i, npk (Term.val owner) (random i) = (pre i).npk)
     (npkOut : Term)
     (hSum : Spendable (listSum (List.ofFn fun i => (pre i).value))),
     Claim <|

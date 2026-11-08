@@ -50,20 +50,19 @@ def Spec.commitment_owner_inj : Prop :=
 **No user note key equals a contract note key.** A user's `npk` is always
 `npk (masterPublicKey pk nk) r` for some spending key `pk` and nullifying key
 `nk` (`ArmadaLean.Transact`), and `masterPublicKey pk nk` is always a Poseidon
-`Term.hash` term — its definition is literally `Term.hash3 ...`, tagged
-`.poseidon`. A contract's `npk` is always `npk (Term.keccak addrInputs) r` for
-whatever inputs its address was derived from (module comment) — a genuine
-Keccak `Term.hash` term, tagged `.keccak`. A Poseidon output and a Keccak
-output never agree, by construction (`Term.poseidon_ne_keccak`), so these two
-`npk` shapes can never collide, whatever randomness, spending key or address
-inputs either side chooses. This is the Dolev-Yao substitute for an on-circuit
-domain tag: see the module comment.
+`Term.hash` term — its definition is literally `Term.hash3 ...`. A contract's `npk`
+is always `npk (Term.val owner) r` for the contract's 160-bit address `owner`
+(`TransactOwnedPublic.ownerField`, operator ruling 2026-11-08) — a `Term.val`, never
+a hash term. A `Term.val` and a `Term.hash` never agree, by construction
+(`Term.val_ne_hash`), so these two `npk` shapes can never collide, whatever
+randomness, spending key or address either side chooses. This is the Dolev-Yao
+substitute for an on-circuit domain tag: see the module comment.
 Source: TransactOwned.circom:66-70, Transact.circom:75-78. -/
 def Spec.user_npk_ne_contract_npk : Prop :=
   ∀ {pk : Nat × Nat} {nk r₁ : Nat}
-    {addrInputs : List Term} {r₂ : Nat},
+    {owner : Address} {r₂ : Nat},
     Claim <|
-    npk (masterPublicKey pk nk) r₁ ≠ npk (Term.keccak addrInputs) r₂
+    npk (masterPublicKey pk nk) r₁ ≠ npk (Term.val owner) r₂
 
 end ArmadaLean
 

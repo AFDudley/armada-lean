@@ -53,4 +53,49 @@ theorem rangeCheck120_sound (v : Nat) (h : RangeChecked120 v) : v < 2 ^ 120 := b
   have := bitsVal_lt_two_pow bs
   rwa [hlen] at this
 
+/-! ## The converse: a decomposition for any value below `2^n`
+
+`natBits n v` is the `n`-bit little-endian decomposition of `v`, read off by repeated
+halving; `natBits_val` shows it denotes `v` whenever `v < 2 ^ n`. `spendable_of_lt` is the
+converse of `rangeCheck120_sound`: the pool's `ShieldPre` bounds a value by `2 ^ 120`, and
+`Step.shield` needs `Spendable` (`Pool.apply_backward_refinement`, the `shield` case). The
+fixtures of `PoolNonVacuity` use it for their concrete values. -/
+
+/-- Little-endian bits of `v`, exactly `n` of them, by repeated halving. -/
+def natBits : Nat → Nat → List Bool
+  | 0, _ => []
+  | n + 1, v => (v % 2 == 1) :: natBits n (v / 2)
+
+theorem natBits_length (n v : Nat) : (natBits n v).length = n := by
+  induction n generalizing v with
+  | zero => rfl
+  | succ n ih => simp only [natBits, List.length_cons, ih]
+
+theorem natBits_val (n v : Nat) (hv : v < 2 ^ n) : bitsVal (natBits n v) = v := by
+  induction n generalizing v with
+  | zero =>
+    simp only [Nat.pow_zero] at hv
+    have hv0 : v = 0 := by omega
+    subst hv0
+    rfl
+  | succ n ih =>
+    have hdm : 2 * (v / 2) + v % 2 = v := Nat.div_add_mod v 2
+    have hr : v % 2 < 2 := Nat.mod_lt v (by decide)
+    have hq : v / 2 < 2 ^ n := by
+      simp only [Nat.pow_succ] at hv
+      omega
+    have ihq := ih (v / 2) hq
+    show ((v % 2 == 1 : Bool)).toNat + 2 * bitsVal (natBits n (v / 2)) = v
+    rw [ihq]
+    rcases (by omega : v % 2 = 0 ∨ v % 2 = 1) with h0 | h1
+    · have hb : (0 == 1 : Bool) = false := by decide
+      rw [h0, hb, Bool.toNat_false]; omega
+    · have hb : (1 == 1 : Bool) = true := by decide
+      rw [h1, hb, Bool.toNat_true]; omega
+
+/-- Every value below `2^120` is `Spendable` (and passes `RangeChecked120`): its own
+    `natBits 120` decomposition witnesses it. The converse of `rangeCheck120_sound`. -/
+theorem spendable_of_lt {v : Nat} (h : v < 2 ^ 120) : Spendable v :=
+  ⟨natBits 120 v, natBits_length 120 v, (natBits_val 120 v h).symm⟩
+
 end ArmadaLean

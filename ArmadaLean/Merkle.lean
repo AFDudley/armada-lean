@@ -15,6 +15,7 @@
   the symbolic Poseidon hash of the path, computed exactly as `merkleStep` folds.
 -/
 import ArmadaLean.Poseidon
+import ArmadaLean.RangeCheck
 import Mathlib.Tactic.Says
 
 namespace ArmadaLean
@@ -47,6 +48,37 @@ theorem merkleRoot_inj_leaf (path : List (Term × Bool)) {l₁ l₂ : Term}
     | false => exact (Term.hash2_inj hstep).1
     | true => exact (Term.hash2_inj hstep).2
 
+/-- `MerkleTreeProof(depth)` (merkle.circom:20-55) as one input of `Transact.circom:86-95`
+    and `TransactOwned.circom:78-87` instantiates it, with `depth = 16`. The circuit takes
+    the siblings `pathElements[depth]` and the packed leaf index `pathIndices`
+    (merkle.circom:22-23). `Num2Bits(depth)` constrains `pathIndices` to the sum of its
+    `depth` boolean output bits (merkle.circom:28-29). Bit `i` selects the order of the
+    level-`i` hash: `0` puts the current node left, `1` puts it right (merkle.circom:44-49,
+    `merkleStep`). The bits are read LSB first (merkle.circom:14): bit `0` is the leaf
+    level. The model keeps the path as `(sibling, bit)` pairs; this structure ties the bits
+    to the index. Operator ruling 2026-11-08: the model states this tie, which the circuit
+    enforces. Before, a witness could open one leaf and name another index. -/
+structure MerkleProof (depth : Nat) (leaf : Term) (path : List (Term × Bool)) (index : Nat)
+    (root : Term) : Prop where
+  /-- One `(sibling, bit)` pair per level: `pathElements[depth]` (merkle.circom:22). -/
+  len : path.length = depth
+  /-- `Num2Bits(depth)`: `pathIndices === Σ bits[i] * 2^i` (merkle.circom:28-29, circomlib
+      bitify.circom), with the direction bits as the output bits. With `len`, this also
+      bounds `index < 2 ^ depth` (`bitsVal_lt_two_pow`). -/
+  bits : bitsVal (path.map Prod.snd) = index
+  /-- The fold from `leaf` reaches `root` (`root <== levelHash[depth]`, merkle.circom:54),
+      and the public root equals it (Transact.circom:95, TransactOwned.circom:87). -/
+  root_eq : merkleRoot leaf path = root
+
+/-- The index of a `MerkleProof` is below `2 ^ depth`: `Num2Bits(depth)` admits no other
+    value. -/
+theorem MerkleProof.index_lt {depth : Nat} {leaf : Term} {path : List (Term × Bool)}
+    {index : Nat} {root : Term} (h : MerkleProof depth leaf path index root) :
+    index < 2 ^ depth := by
+  have hlt := bitsVal_lt_two_pow (path.map Prod.snd)
+  rw [h.bits, List.length_map, h.len] at hlt
+  exact hlt
+
 /-! ### The incremental tree, as one static binary tree over its leaf list
 
 `MerkleModule.insertLeaves` (MerkleModule.sol:54-121) computes updates to the pool's
@@ -55,7 +87,7 @@ comment there: "deliberately mutates `leafHashes` in place to save gas"). Whatev
 shortcuts the gas-optimized algorithm takes, the FINAL value it produces is the root of
 the standard binary Merkle tree over `2^TreeDepth` leaf slots, with the real leaves in
 insertion order at the low positions and the empty leaf (`ZERO_VALUE`,
-PrivacyPoolStorage.sol:150, modeled as the opaque constant `emptyLeaf` below) filling
+PrivacyPoolStorage.sol:150, the constant `emptyLeaf` below) filling
 every unused slot — that tree is what `treeRoot`/`treePath` define directly,
 non-incrementally, since this project only needs the tree's final value and
 leaf-membership facts, never a gas analysis. `TreeDepth` mirrors
@@ -77,10 +109,22 @@ overflow the current one (MerkleModule.sol:62-70). No capacity hypothesis gates 
     PrivacyPoolStorage.sol:144): `2^16 = 65536` leaves per tree. -/
 def TreeDepth : Nat := 16
 
-/-- The empty leaf `ZERO_VALUE` (PrivacyPoolStorage.sol:150), a pinned public constant.
-    It fills every unused leaf slot of a tree. No theorem reads its value, so the model
-    leaves it opaque. -/
-opaque emptyLeaf : Term
+/-- The empty leaf `ZERO_VALUE` (armada-poc PrivacyPoolStorage.sol:150, `bytes32 public
+    constant ZERO_VALUE = 0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc`,
+    on `fork/main`, last changed in commit `4081579b`). It fills every unused leaf slot
+    of a tree. The value is `keccak256("Railgun") mod p` over the BN254 scalar field,
+    RAILGUN's derivation of its zero value; w3:p5 recomputed it on 2026-11-08. Operator
+    ruling 2026-11-08: the model states the contract's real constant. An earlier version
+    kept it `opaque`. A `Term.val`, so it is never a hash term (`emptyLeaf_ne_hash`): no
+    note commitment is the empty leaf. -/
+def emptyLeaf : Term :=
+  Term.val 0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc
+
+/-- The empty leaf is never a hash term, so it is never a commitment
+    (`PoolOwned.emptyLeaf_ne_hashCommitment` states the commitment form). By constructor
+    disjointness of `Term`. -/
+theorem emptyLeaf_ne_hash (fn : HashFn) (l : List Term) : emptyLeaf ≠ Term.hash fn l :=
+  Term.val_ne_hash _ fn l
 
 /-- The root of the depth-`d` binary tree whose leaves, left to right, are `leaves`,
     padded on the right with `emptyLeaf` wherever `leaves` runs out. Defined by
@@ -220,8 +264,8 @@ theorem treePath_correct_of_getElem? (d : Nat) (leaves : List Term) (i : Nat)
   exact treePath_correct d leaves i hi
 
 /-- A `treePath` at depth `d` always has exactly `d` entries — one `(sibling, bit)`
-    pair per level, matching `Constrained.pathLen`/`OwnedConstrained.pathLen`'s own
-    `= 16` requirement once `d = TreeDepth`. -/
+    pair per level, matching `MerkleProof.len`'s `= 16` requirement in
+    `Constrained.merkle`/`OwnedConstrained.merkle` once `d = TreeDepth`. -/
 theorem treePath_length (d : Nat) (leaves : List Term) (i : Nat) :
     (treePath d leaves i).length = d := by
   induction d generalizing leaves i with
@@ -232,5 +276,54 @@ theorem treePath_length (d : Nat) (leaves : List Term) (i : Nat) :
       (simp? [ih] says simp only [List.length_append, ih, List.length_cons, List.length_nil, Nat.zero_add, Nat.add_left_cancel_iff])
     · rw [treePath_succ_ge d leaves i hlt]
       (simp? [ih] says simp only [List.length_append, ih, List.length_cons, List.length_nil, Nat.zero_add, Nat.add_left_cancel_iff])
+
+/-- `bitsVal` of a bit list with one more bit at the top: the new bit weighs
+    `2 ^ bs.length`. -/
+theorem bitsVal_append_single (bs : List Bool) (b : Bool) :
+    bitsVal (bs ++ [b]) = bitsVal bs + b.toNat * 2 ^ bs.length := by
+  induction bs with
+  | nil => simp only [List.nil_append, bitsVal, List.length_nil, Nat.pow_zero, Nat.mul_one,
+      Nat.zero_add, Nat.mul_zero, Nat.add_zero]
+  | cons c bs ih =>
+    simp only [List.cons_append, bitsVal, ih, List.length_cons, Nat.pow_succ]
+    have h2 : b.toNat * (2 ^ bs.length * 2) = 2 * (b.toNat * 2 ^ bs.length) := by
+      rw [Nat.mul_comm (2 ^ bs.length) 2, ← Nat.mul_assoc, Nat.mul_comm b.toNat 2, Nat.mul_assoc]
+    omega
+
+/-- The direction bits of `treePath d leaves i` are the `d` bits of `i`, LSB first: the
+    path `treePath` computes is the one the circuit's `Num2Bits(d)` on the leaf index
+    selects (`MerkleProof.bits`). For an in-range position, `bitsVal` of the bits is `i`. -/
+theorem treePath_bitsVal (d : Nat) (leaves : List Term) (i : Nat) (hi : i < 2 ^ d) :
+    bitsVal ((treePath d leaves i).map Prod.snd) = i := by
+  induction d generalizing leaves i with
+  | zero =>
+    simp only [Nat.pow_zero] at hi
+    have hi0 : i = 0 := by omega
+    subst hi0
+    rfl
+  | succ d ih =>
+    by_cases hlt : i < 2 ^ d
+    · rw [treePath_succ_lt d leaves i hlt, List.map_append, List.map_cons, List.map_nil,
+        bitsVal_append_single, ih (leaves.take (2 ^ d)) i hlt]
+      simp only [Bool.toNat_false, Nat.zero_mul, Nat.add_zero]
+    · have hi2 : i - 2 ^ d < 2 ^ d := by
+        simp only [Nat.pow_succ] at hi
+        omega
+      rw [treePath_succ_ge d leaves i hlt, List.map_append, List.map_cons, List.map_nil,
+        bitsVal_append_single, ih (leaves.drop (2 ^ d)) (i - 2 ^ d) hi2, List.length_map,
+        treePath_length]
+      simp only [Bool.toNat_true, Nat.one_mul]
+      omega
+
+/-- `treePath` is a `MerkleProof`: the path from a leaf that exists at position `i` has
+    `d` levels, carries the bits of `i`, and reconstructs the tree's root. The one
+    constructor every pool witness uses (`PoolSafety.owned_spend_witness_exists`, the
+    fixtures of `PoolNonVacuity`). -/
+theorem treePath_merkleProof (d : Nat) (leaves : List Term) (i : Nat)
+    (hi : i < 2 ^ d) {leaf : Term} (hleaf : leaves[i]? = some leaf) :
+    MerkleProof d leaf (treePath d leaves i) i (treeRoot d leaves) where
+  len := treePath_length d leaves i
+  bits := treePath_bitsVal d leaves i hi
+  root_eq := treePath_correct_of_getElem? d leaves i hi hleaf
 
 end ArmadaLean

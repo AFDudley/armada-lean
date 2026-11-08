@@ -31,38 +31,32 @@
   wanted — one entry per commitment, not a running balance. `preimageOf_
   consistent` is the guarantee that entry is trustworthy.
 
-  ### Address terms (operator ruling)
+  ### Address terms
 
-  An EVM contract address is itself a hash output: the low 160 bits of
-  `keccak256` of the creator's address and a nonce (`CREATE`), or of the
-  creator, a salt and the init-code hash (`CREATE2`) — not a raw number a
-  contract independently "has". `Term.keccak` (`ArmadaLean.Poseidon`) is the
-  model's Keccak primitive; this project represents an address as `Term.keccak
-  inputs` directly, for whatever `inputs` its real derivation uses, with no
-  separate wrapper constructor. Two reasons: first, the ONLY place this project
-  needs Keccak at all is address derivation — there is no second Keccak-tagged
-  term category a wrapper would need to distinguish addresses FROM; second, the
-  property every theorem here actually needs — an address can never equal a
-  Poseidon output — already follows from the function TAG alone
-  (`Term.poseidon_ne_keccak`), so a further wrapper buys no additional
-  separation. If a later model needs a second Keccak-derived term family (a
-  storage slot, say), that is the point to introduce a narrower constructor;
-  nothing here depends on `Term.keccak`'s output being exclusively addresses.
-  The model does not track WHICH concrete `inputs` produced a given address (no
-  theorem below needs to recompute one from a creator and a nonce) — only that
-  it is Keccak-shaped, i.e. of the form `Term.keccak _` for SOME argument list,
-  which is what `user_npk_ne_contract_npk` (`ArmadaLean.TransactOwned`) and
-  every theorem below that touches `ownerField` are stated against.
+  Operator ruling 2026-11-08: the owned path's `ownerField` is a 160-bit address.
+  `TransactOwnedPublic.owner : Address` (`ArmadaLean.Types.Address`) is a number below
+  `2^160`, and `TransactOwnedPublic.ownerField` is its field element `Term.val owner`
+  (`ownerField = uint256(uint160(owner))`, TransactOwned.circom:13-14). So `ownerField`
+  is never a hash term (`Address.val_ne_hash`): a contract's note key
+  `npk ownerField r` never equals a user's note key `npk (masterPublicKey pk nk) r'`
+  (`user_npk_ne_contract_npk`, `ArmadaLean.TransactOwned`). The model does not track
+  how the address was derived (`CREATE`, `CREATE2`): no theorem below needs to
+  recompute one from a creator and a nonce.
 
-  `TransactOwnedPublic.ownerField`, `OwnedOpening.ownerField`, `Token.address`, and every
-  `caller`/owning-party value in this file and `ArmadaLean.Pool` /
-  `ArmadaLean.PoolSafety` are address terms accordingly — `Term`, never `Nat`.
-  `addressOf` (EVM's `address(uint160(x))` truncation) is deleted along with
-  every `% 2 ^ 160` bound: a `Term` has no numeric interpretation to truncate.
-  See `ArmadaLean.TransactOwned`'s module comment for the resulting
-  authorization-check departure (the real contract's truncating comparison
-  accepts a broader set of `ownerField` values than this model's plain term
-  equality does).
+  Every other address value stays a plain `Term`: `OwnedOpening.ownerField`,
+  `Token.address`, and every `caller`/fee-admin/treasury value in this file and
+  `ArmadaLean.Pool` / `ArmadaLean.PoolSafety`. A caller of an owned spend equals
+  `pub.ownerField` (`hCaller` of `Step.transactOwned`), so it is a `Term.val` of an
+  address. An earlier version of this model (operator ruling of 2026-10, superseded)
+  represented every address as a Keccak hash term `Term.keccak inputs` and rested the
+  user/contract note-key separation on the hash-function tag. `Term.keccak` stays in
+  use for the bound-parameters hash (`ArmadaLean.BoundParams`) and for the fee-admin
+  and treasury terms of the fixtures. `addressOf` (EVM's `address(uint160(x))`
+  truncation) and every `% 2 ^ 160` bound on a `Term` are deleted: a `Term` has no
+  numeric interpretation to truncate. The bound lives in `Address` alone. See
+  `ArmadaLean.TransactOwned`'s module comment for the authorization-check departure
+  (the current contract's truncating comparison accepts a broader set of `ownerField`
+  values than this model's plain term equality does; the rewrite rejects them).
 -/
 import ArmadaLean.TransactOwned
 import Mathlib.Tactic.Says
@@ -84,6 +78,14 @@ structure CommitmentPreimage where
     Poseidon as `commitment` in ArmadaLean.Transact — reused directly, no
     second commitment hash is defined here. -/
 def hashCommitment (pre : CommitmentPreimage) : Term := commitment pre.npk pre.token pre.value
+
+/-- The empty leaf is no note's commitment: `emptyLeaf` is a `Term.val` (the contract's
+    `ZERO_VALUE`, `ArmadaLean.Merkle`) and a commitment is a Poseidon hash term
+    (`Term.hash3`), so the two never agree, by constructor disjointness
+    (`emptyLeaf_ne_hash`). A Merkle opening of a padding slot therefore opens no note. -/
+theorem emptyLeaf_ne_hashCommitment (pre : CommitmentPreimage) :
+    emptyLeaf ≠ hashCommitment pre :=
+  emptyLeaf_ne_hash .poseidon _
 
 /- An output that stays ciphertext-only has no disclosed preimage. The contract encodes
    "no preimage" as an all-zero `publicOutputs` entry (`_isZeroPreimage`,
@@ -332,67 +334,66 @@ structure OwnedOpening where
 
 /--
 **Can happen**: an owned spend by the real owner, with an accepted proof,
-succeeds. `ownerField`, `token`, `randomIn`, `valueIn`, `leavesIndices`,
+succeeds. `owner`, `token`, `randomIn`, `valueIn`, `leavesIndices`,
 `pathElements`, `npkOut`, `valueOut` are the real owner's own data — the
 witness for `N` notes it genuinely holds at Merkle root `root`, re-minted
 into `M` fresh outputs of equal total value. `boundParamsHash` is the hash of the
 transaction's bound parameters (`ArmadaLean.BoundParams.hashBoundParams`).
 `owned_spend_can_happen` clears every pool-level gate this model covers: the circuit
 constraints hold (`OwnedConstrained`, by construction), `verifyOwned` accepts
-(`hComplete.complete`, the one completeness assumption), the caller is
-authorized (`hCaller`), every output's preimage hashes to its commitment so
+(`hComplete.complete`, the one completeness assumption), the caller
+`Term.val owner` is the owner (the authorization check, `owned_owner_binding`), every
+output's preimage hashes to its commitment so
 `_validatePublicOutputs(requireAll = true)` (TransactModule.sol:630-634)
 passes, and the nullifiers are fresh so `_accumulateAndNullify` does not
 revert (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers`
 from ArmadaLean.Nullifier to turn the owner's genuinely-distinct note
 positions into pairwise-distinct nullifiers). -/
 theorem owned_spend_can_happen {N M : Nat} (hComplete : OwnedProofCompleteness)
-    (ownerField : Term) (token : Token) (boundParamsHash : Term) (root : Term)
+    (owner : Address) (token : Token) (boundParamsHash : Term) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool))
     (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i))
-        (pathElements i) = root)
+      MerkleProof 16 (commitment (npk (Term.val owner) (randomIn i)) token (valueIn i))
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (spent : NullifierSet) (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ spent)
-    (caller : Term) (hCaller : caller = ownerField) :
+    (spent : NullifierSet) (hFresh : ∀ i, nullifier (Term.val owner) (leavesIndices i) ∉ spent) :
     ∃ (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M),
       OwnedConstrained w pub ∧
       VerifyOwnedAccepts pub ∧
       pub.boundParamsHash = boundParamsHash ∧
-      caller = pub.ownerField ∧
+      Term.val owner = pub.ownerField ∧
       (∀ j, hashCommitment ⟨npkOut j, token, valueOut j⟩ = pub.commitmentsOut j) ∧
     ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
   let pub : TransactOwnedPublic N M :=
     { merkleRoot := root, boundParamsHash := boundParamsHash,
-      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      nullifiers := fun i => nullifier (Term.val owner) (leavesIndices i),
       commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
-      ownerField := ownerField }
+      owner := owner }
   let w : TransactOwnedWitness N M :=
     { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
       leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
   have hConstrained : OwnedConstrained w pub :=
-    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+    { merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
       balance := congrArg (· % p) hBalance }
   obtain ⟨spent', hNullify⟩ :
       ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent' := by
     apply markSpent_succeeds
-    · have hmap := distinct_leaves_distinct_nullifiers ownerField
+    · have hmap := distinct_leaves_distinct_nullifiers (Term.val owner)
         (List.ofFn leavesIndices) hDistinctLeaves
-      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
+      have heq : (List.ofFn leavesIndices).map (nullifier (Term.val owner))
           = List.ofFn pub.nullifiers := List.map_ofFn
       rwa [heq] at hmap
     · intro n hn
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
       exact hFresh i
-  exact ⟨w, pub, hConstrained, hComplete.complete hConstrained, rfl, hCaller,
+  exact ⟨w, pub, hConstrained, hComplete.complete hConstrained, rfl, rfl,
     fun _ => rfl, spent', hNullify⟩
 
 end ArmadaLean

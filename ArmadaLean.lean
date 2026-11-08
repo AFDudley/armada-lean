@@ -4,6 +4,7 @@
 -/
 import ArmadaLean.Machine
 import ArmadaLean.Types.Reachable
+import ArmadaLean.Types.Address
 import ArmadaLean.SpecTools
 import ArmadaLean.Field
 import ArmadaLean.Poseidon

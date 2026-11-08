@@ -43,20 +43,21 @@
   formula and no on-circuit tag distinguishing which circuit produced `X`
   (confirmed by reading both files: TransactOwned.circom:66-70 and
   Transact.circom:75-78 share the identical call shape). `ownerField` is the
-  owning contract's address: per the operator's ruling, an EVM contract address
-  is itself a hash output — the low 160 bits of `keccak256` of its creator and a
-  nonce (`CREATE`) or creator, salt and init-code hash (`CREATE2`), canonically a
-  `uint256` field element at the circuit boundary (`TransactOwned.circom:13`,
-  `ownerField = uint256(uint160(owner))`; `ShieldedRagequit.sol:147` is one
-  caller that supplies one). This model represents `ownerField` as a `Term`, a
-  Keccak hash (`ArmadaLean.Poseidon.Term.keccak`, `ArmadaLean.PoolOwned`'s module
-  comment has the full address-term account), never a raw `Term.val`.
+  owning contract's address: `ownerField = uint256(uint160(owner))`, supplied by
+  the calling contract, and the on-chain verifier checks it against `msg.sender`
+  (TransactOwned.circom:13-14; `ShieldedRagequit.sol:147` is one caller that
+  supplies one). Operator ruling 2026-11-08: the model states this. The public
+  input holds `owner : Address`, a number below `2^160` (`ArmadaLean.Types.Address`),
+  and `TransactOwnedPublic.ownerField` is `Term.val owner`. So `ownerField` is never
+  a hash term, by constructor disjointness of `Term` (`Address.val_ne_hash`).
   `masterPublicKey` (ArmadaLean.Transact), by contrast, is always a Poseidon
-  `Term.hash` term. The separation `user_npk_ne_contract_npk` below proves rests
-  on that function-tag difference — a Poseidon output and a Keccak output never
-  agree, by construction (`ArmadaLean.Poseidon.Term.poseidon_ne_keccak`) — not on
-  any tag the circuits themselves carry, and not on `Term.val` vs `Term.hash`
-  (both shapes are `Term.hash` terms now).
+  `Term.hash` term. The separation `user_npk_ne_contract_npk` below rests on that
+  constructor difference, not on any tag the circuits themselves carry. An earlier
+  version of this model represented `ownerField` as a Keccak hash term and rested
+  the separation on the hash-function tag (`Term.poseidon_ne_keccak`). That form let
+  a witness name any term as `ownerField`, a user's master public key included, and
+  made `Pool.apply_backward_refinement` unprovable
+  (`armada-laconic/.scratch/pool-exec/pe5-gap/PE5Gap.lean`).
 
   DEPARTURE of the current contract, removed by the rewrite (armada-laconic
   `labbook/2026-11-02-refinement-risks.md` §7: the rewrite takes a 20-byte
@@ -65,12 +66,11 @@
   (TransactModule.sol:637) — the contract truncates `ownerField` to its low 160
   bits before comparing, so it also accepts a non-canonical `ownerField` with
   high bits set (any field element whose low 160 bits equal the caller's
-  address). This symbolic model cannot express "truncate a `Term`" (a `Term` has
-  no numeric interpretation to truncate) and does not: `ArmadaLean.PoolOwned
-  .owned_owner_binding` models the authorization check as plain term equality,
-  `ownerField = caller`, the canonical case (`TransactOwned.circom:13`,
-  `ShieldedRagequit.sol:147` establish the canonical, untruncated form a genuine
-  caller supplies).
+  address). This model's `Address` admits only the canonical value below `2^160`,
+  the rewrite's rule: `ArmadaLean.PoolOwned.owned_owner_binding` models the
+  authorization check as plain term equality, `ownerField = caller`
+  (`TransactOwned.circom:13`, `ShieldedRagequit.sol:147` establish the canonical,
+  untruncated form a genuine caller supplies).
 -/
 import ArmadaLean.Field
 import ArmadaLean.Poseidon
@@ -79,6 +79,7 @@ import ArmadaLean.ValueConservation
 import ArmadaLean.Nullifier
 import ArmadaLean.Merkle
 import ArmadaLean.Transact
+import ArmadaLean.Types.Address
 
 namespace ArmadaLean
 
@@ -92,8 +93,9 @@ structure TransactOwnedWitness (N M : Nat) where
   randomIn : Fin N → Nat
   /-- note value per input (:47). -/
   valueIn : Fin N → Nat
-  /-- Merkle path (sibling, directionBit) per input; each of length 16
-      (:48, enforced by `Constrained.pathLen`). Siblings are terms. -/
+  /-- Merkle path (sibling, directionBit) per input; each of length 16 and with the
+      bits of `leavesIndices i` (:48, enforced by `OwnedConstrained.merkle`). Siblings
+      are terms. -/
   pathElements : Fin N → List (Term × Bool)
   /-- Merkle leaf positions (:49). -/
   leavesIndices : Fin N → Nat
@@ -109,11 +111,24 @@ structure TransactOwnedPublic (N M : Nat) where
   boundParamsHash : Term
   nullifiers : Fin N → Term
   commitmentsOut : Fin M → Term
-  /-- The calling contract's address (TransactOwned.circom:36; `ownerField =
-      uint256(uint160(owner))`, TransactOwned.circom:13) — a Keccak hash term
-      (module comment), never a Poseidon output. The pool checks this against
-      the caller (modeled by `owned_owner_binding` in ArmadaLean.PoolOwned). -/
-  ownerField : Term
+  /-- The calling contract's address (TransactOwned.circom:36): a 160-bit `Address`
+      (`ArmadaLean.Types.Address`). The circuit takes `ownerField =
+      uint256(uint160(owner))` from the calling contract (TransactOwned.circom:13-14).
+      Operator ruling 2026-11-08. The pool checks `ownerField` against the caller
+      (modeled by `owned_owner_binding` in ArmadaLean.PoolOwned). -/
+  owner : Address
+
+/-- The public input `ownerField` (TransactOwned.circom:36): `uint256(uint160(owner))`
+    (TransactOwned.circom:13), the field element of the owner's address. A `Term.val`,
+    never a hash term (`ownerField_ne_hash`). Operator ruling 2026-11-08. -/
+def TransactOwnedPublic.ownerField {N M : Nat} (pub : TransactOwnedPublic N M) : Term :=
+  Term.val pub.owner
+
+/-- `ownerField` is never a hash term: it is never a note key, a commitment, a nullifier
+    or a master public key (`Address.val_ne_hash`). -/
+theorem TransactOwnedPublic.ownerField_ne_hash {N M : Nat} (pub : TransactOwnedPublic N M)
+    (fn : HashFn) (l : List Term) : pub.ownerField ≠ Term.hash fn l :=
+  Address.val_ne_hash pub.owner fn l
 
 /--
 The full constraint system of the TransactOwned circuit
@@ -126,15 +141,16 @@ check them against, so they are not separate fields here: `npk pub.ownerField
 -/
 structure OwnedConstrained {N M : Nat} (w : TransactOwnedWitness N M)
     (pub : TransactOwnedPublic N M) : Prop where
-  /-- Every Merkle path has the production depth 16 (:48, :79, :81-83). -/
-  pathLen : ∀ i, (w.pathElements i).length = 16
   /-- 1a-1c: `npk = Poseidon(ownerField, random)` (:66-70), `commitment =
       Poseidon(npk, token, value)` (:72-76), and Merkle membership against the
-      public root (:78-87). -/
+      public root (:78-87): `MerkleTreeProof(16)` with the path's 16 levels (:48, :79,
+      :81-83), the direction bits of `leavesIndices i` (:84, `Num2Bits(16)` in
+      merkle.circom:28-29) and the root check (:87). Operator ruling 2026-11-08: the
+      bits are tied to the index. -/
   merkle : ∀ i,
-    merkleRoot
+    MerkleProof 16
       (commitment (npk pub.ownerField (w.randomIn i)) w.token (w.valueIn i))
-      (w.pathElements i) = pub.merkleRoot
+      (w.pathElements i) (w.leavesIndices i) pub.merkleRoot
   /-- 1d: nullifier = Poseidon(ownerField, leafIndex) (:89-97). -/
   nullifiers : ∀ i, pub.nullifiers i = nullifier pub.ownerField (w.leavesIndices i)
   /-- 2: output commitments (:100-109). -/
@@ -194,20 +210,19 @@ theorem commitment_owner_inj {owner₁ owner₂ : Term} {r₁ r₂ value : Nat} 
 **No user note key equals a contract note key.** A user's `npk` is always
 `npk (masterPublicKey pk nk) r` for some spending key `pk` and nullifying key
 `nk` (`ArmadaLean.Transact`), and `masterPublicKey pk nk` is always a Poseidon
-`Term.hash` term — its definition is literally `Term.hash3 ...`, tagged
-`.poseidon`. A contract's `npk` is always `npk (Term.keccak addrInputs) r` for
-whatever inputs its address was derived from (module comment) — a genuine
-Keccak `Term.hash` term, tagged `.keccak`. A Poseidon output and a Keccak
-output never agree, by construction (`Term.poseidon_ne_keccak`), so these two
-`npk` shapes can never collide, whatever randomness, spending key or address
-inputs either side chooses. This is the Dolev-Yao substitute for an on-circuit
-domain tag: see the module comment.
+`Term.hash` term — its definition is literally `Term.hash3 ...`. A contract's `npk`
+is always `npk (Term.val owner) r` for the contract's 160-bit address `owner`
+(`TransactOwnedPublic.ownerField`, operator ruling 2026-11-08) — a `Term.val`, never
+a hash term. A `Term.val` and a `Term.hash` never agree, by construction
+(`Term.val_ne_hash`), so these two `npk` shapes can never collide, whatever
+randomness, spending key or address either side chooses. This is the Dolev-Yao
+substitute for an on-circuit domain tag: see the module comment.
 Source: TransactOwned.circom:66-70, Transact.circom:75-78. -/
 theorem user_npk_ne_contract_npk {pk : Nat × Nat} {nk r₁ : Nat}
-    {addrInputs : List Term} {r₂ : Nat} :
-    npk (masterPublicKey pk nk) r₁ ≠ npk (Term.keccak addrInputs) r₂ := by
+    {owner : Address} {r₂ : Nat} :
+    npk (masterPublicKey pk nk) r₁ ≠ npk (Term.val owner) r₂ := by
   intro h
-  have hmpk : masterPublicKey pk nk = Term.keccak addrInputs := (Term.hash2_inj h).1
-  exact Term.poseidon_ne_keccak hmpk
+  have hmpk : masterPublicKey pk nk = Term.val owner := (Term.hash2_inj h).1
+  exact Address.val_ne_hash owner _ _ hmpk.symm
 
 end ArmadaLean

@@ -13,15 +13,15 @@ open ArmadaLean.Witness.CircuitValues
 
 /-- The witness of `Spec.transactOwned_value_conserved`: `N = M = 0`, so
     every per-input and per-output field of `OwnedConstrained` is vacuous
-    and the balance check is `fieldEq 0 0`, `rfl`. -/
+    and the balance check is `fieldEq 0 0`, `rfl`. The owner is the address `0`. -/
 theorem ArmadaLean.Spec.transactOwned_value_conserved.witness :
     spec_premise% ArmadaLean.Spec.transactOwned_value_conserved := by
   refine ⟨0, 0,
     ⟨token0, fun i => i.elim0, fun i => i.elim0, fun i => i.elim0, fun i => i.elim0,
       fun j => j.elim0, fun j => j.elim0⟩,
-    ⟨t0, t0, fun i => i.elim0, fun j => j.elim0, t0⟩,
+    ⟨t0, t0, fun i => i.elim0, fun j => j.elim0, ⟨0, by decide⟩⟩,
     by decide, by decide,
-    ⟨fun i => i.elim0, fun i => i.elim0, fun i => i.elim0, fun j => j.elim0,
+    ⟨fun i => i.elim0, fun i => i.elim0, fun j => j.elim0,
       fun i => i.elim0, fun j => j.elim0, rfl⟩,
     trivial⟩
 

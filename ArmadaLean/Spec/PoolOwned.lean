@@ -72,15 +72,16 @@ def Spec.preimageOf_consistent : Prop :=
 
 /--
 **Can happen**: an owned spend by the real owner, with an accepted proof,
-succeeds. `ownerField`, `token`, `randomIn`, `valueIn`, `leavesIndices`,
+succeeds. `owner`, `token`, `randomIn`, `valueIn`, `leavesIndices`,
 `pathElements`, `npkOut`, `valueOut` are the real owner's own data — the
 witness for `N` notes it genuinely holds at Merkle root `root`, re-minted
 into `M` fresh outputs of equal total value. `boundParamsHash` is the hash of the
 transaction's bound parameters (`ArmadaLean.BoundParams.hashBoundParams`).
 `owned_spend_can_happen` clears every pool-level gate this model covers: the circuit
 constraints hold (`OwnedConstrained`, by construction), `verifyOwned` accepts
-(`hComplete.complete`, the one completeness assumption), the caller is
-authorized (`hCaller`), every output's preimage hashes to its commitment so
+(`hComplete.complete`, the one completeness assumption), the caller
+`Term.val owner` is the owner (the authorization check, `owned_owner_binding`), every
+output's preimage hashes to its commitment so
 `_validatePublicOutputs(requireAll = true)` (TransactModule.sol:630-634)
 passes, and the nullifiers are fresh so `_accumulateAndNullify` does not
 revert (`markSpent_succeeds`, using `distinct_leaves_distinct_nullifiers`
@@ -88,26 +89,24 @@ from ArmadaLean.Nullifier to turn the owner's genuinely-distinct note
 positions into pairwise-distinct nullifiers). -/
 def Spec.owned_spend_can_happen : Prop :=
   ∀ {N M : Nat} (hComplete : OwnedProofCompleteness)
-    (ownerField : Term) (token : Token) (boundParamsHash : Term) (root : Term)
+    (owner : Address) (token : Token) (boundParamsHash : Term) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool))
     (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i))
-        (pathElements i) = root)
+      MerkleProof 16 (commitment (npk (Term.val owner) (randomIn i)) token (valueIn i))
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (spent : NullifierSet) (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ spent)
-    (caller : Term) (hCaller : caller = ownerField),
+    (spent : NullifierSet) (hFresh : ∀ i, nullifier (Term.val owner) (leavesIndices i) ∉ spent),
     Claim <|
     ∃ (w : TransactOwnedWitness N M) (pub : TransactOwnedPublic N M),
       OwnedConstrained w pub ∧
       VerifyOwnedAccepts pub ∧
       pub.boundParamsHash = boundParamsHash ∧
-      caller = pub.ownerField ∧
+      Term.val owner = pub.ownerField ∧
       (∀ j, hashCommitment ⟨npkOut j, token, valueOut j⟩ = pub.commitmentsOut j) ∧
     ∃ spent', markSpent spent (List.ofFn pub.nullifiers) = some spent'
 

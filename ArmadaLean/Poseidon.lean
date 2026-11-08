@@ -35,19 +35,19 @@ namespace ArmadaLean
   `Term.hash` takes a `List Term`, so one constructor covers every arity either hash
   function is used at: Poseidon arity 2 (note public keys, nullifiers, Merkle tree
   levels — `Term.hash2` below), 3 (commitments — `Term.hash3`), and the variable arity
-  `2+N+M` of the EdDSA message hash (`msgHashOf`, ArmadaLean.Transact); Keccak arity
-  however many inputs CREATE/CREATE2 address derivation uses (`Term.keccak`,
-  ArmadaLean.PoolOwned's module comment on address terms — the only place this project
-  needs Keccak at all).
+  `2+N+M` of the EdDSA message hash (`msgHashOf`, ArmadaLean.Transact); Keccak for the
+  bound-parameters hash (`hashBoundParams`, ArmadaLean.BoundParams) and for address
+  terms that no theorem constrains (ArmadaLean.PoolOwned's module comment on address
+  terms).
 
-  DEPARTURE (operator ruling): a contract address is itself a hash output — the low 160
-  bits of `keccak256` of the creator and a nonce (`CREATE`) or of the creator, a salt
-  and the init-code hash (`CREATE2`) — not a raw number a contract "has". Tagging
-  `Term.hash` with the function that produced it is what makes a Keccak output (an
-  address) provably distinct from a Poseidon output (a note key, a commitment, a
-  nullifier): a Dolev-Yao attacker building a witness from terms it holds can never pass
-  an address off as a note key, or vice versa, whatever numbers it chooses, because the
-  tag alone already separates them (`Term.hash.inj`, no further argument needed).
+  Addresses (operator ruling 2026-11-08, superseding the ruling that made every
+  address a Keccak term): the owned circuit's `ownerField` is a 160-bit address,
+  `Term.val a` with `a < 2^160` (`ArmadaLean.Types.Address`,
+  `ArmadaLean.TransactOwned`). It is never a hash term (`Term.val_ne_hash`), so a
+  Dolev-Yao attacker building a witness from terms it holds can never pass an address
+  off as a note key, a commitment or a nullifier, whatever number it chooses. `Term.keccak`
+  stays in use for the bound-parameters hash (`ArmadaLean.BoundParams`) and for address
+  terms that no theorem constrains (fee admin, treasury, tokens).
 -/
 
 /-- Which hash function produced a `Term.hash` term. The circuits use only Poseidon
@@ -109,8 +109,7 @@ end
 
 instance : DecidableEq Term := Term.decEq
 
-/-- `Term` is inhabited. `opaque` constants of type `Term` (`ArmadaLean.Merkle
-    .emptyLeaf`) need the instance. No theorem reads the default value. -/
+/-- `Term` is inhabited. No theorem reads the default value. -/
 instance : Inhabited Term := ⟨Term.hash .poseidon []⟩
 
 /-- The 2-argument Poseidon hash (used for note public keys, nullifiers, and every
@@ -122,9 +121,10 @@ def Term.hash2 (a b : Term) : Term := Term.hash .poseidon [a, b]
 def Term.hash3 (a b c : Term) : Term := Term.hash .poseidon [a, b, c]
 
 /-- The Keccak-256 hash of a list of terms — EVM's `keccak256` opcode, distinct from
-    Poseidon by construction (`HashFn`'s own constructors, via `Term.hash`'s tag). The
-    one use this project has for it: contract address derivation
-    (`ArmadaLean.PoolOwned`'s module comment on address terms). -/
+    Poseidon by construction (`HashFn`'s own constructors, via `Term.hash`'s tag). Used
+    for the bound-parameters hash (`ArmadaLean.BoundParams.hashBoundParams`) and for
+    address terms that no theorem constrains (`ArmadaLean.PoolOwned`'s module comment on
+    address terms). -/
 def Term.keccak (l : List Term) : Term := Term.hash .keccak l
 
 /-- Collision resistance of `Term.hash2`, by construction: a collision forces
@@ -157,11 +157,10 @@ theorem Term.val_ne_hash (n : Nat) (fn : HashFn) (l : List Term) : Term.val n �
 
 /-- **A Poseidon output is never a Keccak output, whatever either hash's arguments
     are.** Domain separation across hash functions, by construction
-    (`HashFn.noConfusion`, via `Term.hash`'s own tag argument): this is the fact
-    `ArmadaLean.TransactOwned.user_npk_ne_contract_npk` rests on, now that a
-    contract's address is itself a hash term (a Keccak output,
-    `ArmadaLean.PoolOwned`'s module comment on address terms) rather than a raw
-    `val`. -/
+    (`HashFn.noConfusion`, via `Term.hash`'s own tag argument). Before the operator
+    ruling of 2026-11-08, `ArmadaLean.TransactOwned.user_npk_ne_contract_npk` rested on
+    this fact; it now rests on `Term.val_ne_hash`, because `ownerField` is a
+    160-bit address (`ArmadaLean.Types.Address`). -/
 theorem Term.poseidon_ne_keccak {l1 l2 : List Term} :
     Term.hash .poseidon l1 ≠ Term.hash .keccak l2 :=
   fun h => HashFn.noConfusion (Term.hash.inj h).1

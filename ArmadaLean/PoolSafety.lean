@@ -647,12 +647,11 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
     (nullifyingKey : Nat) (token : Token) (boundParamsHash : Term) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot
+      MerkleProof 16
         (commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn i)) token
           (valueIn i))
-        (pathElements i) = root)
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
@@ -674,7 +673,7 @@ theorem transact_spend_can_happen {N M : Nat} (hComplete : TransactProofComplete
       randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
       leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
   have hConstrained : Constrained w pub :=
-    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+    { merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
       balance := congrArg (· % p) hBalance,
       distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
@@ -729,12 +728,11 @@ theorem transact_can_happen (s : ReachableState Pool.machine)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
     (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot
+      MerkleProof 16
         (commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn i)) token
           (valueIn i))
-        (pathElements i) = root)
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
@@ -759,7 +757,7 @@ theorem transact_can_happen (s : ReachableState Pool.machine)
       randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
       leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
   have hConstrained : Constrained w pub :=
-    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+    { merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
       balance := congrArg (· % p) hBalance,
       distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
@@ -799,12 +797,11 @@ theorem unshield_can_happen (s : ReachableState Pool.machine)
     (pathElements : Fin N → List (Term × Bool))
     (hN : N ≤ 8)
     (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot
+      MerkleProof 16
         (commitment (npk (masterPublicKey publicKey nullifyingKey) (randomIn i)) token
           (valueIn i))
-        (pathElements i) = root)
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i)) (hRangeOut : RangeChecked120 value)
     (hBalance : listSum (List.ofFn valueIn) = value)
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
@@ -831,7 +828,7 @@ theorem unshield_can_happen (s : ReachableState Pool.machine)
     show listSum (List.ofFn valueIn) = listSum (List.ofFn (fun _ : Fin 1 => value))
     (simp? [List.ofFn_succ, List.ofFn_zero, listSum, hBalance] says simp only [hBalance, List.ofFn_succ, List.ofFn_zero, listSum, Nat.add_zero])
   have hConstrained : Constrained w pub :=
-    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+    { merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := fun _ => hRangeOut,
       balance := congrArg (· % p) hBalance',
       distinct := ofFn_pairwise_ne leavesIndices hDistinctLeaves,
@@ -860,63 +857,62 @@ theorem unshield_can_happen (s : ReachableState Pool.machine)
 /-- **Can happen: an owned transact succeeds.** Wires an owned witness, built as
     `ArmadaLean.PoolOwned.owned_spend_can_happen` builds one, into
     `Step.transactOwned`: `hLive` is the ghost liveness precondition, `hN`/`hM` the
-    registered-shape bound, `caller`/`hCaller` the authorization check
+    registered-shape bound, the caller `Term.val owner` the authorization check
     (`transactOwned_spends_only_owned` is the matching safety theorem), and `bp` the
-    bound parameters (no unshield, adapt contract `caller` or none). An owned transact
+    bound parameters (no unshield, adapt contract the owner or none). An owned transact
     can pay out to any recipient's note key; the step publishes no opening
     (`openings := []`).
     Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem owned_transact_can_happen (s : ReachableState Pool.machine)
     (hComplete : OwnedProofCompleteness)
-    {N M : Nat} (ownerField : Term) (token : Token) (bp : BoundParams)
+    {N M : Nat} (owner : Address) (token : Token) (bp : BoundParams)
     (hNoUnshield : bp.unshield = none) (root : Term)
     (randomIn valueIn : Fin N → Nat) (leavesIndices : Fin N → Nat)
     (pathElements : Fin N → List (Term × Bool)) (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
     (hN : N ≤ 8) (hM : M ≤ 4)
     (hRoot : root ∈ s.state.rootsAt' bp.treeNumber)
-    (hPathLen : ∀ i, (pathElements i).length = 16)
     (hMerkle : ∀ i,
-      merkleRoot (commitment (npk ownerField (randomIn i)) token (valueIn i))
-        (pathElements i) = root)
+      MerkleProof 16 (commitment (npk (Term.val owner) (randomIn i)) token (valueIn i))
+        (pathElements i) (leavesIndices i) root)
     (hRangeIn : ∀ i, RangeChecked120 (valueIn i))
     (hRangeOut : ∀ j, RangeChecked120 (valueOut j))
     (hBalance : listSum (List.ofFn valueIn) = listSum (List.ofFn valueOut))
     (hDistinctLeaves : (List.ofFn leavesIndices).Pairwise (· ≠ ·))
-    (hFresh : ∀ i, nullifier ownerField (leavesIndices i) ∉ s.state.spent bp.treeNumber)
-    (caller : Term) (hCaller : caller = ownerField) (hAdapt : AdaptAllows bp caller)
+    (hFresh : ∀ i, nullifier (Term.val owner) (leavesIndices i) ∉ s.state.spent bp.treeNumber)
+    (hAdapt : AdaptAllows bp (Term.val owner))
     {rest : List ((Nat × Nat) × CommitmentPreimage)}
     (hLive : removeAll (s.state.live token)
         (List.ofFn fun i =>
           ((bp.treeNumber, leavesIndices i),
-            (⟨npk ownerField (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
+            (⟨npk (Term.val owner) (randomIn i), token, valueIn i⟩ : CommitmentPreimage)))
         = some rest) :
     ∃ s', Step s.state s' := by
   obtain_reach ⟨s, _hr⟩ := s
   let pub : TransactOwnedPublic N M :=
     { merkleRoot := root, boundParamsHash := hashBoundParams bp,
-      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      nullifiers := fun i => nullifier (Term.val owner) (leavesIndices i),
       commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
-      ownerField := ownerField }
+      owner := owner }
   let w : TransactOwnedWitness N M :=
     { token := token, randomIn := randomIn, valueIn := valueIn, pathElements := pathElements,
       leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
   have hConstrained : OwnedConstrained w pub :=
-    { pathLen := hPathLen, merkle := hMerkle, nullifiers := fun _ => rfl,
+    { merkle := hMerkle, nullifiers := fun _ => rfl,
       outputs := fun _ => rfl, rangeIn := hRangeIn, rangeOut := hRangeOut,
       balance := congrArg (· % p) hBalance }
   obtain ⟨spent', hNullify⟩ :
       ∃ spent', markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' := by
     apply markSpent_succeeds
-    · have hmap := distinct_leaves_distinct_nullifiers ownerField
+    · have hmap := distinct_leaves_distinct_nullifiers (Term.val owner)
         (List.ofFn leavesIndices) hDistinctLeaves
-      have heq : (List.ofFn leavesIndices).map (nullifier ownerField)
+      have heq : (List.ofFn leavesIndices).map (nullifier (Term.val owner))
           = List.ofFn pub.nullifiers := List.map_ofFn
       rwa [heq] at hmap
     · intro n hn
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
       exact hFresh i
-  exact ⟨_, Step.transactOwned w pub bp hN hM hConstrained caller hCaller rfl hAdapt
+  exact ⟨_, Step.transactOwned w pub bp hN hM hConstrained (Term.val owner) rfl rfl hAdapt
     hNoUnshield rest spent' [] hRoot hLive hNullify⟩
 
 /-! ### Every inserted leaf has a Merkle witness to a root the pool produced -/
@@ -1094,19 +1090,19 @@ constructible `OwnedConstrained` spend witness, built entirely from public data.
 `N` input notes whose preimages (`preimages`, what `PoolState.preimageOf` records for
 every disclosed output, PrivacyPoolStorage.sol:248) sit at known positions of a leaf
 list `leaves` (`hLeafValue`; callers instantiate `leaves := s.leavesAt' tn`), and whose
-openings `(ownerField, r)` appear in a list of published openings (`hOwned`; callers
+openings `(Term.val owner, r)` appear in a list of published openings (`hOwned`; callers
 instantiate `published := s.published`, decision 11) and match the note's `npk`, a
 satisfying `OwnedConstrained` witness/public pair exists. Its Merkle path is
 `treePath TreeDepth leaves`, computed, not chosen. The pool does not check a published
 opening; `hOwned` is the reader's own check against `npk`. -/
 theorem owned_spend_witness_exists {N M : Nat}
-    (ownerField : Term) (token : Token) (boundParamsHash : Term)
+    (owner : Address) (token : Token) (boundParamsHash : Term)
     (preimages : Fin N → CommitmentPreimage)
     (leavesIndices : Fin N → Nat) (leaves : List Term)
     (published : List (Term × OwnedOpening))
     (hToken : ∀ i, (preimages i).token = token)
-    (hOwned : ∀ i, ∃ r, (hashCommitment (preimages i), ⟨ownerField, r⟩) ∈ published ∧
-      npk ownerField r = (preimages i).npk)
+    (hOwned : ∀ i, ∃ r, (hashCommitment (preimages i), ⟨Term.val owner, r⟩) ∈ published ∧
+      npk (Term.val owner) r = (preimages i).npk)
     (hLeafIndex : ∀ i, leavesIndices i < 2 ^ TreeDepth)
     (hLeafValue : ∀ i, leaves[leavesIndices i]? = some (hashCommitment (preimages i)))
     (npkOut : Fin M → Term) (valueOut : Fin M → Nat)
@@ -1117,29 +1113,28 @@ theorem owned_spend_witness_exists {N M : Nat}
       OwnedConstrained w pub ∧
       pub.merkleRoot = treeRoot TreeDepth leaves ∧
       pub.boundParamsHash = boundParamsHash ∧
-      pub.ownerField = ownerField ∧
+      pub.owner = owner ∧
       w.token = token ∧
       (∀ i, w.valueIn i = (preimages i).value) := by
   let r : Fin N → Nat := fun i => (hOwned i).choose
   let pub : TransactOwnedPublic N M :=
     { merkleRoot := treeRoot TreeDepth leaves, boundParamsHash := boundParamsHash,
-      nullifiers := fun i => nullifier ownerField (leavesIndices i),
+      nullifiers := fun i => nullifier (Term.val owner) (leavesIndices i),
       commitmentsOut := fun j => commitment (npkOut j) token (valueOut j),
-      ownerField := ownerField }
+      owner := owner }
   let w : TransactOwnedWitness N M :=
     { token := token, randomIn := r,
       valueIn := fun i => (preimages i).value,
       pathElements := fun i => treePath TreeDepth leaves (leavesIndices i),
       leavesIndices := leavesIndices, npkOut := npkOut, valueOut := valueOut }
   have hConstrained : OwnedConstrained w pub :=
-    { pathLen := fun i => treePath_length TreeDepth leaves (leavesIndices i),
-      merkle := fun i => by
+    { merkle := fun i => by
         have hr := (hOwned i).choose_spec
         have hge : leaves[leavesIndices i]? =
-            some (commitment (npk ownerField (r i)) token ((preimages i).value)) := by
+            some (commitment (npk (Term.val owner) (r i)) token ((preimages i).value)) := by
           rw [hr.2, ← hToken i]
           exact hLeafValue i
-        exact treePath_correct_of_getElem? TreeDepth leaves (leavesIndices i) (hLeafIndex i) hge,
+        exact treePath_merkleProof TreeDepth leaves (leavesIndices i) (hLeafIndex i) hge,
       nullifiers := fun _ => rfl,
       outputs := fun _ => rfl,
       rangeIn := hRangeIn,
@@ -2204,8 +2199,8 @@ theorem reachable_live_token {s : PoolState} (h : Reachable s) :
 /--
 **Can happen: an owned transact merges several notes of one owner into one note.** In a
 reachable state, take `N` (`1 ≤ N ≤ 8`) live notes of `token` at distinct positions of
-tree `bp.treeNumber`, all owned by `owner` (`hOpen`: each note's `npk` is
-`npk owner (random i)`). If the sum of their values passes the circuit's range check
+tree `bp.treeNumber`, all owned by the address `owner` (`hOpen`: each note's `npk` is
+`npk (Term.val owner) (random i)`). If the sum of their values passes the circuit's range check
 (`hSum`), the owner can spend all of them in one `Step.transactOwned` with one output
 of exactly that sum, to the note key `npkOut`. After the step none of the inputs is
 live, the output is live, and the pool's custody of `token` is unchanged: value is
@@ -2218,12 +2213,12 @@ The model's owned path admits `N ≤ 8`, so this theorem needs owned verifying k
 Source: TransactModule.sol:488-519; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
     (hN0 : 0 < N) (hN : N ≤ 8)
-    (owner : Term) (token : Token) (bp : BoundParams)
-    (hNoUnshield : bp.unshield = none) (hAdapt : AdaptAllows bp owner)
+    (owner : Address) (token : Token) (bp : BoundParams)
+    (hNoUnshield : bp.unshield = none) (hAdapt : AdaptAllows bp (Term.val owner))
     (pos : Fin N → Nat) (pre : Fin N → CommitmentPreimage) (random : Fin N → Nat)
     (hLive : ∀ i, ((bp.treeNumber, pos i), pre i) ∈ s.state.live token)
     (hDistinct : (List.ofFn pos).Pairwise (· ≠ ·))
-    (hOpen : ∀ i, npk owner (random i) = (pre i).npk)
+    (hOpen : ∀ i, npk (Term.val owner) (random i) = (pre i).npk)
     (npkOut : Term)
     (hSum : Spendable (listSum (List.ofFn fun i => (pre i).value))) :
     ∃ s', Step s.state s' ∧
@@ -2251,8 +2246,8 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
     fun i => reachable_live_token hs token ((bp.treeNumber, pos i), pre i) (hLive i)
   have hSpendIn : ∀ i, RangeChecked120 (pre i).value :=
     fun i => live_values_spendable ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ token ((bp.treeNumber, pos i), pre i) (hLive i)
-  have hFresh : ∀ i, nullifier owner (pos i) ∉ s.spent bp.treeNumber :=
-    fun i => live_note_unspent ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ token bp.treeNumber (pos i) (pre i) (hLive i) owner
+  have hFresh : ∀ i, nullifier (Term.val owner) (pos i) ∉ s.spent bp.treeNumber :=
+    fun i => live_note_unspent ⟨_, (Pool.machine_reachable_iff.mpr hs)⟩ token bp.treeNumber (pos i) (pre i) (hLive i) (Term.val owner)
   let w : TransactOwnedWitness N 1 :=
     { token := token, randomIn := random,
       valueIn := fun i => (pre i).value,
@@ -2263,22 +2258,21 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
   let pub : TransactOwnedPublic N 1 :=
     { merkleRoot := treeRoot TreeDepth (s.leavesAt' bp.treeNumber),
       boundParamsHash := hashBoundParams bp,
-      nullifiers := fun i => nullifier owner (pos i),
+      nullifiers := fun i => nullifier (Term.val owner) (pos i),
       commitmentsOut := fun _ =>
         commitment npkOut token (listSum (List.ofFn fun i => (pre i).value)),
-      ownerField := owner }
+      owner := owner }
   have hConstrained : OwnedConstrained w pub :=
-    { pathLen := fun i => treePath_length TreeDepth (s.leavesAt' bp.treeNumber) (pos i),
-      merkle := fun i => by
-        have hcommit : commitment (npk owner (random i)) token ((pre i).value) =
+    { merkle := fun i => by
+        have hcommit : commitment (npk (Term.val owner) (random i)) token ((pre i).value) =
             hashCommitment (pre i) := by
           unfold hashCommitment
           rw [hOpen i, hTokenEq i]
-        show merkleRoot (commitment (npk owner (random i)) token ((pre i).value))
-            (treePath TreeDepth (s.leavesAt' bp.treeNumber) (pos i)) =
-            treeRoot TreeDepth (s.leavesAt' bp.treeNumber)
+        show MerkleProof 16 (commitment (npk (Term.val owner) (random i)) token ((pre i).value))
+            (treePath TreeDepth (s.leavesAt' bp.treeNumber) (pos i)) (pos i)
+            (treeRoot TreeDepth (s.leavesAt' bp.treeNumber))
         rw [hcommit]
-        exact treePath_correct_of_getElem? TreeDepth (s.leavesAt' bp.treeNumber) (pos i)
+        exact treePath_merkleProof TreeDepth (s.leavesAt' bp.treeNumber) (pos i)
           (hLeafIndex i) (hLeafValue i)
       nullifiers := fun _ => rfl
       outputs := fun _ => rfl
@@ -2295,8 +2289,11 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
     unfold ownedSpentPositions
     congr 1
     funext i
-    have hval : (⟨npk owner (random i), token, (pre i).value⟩ : CommitmentPreimage) = pre i := by
+    have hval : (⟨npk (Term.val owner) (random i), token, (pre i).value⟩ : CommitmentPreimage) = pre i := by
       rw [hOpen i, ← hTokenEq i]
+    show ((bp.treeNumber, pos i), pre i) =
+      ((bp.treeNumber, pos i),
+        (⟨npk (Term.val owner) (random i), token, (pre i).value⟩ : CommitmentPreimage))
     rw [hval]
   have hwantedPairwise :
       (List.ofFn fun i => ((bp.treeNumber, pos i), pre i) :
@@ -2323,15 +2320,15 @@ theorem owned_merge_can_happen (s : ReachableState Pool.machine) {N : Nat}
   obtain ⟨spent', hNullify⟩ :
       ∃ spent', markSpent (s.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' := by
     apply markSpent_succeeds
-    · have hmap := distinct_leaves_distinct_nullifiers owner (List.ofFn pos) hDistinct
-      have heq2 : (List.ofFn pos).map (nullifier owner) = List.ofFn pub.nullifiers :=
+    · have hmap := distinct_leaves_distinct_nullifiers (Term.val owner) (List.ofFn pos) hDistinct
+      have heq2 : (List.ofFn pos).map (nullifier (Term.val owner)) = List.ofFn pub.nullifiers :=
         List.map_ofFn
       rwa [heq2] at hmap
     · intro n hn
       obtain ⟨i, hi⟩ := List.mem_ofFn.mp hn
       rw [← hi]
       exact hFresh i
-  refine ⟨_, Step.transactOwned w pub bp hN (by omega) hConstrained owner rfl rfl hAdapt
+  refine ⟨_, Step.transactOwned w pub bp hN (by omega) hConstrained (Term.val owner) rfl rfl hAdapt
     hNoUnshield rest spent' [] hRootMem hRemove hNullify, ?_, ?_, rfl⟩
   · intro i
     show ((bp.treeNumber, pos i), pre i) ∉

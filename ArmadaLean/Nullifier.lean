@@ -19,9 +19,9 @@
   collision resistance are symbolic (`ArmadaLean.Poseidon`, Dolev-Yao style): the
   nullifying key `nk` is already a term — a raw secret value an attacker/prover
   chose, embedded as `Term.val`, on the plain path (`Transact.circom:97-101`), or a
-  contract address, itself a Keccak hash term, on the owned path
-  (`TransactOwned.circom:89-97`, `ArmadaLean.PoolOwned`'s module comment on address
-  terms) — and the leaf index `leafIdx` is a raw tree position, embedded as `Term.val`;
+  contract's 160-bit address `ownerField`, also a `Term.val`, on the owned path
+  (`TransactOwned.circom:89-97`, `ArmadaLean.TransactOwned`, operator ruling
+  2026-11-08) — and the leaf index `leafIdx` is a raw tree position, embedded as `Term.val`;
   the nullifier is the symbolic hash of the pair.
 -/
 import ArmadaLean.Poseidon
@@ -30,8 +30,8 @@ namespace ArmadaLean
 
 /-- The nullifier of a note at Merkle leaf index `leafIdx` spent under nullifying key
     `nk` (Transact.circom:97-101, TransactOwned.circom:89-97). `nk` is already a term
-    — `Term.val` of a raw secret on the plain path, or a contract's address term on
-    the owned path; `leafIdx` is a raw tree position, embedded as `Term.val` before
+    — `Term.val` of a raw secret on the plain path, or `Term.val` of a contract's
+    address on the owned path; `leafIdx` is a raw tree position, embedded as `Term.val` before
     hashing. -/
 def nullifier (nk : Term) (leafIdx : Nat) : Term := Term.hash2 nk (Term.val leafIdx)
 

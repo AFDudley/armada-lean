@@ -74,10 +74,9 @@ def masterPublicKey (pk : Nat × Nat) (nk : Nat) : Term :=
 
 /-- Note public key = Poseidon(masterPublicKey, random) (Transact.circom:75-78).
     `mpk` is already a `Term` (a master public key, or — on the owned path,
-    `ArmadaLean.TransactOwned` — the owning contract's address term,
-    `TransactOwnedPublic.ownerField`, a Keccak hash, `ArmadaLean.PoolOwned`'s module
-    comment on address terms); `r` is a raw randomness value, embedded as
-    `Term.val`. -/
+    `ArmadaLean.TransactOwned` — the owning contract's address,
+    `TransactOwnedPublic.ownerField`, the `Term.val` of a 160-bit `Address`); `r` is a
+    raw randomness value, embedded as `Term.val`. -/
 def npk (mpk : Term) (r : Nat) : Term := Term.hash2 mpk (Term.val r)
 
 /-- Note commitment = Poseidon(npk, tokenId, value)
@@ -104,9 +103,9 @@ structure TransactWitness (N M : Nat) where
   randomIn : Fin N → Nat
   /-- note value per input (:49) -/
   valueIn : Fin N → Nat
-  /-- Merkle path (sibling, directionBit) per input; each of length 16
-      (:50, enforced by `Constrained.pathLen`). Siblings are terms (other
-      Merkle tree nodes). -/
+  /-- Merkle path (sibling, directionBit) per input; each of length 16 and with the
+      bits of `leavesIndices i` (:50, enforced by `Constrained.merkle`). Siblings are
+      terms (other Merkle tree nodes). -/
   pathElements : Fin N → List (Term × Bool)
   /-- Merkle leaf positions (:51) -/
   leavesIndices : Fin N → Nat
@@ -142,16 +141,17 @@ pair satisfying `Constrained` is exactly a satisfying assignment of the circuit.
 -/
 structure Constrained {N M : Nat} (w : TransactWitness N M)
     (pub : TransactPublic N M) : Prop where
-  /-- Every Merkle path has the production depth 16 (:50, :87, :89-91). -/
-  pathLen : ∀ i, (w.pathElements i).length = 16
   /-- 2c: Merkle membership — each input note's commitment (derived from the
       master public key :61-66, npk :75-78, commitment :80-84) opens along its
-      path to the public root (:86-95). -/
+      path to the public root (:86-95): `MerkleTreeProof(16)` with the path's 16
+      levels (:50, :87, :89-91), the direction bits of `leavesIndices i` (:92,
+      `Num2Bits(16)` in merkle.circom:28-29) and the root check (:95). Operator ruling
+      2026-11-08: the bits are tied to the index. -/
   merkle : ∀ i,
-    merkleRoot
+    MerkleProof 16
       (commitment (npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i))
         w.token (w.valueIn i))
-      (w.pathElements i) = pub.merkleRoot
+      (w.pathElements i) (w.leavesIndices i) pub.merkleRoot
   /-- 2d: nullifier derivation (:97-101). -/
   nullifiers : ∀ i, pub.nullifiers i = nullifier (Term.val w.nullifyingKey) (w.leavesIndices i)
   /-- 3: output commitments (:105-113). -/
