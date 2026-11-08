@@ -2172,3 +2172,9 @@
 {"type":"comment","timestamp":"2026-11-08T05:26:26.364841Z","issue_id":"aln-e22","payload":{"body":"gate-verdict: f16c29bb8e056b058d4ceca5d77c64dcfd988594 passed 0.2.1+03c2a218","build":"0.2.1+03c2a218","outcome":"passed","sha":"f16c29bb8e056b058d4ceca5d77c64dcfd988594","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-08T05:26:26.393481Z","issue_id":"aln-e22","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-08T05:26:26.404842Z","issue_id":"aln-e22","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-08T05:45:17.535376Z","issue_id":"aln-1bb","payload":{"description":"Operator-authored branch `draft/lake-artifact-cache`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: draft/lake-artifact-cache","type":"task"}}
+{"type":"comment","timestamp":"2026-11-08T05:45:17.560393Z","issue_id":"aln-1bb","payload":{"body":"branch-identity: draft/lake-artifact-cache"}}
+{"type":"comment","timestamp":"2026-11-08T05:55:04.743995Z","issue_id":"aln-1bb","payload":{"body":"exophial-integration-attempt-started: at c3e423e265da65332f92a0764ef2bc6d881df027"}}
+{"type":"comment","timestamp":"2026-11-08T05:55:07.520063Z","issue_id":"aln-1bb","payload":{"body":"gate-verdict: e919b4c7749e339be14323d9307cd608ac10c171 passed 0.2.1+03c2a218","build":"0.2.1+03c2a218","outcome":"passed","sha":"e919b4c7749e339be14323d9307cd608ac10c171","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-08T05:55:07.548686Z","issue_id":"aln-1bb","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-08T05:55:07.559665Z","issue_id":"aln-1bb","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
