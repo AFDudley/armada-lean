@@ -2,6 +2,19 @@ import Lake
 open Lake DSL
 
 package «armada-lean» where
+  -- Lake's content-addressed artifact cache. The default reads the cache and
+  -- never writes it (Lake/Config/Monad.lean, `isArtifactCacheWritable`), so a
+  -- fresh tree compiled all of ArmadaLean from source. The cache key is the
+  -- source hash, the import hashes, the Lean git hash, the options and the
+  -- module name; no absolute path. Two trees at different paths share one
+  -- store. `restoreAllArtifacts` copies the `.olean` files too; without it
+  -- Lake restores only the `.ilean` files and `lake env lean` in
+  -- `scripts/gate_extra.py` has no imports. Measured 2026-11-08 at c3e423e2:
+  -- fresh tree without the cache 244.9 s and 91 modules compiled; fresh tree
+  -- with a warm store 8.9 s and 0 modules compiled. The store is
+  -- `LAKE_CACHE_DIR` (default `~/.elan/toolchains/<toolchain>/lake/cache`).
+  enableArtifactCache := true
+  restoreAllArtifacts := true
 
 -- Mathlib is used wherever it applies (operator ruling 2026-10-27).
 -- Pinned to the toolchain tag, the same pin EVMLean uses.
