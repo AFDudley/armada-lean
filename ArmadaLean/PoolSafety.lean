@@ -282,6 +282,22 @@ theorem markSpent_superset {spent spent' : NullifierSet} {ns : List Term}
         · exact Or.inl hcase2
       · exact Or.inr (List.mem_cons_of_mem n hcase)
 
+/-- A successful `markSpent` call marks every nullifier of its batch. -/
+theorem markSpent_mem {spent spent' : NullifierSet} {ns : List Term}
+    (h : markSpent spent ns = some spent') : ∀ n ∈ ns, n ∈ spent' := by
+  induction ns generalizing spent with
+  | nil => intro n hn; exact absurd hn List.not_mem_nil
+  | cons m ms ih =>
+    unfold markSpent at h
+    by_cases hm : m ∈ spent
+    · rw [if_pos hm] at h
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+    · rw [if_neg hm] at h
+      intro n hn
+      rcases List.mem_cons.mp hn with hn | hn
+      · exact hn ▸ markSpent_subset h m List.mem_cons_self
+      · exact ih h n hn
+
 /-- One step never un-spends a nullifier, in any one tree. `spent` is now per-tree
     (`PrivacyPoolStorage.nullifiers`, `treeNumber -> nullifier -> isSpent`,
     PrivacyPoolStorage.sol:174): a step only ever updates tree `treeNumber`'s own
@@ -520,6 +536,62 @@ theorem transact_root_was_produced (s : ReachableState Pool.machine)
   · exact Or.inr ⟨pushed, h1, hpushed⟩
   · exact Or.inl h2
 
+/-! ### Every root of a tree is the root of a prefix of its leaves -/
+
+/-- Every root in a tree's history is `treeRoot` of a prefix of the tree's current leaf
+    list. The pool pushes a root only at an insertion (`TreeState.extend`), and an
+    insertion only appends leaves. A proof against a historical root therefore opens a
+    leaf that the tree still holds (`MerkleProof.opens_treeRoot`). -/
+structure RootsOfPrefixes (s : PoolState) : Prop where
+  roots : ∀ tn r, r ∈ s.rootsAt' tn → ∃ ls, ls <+: s.leavesAt' tn ∧ r = treeRoot TreeDepth ls
+
+/-- One insertion keeps every root a root of a prefix: the new root is the root of the
+    whole new leaf list, and an old prefix stays a prefix of the appended list. -/
+theorem insertLeaves_rootsOfPrefixes (trees : List TreeState) (newLeaves : List Term)
+    (ih : ∀ tn r, r ∈ rootsAt trees tn → ∃ ls, ls <+: leavesAt trees tn ∧ r = treeRoot TreeDepth ls) :
+    ∀ tn r, r ∈ rootsAt (insertLeaves trees newLeaves) tn →
+      ∃ ls, ls <+: leavesAt (insertLeaves trees newLeaves) tn ∧ r = treeRoot TreeDepth ls := by
+  intro tn r hr
+  rw [insertLeaves_rootsAt] at hr
+  rw [insertLeaves_leavesAt]
+  by_cases h : tn = insertTree trees newLeaves.length
+  · rw [if_pos h] at hr
+    rw [if_pos h]
+    rcases List.mem_cons.mp hr with hr | hr
+    · exact ⟨_, List.prefix_refl _, hr⟩
+    · obtain ⟨ls, hpre, hls⟩ := ih tn r hr
+      exact ⟨ls, hpre.trans (List.prefix_append _ _), hls⟩
+  · rw [if_neg h] at hr
+    rw [if_neg h]
+    exact ih tn r hr
+
+theorem genesis_rootsOfPrefixes (r : FeeRatio) (feeAdmin treasury : Term) :
+    RootsOfPrefixes (genesis r feeAdmin treasury) := by
+  refine ⟨fun tn root hr => ?_⟩
+  cases tn with
+  | zero =>
+    simp only [genesis, PoolState.rootsAt', rootsAt, genesisTrees, List.getElem?_cons_zero,
+      List.mem_singleton] at hr
+    exact ⟨[], List.nil_prefix, hr⟩
+  | succ n =>
+    simp only [genesis, PoolState.rootsAt', rootsAt, genesisTrees, List.getElem?_cons_succ,
+      List.getElem?_nil, List.not_mem_nil] at hr
+
+theorem step_preserves_rootsOfPrefixes {s s' : PoolState} (ih : RootsOfPrefixes s)
+    (hstep : Step s s') : RootsOfPrefixes s' := by
+  cases hstep with
+  | setFeeRatio => exact ⟨ih.roots⟩
+  | shield => exact ⟨insertLeaves_rootsOfPrefixes s.trees _ ih.roots⟩
+  | transact => exact ⟨insertLeaves_rootsOfPrefixes s.trees _ ih.roots⟩
+  | transactOwned => exact ⟨insertLeaves_rootsOfPrefixes s.trees _ ih.roots⟩
+
+/-- Every reachable state has every root a root of a prefix of its leaves. -/
+theorem roots_of_prefixes (s : ReachableState Pool.machine) : RootsOfPrefixes s.state := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
+  induction h with
+  | genesis r a b => exact genesis_rootsOfPrefixes r a b
+  | step _ hstep ih => exact step_preserves_rootsOfPrefixes ih hstep
+
 /-! ### The preimage registry -/
 
 /-- One step keeps the preimage registry consistent. -/
@@ -568,7 +640,7 @@ theorem transactOwned_records_all {reg : PreimageRegistry} {N M : Nat}
     .owned_spend_can_happen` takes it, via `List.ofFn`) into the pointwise form
     `Constrained.distinct` needs. Leaf indices are plain `Nat` tree positions, never
     hashed, so this lemma is unaffected by the symbolic `Term` model. -/
-theorem ofFn_pairwise_ne {N : Nat} (f : Fin N → Nat)
+theorem ofFn_pairwise_ne {α : Type} {N : Nat} (f : Fin N → α)
     (h : (List.ofFn f).Pairwise (· ≠ ·)) : ∀ i j : Fin N, i ≠ j → f i ≠ f j := by
   rw [List.pairwise_iff_getElem] at h
   intro i j hij
@@ -580,6 +652,19 @@ theorem ofFn_pairwise_ne {N : Nat} (f : Fin N → Nat)
     simp only [List.getElem_ofFn] at hh
     intro heq
     exact hh (by (simpa? using heq.symm says simpa only [Fin.eta] using heq.symm))
+
+/-- The converse of `ofFn_pairwise_ne`: a function that maps distinct indices to
+    distinct values builds a list with no repetition. -/
+theorem ofFn_nodup_of_ne {α : Type} {N : Nat} (f : Fin N → α)
+    (h : ∀ i j : Fin N, i ≠ j → f i ≠ f j) : (List.ofFn f).Nodup := by
+  rw [List.Nodup, List.pairwise_iff_getElem]
+  intro i j hi hj hij
+  simp only [List.getElem_ofFn]
+  apply h
+  intro heq
+  have := congrArg Fin.val heq
+  simp only at this
+  omega
 
 /-- `VerifyAccepts pub` holds iff some Groth16 proof over `pub`'s public inputs makes
     `PrivacyPool.verify` return `true` (PrivacyPool.sol:506-552), when `testingMode` is
@@ -1899,6 +1984,184 @@ theorem live_leaf_matches (s : ReachableState Pool.machine) (t : Token) (tn pos 
   rw [List.getElem?_eq_getElem hrange]
   exact congrArg some hmatch
 
+/-! ### A leaf is live or its note is spent -/
+
+/-- `nk` is the nullifier key of the note `pre`: `Term.val` of the nullifying key when
+    the note key is a user key (`npk (masterPublicKey pk k) r`), and the owner field
+    when the note key is an owned key (`npk (Term.val o) r`). A plain spend marks
+    `nullifier (Term.val k) pos`; an owned spend marks `nullifier (Term.val o) pos`. -/
+def NoteKey (pre : CommitmentPreimage) (nk : Term) : Prop :=
+  (∃ (pk : Nat × Nat) (k r : Nat), pre.npk = npk (masterPublicKey pk k) r ∧ nk = Term.val k) ∨
+  (∃ (o r : Nat), pre.npk = npk (Term.val o) r ∧ nk = Term.val o)
+
+/-- Every leaf that holds a commitment is live at its position, or its note's own
+    nullifier is spent in its tree. The converse of `live_note_unspent`: a contract that
+    checks the root and the nullifier can conclude that the note is live. -/
+structure LeafLiveOrSpent (s : PoolState) : Prop where
+  leaf : ∀ tn pos pre, (s.leavesAt' tn)[pos]? = some (hashCommitment pre) →
+    ((tn, pos), pre) ∈ s.live pre.token ∨ ∃ nk, NoteKey pre nk ∧ nullifier nk pos ∈ s.spent tn
+
+theorem genesis_leafLiveOrSpent (r : FeeRatio) (feeAdmin treasury : Term) :
+    LeafLiveOrSpent (genesis r feeAdmin treasury) := by
+  refine ⟨fun tn pos pre h => ?_⟩
+  cases tn with
+  | zero =>
+    simp only [genesis, PoolState.leavesAt', leavesAt, genesisTrees, List.getElem?_cons_zero,
+      List.getElem?_nil, reduceCtorEq] at h
+  | succ n =>
+    simp only [genesis, PoolState.leavesAt', leavesAt, genesisTrees, List.getElem?_cons_succ,
+      List.getElem?_nil, reduceCtorEq] at h
+
+/-- The shape of a spend-like step from `s` to `s'`: the step removes `wanted` from the
+    live entries of `tok`, marks `nulls` in tree `treeNumber`, and appends `notes` of
+    token `tok` as new leaves and as new live entries. Every removed entry is in the
+    tree the step marks, and the step marks its note's nullifier (`wanted_spent`). A
+    shield is the case with nothing removed and nothing marked. -/
+structure SpendShape (s s' : PoolState) (tok : Token) (notes : List CommitmentPreimage)
+    (treeNumber : Nat) (wanted rest : List ((Nat × Nat) × CommitmentPreimage))
+    (nulls : List Term) (spent' : NullifierSet) : Prop where
+  remove : removeAll (s.live tok) wanted = some rest
+  nullify : markSpent (s.spent treeNumber) nulls = some spent'
+  wanted_spent : ∀ e ∈ wanted,
+    e.1.1 = treeNumber ∧ ∃ nk, NoteKey e.2 nk ∧ nullifier nk e.1.2 ∈ nulls
+  notes_token : ∀ n ∈ notes, n.token = tok
+  live : ∀ t, s'.live t = if t = tok
+    then withTreePositionsFrom (insertTree s.trees notes.length)
+      (insertStart s.trees notes.length) notes ++ rest
+    else s.live t
+  spent : ∀ n, s'.spent n = if n = treeNumber then spent' else s.spent n
+  trees : s'.trees = insertLeaves s.trees (notes.map hashCommitment)
+
+/-- One spend-shaped step preserves `LeafLiveOrSpent`. An old leaf keeps its live
+    entry unless the step spent it, and then the step marked its nullifier
+    (`SpendShape.wanted_spent`). A new leaf gets its live entry at its own position
+    (`withTreePositionsFrom_mem_of_getElem?`). -/
+theorem spendShape_preserves_leafLiveOrSpent {s s' : PoolState} (ih : LeafLiveOrSpent s)
+    (tok : Token) (notes : List CommitmentPreimage) (treeNumber : Nat)
+    (wanted rest : List ((Nat × Nat) × CommitmentPreimage)) (nulls : List Term)
+    (spent' : NullifierSet) (h : SpendShape s s' tok notes treeNumber wanted rest nulls spent') :
+    LeafLiveOrSpent s' := by
+  obtain ⟨hRemove, hNullify, hWanted, hNotes, hlive, hspent, htrees⟩ := h
+  refine ⟨fun tn pos pre hleaf => ?_⟩
+  have hspentMono : ∀ n x, x ∈ s.spent n → x ∈ s'.spent n := by
+    intro n x hx
+    rw [hspent]
+    by_cases hn : n = treeNumber
+    · rw [if_pos hn]; subst hn; exact markSpent_subset hNullify x hx
+    · rw [if_neg hn]; exact hx
+  have hlenEq : (notes.map hashCommitment).length = notes.length := by rw [List.length_map]
+  -- An old leaf: its entry is live or spent at `s`.
+  have hold : (s.leavesAt' tn)[pos]? = some (hashCommitment pre) →
+      ((tn, pos), pre) ∈ s'.live pre.token ∨
+        ∃ nk, NoteKey pre nk ∧ nullifier nk pos ∈ s'.spent tn := by
+    intro hleafOld
+    rcases ih.leaf tn pos pre hleafOld with hlv | ⟨nk, hkey, hsp⟩
+    · by_cases ht : pre.token = tok
+      · rw [ht] at hlv
+        rcases (removeAll_perm hRemove).mem_iff.mp hlv |> List.mem_append.mp with hw | hr
+        · obtain ⟨htn, nk, hkey, hnull⟩ := hWanted _ hw
+          simp only at htn
+          refine Or.inr ⟨nk, hkey, ?_⟩
+          rw [hspent, htn, if_pos rfl]
+          exact markSpent_mem hNullify _ hnull
+        · refine Or.inl ?_
+          rw [hlive, if_pos ht]
+          exact List.mem_append_right _ hr
+      · refine Or.inl ?_
+        rw [hlive, if_neg ht]
+        exact hlv
+    · exact Or.inr ⟨nk, hkey, hspentMono tn _ hsp⟩
+  dsimp only [PoolState.leavesAt'] at hleaf
+  rw [htrees, insertLeaves_leavesAt] at hleaf
+  by_cases htn : tn = insertTree s.trees (notes.map hashCommitment).length
+  · rw [if_pos htn] at hleaf
+    rw [List.getElem?_append] at hleaf
+    by_cases hpos : pos < (leavesAt s.trees tn).length
+    · rw [if_pos hpos] at hleaf
+      exact hold hleaf
+    · rw [if_neg hpos] at hleaf
+      rw [List.getElem?_map] at hleaf
+      cases hj : notes[pos - (leavesAt s.trees tn).length]? with
+      | none =>
+        rw [hj] at hleaf
+        exact absurd hleaf (by (simp? says simp only [Option.map_none, reduceCtorEq, not_false_eq_true]))
+      | some pre' =>
+        rw [hj] at hleaf
+        simp only [Option.map_some, Option.some.injEq] at hleaf
+        have hpre : pre' = pre := hashCommitment_inj hleaf
+        subst hpre
+        refine Or.inl ?_
+        rw [hlive, if_pos (hNotes pre' (List.mem_of_getElem? hj))]
+        refine List.mem_append_left _ ?_
+        have hstart : insertStart s.trees notes.length = (leavesAt s.trees tn).length := by
+          rw [insertStart_eq, ← hlenEq, ← htn]
+        rw [hlenEq] at htn
+        have hpos' : pos =
+            insertStart s.trees notes.length + (pos - (leavesAt s.trees tn).length) := by
+          rw [hstart]; omega
+        rw [hpos']
+        subst htn
+        exact withTreePositionsFrom_mem_of_getElem? _ _ notes _ hj
+  · rw [if_neg htn] at hleaf
+    exact hold hleaf
+
+theorem step_preserves_leafLiveOrSpent {s s' : PoolState} (ih : LeafLiveOrSpent s)
+    (hstep : Step s s') : LeafLiveOrSpent s' := by
+  cases hstep with
+  | setFeeRatio => exact ⟨ih.leaf⟩
+  | shield token x npk hValue hSpendable =>
+    refine spendShape_preserves_leafLiveOrSpent ih token [⟨npk, token, shieldBase s.feeRatio x⟩]
+      0 [] (s.live token) [] (s.spent 0) ⟨rfl, rfl, fun e he => absurd he List.not_mem_nil,
+      fun n hn => by rw [List.mem_singleton] at hn; subst hn; rfl, ?_, ?_, rfl⟩
+    · intro t
+      dsimp only
+      by_cases ht : t = token
+      · subst ht
+        rw [if_pos rfl, if_pos rfl]
+        rfl
+      · rw [if_neg ht, if_neg ht]
+    · intro n
+      dsimp only
+      by_cases hn : n = 0
+      · rw [if_pos hn, hn]
+      · rw [if_neg hn]
+  | transact caller w pub bp hN hM hC hBound hAdapt newNotes hOutputs rest spent' records
+      openings hRoot hRemove hNullify hRecords =>
+    refine spendShape_preserves_leafLiveOrSpent ih w.token newNotes bp.treeNumber
+      (transactSpentPositions bp.treeNumber w) rest (List.ofFn pub.nullifiers) spent'
+      ⟨hRemove, hNullify, ?_, ?_, fun t => rfl, fun n => rfl, rfl⟩
+    · intro e he
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+      subst hi
+      refine ⟨rfl, Term.val w.nullifyingKey,
+        Or.inl ⟨w.publicKey, w.nullifyingKey, w.randomIn i, rfl, rfl⟩, ?_⟩
+      rw [← hC.nullifiers i]
+      exact List.mem_ofFn.mpr ⟨i, rfl⟩
+    · intro n hn
+      obtain ⟨j, hj⟩ := List.mem_ofFn.mp (unshieldRefines_mem hOutputs n hn)
+      rw [← hj]
+  | transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield rest spent'
+      openings hRoot hRemove hNullify =>
+    refine spendShape_preserves_leafLiveOrSpent ih w.token (ownedNewNotes w) bp.treeNumber
+      (ownedSpentPositions bp.treeNumber pub w) rest (List.ofFn pub.nullifiers) spent'
+      ⟨hRemove, hNullify, ?_, ?_, fun t => rfl, fun n => rfl, rfl⟩
+    · intro e he
+      obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+      subst hi
+      refine ⟨rfl, pub.ownerField, Or.inr ⟨pub.owner, w.randomIn i, rfl, rfl⟩, ?_⟩
+      rw [← hC.nullifiers i]
+      exact List.mem_ofFn.mpr ⟨i, rfl⟩
+    · intro n hn
+      obtain ⟨j, hj⟩ := List.mem_ofFn.mp hn
+      rw [← hj]
+
+/-- Every leaf of every reachable state is live or spent. -/
+theorem leaf_live_or_spent (s : ReachableState Pool.machine) : LeafLiveOrSpent s.state := by
+  obtain_reach ⟨s, h : Reachable s⟩ := s
+  induction h with
+  | genesis r a b => exact genesis_leafLiveOrSpent r a b
+  | step _ hstep ih => exact step_preserves_leafLiveOrSpent ih hstep
+
 /-! ### Every live note is spendable -/
 
 /-- Every live note's value passes the circuit's input range check (`Spendable`,
@@ -2516,6 +2779,162 @@ theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.R
       dif_pos (show rs.state.contract.SetFeeRatioPre caller r from hCaller)]
     rfl
 
+/-! ### The inputs of an accepted proof are live -/
+
+/-- The spent positions of a `Constrained` witness are live when the root is in the
+    tree's history and the nullifiers are fresh. Each input opens, along its path, a
+    leaf of the tree (`roots_of_prefixes`, `MerkleProof.opens_treeRoot`). The leaf is
+    live or its note is spent (`leaf_live_or_spent`). A spent note's nullifier key is
+    the witness's own nullifying key (a user key is never an owner field,
+    `Term.val_ne_hash`), and that nullifier is fresh. So every input is live, and the
+    nullifiers' distinctness makes the positions distinct. -/
+theorem transact_inputs_live (s : ReachableState Pool.machine) {N M : Nat}
+    {w : TransactWitness N M} {pub : TransactPublic N M} (hC : Constrained w pub) (tn : Nat)
+    (hRoot : pub.merkleRoot ∈ s.state.rootsAt' tn) {spent' : NullifierSet}
+    (hNullify : markSpent (s.state.spent tn) (List.ofFn pub.nullifiers) = some spent') :
+    ∃ rest, removeAll (s.state.live w.token) (transactSpentPositions tn w) = some rest := by
+  have hs : Reachable s.state := Pool.machine_reachable_iff.mp s.reachable
+  obtain ⟨hpw, hfresh⟩ := owned_no_double_spend hNullify
+  have hne := ofFn_pairwise_ne pub.nullifiers hpw
+  refine removeAll_of_subset ((reachable_live_spent_invariant hs).2.2.2.2 w.token) ?_ ?_
+  · refine ofFn_nodup_of_ne _ fun i j hij heq => hne i j hij ?_
+    rw [hC.nullifiers i, hC.nullifiers j]
+    simp only [Prod.mk.injEq] at heq
+    rw [heq.1.2]
+  · intro e he
+    obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+    subst hi
+    obtain ⟨ls, ⟨tl, htl⟩, hr⟩ := (roots_of_prefixes s).roots tn _ hRoot
+    have hm := hC.merkle i
+    rw [hr] at hm
+    have hget := MerkleProof.opens_treeRoot hm
+    have hsome := List.getElem?_eq_some_of_getD ls _ emptyLeaf (by
+      rw [hget]
+      exact Ne.symm (emptyLeaf_ne_hashCommitment ⟨npk (masterPublicKey w.publicKey w.nullifyingKey)
+        (w.randomIn i), w.token, w.valueIn i⟩))
+    rw [hget] at hsome
+    obtain ⟨hlt, _⟩ := List.getElem?_eq_some_iff.mp hsome
+    have hleaf : (s.state.leavesAt' tn)[w.leavesIndices i]? = some (hashCommitment
+        ⟨npk (masterPublicKey w.publicKey w.nullifyingKey) (w.randomIn i), w.token,
+          w.valueIn i⟩) := by
+      rw [← htl, List.getElem?_append_left hlt]
+      exact hsome
+    rcases (leaf_live_or_spent s).leaf tn _ _ hleaf with hlv | ⟨nk, hkey, hsp⟩
+    · exact hlv
+    · exfalso
+      rcases hkey with ⟨pk, k, r, hnpk, hnk⟩ | ⟨o, r, hnpk, hnk⟩
+      · have hmpk := (Term.hash2_inj hnpk).1
+        have hk : Term.val w.nullifyingKey = Term.val k := (Term.hash3_inj hmpk).2.2
+        rw [hnk, ← hk, ← hC.nullifiers i] at hsp
+        exact hfresh _ (List.mem_ofFn.mpr ⟨i, rfl⟩) hsp
+      · have hmpk := (Term.hash2_inj hnpk).1
+        exact Term.val_ne_hash o _ _ hmpk.symm
+
+/-- The owned counterpart of `transact_inputs_live`. A spent note's nullifier key is the
+    owner field itself (an owner field is never a master public key,
+    `TransactOwnedPublic.ownerField_ne_hash`). -/
+theorem transactOwned_inputs_live (s : ReachableState Pool.machine) {N M : Nat}
+    {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M} (hC : OwnedConstrained w pub)
+    (tn : Nat) (hRoot : pub.merkleRoot ∈ s.state.rootsAt' tn) {spent' : NullifierSet}
+    (hNullify : markSpent (s.state.spent tn) (List.ofFn pub.nullifiers) = some spent') :
+    ∃ rest, removeAll (s.state.live w.token) (ownedSpentPositions tn pub w) = some rest := by
+  have hs : Reachable s.state := Pool.machine_reachable_iff.mp s.reachable
+  obtain ⟨hpw, hfresh⟩ := owned_no_double_spend hNullify
+  have hne := ofFn_pairwise_ne pub.nullifiers hpw
+  refine removeAll_of_subset ((reachable_live_spent_invariant hs).2.2.2.2 w.token) ?_ ?_
+  · refine ofFn_nodup_of_ne _ fun i j hij heq => hne i j hij ?_
+    rw [hC.nullifiers i, hC.nullifiers j]
+    simp only [Prod.mk.injEq] at heq
+    rw [heq.1.2]
+  · intro e he
+    obtain ⟨i, hi⟩ := List.mem_ofFn.mp he
+    subst hi
+    obtain ⟨ls, ⟨tl, htl⟩, hr⟩ := (roots_of_prefixes s).roots tn _ hRoot
+    have hm := hC.merkle i
+    rw [hr] at hm
+    have hget := MerkleProof.opens_treeRoot hm
+    have hsome := List.getElem?_eq_some_of_getD ls _ emptyLeaf (by
+      rw [hget]
+      exact Ne.symm (emptyLeaf_ne_hashCommitment ⟨npk pub.ownerField (w.randomIn i), w.token,
+        w.valueIn i⟩))
+    rw [hget] at hsome
+    obtain ⟨hlt, _⟩ := List.getElem?_eq_some_iff.mp hsome
+    have hleaf : (s.state.leavesAt' tn)[w.leavesIndices i]? = some (hashCommitment
+        ⟨npk pub.ownerField (w.randomIn i), w.token, w.valueIn i⟩) := by
+      rw [← htl, List.getElem?_append_left hlt]
+      exact hsome
+    rcases (leaf_live_or_spent s).leaf tn _ _ hleaf with hlv | ⟨nk, hkey, hsp⟩
+    · exact hlv
+    · exfalso
+      rcases hkey with ⟨pk, k, r, hnpk, hnk⟩ | ⟨o, r, hnpk, hnk⟩
+      · have hmpk := (Term.hash2_inj hnpk).1
+        exact pub.ownerField_ne_hash _ _ hmpk
+      · have ho : pub.ownerField = Term.val o := (Term.hash2_inj hnpk).1
+        rw [hnk, ← ho, ← hC.nullifiers i] at hsp
+        exact hfresh _ (List.mem_ofFn.mpr ⟨i, rfl⟩) hsp
+
+/-! ### The records of an accepted call -/
+
+/-- The records a plain `transact` call discloses (`recordsMatch`) give the registry of
+    some sublist of the witness's own output records: the sublist of the records the
+    call names. Every disclosed record is one of the witness's output records, so the
+    two lists name one set of commitments (`applyRecords_eq_of_keys`). -/
+theorem transact_records_registry {N M : Nat} {w : TransactWitness N M}
+    {pub : TransactPublic N M} (hC : Constrained w pub)
+    {records : List (Term × CommitmentPreimage)}
+    (hMatch : recordsMatch pub.commitmentsOut records = true) (reg : PreimageRegistry) :
+    ∃ records' : List (Term × CommitmentPreimage),
+      records'.Sublist (transactOutputRecords w pub) ∧
+      applyRecords reg records' = applyRecords reg records := by
+  have hmem : ∀ cp ∈ records, cp ∈ transactOutputRecords w pub := by
+    intro cp hcp
+    obtain ⟨c, p⟩ := cp
+    unfold recordsMatch at hMatch
+    have h := List.all_eq_true.mp hMatch (c, p) hcp
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨hhash, hmem⟩ := h
+    obtain ⟨j, hj⟩ := List.mem_ofFn.mp (List.mem_of_elem_eq_true hmem)
+    have hpre : p = ⟨w.npkOut j, w.token, w.valueOut j⟩ :=
+      hashCommitment_inj (hhash.trans (hj.symm.trans (hC.outputs j)))
+    subst hj
+    subst hpre
+    exact List.mem_ofFn.mpr ⟨j, rfl⟩
+  refine ⟨(transactOutputRecords w pub).filter (fun cp => decide (cp ∈ records)),
+    List.filter_sublist, ?_⟩
+  apply applyRecords_eq_of_keys
+  · exact ⟨fun cp hcp => transactOutputRecords_valid hC cp (List.mem_filter.mp hcp).1⟩
+  · refine ⟨fun cp hcp => ?_⟩
+    have h := List.all_eq_true.mp hMatch cp hcp
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    exact h.1
+  · intro c
+    constructor
+    · intro hc
+      obtain ⟨cp, hcp, hc⟩ := List.mem_map.mp hc
+      exact List.mem_map.mpr ⟨cp, (List.mem_filter.mp hcp).2 |> of_decide_eq_true, hc⟩
+    · intro hc
+      obtain ⟨cp, hcp, hc⟩ := List.mem_map.mp hc
+      exact List.mem_map.mpr ⟨cp, List.mem_filter.mpr ⟨hmem cp hcp, decide_eq_true hcp⟩, hc⟩
+
+/-- The records an owned call discloses (`recordsComplete`) give the registry of the
+    witness's own output records: the two lists name the output commitments in order. -/
+theorem transactOwned_records_registry {N M : Nat} {w : TransactOwnedWitness N M}
+    {pub : TransactOwnedPublic N M} (hC : OwnedConstrained w pub)
+    {records : List (Term × CommitmentPreimage)}
+    (hComplete : recordsComplete pub.commitmentsOut records = true) (reg : PreimageRegistry) :
+    applyRecords reg (ownedOutputRecords w pub) = applyRecords reg records := by
+  unfold recordsComplete at hComplete
+  rw [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hComplete
+  obtain ⟨hkeys, hvalid⟩ := hComplete
+  apply applyRecords_eq_of_keys
+  · exact ⟨ownedOutputRecords_valid hC⟩
+  · exact ⟨fun cp hcp => of_decide_eq_true (hvalid cp hcp)⟩
+  · intro c
+    rw [hkeys]
+    unfold ownedOutputRecords outputRecords
+    rw [List.map_ofFn]
+    rfl
+
 /-- **Backward refinement** (rule PE5, operator ruling 2026-11-04): every call that
 `Pool.apply` accepts is the contract image of some `Step`.
 
@@ -2535,6 +2954,143 @@ theorem Pool.apply_backward_refinement (verify : Pool.Verifier) (hReal : verify.
     (s : ReachableState Pool.machine) {c : Pool.Call} {t : Pool.ContractState}
     (h : Pool.apply verify s.state.contract c = some t) :
     ∃ s' : PoolState, Step s.state s' ∧ s'.contract = t := by
-  sorry
+  cases c with
+  | shield token x npk =>
+    rw [Pool.apply_shield_equation] at h
+    by_cases hPre : s.state.contract.ShieldPre token x npk
+    · rw [dif_pos hPre] at h
+      obtain ⟨hValue, hBound⟩ := hPre
+      refine ⟨_, Step.shield token x npk hValue (spendable_of_lt hBound), ?_⟩
+      rw [← Option.some.inj h]
+      rfl
+    · rw [dif_neg hPre] at h
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+  | setFeeRatio caller r =>
+    rw [Pool.apply_setFeeRatio_equation] at h
+    by_cases hPre : s.state.contract.SetFeeRatioPre caller r
+    · rw [dif_pos hPre] at h
+      refine ⟨_, Step.setFeeRatio caller hPre r, ?_⟩
+      rw [← Option.some.inj h]
+      rfl
+    · rw [dif_neg hPre] at h
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+  | transact caller pub bp proof unshieldToken records openings =>
+    rw [Pool.apply_transact_equation] at h
+    by_cases hPre : s.state.contract.TransactPre verify caller pub bp proof unshieldToken
+        records openings
+    · rw [dif_pos hPre] at h
+      have ht := Option.some.inj h
+      clear h
+      obtain ⟨hN, hM, hproof, hBound, hAdapt, hRoot, hIsSome, hRecordsMatch, hUnshield⟩ := hPre
+      obtain ⟨w, hC⟩ := hTS.sound ((hReal.transact pub).mpr ⟨proof, hproof⟩)
+      obtain ⟨spent', hNullify⟩ := Option.isSome_iff_exists.mp hIsSome
+      obtain ⟨rest, hRemove⟩ := transact_inputs_live s hC bp.treeNumber hRoot hNullify
+      obtain ⟨records', hRecords, hReg⟩ :=
+        transact_records_registry hC hRecordsMatch s.state.preimageOf
+      have hCommitmentsOut :
+          List.ofFn pub.commitmentsOut = (transactAllOutputs w).map hashCommitment := by
+        rw [transactAllOutputs, List.map_ofFn]
+        exact congrArg List.ofFn (funext fun j => hC.outputs j)
+      have hSpent :
+          (fun n => if n = bp.treeNumber then spent' else s.state.spent n) =
+          (fun n => if n = bp.treeNumber then
+              (markSpent (s.state.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD
+                (s.state.spent bp.treeNumber)
+            else s.state.spent n) := by
+        funext n
+        have hNullify' :
+            markSpent (s.state.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' :=
+          hNullify
+        simp only [hNullify', Option.getD_some]
+      cases unshieldToken with
+      | none =>
+        unfold Pool.ContractState.transactEffect at ht
+        dsimp only at ht
+        subst ht
+        rcases hu : bp.unshield with _ | u
+        · refine ⟨_, Step.transact caller w pub bp hN hM hC hBound hAdapt (transactAllOutputs w)
+            (by show UnshieldRefines w bp.unshield _; rw [hu]; exact rfl)
+            rest spent' records' openings hRoot hRemove hNullify hRecords, ?_⟩
+          unfold PoolState.contract
+          dsimp only
+          rw [hCommitmentsOut, hSpent, hReg]
+          congr 1
+          funext t
+          simp only [withdrawn, hu, Nat.sub_zero, ite_self]
+        · exfalso
+          rw [hu] at hUnshield
+          dsimp only [unshieldCommitted] at hUnshield
+          exact Bool.false_ne_true hUnshield
+      | some tok =>
+        unfold Pool.ContractState.transactEffect at ht
+        dsimp only at ht
+        subst ht
+        rcases hu : bp.unshield with _ | u
+        · exfalso
+          rw [hu] at hUnshield
+          dsimp only [unshieldCommitted] at hUnshield
+          exact Bool.false_ne_true hUnshield
+        · rw [hu] at hUnshield
+          dsimp only [unshieldCommitted] at hUnshield
+          rw [decide_eq_true_eq, hCommitmentsOut, List.getLast?_map] at hUnshield
+          cases hlast : (transactAllOutputs w).getLast? with
+          | none =>
+            rw [hlast] at hUnshield
+            exact absurd hUnshield (by (simp? says simp only [Option.map_none, reduceCtorEq, not_false_eq_true]))
+          | some last =>
+            rw [hlast] at hUnshield
+            simp only [Option.map_some, Option.some.injEq] at hUnshield
+            have hlastEq : last = ⟨u.recipient, tok, u.value⟩ := hashCommitment_inj hUnshield
+            obtain ⟨l', hl'⟩ := List.getLast?_eq_some_iff.mp hlast
+            have htok : tok = w.token := by
+              have hmem : last ∈ transactAllOutputs w := by
+                rw [hl']; exact List.mem_append_right _ List.mem_cons_self
+              obtain ⟨j, hj⟩ := List.mem_ofFn.mp hmem
+              have := congrArg CommitmentPreimage.token hj
+              rw [hlastEq] at this
+              exact this.symm
+            subst htok
+            subst hlastEq
+            refine ⟨_, Step.transact caller w pub bp hN hM hC hBound hAdapt l'
+              (by show UnshieldRefines w bp.unshield _; rw [hu]; exact hl')
+              rest spent' records' openings hRoot hRemove hNullify hRecords, ?_⟩
+            unfold PoolState.contract
+            dsimp only
+            rw [hCommitmentsOut, hl', List.map_append, List.map_singleton, List.dropLast_concat,
+              hSpent, hReg, hu]
+    · rw [dif_neg hPre] at h
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
+  | transactOwned caller pub bp proof records openings =>
+    rw [Pool.apply_transactOwned_equation] at h
+    by_cases hPre : s.state.contract.TransactOwnedPre verify caller pub bp proof records openings
+    · rw [dif_pos hPre] at h
+      obtain ⟨hN, hM, hCaller, hproof, hBound, hAdapt, hNoUnshield, hRoot, hIsSome,
+        hRecordsComplete⟩ := hPre
+      obtain ⟨w, hC⟩ := hOS.sound ((hReal.owned pub).mpr ⟨proof, hproof⟩)
+      obtain ⟨spent', hNullify⟩ := Option.isSome_iff_exists.mp hIsSome
+      obtain ⟨rest, hRemove⟩ := transactOwned_inputs_live s hC bp.treeNumber hRoot hNullify
+      have hCommitmentsOut :
+          List.ofFn pub.commitmentsOut = (ownedNewNotes w).map hashCommitment := by
+        rw [ownedNewNotes, List.map_ofFn]
+        exact congrArg List.ofFn (funext fun j => hC.outputs j)
+      have hSpent :
+          (fun n => if n = bp.treeNumber then spent' else s.state.spent n) =
+          (fun n => if n = bp.treeNumber then
+              (markSpent (s.state.spent bp.treeNumber) (List.ofFn pub.nullifiers)).getD
+                (s.state.spent bp.treeNumber)
+            else s.state.spent n) := by
+        funext n
+        have hNullify' :
+            markSpent (s.state.spent bp.treeNumber) (List.ofFn pub.nullifiers) = some spent' :=
+          hNullify
+        simp only [hNullify', Option.getD_some]
+      refine ⟨_, Step.transactOwned w pub bp hN hM hC caller hCaller hBound hAdapt hNoUnshield
+        rest spent' openings hRoot hRemove hNullify, ?_⟩
+      rw [← Option.some.inj h]
+      unfold Pool.ContractState.transactOwnedEffect PoolState.contract
+      dsimp only
+      rw [hCommitmentsOut, hSpent, transactOwned_records_registry hC hRecordsComplete]
+    · rw [dif_neg hPre] at h
+      exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 end ArmadaLean

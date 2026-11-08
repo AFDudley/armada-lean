@@ -32,6 +32,29 @@ theorem bitsVal_lt_two_pow (bs : List Bool) : bitsVal bs < 2 ^ bs.length := by
       Nat.mul_lt_mul_of_pos_left ih (by decide)
     omega
 
+/-- Two bit lists of one length with one value are equal: `bitsVal` is injective on each
+    length. `MerkleProof.opens_treeRoot` uses it to match a proof's direction bits with
+    the bits of the leaf index. -/
+theorem bitsVal_inj {bs bs' : List Bool} (hlen : bs.length = bs'.length)
+    (h : bitsVal bs = bitsVal bs') : bs = bs' := by
+  induction bs generalizing bs' with
+  | nil =>
+    cases bs' with
+    | nil => rfl
+    | cons _ _ => simp only [List.length_nil, List.length_cons, Nat.right_eq_add, Nat.add_one_ne_zero] at hlen
+  | cons b bs ih =>
+    cases bs' with
+    | nil => simp only [List.length_cons, List.length_nil, Nat.add_one_ne_zero] at hlen
+    | cons b' bs' =>
+      simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+      simp only [bitsVal] at h
+      have hb : b = b' := by
+        cases b <;> cases b' <;> simp only [Bool.toNat_false, Bool.toNat_true] at h <;>
+          first | rfl | omega
+      subst hb
+      have : bitsVal bs = bitsVal bs' := by omega
+      rw [ih hlen this]
+
 /-- A value passes the in-circuit `Num2Bits(120)` check iff it has a 120-bit
     binary decomposition (Transact.circom:120-129). -/
 def RangeChecked120 (v : Nat) : Prop :=

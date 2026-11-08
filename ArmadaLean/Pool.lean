@@ -466,6 +466,30 @@ theorem withTreePositionsFrom_snd_mem {α : Type} (treeNumber start : Nat) (l : 
   rw [← heq]
   exact withPositionsFrom_snd_mem start l q hq
 
+/-- The element at index `j` of `l` is tagged with position `start + j`. -/
+theorem withPositionsFrom_mem_of_getElem? {α : Type} (start : Nat) (l : List α) (j : Nat)
+    {a : α} (h : l[j]? = some a) : (start + j, a) ∈ withPositionsFrom start l := by
+  induction l generalizing start j with
+  | nil => simp only [List.getElem?_nil, reduceCtorEq] at h
+  | cons x rest ih =>
+    cases j with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+      subst h
+      exact List.mem_cons_self
+    | succ j =>
+      simp only [List.getElem?_cons_succ] at h
+      have := ih (start + 1) j h
+      rw [show start + (j + 1) = start + 1 + j by omega]
+      exact List.mem_cons_of_mem _ this
+
+/-- The tree-tagged counterpart of `withPositionsFrom_mem_of_getElem?`. -/
+theorem withTreePositionsFrom_mem_of_getElem? {α : Type} (treeNumber start : Nat) (l : List α)
+    (j : Nat) {a : α} (h : l[j]? = some a) :
+    ((treeNumber, start + j), a) ∈ withTreePositionsFrom treeNumber start l := by
+  unfold withTreePositionsFrom
+  exact List.mem_map.mpr ⟨(start + j, a), withPositionsFrom_mem_of_getElem? start l j h, rfl⟩
+
 /-- `(l ++ l').getD i d = l.getD i d` once `i` is within `l`'s own length: appending
     never disturbs an existing index. `insertLeaves_leavesAt_stable` ("a leaf, once
     placed, never moves") rests on this. -/
@@ -628,6 +652,74 @@ theorem ownedOutputRecords_valid {N M : Nat} {w : TransactOwnedWitness N M}
   obtain ⟨j, hj⟩ := List.mem_ofFn.mp hcp
   rw [← hj]
   exact (hC.outputs j).symm
+
+/-- A record list is valid when every record hashes to the commitment it is recorded
+    under. `transactOutputRecords_valid` and `ownedOutputRecords_valid` give it for a
+    witness's own records; `recordsMatch`/`recordsComplete` give it for a call's records. -/
+structure RecordsValid (l : List (Term × CommitmentPreimage)) : Prop where
+  valid : ∀ cp ∈ l, hashCommitment cp.2 = cp.1
+
+/-- A commitment that no record names keeps its registry entry. -/
+theorem applyRecords_of_not_mem (reg : PreimageRegistry) (l : List (Term × CommitmentPreimage))
+    (c : Term) (hc : c ∉ l.map Prod.fst) : applyRecords reg l c = reg c := by
+  induction l generalizing reg with
+  | nil => rfl
+  | cons cp rest ih =>
+    obtain ⟨c0, p0⟩ := cp
+    simp only [List.map_cons, List.mem_cons, not_or] at hc
+    simp only [applyRecords]
+    rw [ih _ hc.2]
+    simp only [recordStep, if_neg hc.1]
+
+/-- Two valid record lists with one set of commitments give one registry. The contract
+    applies the records of a call; the model applies the witness's own records. The two
+    lists agree on their commitments, so the registries agree. A valid list sets the
+    entry of each of its commitments to the one preimage that hashes to it, whatever the
+    order and the repetitions (`key` below). -/
+theorem applyRecords_eq_of_keys (reg : PreimageRegistry)
+    (l₁ l₂ : List (Term × CommitmentPreimage)) (h₁ : RecordsValid l₁) (h₂ : RecordsValid l₂)
+    (hkeys : ∀ c, c ∈ l₁.map Prod.fst ↔ c ∈ l₂.map Prod.fst) :
+    applyRecords reg l₁ = applyRecords reg l₂ := by
+  have key : ∀ (l : List (Term × CommitmentPreimage)), RecordsValid l →
+      ∀ (reg : PreimageRegistry) (c : Term) (p : CommitmentPreimage), (c, p) ∈ l →
+        applyRecords reg l c = some p := by
+    intro l
+    induction l with
+    | nil => intro _ _ _ _ hmem; exact absurd hmem List.not_mem_nil
+    | cons cp rest ih =>
+      intro hl reg c p hmem
+      obtain ⟨c0, p0⟩ := cp
+      have hrest : RecordsValid rest := ⟨fun cp hcp => hl.valid cp (List.mem_cons_of_mem _ hcp)⟩
+      simp only [applyRecords]
+      rcases List.mem_cons.mp hmem with heq | hmem
+      · injection heq with hc0 hp0
+        subst hc0; subst hp0
+        by_cases hc : c ∈ rest.map Prod.fst
+        · obtain ⟨⟨c', p'⟩, hmem', hc'⟩ := List.mem_map.mp hc
+          simp only at hc'
+          subst hc'
+          have e₁ := hl.valid (c', p') (List.mem_cons_of_mem _ hmem')
+          have e₂ := hl.valid (c', p) List.mem_cons_self
+          simp only at e₁ e₂
+          have hp : p' = p := hashCommitment_inj (e₁.trans e₂.symm)
+          subst hp
+          exact ih hrest _ _ _ hmem'
+        · rw [applyRecords_of_not_mem _ _ _ hc]
+          simp only [recordStep, ↓reduceIte]
+      · exact ih hrest _ _ _ hmem
+  funext c
+  by_cases hc : c ∈ l₁.map Prod.fst
+  · obtain ⟨⟨c', p₁⟩, hm₁, hc₁⟩ := List.mem_map.mp hc
+    obtain ⟨⟨c'', p₂⟩, hm₂, hc₂⟩ := List.mem_map.mp ((hkeys c).mp hc)
+    simp only at hc₁ hc₂
+    subst hc₁; subst hc₂
+    rw [key l₁ h₁ reg _ _ hm₁, key l₂ h₂ reg _ _ hm₂]
+    have e₁ := h₁.valid _ hm₁
+    have e₂ := h₂.valid _ hm₂
+    simp only at e₁ e₂
+    rw [hashCommitment_inj (e₁.trans e₂.symm)]
+  · rw [applyRecords_of_not_mem reg l₁ c hc,
+      applyRecords_of_not_mem reg l₂ c (fun h => hc ((hkeys c).mpr h))]
 
 /-! ### The Merkle tree forest
 
@@ -886,6 +978,15 @@ theorem List.getD_concat_length {α : Type} (l : List α) (x : α) (d : α) :
   induction l with
   | nil => rfl
   | cons a rest ih => (simp? says simp only [List.cons_append, List.length_cons, List.getD_eq_getElem?_getD, List.length_append, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos, List.getElem_cons_succ, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero, Option.getD_some])
+
+/-- A `getD` lookup that returns a value other than the default found that value at
+    the index. -/
+theorem List.getElem?_eq_some_of_getD {α : Type} (l : List α) (i : Nat) (d : α)
+    (hne : l.getD i d ≠ d) : l[i]? = some (l.getD i d) := by
+  rw [List.getD_eq_getElem?_getD] at hne ⊢
+  cases hl : l[i]? with
+  | none => rw [hl] at hne; exact absurd rfl hne
+  | some y => rfl
 
 /-- A batch tagged by `withPositionsFrom` always lands, in the appended leaf list, at
     exactly the leaf `f` of its own preimage — no other value could appear there.

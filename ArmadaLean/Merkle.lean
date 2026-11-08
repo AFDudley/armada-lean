@@ -48,6 +48,33 @@ theorem merkleRoot_inj_leaf (path : List (Term × Bool)) {l₁ l₂ : Term}
     | false => exact (Term.hash2_inj hstep).1
     | true => exact (Term.hash2_inj hstep).2
 
+/-- Two membership proofs with one length and one list of direction bits that compute
+    one root open one leaf. The sibling terms may differ; `Term.hash2_inj` forces them
+    equal level by level. -/
+theorem merkleRoot_inj_bits (path path' : List (Term × Bool)) {l l' : Term}
+    (hlen : path.length = path'.length) (hbits : path.map Prod.snd = path'.map Prod.snd)
+    (h : merkleRoot l path = merkleRoot l' path') : l = l' := by
+  induction path generalizing path' l l' with
+  | nil =>
+    cases path' with
+    | nil => exact h
+    | cons _ _ => simp only [List.length_nil, List.length_cons, Nat.right_eq_add, Nat.add_one_ne_zero] at hlen
+  | cons p ps ih =>
+    cases path' with
+    | nil => simp only [List.length_cons, List.length_nil, Nat.add_one_ne_zero] at hlen
+    | cons p' ps' =>
+      obtain ⟨sib, bit⟩ := p
+      obtain ⟨sib', bit'⟩ := p'
+      simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+      simp only [List.map_cons, List.cons.injEq] at hbits
+      obtain ⟨hbit, hbits⟩ := hbits
+      subst hbit
+      simp only [merkleRoot, List.foldl_cons] at h
+      have hstep : merkleStep l sib bit = merkleStep l' sib' bit := ih ps' hlen hbits h
+      cases bit with
+      | false => exact (Term.hash2_inj hstep).1
+      | true => exact (Term.hash2_inj hstep).2
+
 /-- `MerkleTreeProof(depth)` (merkle.circom:20-55) as one input of `Transact.circom:86-95`
     and `TransactOwned.circom:78-87` instantiates it, with `depth = 16`. The circuit takes
     the siblings `pathElements[depth]` and the packed leaf index `pathIndices`
@@ -325,5 +352,25 @@ theorem treePath_merkleProof (d : Nat) (leaves : List Term) (i : Nat)
   len := treePath_length d leaves i
   bits := treePath_bitsVal d leaves i hi
   root_eq := treePath_correct_of_getElem? d leaves i hi hleaf
+
+/-- **Opening soundness.** A `MerkleProof` against the root of the tree over `leaves`
+    opens the leaf that `leaves` holds at its index (`emptyLeaf` past the end). The
+    proof's direction bits are the bits of the index (`MerkleProof.bits`), so they equal
+    the bits of `treePath` (`treePath_bitsVal`, `bitsVal_inj`), and `merkleRoot_inj_bits`
+    then forces the leaf. This is the fact a contract relies on when it checks a root
+    against its history: the proof names a leaf of that tree. -/
+theorem MerkleProof.opens_treeRoot {d : Nat} {leaf : Term} {path : List (Term × Bool)}
+    {i : Nat} {leaves : List Term} (h : MerkleProof d leaf path i (treeRoot d leaves)) :
+    leaves.getD i emptyLeaf = leaf := by
+  have hi : i < 2 ^ d := h.index_lt
+  have hbits : path.map Prod.snd = (treePath d leaves i).map Prod.snd := by
+    apply bitsVal_inj
+    · rw [List.length_map, List.length_map, h.len, treePath_length]
+    · rw [h.bits, treePath_bitsVal d leaves i hi]
+  have hroot : merkleRoot leaf path =
+      merkleRoot (leaves.getD i emptyLeaf) (treePath d leaves i) := by
+    rw [h.root_eq, treePath_correct d leaves i hi]
+  exact (merkleRoot_inj_bits path (treePath d leaves i)
+    (by rw [h.len, treePath_length]) hbits hroot).symm
 
 end ArmadaLean

@@ -60,8 +60,12 @@ ruling 2026-11-06 (see the notes).
   over `VerifyAccepts`. The soundness direction is the hypothesis that every `Step.transact` takes today
   (`Constrained w pub`).
 - `Step.transact` checks that the spent positions are live (`hRemove`). A contract checks nullifier freshness and the
-  Merkle root instead. So PE5 holds only on reachable states, through the existing pool lemmas such as
-  `live_note_unspent` and `live_leaf_matches`.
+  Merkle root instead. So PE5 holds only on reachable states. The proof (2026-11-08) uses two reachable-state
+  invariants in `ArmadaLean/PoolSafety.lean`: `RootsOfPrefixes` (every root in a tree's history is the root of a
+  prefix of its leaves) and `LeafLiveOrSpent` (every leaf is live, or its note's own nullifier is spent). With
+  `MerkleProof.opens_treeRoot` (`ArmadaLean/Merkle.lean`), each input of an accepted proof is a live note
+  (`transact_inputs_live`, `transactOwned_inputs_live`). The contract's records give the registry of a sublist of the
+  witness's records (`transact_records_registry`, `transactOwned_records_registry`, `applyRecords_eq_of_keys`).
 - The contract reads the unshield note's token from calldata and checks it against the last output commitment
   (`UnshieldRefines`). That is why PE2 names the token of the unshield.
 - Order: PE1 and PE2, then PE3, then PE4, then PE5. Each later rule uses the definitions of the earlier ones.
