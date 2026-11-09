@@ -253,8 +253,16 @@ Changes:
   `maxFeePercent < 100` (checked by `decide`). `#print axioms shieldBase_pos` lists
   `propext, Quot.sound`. So `Step.shield`'s `hValue : 0 < x` now gives a note of
   positive value; the earlier case `num = den` (note value 0) is excluded.
-- The fee-module and privileged-caller branches of `_transferTokenIn`
-  (ShieldModule.sol:286-323) are not modeled.
+- Departure: the fee-module and privileged-caller branches are not modeled. At armada-poc
+  `64436c14`, `_transferTokenIn` (ShieldModule.sol:303-385) and `_applyShieldFee` (:176-225)
+  select one of three branches. A privileged caller pays no fee (`_isPrivilegedShieldCaller`,
+  :258, set through `setAdapterRegistry`, PrivacyPool.sol:421). With a fee module set
+  (`setFeeModule`, PrivacyPool.sol:478), the module prices the shield and pays an integrator
+  share directly. Its total fee is capped at `MAX_FEE_MODULE_SHIELD_FEE_BPS = 1500`, that is
+  15% (:42, checked at :247). The model has only the flat branch, with `maxFeePercent = 10`.
+  `setShieldFee` refuses while a fee module is set (PrivacyPool.sol:406). `Step.setFeeRatio`
+  has no such lock. Operator ruling 2026-11-09: record this departure, do not model the
+  fee module.
 
 ### P-10. No `ownedRandomOf` map
 
