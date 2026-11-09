@@ -52,6 +52,10 @@ has a witness that satisfies the circuit.
 type-doctrine linter count above `scripts/gate-baseline.json`. The one exception is the fee-admin setter of operator
 ruling 2026-11-06 (see the notes).
 
+**Rule PE7 (run refinement).** For every list of calls that `Pool.apply verify` accepts in order from
+`(genesis r feeAdmin treasury).contract`, the last contract state is `s.contract` for some reachable `s`, under the
+hypothesis of PE5.
+
 ## Notes for the work
 
 - The two hypotheses of PE4 and PE5 are the completeness and soundness of the trusted zero-knowledge verifier
@@ -68,7 +72,11 @@ ruling 2026-11-06 (see the notes).
   witness's records (`transact_records_registry`, `transactOwned_records_registry`, `applyRecords_eq_of_keys`).
 - The contract reads the unshield note's token from calldata and checks it against the last output commitment
   (`UnshieldRefines`). That is why PE2 names the token of the unshield.
-- Order: PE1 and PE2, then PE3, then PE4, then PE5. Each later rule uses the definitions of the earlier ones.
+- Order: PE1 and PE2, then PE3, then PE4, then PE5, then PE7. Each later rule uses the definitions of the earlier
+  ones.
+- PE7 is PE5 by induction over the calls. Operator ruling 2026-11-09: the pool safety theorems (`core_invariant`,
+  `live_note_unspent`, `pool_no_double_spend`) are statements about `Pool.Step` runs. PE7 makes them statements about
+  every run of the contract. Review of ship-armada/armada-lean#1 found that no theorem stated this transfer.
 - The vault (ship-armada/armada-poc#651) gets the same form later, by the same pattern.
 - Operator ruling 2026-11-06: one named address, the fee admin, can change the fee rate. `Pool.Step` has the
   constructor `setFeeRatio`. Its caller must equal `feeAdmin`, an address that the deployment fixes. Its effect changes
