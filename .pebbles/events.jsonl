@@ -2178,3 +2178,9 @@
 {"type":"comment","timestamp":"2026-11-08T05:55:07.520063Z","issue_id":"aln-1bb","payload":{"body":"gate-verdict: e919b4c7749e339be14323d9307cd608ac10c171 passed 0.2.1+03c2a218","build":"0.2.1+03c2a218","outcome":"passed","sha":"e919b4c7749e339be14323d9307cd608ac10c171","verdict_kind":"gate_verdict"}}
 {"type":"comment","timestamp":"2026-11-08T05:55:07.548686Z","issue_id":"aln-1bb","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
 {"type":"close","timestamp":"2026-11-08T05:55:07.559665Z","issue_id":"aln-1bb","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
+{"type":"create","timestamp":"2026-11-09T12:53:00.776024Z","issue_id":"aln-0e6","payload":{"description":"Operator-authored branch `fee-cap-10`, merged via `exophial integrate --branch` — no pebble id already tracked it.","priority":"2","title":"land: fee-cap-10","type":"task"}}
+{"type":"comment","timestamp":"2026-11-09T12:53:00.821758Z","issue_id":"aln-0e6","payload":{"body":"branch-identity: fee-cap-10"}}
+{"type":"comment","timestamp":"2026-11-09T13:07:45.562039Z","issue_id":"aln-0e6","payload":{"body":"exophial-integration-attempt-started: at df7fd4d8f899fecd27387ae077eb383c358e1441"}}
+{"type":"comment","timestamp":"2026-11-09T13:09:28.054954Z","issue_id":"aln-0e6","payload":{"body":"gate-verdict: faf809c3316c73be5059e0a7518033d0e5d0112c passed 0.2.1+6dcd4825","build":"0.2.1+6dcd4825","outcome":"passed","sha":"faf809c3316c73be5059e0a7518033d0e5d0112c","verdict_kind":"gate_verdict"}}
+{"type":"comment","timestamp":"2026-11-09T13:09:28.115152Z","issue_id":"aln-0e6","payload":{"body":"exophiald: merged (merged_ff).\n\nexophial-verdict: {\"verdict\": \"pass\"}"}}
+{"type":"close","timestamp":"2026-11-09T13:09:28.140164Z","issue_id":"aln-0e6","payload":{"outcome":"merged_ff","reason":"clean fast-forward merge; no rebase was needed"}}
