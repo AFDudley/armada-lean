@@ -234,13 +234,14 @@ Changes:
   `treasuryFees token` grows by `shieldFee s.feeRatio x`. `hValue` is the contract's own
   check on the gross request (`_validateCommitmentPreimage`, ShieldModule.sol:244, called
   at :59 before the fee is taken).
-- Operator ruling, 2026-10-27: the shield fee is never 100%; it has a hard cap, probably
-  1%. `Fee.lean` has one named constant `maxFeePercent : Nat := 1`, and `FeeRatio` has a
-  new field `fee_capped : num * 100 ≤ den * maxFeePercent`. To change the cap, change
-  `maxFeePercent` only. Every theorem that takes a `FeeRatio` keeps its text. The
-  contract has a looser cap: `setShieldFee` requires `_feeBps <= MAX_SHIELD_FEE_BPS`
-  (PrivacyPool.sol:391-395) with `MAX_SHIELD_FEE_BPS = 1000`, that is 10%
-  (PrivacyPool.sol:39). The model's 1% follows the ruling, not the contract.
+- Operator ruling, 2026-10-27: the shield fee is never 100%; it has a hard cap.
+  `Fee.lean` has one named constant `maxFeePercent`, and `FeeRatio` has a new field
+  `fee_capped : num * 100 ≤ den * maxFeePercent`. To change the cap, change
+  `maxFeePercent` only. Every theorem that takes a `FeeRatio` keeps its text.
+  Operator ruling, 2026-11-09: `maxFeePercent` is `10`, the contract's own cap.
+  `setShieldFee` requires `_feeBps <= MAX_SHIELD_FEE_BPS` (PrivacyPool.sol:407) with
+  `MAX_SHIELD_FEE_BPS = 1000`, that is 10% (PrivacyPool.sol:39, armada-poc `64436c14`).
+  The ruling of 2026-10-27 set the cap at 1%.
 - New theorem, proved (14 lines):
 
   ```lean

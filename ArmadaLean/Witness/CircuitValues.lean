@@ -23,7 +23,7 @@ def token0 : Token := ⟨t0⟩
 def bp0 : BoundParams := ⟨0, none, none, t0⟩
 
 /-- A fee ratio of `0/1`: `den_pos`, `num_le_den` and `fee_capped` all hold by
-    `decide`, since `maxFeePercent = 1`. -/
+    `decide` (`fee_capped` reads `0 * 100 ≤ 1 * maxFeePercent`). -/
 def feeRatio0 : FeeRatio := ⟨0, 1, by decide, by decide, by decide⟩
 
 /-- A 120-bit decomposition of `0`: every bit `false`. -/
