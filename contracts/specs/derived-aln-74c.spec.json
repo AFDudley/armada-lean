@@ -1,0 +1,512 @@
+{
+  "id": "derived-aln-74c",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. For every list of calls that Pool.apply verify accepts in order from (genesis r feeAdmin treasury).contract, the last contract state is s.contract for some reachable s, under the hypothesis of PE5.\nWhat holds now? Describe the current, observed state. At integrated e0755bd5, Pool.apply_backward_refinement (ArmadaLean/PoolSafety.lean:2952) relates one accepted Pool.apply call to one Step from one reachable state. No theorem in ArmadaLean takes a list of Pool.Call values or a sequence of Pool.apply calls from the genesis contract state. core_invariant, live_note_unspent and pool_no_double_spend are stated over Step runs only.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. In ArmadaLean, a search for the text 'List Pool.Call' returns no match. Through /home/rix/bin/lean-run, run lake env lean on a file that holds import ArmadaLean and #print axioms ArmadaLean.Pool.apply_backward_refinement: Lean lists propext, EdDSAVerify, VerifyAccepts, VerifyOwnedAccepts, Classical.choice and Quot.sound, and no sorryAx.\nWhat constraints apply? State them in plain prose. No approved statement changes: scripts/check.sh --json reports signatures_ok true. scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json. No new axiom, sorry, admit, native_decide or #exit. No type-doctrine linter count rises above scripts/gate-baseline.json. When a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch. The new statement has a spec entry under ArmadaLean/Spec and a witness under ArmadaLean/Witness, as scripts/check.sh reads them. No new file outside ArmadaLean/. A bare lake clean is never run. On the host, every Lean command runs through /home/rix/bin/lean-run.\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) ArmadaLean pool model (ArmadaLean/PoolSafety.lean, ArmadaLean/Spec/PoolSafety.lean)",
+  "restatement": "The ArmadaLean pool model currently only proves a single-call guarantee: Pool.apply_backward_refinement (ArmadaLean/PoolSafety.lean:2952) relates one accepted Pool.apply call to one Step from one reachable state, and nothing in ArmadaLean quantifies over a list of Pool.Call values or a sequence of Pool.apply calls starting from the genesis contract state (a search for the text 'List Pool.Call' returns no match; core_invariant, live_note_unspent and pool_no_double_spend are stated over Step runs only). This request asks for a new, fully proved Lean theorem that lifts that one-step refinement to whole sequences: for every list of calls that `Pool.apply verify` accepts in order starting from `(genesis r feeAdmin treasury).contract`, the resulting last contract state is `s.contract` for some reachable `s`, under the hypothesis of PE5. The proof must be genuine \u2014 no new axiom, sorry, admit, native_decide or #exit \u2014 so that `#print axioms` on the new theorem still lists only propext, EdDSAVerify, VerifyAccepts, VerifyOwnedAccepts, Classical.choice and Quot.sound, with no sorryAx. The work must land without disturbing the existing approved statements or gate posture: scripts/check.sh --json must report signatures_ok true and keep every _ok field true against scripts/gate-baseline.json, no type-doctrine linter count may rise above the baseline (and when a count falls, scripts/update_gate_baseline.py rewrites the baseline in the same branch), the new statement must carry a spec entry under ArmadaLean/Spec and a witness under ArmadaLean/Witness as scripts/check.sh reads them, and no new file may be created outside ArmadaLean/. On the host every Lean command runs through /home/rix/bin/lean-run and a bare lake clean is never run.",
+  "restatement_clauses": [
+    {
+      "id": "C1",
+      "text": "A new theorem in ArmadaLean/PoolSafety.lean takes a list of Pool.Call values and states that for every list of calls that `Pool.apply verify` accepts in order from `(genesis r feeAdmin treasury).contract`, the last contract state is `s.contract` for some reachable `s`, under the hypothesis of PE5; the file typechecks when `lake env lean` is run through /home/rix/bin/lean-run."
+    },
+    {
+      "id": "C2",
+      "text": "Running `lake env lean` through /home/rix/bin/lean-run on a file holding `import ArmadaLean` and `#print axioms` on the new sequence theorem lists only propext, EdDSAVerify, VerifyAccepts, VerifyOwnedAccepts, Classical.choice and Quot.sound, and no sorryAx."
+    },
+    {
+      "id": "C3",
+      "text": "No new axiom, sorry, admit, native_decide or #exit is introduced anywhere in the change."
+    },
+    {
+      "id": "C4",
+      "text": "scripts/check.sh --json reports signatures_ok true, i.e. no approved statement changes."
+    },
+    {
+      "id": "C5",
+      "text": "scripts/check.sh --json keeps every _ok field true against scripts/gate-baseline.json."
+    },
+    {
+      "id": "C6",
+      "text": "No type-doctrine linter count rises above scripts/gate-baseline.json, and when a count falls, scripts/update_gate_baseline.py has rewritten the baseline in the same branch."
+    },
+    {
+      "id": "C7",
+      "text": "The new statement has a spec entry under ArmadaLean/Spec and a witness under ArmadaLean/Witness, as scripts/check.sh reads them."
+    },
+    {
+      "id": "C8",
+      "text": "No new file is created outside ArmadaLean/."
+    }
+  ],
+  "goal": "Make the pool model's safety guarantee cover a whole run of operations instead of just one at a time: whatever sequence of accepted calls the pool processes from its starting state, the state it ends up in is still one the model says is reachable \u2014 and this is backed by a complete machine-checked proof, with all existing checks still passing.",
+  "acceptance_criteria": [
+    "A helper script runs the project's Lean checker (via /home/rix/bin/lean-run with `lake env lean`) on ArmadaLean/PoolSafety.lean and reports what it saw. The report must show that the file passes the checker with zero errors and zero unfinished proofs, and that the file now contains a new finished statement about whole sequences of pool calls: one that starts from the freshly created pool built by `genesis` with the given rate, fee admin and treasury, lets `Pool.apply verify` accept the calls one after another, assumes the PE5 condition, and concludes that the state left at the end is the contract part of some reachable state.",
+    "A checker script asks the Lean tool (run through /home/rix/bin/lean-run) to report the complete list of assumptions the new sequence theorem relies on, using a file that imports ArmadaLean and prints the theorem's axioms. The report it prints back names exactly the six expected assumptions (propext, EdDSAVerify, VerifyAccepts, VerifyOwnedAccepts, Classical.choice, Quot.sound), with nothing extra, nothing missing, and no 'sorryAx' placeholder standing in for an unfinished proof.",
+    "Running the repository's escape-hatch report over the files touched by this change shows that the change adds none of the shortcuts that let a proof be accepted without being proved: no new assumed statements (axiom), no unfinished placeholders (sorry, admit), no trusted-by-execution checks (native_decide), and no early stop markers (#exit). The report also confirms it actually looked at the changed material rather than finding nothing to inspect.",
+    "Running the project's check script with the --json option prints a machine-readable report that includes a \"signatures_ok\" entry, and that entry reads true \u2014 showing that none of the approved statements have been altered.",
+    "Running the project's own quality-check command in its machine-readable mode, compared against the recorded baseline file, reports a clean result: it produces at least one pass/fail indicator and none of them are marked failing.",
+    "Running the project's own baseline-check helper reports, for every tracked type-doctrine warning category, how its current count compares with the recorded numbers in scripts/gate-baseline.json. The report must show zero categories whose current count is higher than the recorded number, and zero categories whose count has dropped without the recorded number having been lowered to match in the same branch, while confirming the baseline file was found and at least one category was actually compared.",
+    "Running a small report script shows that the newly added statement is listed in the project's specification folder (ArmadaLean/Spec) and has a matching witness file in ArmadaLean/Witness, and that the project's own checker script (scripts/check.sh) runs over those two files and finishes successfully.",
+    "A checker script, run against the repository, lists every file that is newly added compared with the original starting state and reports how many of those new files sit outside the ArmadaLean/ folder. The report must show zero new files anywhere outside ArmadaLean/, while confirming that at least one newly added file was found (so the check genuinely inspected real additions)."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "A helper script runs the project's Lean checker (via /home/rix/bin/lean-run with `lake env lean`) on ArmadaLean/PoolSafety.lean and reports what it saw. The report must show that the file passes the checker with zero errors and zero unfinished proofs, and that the file now contains a new finished statement about whole sequences of pool calls: one that starts from the freshly created pool built by `genesis` with the given rate, fee admin and treasury, lets `Pool.apply verify` accept the calls one after another, assumes the PE5 condition, and concludes that the state left at the end is the contract part of some reachable state."
+    },
+    {
+      "id": "c2",
+      "text": "A checker script asks the Lean tool (run through /home/rix/bin/lean-run) to report the complete list of assumptions the new sequence theorem relies on, using a file that imports ArmadaLean and prints the theorem's axioms. The report it prints back names exactly the six expected assumptions (propext, EdDSAVerify, VerifyAccepts, VerifyOwnedAccepts, Classical.choice, Quot.sound), with nothing extra, nothing missing, and no 'sorryAx' placeholder standing in for an unfinished proof."
+    },
+    {
+      "id": "c3",
+      "text": "Running the repository's escape-hatch report over the files touched by this change shows that the change adds none of the shortcuts that let a proof be accepted without being proved: no new assumed statements (axiom), no unfinished placeholders (sorry, admit), no trusted-by-execution checks (native_decide), and no early stop markers (#exit). The report also confirms it actually looked at the changed material rather than finding nothing to inspect."
+    },
+    {
+      "id": "c4",
+      "text": "Running the project's check script with the --json option prints a machine-readable report that includes a \"signatures_ok\" entry, and that entry reads true \u2014 showing that none of the approved statements have been altered."
+    },
+    {
+      "id": "c5",
+      "text": "Running the project's own quality-check command in its machine-readable mode, compared against the recorded baseline file, reports a clean result: it produces at least one pass/fail indicator and none of them are marked failing."
+    },
+    {
+      "id": "c6",
+      "text": "Running the project's own baseline-check helper reports, for every tracked type-doctrine warning category, how its current count compares with the recorded numbers in scripts/gate-baseline.json. The report must show zero categories whose current count is higher than the recorded number, and zero categories whose count has dropped without the recorded number having been lowered to match in the same branch, while confirming the baseline file was found and at least one category was actually compared."
+    },
+    {
+      "id": "c7",
+      "text": "Running a small report script shows that the newly added statement is listed in the project's specification folder (ArmadaLean/Spec) and has a matching witness file in ArmadaLean/Witness, and that the project's own checker script (scripts/check.sh) runs over those two files and finishes successfully."
+    },
+    {
+      "id": "c8",
+      "text": "A checker script, run against the repository, lists every file that is newly added compared with the original starting state and reports how many of those new files sit outside the ArmadaLean/ folder. The report must show zero new files anywhere outside ArmadaLean/, while confirming that at least one newly added file was found (so the check genuinely inspected real additions)."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "A helper script runs the project's Lean checker (via /home/rix/bin/lean-run with `lake env lean`) on ArmadaLean/PoolSafety.lean and reports what it saw. The report must show that the file passes the checker with zero errors and zero unfinished proofs, and that the file now contains a new finished statement about whole sequences of pool calls: one that starts from the freshly created pool built by `genesis` with the given rate, fee admin and treasury, lets `Pool.apply verify` accept the calls one after another, assumes the PE5 condition, and concludes that the state left at the end is the contract part of some reachable state.",
+      "proves": "It proves the requested multi-call safety theorem really was added to ArmadaLean/PoolSafety.lean and is genuinely accepted by Lean: the whole file compiles cleanly with no errors and no placeholder/unproved steps, and the new statement is the one described in the clause (a list of Pool.Call accepted in order from the genesis contract, under PE5, ending in the contract of a reachable state).",
+      "restatement_clause_id": "C1",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_pool_safety_list_theorem.py",
+        "args": [
+          "--file",
+          "ArmadaLean/PoolSafety.lean",
+          "--lean-run",
+          "/home/rix/bin/lean-run"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "typechecks",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "error_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "sorry_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "list_call_theorem_found",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_mentions_pool_apply_verify",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_mentions_genesis_contract",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_mentions_pe5_hypothesis",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "theorem_concludes_reachable_contract",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 2,
+      "timeout_seconds": 2400,
+      "clause_id": "c1"
+    },
+    {
+      "description": "A checker script asks the Lean tool (run through /home/rix/bin/lean-run) to report the complete list of assumptions the new sequence theorem relies on, using a file that imports ArmadaLean and prints the theorem's axioms. The report it prints back names exactly the six expected assumptions (propext, EdDSAVerify, VerifyAccepts, VerifyOwnedAccepts, Classical.choice, Quot.sound), with nothing extra, nothing missing, and no 'sorryAx' placeholder standing in for an unfinished proof.",
+      "proves": "Proves the new sequence theorem is genuinely proved and not left incomplete: it depends only on the six declared assumptions and contains no unproved gaps (no sorryAx), confirming the claim can be checked by running the Lean tool on an importing file.",
+      "restatement_clause_id": "C2",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_sequence_axioms.py",
+        "args": [],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "lean_exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "contains_sorry_ax",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "observe": "stdout_json",
+          "field": "unexpected_axiom_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "missing_axiom_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "axiom_count",
+          "op": "eq",
+          "value": 6
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 1800,
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running the repository's escape-hatch report over the files touched by this change shows that the change adds none of the shortcuts that let a proof be accepted without being proved: no new assumed statements (axiom), no unfinished placeholders (sorry, admit), no trusted-by-execution checks (native_decide), and no early stop markers (#exit). The report also confirms it actually looked at the changed material rather than finding nothing to inspect.",
+      "proves": "Proves the clause that the change introduces no new axiom, sorry, admit, native_decide or #exit anywhere, by reporting a count of zero newly added occurrences of each while confirming the changed files were genuinely examined.",
+      "restatement_clause_id": "C3",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/report_new_escape_hatches.py",
+        "args": [
+          "--format",
+          "json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "files_scanned",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "observe": "stdout_json",
+          "field": "added_lines_scanned",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "observe": "stdout_json",
+          "field": "new_axiom_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "new_sorry_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "new_admit_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "new_native_decide_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "new_exit_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "total_new_escape_hatches",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c3"
+    },
+    {
+      "description": "Running the project's check script with the --json option prints a machine-readable report that includes a \"signatures_ok\" entry, and that entry reads true \u2014 showing that none of the approved statements have been altered.",
+      "proves": "Confirms the clause that scripts/check.sh --json reports signatures_ok as true, i.e. the approved statements are unchanged and their signatures still verify.",
+      "restatement_clause_id": "C4",
+      "type": "behavior",
+      "when": {
+        "interpreter": "",
+        "script": "scripts/check.sh",
+        "args": [
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "signatures_ok",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 300,
+      "clause_id": "c4"
+    },
+    {
+      "description": "Running the project's own quality-check command in its machine-readable mode, compared against the recorded baseline file, reports a clean result: it produces at least one pass/fail indicator and none of them are marked failing.",
+      "proves": "Confirms the clause that the check command, when run in JSON mode against the stored baseline, reports every '_ok' indicator as true (no regressions against the baseline).",
+      "restatement_clause_id": "C5",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/verify_gate_ok.py",
+        "args": [
+          "--check",
+          "scripts/check.sh",
+          "--baseline",
+          "scripts/gate-baseline.json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "baseline_file_present",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "check_exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "ok_field_count",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "observe": "stdout_json",
+          "field": "false_ok_field_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "all_ok_true",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "max_runs": 2,
+      "timeout_seconds": 600,
+      "clause_id": "c5"
+    },
+    {
+      "description": "Running the project's own baseline-check helper reports, for every tracked type-doctrine warning category, how its current count compares with the recorded numbers in scripts/gate-baseline.json. The report must show zero categories whose current count is higher than the recorded number, and zero categories whose count has dropped without the recorded number having been lowered to match in the same branch, while confirming the baseline file was found and at least one category was actually compared.",
+      "proves": "Proves that the type-doctrine warning counts never grow past the agreed ceiling and that whenever a count improves, the recorded ceiling has already been tightened by scripts/update_gate_baseline.py in the same branch, so improvements cannot silently be given back.",
+      "restatement_clause_id": "C6",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracle_gate_baseline_report.py",
+        "args": [
+          "--baseline",
+          "scripts/gate-baseline.json",
+          "--json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "baseline_found",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "categories_compared",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "observe": "stdout_json",
+          "field": "categories_above_baseline",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "categories_below_baseline_not_ratcheted",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 2,
+      "timeout_seconds": 900,
+      "clause_id": "c6"
+    },
+    {
+      "description": "Running a small report script shows that the newly added statement is listed in the project's specification folder (ArmadaLean/Spec) and has a matching witness file in ArmadaLean/Witness, and that the project's own checker script (scripts/check.sh) runs over those two files and finishes successfully.",
+      "proves": "Proves the new statement is actually registered where the project's checker looks for it: a spec entry under ArmadaLean/Spec and a corresponding witness under ArmadaLean/Witness, both picked up by scripts/check.sh without error.",
+      "restatement_clause_id": "C7",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/oracle_spec_witness.py",
+        "args": [
+          "--report-json"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "spec_entry_found",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "witness_found",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "check_sh_reads_spec",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "check_sh_reads_witness",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "observe": "stdout_json",
+          "field": "check_sh_exit_code",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "exit_code",
+          "field": "",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "max_runs": 2,
+      "timeout_seconds": 900,
+      "clause_id": "c7"
+    },
+    {
+      "description": "A checker script, run against the repository, lists every file that is newly added compared with the original starting state and reports how many of those new files sit outside the ArmadaLean/ folder. The report must show zero new files anywhere outside ArmadaLean/, while confirming that at least one newly added file was found (so the check genuinely inspected real additions).",
+      "proves": "Confirms that all newly created files live inside ArmadaLean/ and nothing new was dropped anywhere else in the repository, as the clause requires.",
+      "restatement_clause_id": "C8",
+      "type": "behavior",
+      "when": {
+        "interpreter": "python3",
+        "script": "scripts/check_new_file_scope.py",
+        "args": [
+          "--base-ref",
+          "HEAD",
+          "--allowed-prefix",
+          "ArmadaLean/"
+        ],
+        "stdin": ""
+      },
+      "then": [
+        {
+          "observe": "stdout_json",
+          "field": "added_outside_count",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "observe": "stdout_json",
+          "field": "added_total_count",
+          "op": "ge",
+          "value": 1
+        }
+      ],
+      "max_runs": 1,
+      "timeout_seconds": 120,
+      "clause_id": "c8"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check.sh",
+    "scripts/check_new_file_scope.py",
+    "scripts/check_pool_safety_list_theorem.py",
+    "scripts/check_sequence_axioms.py",
+    "scripts/oracle_gate_baseline_report.py",
+    "scripts/oracle_spec_witness.py",
+    "scripts/report_new_escape_hatches.py",
+    "scripts/verify_gate_ok.py"
+  ]
+}
