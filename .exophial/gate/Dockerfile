@@ -17,7 +17,10 @@
 #       (the local pre-commit hooks call exophial-check-claude-md,
 #        exophial-reroute-main-commit, exophial-red-before-green,
 #        exophial-check-subtree-edits, exophial-session-trailer)
-#   elan + leanprover/lean4:v4.33.1 (lean-toolchain)   -> lake build
+#   elan + leanprover/lean4:v4.35.0 (lean-toolchain)   -> lake build
+#       and leanprover/lean4:v4.33.1, kept so that a tree from before the
+#       v4.35.0 move still builds in this image (exophial env_change_e2e
+#       grades the parent tree in the new image)
 #   pre-commit 4.5.1 (the host's version)              -> scripts/check.sh
 #       does not itself run pre-commit, but the pre-commit hook
 #       environments are still built here so a future gate.command that
@@ -31,11 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# --- elan + the pinned toolchain (lean-toolchain: leanprover/lean4:v4.33.1) ---
+# --- elan + the pinned toolchain (lean-toolchain: leanprover/lean4:v4.35.0),
+#     plus v4.33.1 for trees from before the move ---
 ENV ELAN_HOME=/root/.elan HOME=/root
 ENV PATH="/root/.elan/bin:${PATH}"
 RUN curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
         | sh -s -- -y --no-modify-path --default-toolchain none \
+    && elan toolchain install leanprover/lean4:v4.35.0 \
     && elan toolchain install leanprover/lean4:v4.33.1
 
 # --- pre-commit 4.5.1 (the host's version) ---
