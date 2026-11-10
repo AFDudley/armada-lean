@@ -40,7 +40,7 @@ The model has no forks and no finality: the papers make no confirmation claims. 
 
 ## Mathlib (operator ruling 2026-10-27)
 
-Mathlib `v4.33.1` is a dependency. Hand-written definitions replaced by Mathlib ones, with the meaning unchanged: `Reachable` is `Relation.ReflTransGen (Step apps) genesis`; `Redistributed` is `Relation.ReflTransGen RedistributeStep` (the one-step inductive stays); `Acyclic edge` is `Std.Irrefl (Relation.TransGen edge)`, whose `irrefl` field is the ruling's `∀ c, ¬ TransGen edge c c`. Sums stay core `List.sum`; `List.lookup`, `List.Nodup`, `List.all` are core.
+Mathlib `v4.35.0` is a dependency. Hand-written definitions replaced by Mathlib ones, with the meaning unchanged: `Reachable` is `Relation.ReflTransGen (Step apps) genesis`; `Redistributed` is `Relation.ReflTransGen RedistributeStep` (the one-step inductive stays); `Acyclic edge` is `Std.Irrefl (Relation.TransGen edge)`, whose `irrefl` field is the ruling's `∀ c, ¬ TransGen edge c c`. Sums stay core `List.sum`; `List.lookup`, `List.Nodup`, `List.all` are core.
 
 ## Operator ruling 2026-10-27: reclaim only
 

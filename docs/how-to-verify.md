@@ -14,7 +14,7 @@ export PATH="$HOME/.elan/bin:$PATH"   # also added to your shell profile
 ```
 
 You do **not** need to install Lean itself: the repo's `lean-toolchain` file
-pins the exact compiler version (`leanprover/lean4:v4.33.1`), and elan
+pins the exact compiler version (`leanprover/lean4:v4.35.0`), and elan
 downloads it automatically on first use.
 
 ## 2. Clone and build
@@ -33,7 +33,7 @@ proof step by proof step, by the Lean kernel. If any proof were wrong — or a
 theorem statement didn't say what we claim — the build would fail. There is no
 way to "force" a green build other than a correct proof.
 
-The project depends on Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib
+The project depends on Mathlib `v4.35.0` (operator ruling 2026-10-27: use Mathlib
 where it makes sense). `lake exe cache get` downloads Mathlib's prebuilt files, so
 the build does not compile Mathlib. `lake-manifest.json` pins the Mathlib commit.
 

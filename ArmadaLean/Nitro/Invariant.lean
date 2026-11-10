@@ -209,7 +209,7 @@ theorem inv_step {apps : Apps E} {s s' : Adjudicator E} (hr : Reachable apps s) 
       rw [hh, hb]
       simp only [Balances.add]
       (simp? at this says simp only [Bool.decide_eq_false, Address.isExternal_channel, decide_true, ↓reduceIte] at this)
-      (grind? says grind only [#3a2f, #8010, #3acd])
+      (grind only)
     | transfer a b =>
       obtain ⟨o, _, x, -, -, hx, hb, hh, -, -, -, -⟩ := transfer_some h
       have hxa : x ≤ s.balances.get a.address := hx ▸ Allocation.paidTo_le_held _ _ _
@@ -219,7 +219,7 @@ theorem inv_step {apps : Apps E} {s s' : Adjudicator E} (hr : Reachable apps s) 
         (a := a.address) (by (simp? says simp only [FixedPart.address_eq, Address.isExternal_channel, decide_true]))
       rw [hh, hb, Balances.channelTotal_eq_sumIf]
       rw [Balances.channelTotal_eq_sumIf] at hheld
-      cases b <;> simp at this ⊢ <;> (grind? says grind only [#3a2f, #8010, #3acd])
+      cases b <;> simp at this ⊢ <;> (grind only)
     | reclaim l v =>
       obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := reclaim_some h; exact ⟨hnd, hheld⟩
     | challenge c proof cand => obtain ⟨_, rfl⟩ := challenge_some h; exact ⟨hnd, hheld⟩

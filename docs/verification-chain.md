@@ -15,7 +15,7 @@ section "Verification chain" (operator rulings 2026-10-25 and 2026-10-27).
 | 3 | Solidity | bytecode | solc | none needed: step 4 checks the result |
 | 4 | bytecode | Stele | EquiVM on EVMLean's EVM semantics | a refinement proof, written by an agent |
 
-All of it is Lean on one toolchain, `leanprover/lean4:v4.33.1`.
+All of it is Lean on one toolchain, `leanprover/lean4:v4.35.0`.
 
 ## What the specification leaves out, and why
 

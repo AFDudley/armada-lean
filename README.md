@@ -44,7 +44,7 @@ Both models came from the branches `pool-symbolic` and `nitro-proofs`, now
 merged into this trunk. The branches no longer exist; their content survives
 as the tags `archive/pool-symbolic` and `archive/nitro-proofs`.
 
-Dependency: Mathlib `v4.33.1` (operator ruling 2026-10-27: use Mathlib where it makes sense). Run
+Dependency: Mathlib `v4.35.0` (operator ruling 2026-10-27: use Mathlib where it makes sense). Run
 `lake exe cache get` before the first `lake build`.
 
 ## What is proven, and where it maps to the code
