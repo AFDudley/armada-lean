@@ -4,19 +4,26 @@
 Usage: python3 scripts/spec_check.py [--json [THEOREM_NAME]]
 Run from the repo root. Exit 0 means every check passed.
 
-The check is `lake build` plus one computed report (`scripts/spec_report.lean`). It
-reads no stored list of names, counts or signatures. Every set below is computed
-from the checked environment on each run.
+The check is `lake build` plus one computed report (`scripts/spec_report.lean`), plus
+two committed facts: `ALLOWED_AXIOMS` below, and `scripts/approved-open.tsv`
+(`spec_lib.load_approved_open`). Every other set is computed from the checked
+environment on each run.
 
 - build_ok: `lake build` exits 0. The build checks every proof and runs
   `#check_spec_bindings` in each `ArmadaLean/Spec/` module.
 - signatures_ok: every spec theorem has its spec definition `N.Spec.x`, and the
   theorem's type is definitionally equal to it; every spec definition belongs to a
   spec theorem.
-- axioms_ok: every axiom of every spec theorem and witness is a Lean core axiom
-  (module `Init`), `sorryAx` (an open proof, reported in `sorry`), or a declared
-  primitive of the model: an axiom whose type is not a proposition
-  (`writing-lean.md` §11: "It never asserts a property").
+- axioms_ok: every axiom of every spec theorem and witness is in `ALLOWED_AXIOMS`, or
+  is `sorryAx` (an open proof, gated by `sorry_ok` below, not here). Review
+  ship-armada/armada-lean#1, finding 3: the earlier rule passed any axiom whose type
+  was not a proposition, so `axiom x : Empty` would have passed and proved anything
+  (`Empty : Type`, not a `Prop`). `ALLOWED_AXIOMS` is an exact name list instead.
+- sorry_ok: every spec theorem whose axioms include `sorryAx` is named in
+  `scripts/approved-open.tsv`, with the operator's approval date
+  (`docs/process.md` rule 8.3). Review finding 3: the gate used to exit 0 on any
+  `sorry` spec theorem; this is the one committed exception list, reported in
+  `--json` as `approved_open`.
 - reach_ok: a spec entry with a binder of a machine state type also has a
   `ReachableState` binder, or its spec definition says "Every state: REASON".
 - nonvacuity_ok: every spec entry with a hypothesis has its witness
@@ -25,13 +32,14 @@ from the checked environment on each run.
   `theorem_witness_open` says whether that theorem's witness is open: one boolean,
   so an acceptance oracle can compare it with `eq` (the oracle grammar has no
   list-membership comparison).
-- witness_blocked: an open witness whose premise reaches a declared primitive (an
-  axiom that is not a proposition, such as `EdDSAVerify` or `VerifyAccepts`). No
-  concrete value proves a hypothesis about an uninterpreted primitive
-  (`docs/spec-module-design.md` §5), so the witness waits on the primitive, not on
-  work. It maps the theorem to the primitives; it is not in `witness_open`.
-  `theorem_witness_blocked` answers for a THEOREM_NAME.
-- sorry: the spec theorems whose axioms include `sorryAx`.
+- witness_blocked: an open witness whose premise reaches a `PRIMITIVE_AXIOMS` name
+  (`EdDSAVerify`, `VerifyAccepts` or `VerifyOwnedAccepts`). No concrete value proves
+  a hypothesis about an uninterpreted primitive (`docs/spec-module-design.md` §5),
+  so the witness waits on the primitive, not on work. It maps the theorem to the
+  primitives; it is not in `witness_open`. `theorem_witness_blocked` answers for a
+  THEOREM_NAME.
+- sorry: the spec theorems whose axioms include `sorryAx` (approved or not;
+  `sorry_ok` reports the ones that are not).
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
 """
 from __future__ import annotations
@@ -49,9 +57,48 @@ import gate_extra  # noqa: E402
 
 ROOT = Path.cwd()
 
+# Lean's three core axioms (`Init.Core`, `Init.Prelude`): the kernel's own soundness
+# assumptions, which every proof may use.
+CORE_AXIOMS = frozenset({
+    "propext",           # propositional extensionality
+    "Classical.choice",  # the axiom of choice
+    "Quot.sound",        # quotient soundness
+})
+# The model's three declared primitives (`docs/process.md` rule 2.4: an axiom may
+# declare a primitive's type; it never asserts a property). Each states only an
+# uninterpreted function's or relation's type, with no defining equation:
+# `ArmadaLean/Transact.lean`, `ArmadaLean/PoolSafety.lean`, `ArmadaLean/PoolOwned.lean`.
+PRIMITIVE_AXIOMS = frozenset({
+    "ArmadaLean.EdDSAVerify",        # the EdDSA signature verifier (Transact.circom)
+    "ArmadaLean.VerifyAccepts",      # the plain-circuit Groth16 verifier (Transact.circom)
+    "ArmadaLean.VerifyOwnedAccepts", # the owned-circuit Groth16 verifier (TransactOwned.circom)
+})
+# The exact allowlist (review ship-armada/armada-lean#1, finding 3). Checked against
+# the built environment on 2026-11-12: no spec theorem's or witness's axioms ever
+# name a seventh. `sorryAx` is not here; `bad_axioms` below excludes it by name, and
+# `sorry_ok` gates it separately against `scripts/approved-open.tsv`.
+ALLOWED_AXIOMS = CORE_AXIOMS | PRIMITIVE_AXIOMS
+
 
 def say(json_mode: bool, msg: str) -> None:
     print(msg, file=sys.stderr if json_mode else sys.stdout)
+
+
+def bad_axioms(axs: list[str]) -> list[str]:
+    """The axioms in `axs` that assert a property: not `sorryAx` (an open proof,
+    gated separately by `sorry_ok`) and not in `ALLOWED_AXIOMS`. Before this
+    allowlist, an axiom passed whenever its type was not a `Prop`, so a declared
+    `axiom x : Empty` passed unconditionally and proved anything."""
+    return [a for a in axs if a != "sorryAx" and a not in ALLOWED_AXIOMS]
+
+
+def unapproved_sorry(members: list[dict], approved_open: dict[str, dict]) -> list[str]:
+    """The names, from `members`, of spec theorems whose own axioms include
+    `sorryAx` and whose name is not a key of `approved_open`
+    (`spec_lib.load_approved_open`). Before this gate, a `sorry` spec theorem
+    passed unconditionally (review ship-armada/armada-lean#1, finding 3)."""
+    return [m["name"] for m in members
+            if "sorryAx" in m["axioms"] and m["name"] not in approved_open]
 
 
 def main() -> int:
@@ -59,6 +106,8 @@ def main() -> int:
     argv = sys.argv[1:]
     json_mode = bool(argv) and argv[0] == "--json"
     theorem = argv[1] if json_mode and len(argv) > 1 else ""
+
+    approved_open = spec_lib.load_approved_open(ROOT)
 
     out_dir = ROOT / ".scratch" / "check"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -68,7 +117,9 @@ def main() -> int:
     say(json_mode, ("PASS" if build_ok else "FAIL") + " build"
         + ("" if build_ok else f" (exit {build.returncode}, see .scratch/check/build.log)"))
 
-    fails: dict[str, list[str]] = {k: [] for k in ("signatures", "axioms", "reach", "nonvacuity")}
+    fails: dict[str, list[str]] = {
+        k: [] for k in ("signatures", "axioms", "reach", "nonvacuity", "sorry")
+    }
     members: list[dict] = []
     helpers: list[dict] = []
     sorry: list[str] = []
@@ -80,16 +131,6 @@ def main() -> int:
         report = spec_lib.run_report(ROOT)
         (out_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
         members, helpers = spec_lib.classify(spec_lib.source_theorems(ROOT, report))
-        ax_info = report["axiom_info"]
-
-        def bad_axioms(axs: list[str]) -> list[str]:
-            bad = []
-            for a in axs:
-                info = ax_info[a]
-                if a == "sorryAx" or info["core"] or not info["prop"]:
-                    continue
-                bad.append(a)
-            return bad
 
         member_specs = set()
         for t in members:
@@ -126,12 +167,14 @@ def main() -> int:
                                                    "which asserts a property")
                     if "sorryAx" in w["axioms"]:
                         prims = sorted(a for a in spec.get("premise_axioms", [])
-                                       if a != "sorryAx" and not ax_info[a]["core"]
-                                       and not ax_info[a]["prop"])
+                                       if a in PRIMITIVE_AXIOMS)
                         if prims:
                             witness_blocked[name] = prims
                         else:
                             witness_open.append(name)
+        fails["sorry"] = [f"{n} has a sorry proof with no {spec_lib.APPROVED_OPEN_REL} entry"
+                          for n in unapproved_sorry(members, approved_open)]
+
         for d in report["spec_defs"]:
             if d not in member_specs:
                 fails["signatures"].append(f"{d} belongs to no spec theorem")
@@ -219,6 +262,8 @@ def main() -> int:
             "build_ok": build_ok,
             "sorry": sorted(sorry),
             "sorry_count": len(sorry),
+            "sorry_ok": ok["sorry"],
+            "approved_open": {n: approved_open[n] for n in sorted(approved_open)},
             "axioms_ok": ok["axioms"],
             "signatures_ok": ok["signatures"],
             "nonvacuity_ok": ok["nonvacuity"],

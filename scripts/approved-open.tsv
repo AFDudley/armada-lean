@@ -1,0 +1,12 @@
+# Approved open spec theorems (scripts/spec_check.py; docs/process.md rule 8.3;
+# docs/spec-module-design.md §7). FULLNAME<TAB>APPROVED<TAB>REASON.
+#
+# A row names a spec theorem whose own proof is `sorry`, with the date the operator
+# approved it staying open. `scripts/spec_check.py` fails any spec theorem whose
+# axioms include `sorryAx` and whose name is not a row here (review
+# ship-armada/armada-lean#1, finding 3: a passing check used to allow any `sorry`
+# spec theorem).
+#
+# Add a row only with the operator's approval of that date; removing a row re-opens
+# the gate's sorry check on that theorem's current proof.
+ArmadaLean.Pool.apply_backward_refinement_run	2026-11-09	PE7 (run refinement over Pool.applyRun, docs/pool-executable.md rule PE7); operator ruling 2026-11-09. Open pending proof.
