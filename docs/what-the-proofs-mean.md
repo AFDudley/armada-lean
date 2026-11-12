@@ -41,10 +41,15 @@ Lean and proved the properties that the internal security review
 3. **Explicit cryptographic assumptions.** Poseidon and Keccak are both modeled
    symbolically (Dolev-Yao style): a hash output is a term built by an inductive
    type (`ArmadaLean.Term`, `ArmadaLean/Poseidon.lean`), tagged with which hash function produced
-   it, never a raw number, so collision resistance, domain separation and
-   cross-function separation (a Keccak output — a contract address — can never
-   equal a Poseidon output) hold *by construction* — no Poseidon or Keccak axiom
-   exists in this project. EdDSA signature unforgeability is still assumed
+   it, never a raw number. The symbolic model is itself the cryptographic assumption.
+   Inside it, Poseidon and Keccak collision freedom, their domain separation from
+   each other (a Keccak output — a contract address — can never equal a Poseidon
+   output), and preimage resistance all hold *by construction*, so no Poseidon or
+   Keccak axiom appears in `#print axioms`. The assumption did not disappear; it
+   moved from a per-theorem axiom to the one choice of model, here. The refinement
+   from this specification to concrete code names these same three properties as
+   explicit hypotheses on the real hash functions, not as axioms
+   (`docs/verification-chain.md`). EdDSA signature unforgeability is still assumed
    (`EdDSAVerify` axiom). These are standard assumptions — every security
    argument about the system makes them, we just make them *visible*. Run
    `#print axioms <theorem>` to see exactly which assumptions any theorem

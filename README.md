@@ -158,13 +158,17 @@ unbeatable strategies and the Turbo Value Algorithm; 16 are proved, and
 
 Poseidon and Keccak are both modeled symbolically (Dolev-Yao style,
 `ArmadaLean.Term`, `ArmadaLean/Poseidon.lean`): a hash output is an inductive term, never a raw
-number, tagged with the hash function that produced it
-(`ArmadaLean.HashFn`), so collision resistance, domain separation and
-cross-function separation (a Keccak output — a contract address — can never
-equal a Poseidon output — a note key, a commitment, a nullifier) hold by
-construction (the type's own constructors), not as an axiom on a concrete
-numeric function — no `poseidon2`/`poseidon3`/`keccak`/injectivity axiom
-exists in this project. EdDSA stays an abstract unforgeable signature scheme —
+number, tagged with the hash function that produced it (`ArmadaLean.HashFn`). The
+symbolic model is itself the cryptographic assumption: inside it, Poseidon and Keccak
+collision freedom, their domain separation from each other (including cross-function
+separation — a Keccak output, a contract address, can never equal a Poseidon output, a
+note key, a commitment, or a nullifier), and preimage resistance all hold by
+construction (the type's own constructors), with no further hypothesis. `#print axioms`
+on a theorem that uses this fact lists no `poseidon2`/`poseidon3`/`keccak`/injectivity
+axiom, because the assumption lives in the choice of model, not in a per-theorem axiom.
+The refinement from this specification to concrete code names these same three
+properties as explicit hypotheses on the real hash functions
+(`docs/verification-chain.md`). EdDSA stays an abstract unforgeable signature scheme —
 an **explicit axiom** (`EdDSAVerify`), visible per-theorem via `#print axioms`
 (see `docs/axioms-*.txt`). The Groth16 verifiers are the uninterpreted predicates
 `VerifyAccepts` and `VerifyOwnedAccepts`, also declared with `axiom`; only the
