@@ -73,18 +73,82 @@ function setFeeModule(address _feeModule) external override {
 ```
 
 The owner can raise or lower the flat fee at any time (bounded by
-`MAX_SHIELD_FEE_BPS = 1000`, 10%, `PrivacyPool.sol:39`), and can swap in or
-remove a fee module.
+`MAX_SHIELD_FEE_BPS = 1000`, 10%, `PrivacyPool.sol:39`). `setFeeModule` can
+swap in or remove a fee module at any time; while one is set, `setShieldFee`
+reverts (`PrivacyPool.sol:406`, `require(feeModule == address(0), ...)`),
+so the flat rate stops applying.
 
-**Effect on the theorems.** `ArmadaLean.Fee.FeeRatio` already models a
-changeable rate: `step_feeRatio_frame` and
+**Effect on the theorems, flat-rate changes.** `ArmadaLean.Fee.FeeRatio`
+already models a changeable flat rate: `step_feeRatio_frame` and
 `Pool.apply_setFeeRatio_not_admin` state that only the fee admin changes
-`PoolState.feeRatio` (operator ruling 2026-11-06). This departure is already
-modeled, not missing. The stale claim this change fixes was in
-`ArmadaLean/Fee.lean`'s header comment, which quoted an early labbook
-decision ("sets verifying keys and fees once at deployment") without noting
-that the fee half of that sentence does not hold at the pinned contract. See
-the diff to `ArmadaLean/Fee.lean` in this branch.
+`PoolState.feeRatio` (operator ruling 2026-11-06). The stale claim this
+change fixes was in `ArmadaLean/Fee.lean`'s header comment, which quoted an
+early labbook decision ("sets verifying keys and fees once at deployment")
+without noting that the fee half of that sentence does not hold at the
+pinned contract.
+
+**A second, unmodeled fee path: the fee module split.** Source:
+`ShieldModule.sol:303-385` (`_transferTokenIn`), the three-way branch
+(spec section 7.3):
+
+```solidity
+if (_isPrivilegedShieldCaller(msg.sender)) {
+    // fee = 0; pool pulls the full gross amount
+} else if (feeModule != address(0)) {
+    (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
+        IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
+    _requireValidFeeSplit(amount, integrator, armadaTake, integratorFee, totalFee);
+    // pool pulls (amount - totalFee); armadaTake goes to treasury,
+    // integratorFee goes to `integrator` (caller-supplied, any address)
+} else {
+    // the flat shieldFee path ArmadaLean.Fee models
+}
+```
+
+`_requireValidFeeSplit` (`ShieldModule.sol:237-250`) caps the fee-module
+total at `MAX_FEE_MODULE_SHIELD_FEE_BPS = 1500` (15%, `ShieldModule.sol:42`),
+a different and higher cap than the flat path's 10%
+(`ArmadaLean.Fee.maxFeePercent`). The fee module can also split the total
+between the treasury (`armadaTake`) and an arbitrary `integrator` address
+the shielder names per call (`integratorFee`, `ShieldModule.sol:352-354`),
+and `_isPrivilegedShieldCaller` (`ShieldModule.sol:258-263`, an adapter
+registry gate) waives the fee to zero for a trusted caller.
+
+**Effect on the theorems.** `shield_creates_exactly`
+(`ArmadaLean.PoolSafety`) states that a shield of gross `x` creates a note of
+exactly `shieldBase s.feeRatio x` and pays `shieldFee s.feeRatio x` to the
+treasury, for every reachable state `s`. Its only state input is
+`s.feeRatio`; nothing hypothesizes `feeModule = address(0)` or that no
+adapter is privileged. So the theorem is stated as if it held in every
+reachable state, but at a real state with a fee module installed, the
+contract computes the note value from `IArmadaFeeModule.calculateShieldFee`
+(an external call this project does not model) under a 15% cap, and can pay
+part of the fee to an integrator the model's `PoolState` has no field for —
+not from `s.feeRatio` under a 10% cap paid wholly to `s.treasury`. The
+privileged-caller branch similarly creates a note of the full gross `x`
+(zero fee), which `shield_creates_exactly` also does not state as a case.
+`core_invariant`'s custody bookkeeping stays sound for the fee-module
+branch specifically (the pool's own balance only ever gains
+`amount - totalFee`, since `armadaTake` and `integratorFee` are pulled
+`safeTransferFrom(msg.sender, ...)` directly, never through the pool's
+balance), but `shield_creates_exactly`'s claimed note VALUE is wrong
+whenever a fee module is installed, because the model's only fee formula is
+`shieldBase`/`shieldFee` over `s.feeRatio`.
+
+**Not modeled.** `ArmadaLean.Fee` and `PoolState` have no fee-module field,
+no integrator fee, no 15% cap, and no privileged-caller zero-fee case.
+`shield_creates_exactly` and the `can_happen` theorem built on it
+(`shield_can_happen`) hold only for the flat-fee branch (`feeModule =
+address(0)` and no privileged adapter); this project's statements do not
+say so. Modeling the fee-module branch needs: a `PoolState` field for
+whether a fee module is active, an opaque `calculateShieldFee`-shaped
+function (parameterized like `VerifyAccepts`, since the fee module is an
+external, upgradable contract), a `treasuryFees`-shaped ledger entry for the
+integrator leg, and a restated `shield_creates_exactly` split into the two
+(or three) cases. This is new work; no statement change is proposed here,
+since fixing `shield_creates_exactly`'s hypotheses (adding `feeModule =
+address(0)` and "no privileged adapter" as explicit hypotheses) is a change
+to a `Spec` statement and needs the operator's approval under rule 8.3.
 
 ## 3. CCTP cross-chain shield and unshield
 
@@ -148,14 +212,27 @@ batch filled the current tree) has no theorem at all, proved or otherwise.
 
 ## Statement changes needed
 
-None of the four items above requires a change to an existing `Spec`
-statement's `Prop`: items 1, 3 and 4 are gaps this project never claimed to
-close (so no existing theorem is false), and item 2 is already correctly
-modeled (`FeeRatio`, `step_feeRatio_frame`). The fix in this branch is to
+Item 2's flat-fee half needs no statement change: it is already correctly
+modeled (`FeeRatio`, `step_feeRatio_frame`), and the fix in this branch is to
 `ArmadaLean/Fee.lean`'s doc comment (a false claim about the fee half of a
-"sets once" sentence), not to a `Spec` definition. Closing items 3 and 4
-needs new `Step` constructors and new theorems — new work, proposed to the
-operator separately, not a correction to a current statement.
+"sets once" sentence), not to a `Spec` definition.
+
+Item 2's fee-module half is a false claim, not a silent gap:
+`shield_creates_exactly` (`ArmadaLean.Spec.PoolSafety`) is stated for every
+reachable state `s`, with no hypothesis ruling out a fee module or a
+privileged adapter. The exact proposed text, for the operator (rule 8.3):
+add two hypotheses, `(hNoFeeModule : s.feeModule = none)` and `(hNoPrivileged
+: ¬ s.PrivilegedShieldCaller caller)` (new `PoolState` fields this change
+does not add), to `Spec.shield_creates_exactly` and every theorem built on
+it (`shield_can_happen`). Counterexample without the fix: a reachable state
+with a fee module installed and `armadaTake + integratorFee = 15% * x >
+shieldFee s.feeRatio x` (the fee-module cap exceeds the flat-rate cap);
+the real contract creates a note of `x - 0.15x`, not `shieldBase s.feeRatio
+x`, so the theorem's conclusion is false at that state as currently stated.
+Items 1, 3 and 4 are gaps this project never claimed to close (so no
+existing theorem is false); closing them needs new `Step` constructors and
+new theorems — new work, proposed to the operator separately, not a
+correction to a current statement.
 
 ## Related, separately owned cleanup
 
