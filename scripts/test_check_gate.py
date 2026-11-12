@@ -75,7 +75,7 @@ def test_sorry_gate_accepts_the_approved_pe7_theorem() -> None:
         "propext", "Quot.sound", "sorryAx",
         "ArmadaLean.EdDSAVerify", "ArmadaLean.VerifyAccepts", "ArmadaLean.VerifyOwnedAccepts",
     ]}]
-    approved = {name: {"approved": "2026-11-09", "reason": "PE7"}}
+    approved = {name: {"approved": "2026-11-12", "reason": "PE7"}}
     rejected = spec_check.unapproved_sorry(members, approved_open=approved)
     check("sorry_gate_accepts_the_approved_pe7_theorem", rejected == [], f"got {rejected!r}")
 
@@ -88,7 +88,7 @@ def test_sorry_gate_rejects_the_approved_name_on_a_different_theorem() -> None:
                {"name": "ArmadaLean.Pool.apply_backward_refinement",
                 "axioms": ["sorryAx"]}]
     approved = {"ArmadaLean.Pool.apply_backward_refinement_run":
-                {"approved": "2026-11-09", "reason": "PE7"}}
+                {"approved": "2026-11-12", "reason": "PE7"}}
     rejected = spec_check.unapproved_sorry(members, approved_open=approved)
     check("sorry_gate_rejects_the_approved_name_on_a_different_theorem",
           rejected == ["ArmadaLean.Pool.apply_backward_refinement"], f"got {rejected!r}")
