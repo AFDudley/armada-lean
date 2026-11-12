@@ -15,22 +15,42 @@ namespace ArmadaLean
   finds one. A theorem whose proof rests on an axiom that is false of the function it
   names is not evidence about that function.
 
-  This module replaces that axiom with the standard Dolev-Yao abstraction: a `Term` is
+  This module replaces that axiom with the standard Dolev-Yao abstraction. A `Term` is
   either a raw value an attacker (or an honest prover) chose (`val`), or the symbolic
   hash of a list of terms it already holds, TAGGED with which hash function produced it
   (`hash`). Two different argument lists never denote the same `hash` term under the
-  same tag, two different tags never denote the same `hash` term whatever their
-  argument lists, and a `hash` term is never a `val` term — this holds *by construction*,
-  from the inductive type's constructors (`Term.noConfusion`, `Term.hash.injEq`), not as
-  an assumption about a numeric function. The soundness this buys: whatever an attacker
-  can submit as a witness is built syntactically from terms it already has — it cannot
-  conjure a `hash` term without supplying every one of its arguments, it cannot make two
-  syntactically different hash calls collide, and it cannot pass off one hash function's
-  output as another's. This is the standard free-algebra abstraction of a cryptographic
-  hash, used throughout formal protocol analysis (Dolev-Yao 1983); it is sound for what
-  this project needs (collision resistance and domain separation, now including
-  cross-function separation) and does not model either hash's concrete field arithmetic,
-  round structure, or bit width.
+  same tag. Two different tags never denote the same `hash` term, whatever their
+  argument lists. A `hash` term is never a `val` term. These three facts hold *by
+  construction*, from the inductive type's constructors (`Term.noConfusion`,
+  `Term.hash.injEq`).
+
+  The free algebra is itself the cryptographic assumption. It is not a way to state no
+  assumption. The old axiom declared Poseidon's collision resistance on a numeric
+  function, `Nat → Nat → Nat → Nat`. This module declares the same kind of property on
+  the model instead: the type gives collision freedom, domain separation, and preimage
+  resistance with no further hypothesis, because it gives an attacker no operation to
+  build a `hash` term except by supplying every one of its arguments, and no operation
+  to read a `hash` term's arguments back out except by already holding them.
+  `#print axioms` on a theorem that uses this fact lists no Poseidon or Keccak axiom.
+  That does not mean the project assumes nothing about these hash functions. It means
+  the assumption moved from a per-theorem hypothesis to one choice of model, made once,
+  here.
+
+  The soundness this buys: whatever an attacker can submit as a witness is built
+  syntactically from terms it already has. It cannot conjure a `hash` term without
+  supplying every one of its arguments. It cannot make two syntactically different hash
+  calls collide. It cannot recover a hash term's arguments without already holding them.
+  It cannot pass off one hash function's output as another's. This is the standard
+  free-algebra abstraction of a cryptographic hash, used throughout formal protocol
+  analysis (Dolev-Yao 1983). It is sound for what this project needs — collision
+  resistance, domain separation, and preimage resistance, now including cross-function
+  separation — and it does not model either hash's concrete field arithmetic, round
+  structure, or bit width.
+
+  The refinement from this specification to concrete code names these same three
+  properties — Poseidon and Keccak collision freedom, their domain separation, and
+  preimage resistance — as explicit hypotheses on the real hash functions, not as
+  axioms (`docs/verification-chain.md`).
 
   `Term.hash` takes a `List Term`, so one constructor covers every arity either hash
   function is used at: Poseidon arity 2 (note public keys, nullifiers, Merkle tree

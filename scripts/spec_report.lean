@@ -170,19 +170,7 @@ def specFacts (heads : NameSet) (d : Name) : MetaM Json := do
     let side (e : Expr) := toJson ((e.getAppFn.constName?).map toString)
     iffs := iffs.push <| Json.mkObj [("name", toJson n.toString),
       ("lhs", side (b.getArg! 0)), ("rhs", side (b.getArg! 1))]
-  -- Every axiom in the environment: is it a Lean core axiom (module `Init`), and is
-  -- its type a proposition (an axiom that asserts a property)?
-  let mut axiomInfo : Array (String × Json) := #[]
-  for (n, ci) in env.constants.toList do
-    unless ci matches .axiomInfo _ do continue
-    let core := match moduleOf? env n with
-      | some m => (`Init).isPrefixOf m
-      | none => false
-    axiomInfo := axiomInfo.push (n.toString, Json.mkObj [("core", toJson core),
-      ("prop", toJson (← isProp ci.type)),
-      ("module", toJson ((moduleOf? env n).map toString))])
   IO.println <| Json.compress <| Json.mkObj [
-    ("axiom_info", Json.mkObj axiomInfo.toList),
     ("machines", Json.arr machines), ("reach_iffs", Json.arr iffs),
     ("state_heads", toJson (heads.toList.map toString)),
     ("reach_preds", toJson (preds.toList.map toString)),

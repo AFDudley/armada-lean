@@ -64,10 +64,13 @@ the theorem's type differs from it. `docs/spec-module-design.md` explains each c
 
 ## 4. Audit the assumptions (the important part)
 
-Proofs about a ZK system must assume *some* cryptography (no one proves
-Poseidon is collision-resistant — that's a computational hardness assumption).
-We made every such assumption an explicit, named `axiom`. Lean can tell you
-exactly which assumptions any theorem depends on:
+Proofs about a ZK system must assume *some* cryptography — no one proves Poseidon
+is collision-resistant; that is a computational hardness assumption. We made each
+such assumption explicit: either a named `axiom` (EdDSA, the Groth16 verifiers), or
+a choice of symbolic model whose construction forces the property (Poseidon and
+Keccak collision freedom, their domain separation, and preimage resistance —
+`ArmadaLean/Poseidon.lean`'s `Term`). Lean can tell you exactly which axioms any
+theorem depends on:
 
 ```bash
 cat > /tmp/check_axioms.lean <<'EOF'
@@ -89,8 +92,13 @@ Compare against the recorded output in `docs/axioms-circuit.txt` and
 - **Theorems that use a proof check** may list `EdDSAVerify`, `VerifyAccepts`
   and `VerifyOwnedAccepts`. These are the declared primitives: each declares a
   verifier by its type only (read their doc comments in `ArmadaLean/Transact.lean`,
-  `ArmadaLean/PoolSafety.lean` and `ArmadaLean/PoolOwned.lean`). Poseidon is a
-  symbolic term, not an axiom (`ArmadaLean/Poseidon.lean`).
+  `ArmadaLean/PoolSafety.lean` and `ArmadaLean/PoolOwned.lean`). Poseidon and
+  Keccak never appear as an axiom here. Their collision freedom, domain
+  separation, and preimage resistance hold by construction, inside the free
+  algebra `Term` (`ArmadaLean/Poseidon.lean`) — the symbolic model is the
+  assumption, not an absence of one. The refinement from this specification to
+  concrete code names these same three properties as explicit hypotheses on the
+  real hash functions (`docs/verification-chain.md`).
 - **`no_wraparound_minting`** depends only on `propext` / `Quot.sound` — Lean's
   standard logical axioms, i.e. it is unconditional mathematics. **The vault
   and fee theorems** depend on `propext` / `Quot.sound`, and the vault's

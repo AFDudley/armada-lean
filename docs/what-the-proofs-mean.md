@@ -19,7 +19,7 @@ Lean and proved the properties that the internal security review
 |---|---|
 | `rangeCheck120_sound` | The circuit's 120-bit range check really does bound every note value below 2¹²⁰. |
 | `no_wraparound_minting` | Because all values are < 2¹²⁰ and a transaction has ≤ 8 inputs / ≤ 4 outputs, "sum of inputs equals sum of outputs" holds as ordinary integers — not just modulo the field prime. **Value cannot be created by wrapping around the field modulus.** (Formalizes the fix for Finding 1.) |
-| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions (armada-circuits `main`, merged PR #5) makes all nullifiers in one proof distinct (Poseidon is modeled symbolically, so collision resistance holds by construction — see below). **One proof cannot list the same note twice.** The circuit has no input that holds earlier spends, so it cannot stop a note spent in an earlier transaction. Only the contract's spent map does (`pool_no_double_spend`). |
+| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions (armada-circuits `main`, merged PR #5) makes all nullifiers in one proof distinct (Poseidon is modeled symbolically, so collision resistance holds by construction — see below). **One proof cannot list the same note twice.** The circuit has no input that holds earlier spends, so it cannot stop a note spent in an earlier transaction. Only the contract's spent map does: `pool_no_double_spend` proves that no nullifier value is ever marked spent twice, across the pool's whole history. A nullifier is the hash of one note's own spending key and leaf position, and that pairing is injective (`nullifier_inj`). So the theorem's own statement is about nullifier values, and that is what stops each note from being spent twice. |
 | `merkleRoot_inj_leaf` | A Merkle membership proof binds exactly *one* leaf to the tree root — a proof for one commitment cannot be repurposed for another. |
 | `transact_public_outputs_determined` | Given the private witness, the public outputs (nullifiers, output commitments) are fully determined — no hidden degrees of freedom in the security-critical signals. |
 | `transact_inputs_distinct_nullifiers` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. The first is about one proof only; it is not a no-double-spend theorem. |
@@ -41,10 +41,15 @@ Lean and proved the properties that the internal security review
 3. **Explicit cryptographic assumptions.** Poseidon and Keccak are both modeled
    symbolically (Dolev-Yao style): a hash output is a term built by an inductive
    type (`ArmadaLean.Term`, `ArmadaLean/Poseidon.lean`), tagged with which hash function produced
-   it, never a raw number, so collision resistance, domain separation and
-   cross-function separation (a Keccak output — a contract address — can never
-   equal a Poseidon output) hold *by construction* — no Poseidon or Keccak axiom
-   exists in this project. EdDSA signature unforgeability is still assumed
+   it, never a raw number. The symbolic model is itself the cryptographic assumption.
+   Inside it, Poseidon and Keccak collision freedom, their domain separation from
+   each other (a Keccak output — a contract address — can never equal a Poseidon
+   output), and preimage resistance all hold *by construction*, so no Poseidon or
+   Keccak axiom appears in `#print axioms`. The assumption did not disappear; it
+   moved from a per-theorem axiom to the one choice of model, here. The refinement
+   from this specification to concrete code names these same three properties as
+   explicit hypotheses on the real hash functions, not as axioms
+   (`docs/verification-chain.md`). EdDSA signature unforgeability is still assumed
    (`EdDSAVerify` axiom). These are standard assumptions — every security
    argument about the system makes them, we just make them *visible*. Run
    `#print axioms <theorem>` to see exactly which assumptions any theorem

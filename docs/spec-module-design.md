@@ -1,11 +1,13 @@
-# The spec module: a check that stores no list
+# The spec module: a check that stores no list, with one named exception
 
 Status: branch `draft/spec-module-2`, 2026-10-31. Operator decisions of 2026-10-31.
+Review ship-armada/armada-lean#1 finding 3 (2026-11-12) added the one exception: §6
+and §7 below.
 
 This document replaces the ratchet check: `scripts/check.sh`, `scripts/sigs-baseline.tsv`,
 the sorry baseline count, `scripts/reach-exempt.tsv`, `scripts/sigs.py`, `scripts/reach.py`
-and `scripts/sorry_report.py`. The new check is `lake build` plus one computed report. The
-check stores no list of names, counts or signatures.
+and `scripts/sorry_report.py`. The new check is `lake build` plus one computed report, plus
+`scripts/approved-open.tsv` (§7). Every other set the check reports is computed, not stored.
 
 ## 1. Parts
 
@@ -163,19 +165,35 @@ witness stays open; the report names it.
 ## 6. Axioms
 
 `axioms_ok` reads the axioms of every spec theorem and every witness from `collectAxioms` (the
-data of `#print axioms`). An axiom passes when it is a Lean core axiom (module `Init`:
-`propext`, `Classical.choice`, `Quot.sound`), when it is `sorryAx` (an open proof), or when its
-type is not a proposition: a declared primitive such as `EdDSAVerify : … → Prop`
-(`writing-lean.md` §11: an axiom "never asserts a property"). An axiom whose type is a
-proposition fails. The rule needs no list of axiom names.
+data of `#print axioms`). An axiom passes only when `scripts/spec_check.py`'s
+`ALLOWED_AXIOMS` names it: Lean's three core axioms (`propext`, `Classical.choice`,
+`Quot.sound`) or the model's three declared primitives (`ArmadaLean.EdDSAVerify`,
+`ArmadaLean.VerifyAccepts`, `ArmadaLean.VerifyOwnedAccepts`), or it is `sorryAx` (an open
+proof, gated by §7, not here). Every other axiom fails, whatever its type.
 
-## 7. Open proofs are computed
+Before this allowlist, an axiom passed when its type was not a proposition
+(`writing-lean.md` §11: a declared primitive "never asserts a property", so its type is
+never a `Prop`). Review ship-armada/armada-lean#1, finding 3: a declared `axiom x : Empty`
+has that same shape (`Empty : Type`, not a `Prop`), so it passed too, and a false axiom
+proves anything. `ALLOWED_AXIOMS` is an exact name list instead: checked against the built
+environment on 2026-11-12, no spec theorem's or witness's axioms ever name a seventh.
 
-`sorry` is the set of spec theorems whose axioms include `sorryAx`. Nothing stores it. A gate
-decision that compares ("this branch opens no new spec proof", "this branch closes
-`theorem_under_test`") computes the same set twice: on the branch, and on the merge base
-`git merge-base BASE HEAD` in a scratch worktree. The branch passes when
-`sorry(HEAD) ⊆ sorry(merge base)`. The same rule applies to `witness_open`.
+## 7. Open proofs, except one committed approval list
+
+`sorry` is the set of spec theorems whose axioms include `sorryAx`; this set is still
+computed, not stored. `sorry_ok` is true only when every name in `sorry` is also a row of
+`scripts/approved-open.tsv`: `FULLNAME<TAB>APPROVED<TAB>REASON`, one row per spec theorem
+the operator approved to stay open with `sorry`, with the date of that approval
+(`docs/process.md` rule 8.3). `--json` reports the file's content as `approved_open`.
+
+Before this gate, a `sorry` spec theorem passed unconditionally (review
+ship-armada/armada-lean#1, finding 3). A live comparison against the branch's merge base
+("this branch opens no new spec proof") was proposed instead, but the gate's
+commit-boundary container builds the judged tree as a single orphan commit with no other
+ref and no inherited history, the same constraint `scripts/gate_extra.py`'s own committed
+baseline documents for its lint and `decisionScope` counts. A committed file travels with
+the judged tree; a query against history older than that one commit cannot run inside it.
+`scripts/approved-open.tsv` is the one committed list in the check.
 
 ## 8. The JSON object
 
@@ -189,15 +207,19 @@ that the open pebble specs read keep their names:
 | `sorry_count` | length of `sorry` | the same |
 | `theorem_under_test` | the argument, echoed | the same |
 | `theorem_in_sorry` | the argument (or a name that ends in `.ARG`) is in `sorry` | the same |
-| `axioms_ok` | every theorem's axioms are in a fixed name set | every spec theorem's and witness's axioms pass §6 |
+| `axioms_ok` | every theorem's axioms are in a fixed name set | every spec theorem's and witness's axioms pass §6 (the exact `ALLOWED_AXIOMS` list) |
 | `signatures_ok` | no statement text changed against `sigs-baseline.tsv` | every spec theorem has its `Spec` definition, its type is definitionally equal to it, and every `Spec` definition has its spec theorem |
 | `nonvacuity_ok` | `NonVacuity.lean` has no `sorry` | every spec entry with a hypothesis has a witness of its premise, with axioms that pass §6 |
 | `reach_ok` | baseline theorems over a state name `Reachable*` or have a TSV row | every spec entry over a state type has a `ReachableState` binder or an "Every state:" line |
+| `sorry_ok` | (new) | every name in `sorry` is a row of `scripts/approved-open.tsv` (§7) |
 
 New fields: `spec_count`, `helper_count`, `witness_open`, `theorem_witness_open`, `every_state`,
-`vacuous_defs`, `failures`, `runtime_seconds`. `theorem_witness_open` answers, for the theorem
+`vacuous_defs`, `failures`, `runtime_seconds`, `sorry_ok`, `approved_open`.
+`theorem_witness_open` answers, for the theorem
 named on the command line, whether its witness is in `witness_open`. It is one boolean because
 the acceptance-oracle grammar compares scalars only and has no list membership.
+`approved_open` reports `scripts/approved-open.tsv`'s content, keyed by theorem name
+(§7).
 `witness_blocked` maps each open witness whose premise needs a declared primitive (an axiom
 that is not a proposition: `EdDSAVerify`, `VerifyAccepts`, `VerifyOwnedAccepts`) to those
 primitives; such a witness is not in `witness_open`, and `theorem_witness_blocked` answers for
