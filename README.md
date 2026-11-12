@@ -191,7 +191,7 @@ ArmadaLean/
   BoundParams.lean        bound parameters and their symbolic hash (P-2, P-7)
   RangeCheck.lean         Num2Bits(120) semantics
   ValueConservation.lean  no-wraparound minting theorem
-  Nullifier.lean          double-spend impossibility
+  Nullifier.lean          nullifier derivation + injectivity (not itself a double-spend proof)
   Merkle.lean             Merkle proof leaf-binding + the incremental tree (root, path)
   Transact.lean           full constraint model of Transact.circom
   TransactOwned.lean      constraint model of TransactOwned.circom
