@@ -1,5 +1,11 @@
 /-
   ArmadaLean.PoolSafety — the pool contract's safety theorems, over ArmadaLean.Pool.
+
+  NO UPSTREAM SOURCE for `transactOwned`/`verifyOwned` citations below (review PR #1,
+  finding 2): `ArmadaLean.PoolOwned`'s header gives the unmerged fork commit this
+  model follows. Every `TransactModule.sol:N` citation with `N` past line 498 of the
+  armada-poc pin (`64436c14`), and every `PrivacyPoolStorage.sol:N` citation with `N`
+  past line 236, names that fork, not the pin.
 -/
 import ArmadaLean.Pool
 import ArmadaLean.PoolMachine
@@ -175,8 +181,8 @@ Sources. Each step moves tokens and note value by the same amount: a shield pull
 the note's value into the pool and checks the received amount,
 `require(balanceAfter - balanceBefore == base, …)` (ShieldModule.sol:300-309); an unshield
 pays exactly the unshield note's value out, `token.safeTransfer(recipient, _note.value)`
-(TransactModule.sol:406-422); a spend marks each input note's nullifier once
-(TransactModule.sol:379-386); and a proof's inputs equal its outputs, `sumIn === sumOut`
+(TransactModule.sol:434); a spend marks each input note's nullifier once
+(TransactModule.sol:392-398); and a proof's inputs equal its outputs, `sumIn === sumOut`
 (Transact.circom:143 at commit `e79919d`). S-RG ("RAILGUN Core System & Protocol",
 `ArmadaLean.Pool` module comment) states the same split: "Deposit amount + input amounts =
 withdrawal amount + output amounts, so no one can create tokens out of thin air", and the
@@ -184,8 +190,7 @@ contract "transfers tokens from the user wallet to itself … or transfers token
 to the specified user wallet address". armada-poc states this exact invariant as a Foundry
 invariant test, `invariant_poolCoversUnspentNotesPerToken`: `assertEq(usdc.balanceOf(address(pool)),
 handler.ghostTotal(address(usdc)), "USDC notes not backed")`
-(PrivacyPoolSolvencyInvariant.t.sol:475-478; upstream `64436c14` extends it to the yield
-vault's shares, :617-621). RAILGUN's documentation: "The Merkle Tree keeps track of all
+(PrivacyPoolSolvencyInvariant.t.sol:617-621). RAILGUN's documentation: "The Merkle Tree keeps track of all
 balances held by 0zk addresses in the system which can only be updated if proof that passes
 the cryptographic validation rules is submitted to the RAILGUN smart contracts"
 (docs.railgun.org/wiki/learn/using-private-tokens, line 5). -/
@@ -348,7 +353,7 @@ in `s.spent tn`, since spending never un-marks a nullifier) with
 `ArmadaLean.PoolOwned.owned_no_double_spend` (a successful `markSpent` call's
 nullifiers are all fresh against the *current* spent set — the same freshness check
 covers `transact` and `transactOwned`, since both call `_accumulateAndNullify`,
-TransactModule.sol:379-386). S-RG, "RAILGUN Core System & Protocol": "The contract
+TransactModule.sol:385-411). S-RG, "RAILGUN Core System & Protocol": "The contract
 checks to make sure: ... That it hasn't seen the nullifiers before, eliminating any
 double spends." -/
 theorem pool_no_double_spend (s0 : ReachableState Pool.machine) {s : PoolState}
@@ -2317,7 +2322,7 @@ theorem spend_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} (hs
 
 /-- `spend_not_blocked` for a pending `Step.transact`: its state checks stay true across
     any step that spends none of its input notes.
-    Source: TransactModule.sol:373-399,538; operator ruling 2026-10-28 (pool symbolic types approval). -/
+    Source: TransactModule.sol:392-398; operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem transact_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} (hstep : Step s.state s')
     {N M : Nat} {w : TransactWitness N M} {pub : TransactPublic N M} {bp : BoundParams}
     (hC : Constrained w pub)
@@ -2345,7 +2350,8 @@ theorem transact_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} 
 
 /-- `spend_not_blocked` for a pending `Step.transactOwned`: its state checks stay true
     across any step that spends none of its input notes.
-    Source: TransactModule.sol:373-399,538; operator ruling 2026-10-28 (pool symbolic types approval). -/
+    Source: TransactModule.sol:392-398 (plain-path mechanism; the owned path has no upstream
+    equivalent, see the module header); operator ruling 2026-10-28 (pool symbolic types approval). -/
 theorem transactOwned_not_blocked (s : ReachableState Pool.machine) {s' : PoolState} (hstep : Step s.state s')
     {N M : Nat} {w : TransactOwnedWitness N M} {pub : TransactOwnedPublic N M}
     {bp : BoundParams} (hC : OwnedConstrained w pub)

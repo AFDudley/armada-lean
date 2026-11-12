@@ -1,10 +1,10 @@
 /-
   ArmadaLean.BoundParams — the bound parameters of a transaction, as symbolic data.
 
-  `BoundParams` (PoolTypes.sol:107-127) is the part of a transaction that the proof
+  `BoundParams` (PoolTypes.sol:105-113) is the part of a transaction that the proof
   binds through the public input `boundParamsHash`. The contract computes that input
-  as `keccak256(abi.encode(core)) % SNARK_SCALAR_FIELD` (`_boundParamsHash`,
-  PrivacyPoolStorage.sol:46-57). This module keeps the hash symbolic: `hashBoundParams`
+  as `keccak256(abi.encode(core)) % SNARK_SCALAR_FIELD` (`hashBoundParams`,
+  VerifierModule.sol:71-73). This module keeps the hash symbolic: `hashBoundParams`
   is a Keccak `Term` of the parameters (`ArmadaLean.Poseidon`), so two different
   parameter records never give the same hash (`hashBoundParams_inj`). The ABI encoding
   and the `% p` reduction belong to the current contract. The rewrite does not keep the
@@ -15,11 +15,12 @@
 
   The record holds the fields that the pool reads:
   * `treeNumber`: the tree that every input's Merkle proof and nullifier names
-    (`_validateCommonContext`, TransactModule.sol:538; `_accumulateAndNullify`).
+    (`_validateTransaction`, TransactModule.sol:315; `_accumulateAndNullify`,
+    TransactModule.sol:394).
   * `unshield`: an optional payout of an amount to a recipient address (finding P-7,
     see `Unshield`).
   * `adaptContract`: an optional contract that alone may submit the transaction
-    (`_validateCommonContext`, TransactModule.sol:530-532). "No adapt contract" is
+    (`_validateTransaction`, TransactModule.sol:301-307). "No adapt contract" is
     `none`, not the zero address (finding P-4).
   * `adaptParams`: data that the adapt contract reads. Armada puts a channel's
     deposit data here (labbook `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`,
@@ -40,7 +41,7 @@ namespace ArmadaLean
     amount is specified" (S-RG, "RAILGUN Core System & Protocol"). One transaction has
     at most one such pair, so the bound parameters hold an `Option Unshield`. The
     contract carries the pair as the last output commitment, with the address packed
-    into `npk` (TransactModule.sol:313-331, PoolTypes.sol:78). That packing is an
+    into `npk` (TransactModule.sol:357-360, PoolTypes.sol:74). That packing is an
     encoding; `ArmadaLean.Pool.UnshieldRefines` states it at the circuit boundary. -/
 structure Unshield where
   recipient : Term
@@ -67,7 +68,7 @@ def unshieldTerm : Option Unshield → Term
   | none => Term.keccak []
   | some u => Term.keccak [u.recipient, Term.val u.value]
 
-/-- `_boundParamsHash` (PrivacyPoolStorage.sol:46-57), symbolic: the Keccak term of the
+/-- `hashBoundParams` (VerifierModule.sol:71-73), symbolic: the Keccak term of the
     bound parameters. -/
 def hashBoundParams (bp : BoundParams) : Term :=
   Term.keccak [Term.val bp.treeNumber, unshieldTerm bp.unshield,
@@ -89,7 +90,7 @@ theorem unshieldTerm_inj {a b : Option Unshield} (h : unshieldTerm a = unshieldT
 
 /-- **Two different bound-parameter records never give the same hash.** By
     construction of the symbolic hash (`Term.hash.inj`), not by assumption.
-    Source: PrivacyPoolStorage.sol:46-57. -/
+    Source: VerifierModule.sol:71-73. -/
 theorem hashBoundParams_inj {bp₁ bp₂ : BoundParams}
     (h : hashBoundParams bp₁ = hashBoundParams bp₂) : bp₁ = bp₂ := by
   unfold hashBoundParams Term.keccak at h
@@ -99,7 +100,7 @@ theorem hashBoundParams_inj {bp₁ bp₂ : BoundParams}
   simp only [BoundParams.mk.injEq]
   exact ⟨htn, unshieldTerm_inj hu, optionTerm_inj ha, hp⟩
 
-/-- `_validateCommonContext`'s adapt check (TransactModule.sol:530-532): a transaction
+/-- `_validateTransaction`'s adapt check (TransactModule.sol:301-307): a transaction
     that names an adapt contract executes only when that contract is the caller. -/
 def AdaptAllows (bp : BoundParams) (caller : Term) : Prop :=
   ∀ a, bp.adaptContract = some a → caller = a
@@ -112,7 +113,7 @@ def withdrawn : Option Unshield → Nat
 
 /-- `AdaptAllows` as a computable check: no constraint when there is no adapt contract,
     else the caller must be the named one. The contract performs exactly this check
-    (`_validateCommonContext`, TransactModule.sol:530-532). -/
+    (`_validateTransaction`, TransactModule.sol:301-307). -/
 def AdaptAllowsB (bp : BoundParams) (caller : Term) : Bool :=
   match bp.adaptContract with
   | none => true

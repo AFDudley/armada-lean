@@ -6,7 +6,9 @@
   input-distinctness block at Transact.circom:145-161, which constrains every pair of
   leaf indices of one proof to be different (`IsEqual(...).out === 0`). That block is
   in commit `e79919d` (branch `feat/public-ceremony`) only. TransactOwned.circom has
-  no such block (`ArmadaLean.TransactOwned`, DEPARTURE).
+  no such block (`ArmadaLean.TransactOwned`, DEPARTURE). NO UPSTREAM SOURCE for
+  TransactOwned.circom itself (review PR #1, finding 2; see `ArmadaLean.TransactOwned`'s
+  header for the commit of the unmerged fork this module cites).
 
   A note is its slot: the nullifier hashes the leaf index, and the contract keys its
   spent map by tree number, so the same slot always gives the same nullifier and

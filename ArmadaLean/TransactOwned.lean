@@ -1,4 +1,20 @@
 /-
+  NO UPSTREAM SOURCE (review PR #1, finding 2). `TransactOwned.circom` does not
+  exist at the armada-circuits pin (ship-armada/feat/public-ceremony `e79919d`) or
+  on any ship-armada branch. It exists only in the author's own unmerged fork
+  (AFDudley/armada-circuits, branch `integrated`, commit `850ba956`, "Fix
+  double-spend: bind the owned nullifier to ownerField"; the circuit itself first
+  lands earlier on the same branch at commit `2d53d4b`, "Add owned Transact circuit
+  variants (1x1, 1x2, 1x3)"; no pull request against ship-armada/armada-circuits).
+  Every `TransactOwned.circom:N` citation below models that fork file directly,
+  confirmed present there. `TransactModule.sol:N` citations with `N` past line 498
+  name the matching unmerged contract fork (AFDudley/armada-poc `main`, commit
+  `4081579b`) — see `ArmadaLean.PoolOwned`'s header for that pin. Whether to split
+  the owned path into its own file, pending its upstream landing, is an open
+  question for the operator.
+-/
+
+/-
   ArmadaLean.TransactOwned — constraint model of the TransactOwned circuit.
 
   TransactOwned.circom (armada-circuits src/operations/TransactOwned.circom) is
@@ -32,7 +48,7 @@
   nullifier twice. That is safe only because `nullifier = Poseidon(ownerField,
   leafIndex)` is a pure function of the leaf index: two inputs that reuse one
   leaf index publish the same nullifier value, and the pool's
-  nullifier-marking loop (TransactModule.sol:379-386, modeled in
+  nullifier-marking loop (TransactModule.sol:392-398, modeled in
   ArmadaLean.PoolOwned) reverts the whole call the second time that value is
   marked. The circuit cannot see earlier spends on any branch: the contract's
   spent map is the only no-double-spend check. `owned_no_double_spend` in

@@ -65,16 +65,27 @@ Dependency: Mathlib `v4.35.0` (operator ruling 2026-10-27: use Mathlib where it 
 
 ### Contract-owned notes (`armada-circuits` `TransactOwned.circom`, `armada-poc` `TransactModule.transactOwned`)
 
+**NO UPSTREAM SOURCE** (review PR #1, finding 2). `transactOwned`, `verifyOwned`,
+`ownerField` and `TransactOwned.circom` do not exist at the armada-poc pin
+(origin/main `64436c14`) or the armada-circuits pin (`e79919d`), and have no commit
+on any ship-armada branch of either repo. This table models a design drawn
+directly from the author's own unmerged forks: AFDudley/armada-poc branch `main`
+commit `4081579b` (`transactOwned` itself first lands at `b3bcf88b`), and
+AFDudley/armada-circuits branch `integrated` commit `850ba956` (the circuit itself
+first lands at `2d53d4b`). Neither fork has an open pull request against
+ship-armada. Whether to split this section out until the design lands upstream is
+open for the operator.
+
 | Lean theorem | Module | Property | Circuit or contract code | Source |
 |---|---|---|---|---|
 | `transactOwned_value_conserved` | `TransactOwned` | any valid owned witness conserves value over the integers | `TransactOwned.circom:111-135` | Finding 1, owned path |
 | `commitment_owner_inj` | `TransactOwned` | a note's commitment determines its owner (`ownerField`) | `TransactOwned.circom:66-76` | owner-binding core |
 | `user_npk_ne_contract_npk` | `TransactOwned` | no user note key equals a contract note key | `TransactOwned.circom:66-70`, `Transact.circom:75-78` | Dolev-Yao domain separation |
 | `owned_owner_binding` | `PoolOwned` | no one except the owning contract can spend its note | `TransactModule.sol:636-639` | labbook decision 2 |
-| `owned_no_double_spend` | `PoolOwned` | an accepted call's nullifiers are pairwise distinct and were not already spent | `TransactModule.sol:379-386` | Finding 2, pool-level |
+| `owned_no_double_spend` | `PoolOwned` | an accepted call's nullifiers are pairwise distinct and were not already spent | `TransactModule.sol:385-411` (on the pin; the owned path reuses this mechanism in the fork design) | Finding 2, pool-level |
 | `preimageOf_consistent` | `PoolOwned` | every recorded preimage hashes to the commitment it is recorded for | `TransactModule.sol:550-604` | labbook §3a (registry defect) |
 | `owned_spend_can_happen` | `PoolOwned` | the real owner's spend, with an accepted proof, clears every modeled pool gate (type changed: P-1, P-2, P-4; proved) | `TransactModule.sol:488-519,609-647` | proof completeness |
-| `hashBoundParams_inj` | `BoundParams` | two different bound-parameter records never give the same `boundParamsHash` (symbolic Keccak) | `PrivacyPoolStorage.sol:46-57` | P-2 |
+| `hashBoundParams_inj` | `BoundParams` | two different bound-parameter records never give the same `boundParamsHash` (symbolic Keccak) | `VerifierModule.sol:71-73` | P-2 |
 
 ### Pool contract (`armada-poc` `PrivacyPool.sol`, `ShieldModule.sol`, `TransactModule.sol`, `MerkleModule.sol`)
 

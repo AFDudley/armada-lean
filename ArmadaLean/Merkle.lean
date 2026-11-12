@@ -13,6 +13,11 @@
   A leaf, a sibling and a root are all terms (`ArmadaLean.Poseidon.Term`): a leaf is a
   commitment (itself a Poseidon output), siblings are other tree nodes, and the root is
   the symbolic Poseidon hash of the path, computed exactly as `merkleStep` folds.
+
+  NO UPSTREAM SOURCE for `TransactOwned.circom` (review PR #1, finding 2): it has no
+  commit on any ship-armada branch, only on the author's unmerged fork
+  (`ArmadaLean.TransactOwned`'s header gives the commit). Citations below to it
+  describe that fork file, used as the owned path's design source.
 -/
 import ArmadaLean.Poseidon
 import ArmadaLean.RangeCheck

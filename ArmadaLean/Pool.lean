@@ -39,10 +39,12 @@
   the unshield payouts.
 
   Scope: local `shield` (ShieldModule.sol:45-90), local `transact` including a local
-  unshield (TransactModule.sol:43-96), and `transactOwned` (TransactModule.sol:488-519).
-  Out of scope: `processIncomingShield` and `atomicCrossChainUnshield` (CCTP-mediated
-  token movement) and the yield vault. Nullifier marking, Merkle insertion and the
-  preimage registry follow the same shape on every entry point.
+  unshield (TransactModule.sol:43-96), and `transactOwned` (no upstream source,
+  review PR #1 finding 2; `ArmadaLean.PoolOwned`'s header gives the unmerged fork
+  commit this model follows). Out of scope: `processIncomingShield` and
+  `atomicCrossChainUnshield` (CCTP-mediated token movement) and the yield vault.
+  Nullifier marking, Merkle insertion and the preimage registry follow the same
+  shape on every entry point.
 
   A spend's circuit-level facts (Merkle membership, nullifier derivation, value
   conservation) come from `ArmadaLean.Transact.Constrained` /
@@ -1028,7 +1030,7 @@ theorem withTreePositionsFrom_leaf_matches {α : Type} (f : α → Term) (base :
 /-! ### Pool state -/
 
 /-- One unshield payout: the pool sent `value` of `token` to the address `recipient`
-    (`_transferTokenOut`, TransactModule.sol:401-424). A ghost record of public data
+    (`_transferTokenOut`, TransactModule.sol:418-436). A ghost record of public data
     (the `Unshield` event). -/
 structure Payout where
   token : Token
@@ -1176,7 +1178,7 @@ def transactAllOutputs {N M : Nat} (w : TransactWitness N M) : List CommitmentPr
 /-- **Refinement: how the circuit's outputs carry the bound unshield.** The circuit has
     no unshield; it has `M` uniform outputs. The contract reads the last output
     commitment as the unshield note, with the recipient address in its `npk`
-    (TransactModule.sol:313-331: "Hash must match last commitment"; PoolTypes.sol:78:
+    (TransactModule.sol:357-360: "Hash must match last commitment"; PoolTypes.sol:74:
     "For unshield outputs, `npk` encodes the recipient address"). That is an encoding
     of the protocol's "withdraw this amount to this address" (`Unshield`, finding P-7).
     This definition is the one place where the encoding appears. `newNotes` are the
@@ -1375,7 +1377,7 @@ to the model's trusted verifier; `Pool.apply` itself takes no such hypothesis. -
 /-- The token of an unshield, checked against the last output commitment the way the
     contract does: it reads the token from calldata (`unshieldToken`) and recomputes the
     commitment `UnshieldRefines` expects, matching it against `commitmentsOut`'s last
-    entry (TransactModule.sol:313-331, "Hash must match last commitment"). No unshield
+    entry (TransactModule.sol:357-360, "Hash must match last commitment"). No unshield
     needs no token. -/
 def unshieldCommitted {M : Nat} (commitmentsOut : Fin M → Term) (unshieldToken : Option Token)
     (unshield : Option Unshield) : Bool :=

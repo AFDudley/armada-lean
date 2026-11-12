@@ -1,10 +1,29 @@
 /-
+  NO UPSTREAM SOURCE (review PR #1, finding 2). `transactOwned`, `verifyOwned`,
+  `ownerField` and the public preimage registry (`preimageOf`) do not exist at the
+  armada-poc pin (origin/main `64436c14`, `contracts/privacy-pool/modules/
+  TransactModule.sol` is 498 lines there) or on any ship-armada branch of armada-poc
+  or armada-circuits. They exist only in the author's own unmerged fork
+  (AFDudley/armada-poc, branch `main`, commit `4081579b`, "P2b: fee-tagged outputs
+  recognized into cumulativeFees"; `transactOwned` itself first lands earlier on the
+  same branch at commit `b3bcf88b`, "P2a: contract-owned spend path and public
+  preimage registry"; no pull request against ship-armada/armada-poc). This module
+  models that fork's design directly: every `TransactModule.sol:N` citation below
+  with `N` past line 498, and every `PrivacyPoolStorage.sol:N` citation with `N`
+  past line 236, names a line in that fork, confirmed present there, not in the
+  pin. Whether to split the owned path into its own file, pending its upstream
+  landing, is an open question for the operator.
+-/
+
+/-
   ArmadaLean.PoolOwned — the pool contract's owned path and its storage.
 
-  Models `TransactModule.transactOwned` (armada-poc
-  contracts/privacy-pool/modules/TransactModule.sol:488-519) and the state it
-  reads and writes: `PrivacyPoolStorage.nullifiers` (:174), `PrivacyPoolStorage
-  .preimageOf` (:248), and `PrivacyPool.verifyOwned` (PrivacyPool.sol:562-601).
+  Models the design of `TransactModule.transactOwned` (no upstream pin; see the
+  NO UPSTREAM SOURCE note above. The line below is the author's unmerged fork,
+  AFDudley/armada-poc `4081579b`, contracts/privacy-pool/modules/TransactModule.sol:
+  488-519) and the state it reads and writes: `PrivacyPoolStorage.nullifiers` (:174,
+  on the pin), `PrivacyPoolStorage.preimageOf` (:248, fork only), and
+  `PrivacyPool.verifyOwned` (PrivacyPool.sol:562-601, fork only).
   Imports `ArmadaLean.TransactOwned` and builds on `OwnedConstrained` — "the
   accepted proof's witness satisfies every circuit constraint" is the named
   hypothesis every theorem below takes (the brief's soundness assumption:
@@ -17,7 +36,8 @@
   * `owned_owner_binding` — no one except the owning contract can spend its
     note (TransactModule.sol:636-639, `ownerField == msg.sender`).
   * `owned_no_double_spend` — no note is spent twice
-    (`_accumulateAndNullify`, TransactModule.sol:379-386).
+    (`_accumulateAndNullify`, TransactModule.sol:385-411 on the pin; the owned path
+    reuses this mechanism in the fork design, with no separate upstream pin).
   * `preimageOf_consistent` — every preimage the pool records hashes to the
     commitment it is recorded for (`_recordPreimages`, TransactModule.sol
     :590-604, gated by `_validatePublicOutputs`, :550-578).

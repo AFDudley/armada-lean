@@ -148,9 +148,9 @@ Evidence:
   note.
 - Circuits: `armada-circuits/src/operations/Transact.circom` and `TransactOwned.circom`
   contain no unshield at all (no match for "unshield"). The `M` outputs are uniform.
-- Contract: PoolTypes.sol:78 "For unshield outputs, `npk` encodes the recipient
-  address." TransactModule.sol:313-331 "Hash must match last commitment".
-  TransactModule.sol:413 `address recipient = address(uint160(uint256(_note.npk)));`.
+- Contract: PoolTypes.sol:74 "For unshield outputs, `npk` encodes the recipient
+  address." TransactModule.sol:357-360 "Hash must match last commitment".
+  TransactModule.sol:424 `address recipient = address(uint160(uint256(_note.npk)));`.
   `BoundParams.unshield` is only the kind `NONE`/`NORMAL`/`REDIRECT`
   (PoolTypes.sol:24-31).
 - Zokyo audit of Railgun v2, 2022-12-21, finding #1: "does not validate
@@ -432,8 +432,10 @@ stated.
 
 Two findings from the type:
 1. `hSum` is necessary. The merged value must pass the output range check (P-6).
-2. The deployed owned circuits have one input only: `armada-circuits/src/main/` holds
-   `main_1x1_owned`, `main_1x2_owned`, `main_1x3_owned` and no owned shape with `N > 1`.
+2. The owned circuits have one input only, in the unmerged fork this design follows
+   (no upstream source, review PR #1 finding 2): `armada-circuits/src/main/` there
+   holds `main_1x1_owned`, `main_1x2_owned`, `main_1x3_owned` and no owned shape with
+   `N > 1`.
    `Step.transactOwned` admits `N ≤ 8`, so the theorem holds in the model, but the
    deployment needs owned verifying keys with `N > 1` for the merge to exist on chain.
 
