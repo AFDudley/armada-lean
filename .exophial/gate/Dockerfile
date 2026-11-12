@@ -26,6 +26,9 @@
 #       environments are still built here so a future gate.command that
 #       adds `pre-commit run --all-files` needs no further image change
 #   the Mathlib build cache (lake exe cache get)        -> lake build offline
+#       (fetched from lean-toolchain, lakefile.lean, lake-manifest.json only,
+#        before the judged tree is copied, so an unrelated source change
+#        never busts this layer)
 FROM exophial-e2e-base
 
 USER root
@@ -48,16 +51,29 @@ RUN uv tool install pre-commit==4.5.1 \
     && ln -sf /root/.local/bin/pre-commit /usr/local/bin/pre-commit
 
 WORKDIR /gate
-COPY . .
 
 # Under `docker build --quiet` a RUN step that streams much output to the
 # step pipe can die mid-write (armada-poc: npm ci exited 146; armada-sdk
 # Dockerfile applies the same tail-on-failure discipline here). Each heavy
 # step writes to a log file and prints the log tail only on failure.
 
-# --- Mathlib build cache + a full project build, so the gate's own
-#     `lake build` resolves offline from this image's .lake content. ---
-RUN { lake exe cache get && lake build; } \
+# --- The Mathlib download cache, from the dependency manifest only
+#     (lean-toolchain, lakefile.lean, lake-manifest.json: the three files
+#     lake needs to resolve and fetch every pinned package -- mathlib,
+#     plausible, LeanSearchClient, importGraph, proofwidgets, aesop, Qq,
+#     batteries, Cli). A commit that does not touch these three keeps this
+#     layer's cache hit, so it never re-fetches Mathlib. `lake exe cache
+#     get` needs no project source: `lake build` of the project itself runs
+#     after the full tree is copied, below. ---
+COPY lean-toolchain lakefile.lean lake-manifest.json ./
+RUN lake exe cache get \
+        > /tmp/lake-cache.log 2>&1 || { tail -c 40000 /tmp/lake-cache.log; exit 1; }
+
+COPY . .
+
+# --- The project build, now that the full tree is present. Depends on the
+#     cache layer above; a source-only commit re-runs only this step. ---
+RUN lake build \
         > /tmp/lake-build.log 2>&1 || { tail -c 40000 /tmp/lake-build.log; exit 1; }
 
 # --- A throwaway git history gives pre-commit a repo (the judged tree has
