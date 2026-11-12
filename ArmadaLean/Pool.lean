@@ -1625,4 +1625,25 @@ theorem Pool.apply_setFeeRatio_not_admin (verify : Pool.Verifier) (s : Pool.Cont
   rw [Pool.apply_setFeeRatio_equation]
   exact dif_neg hne
 
+/-! ### The pool contract over a run of calls (rule PE7) -/
+
+/-- `Pool.apply`, folded over a list of calls in order (rule PE7): `none` as soon as one call is
+    rejected, the contract state left after every call is accepted when the whole list is. -/
+def Pool.applyRun (verify : Pool.Verifier) (s : Pool.ContractState) :
+    List Pool.Call → Option Pool.ContractState
+  | [] => some s
+  | c :: cs => (Pool.apply verify s c).bind (fun s' => Pool.applyRun verify s' cs)
+
+/-- The empty-list equation: `Pool.applyRun` accepts no calls and leaves `s` unchanged, by
+    `rfl` (as `Pool.apply_shield_equation`). -/
+theorem Pool.applyRun_nil (verify : Pool.Verifier) (s : Pool.ContractState) :
+    Pool.applyRun verify s [] = some s := rfl
+
+/-- The cons equation: `Pool.applyRun` accepts the head call, then the rest from the state it
+    leaves, by `rfl` (as `Pool.apply_shield_equation`). -/
+theorem Pool.applyRun_cons (verify : Pool.Verifier) (s : Pool.ContractState) (c : Pool.Call)
+    (cs : List Pool.Call) :
+    Pool.applyRun verify s (c :: cs) =
+      (Pool.apply verify s c).bind (fun s' => Pool.applyRun verify s' cs) := rfl
+
 end ArmadaLean

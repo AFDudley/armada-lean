@@ -165,3 +165,10 @@ theorem ArmadaLean.Pool.Spec.apply_forward_refinement.witness : spec_premise% Ar
     `OwnedProofCompleteness`; see this file's module comment. -/
 theorem ArmadaLean.Pool.Spec.apply_backward_refinement.witness : spec_premise% ArmadaLean.Pool.Spec.apply_backward_refinement := by
   sorry
+
+/-- The witness of `Pool.Spec.apply_backward_refinement_run`: open. Its hypotheses `hReal :
+    verify.Realizes`, `hTS : TransactProofSoundness` and `hOS : OwnedProofSoundness` are the
+    same as `Pool.Spec.apply_backward_refinement`'s; see this file's module comment and
+    `apply_backward_refinement.witness` above. -/
+theorem ArmadaLean.Pool.Spec.apply_backward_refinement_run.witness : spec_premise% ArmadaLean.Pool.Spec.apply_backward_refinement_run := by
+  sorry

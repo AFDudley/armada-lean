@@ -3093,4 +3093,20 @@ theorem Pool.apply_backward_refinement (verify : Pool.Verifier) (hReal : verify.
     · rw [dif_neg hPre] at h
       exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
+/-- **Run refinement** (rule PE7, operator ruling 2026-11-09): every list of calls that
+`Pool.apply verify` accepts in order from the genesis contract reaches the contract of some
+reachable state.
+
+For every list of calls, when `Pool.apply verify` accepts them one after another starting from
+`(genesis r feeAdmin treasury).contract`, the state the run leaves is `s.contract` for some
+reachable `s`, under the same hypothesis as PE5: every public input `verify` accepts has a
+witness that satisfies the circuit.
+
+Source: docs/pool-executable.md rule PE7 (operator ruling 2026-11-09). -/
+theorem Pool.apply_backward_refinement_run (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
+    (r : FeeRatio) (feeAdmin treasury : Term) (cs : List Pool.Call) {t : Pool.ContractState}
+    (h : Pool.applyRun verify (genesis r feeAdmin treasury).contract cs = some t) :
+    ∃ s : PoolState, Reachable s ∧ s.contract = t := by sorry
+
 end ArmadaLean
