@@ -16,7 +16,7 @@
   "decision_findings": [],
   "file_hashes": {
     "ArmadaLean/BoundParams.lean": "fe8890b60b70af4aac2d207d6329d5a6ad59934d2e3b5da3f29c0fed3a443edc",
-    "ArmadaLean/Fee.lean": "160cd2bb2e21e0b8ecfde9bd53e8a244686f62173168389c728ab99ef68a7f4f",
+    "ArmadaLean/Fee.lean": "82fe795e5bcd4429a621b7a7b956909a5e7b33733280a99c3d725666b9391971",
     "ArmadaLean/Field.lean": "57dc643551629ae08e57205dc7f1316693f1963c7ab1993b97f330c2c28b8405",
     "ArmadaLean/Machine.lean": "ebd0bd880b08cd70527b361ebd3b95c9592cada3e90c09e536129140e9033029",
     "ArmadaLean/Machines.lean": "0ddf32b50eae880327ff3d355269a25127b87dc685e88e42cef0e65359e1632e",
@@ -27,7 +27,7 @@
     "ArmadaLean/Nitro/Constructions.lean": "ffe5a3b8bbb36574a9c402191b0301646b3ff90ae467af2b12db69528bf9884f",
     "ArmadaLean/Nitro/Invariant.lean": "2674c61bdf465c78f113de9764bd7ddb8eea6a7a8e2132071ebc9564876da7e6",
     "ArmadaLean/Nitro/Lemmas.lean": "4ae729dac65caa2fe9791f8b527a19c353378ff6a01bd3f27184a4ae077d27d2",
-    "ArmadaLean/Nitro/Liveness.lean": "358e21bd1d9b65a45ba305bacf90ff9a3890570722c3d4b424b2eec33e8ac246",
+    "ArmadaLean/Nitro/Liveness.lean": "9752d7ec1819bc7a6e6e9b08b07a5e151b5a7feeaed10ee3feafaa6dea282794",
     "ArmadaLean/Nitro/NonVacuity.lean": "4a04de1f6750d64b733af860169f33a7b9ebff48254c8a941def090874735292",
     "ArmadaLean/Nitro/OpEquations.lean": "2a96c15618c1bff87efd4af4ace4e02ecc7f143ddba40e0c0901b6e64ec700eb",
     "ArmadaLean/Nitro/Outcome.lean": "e8c8abdd924d79b677ad98b120ac4a20e3d048bc5c4b77265c33f8da0cd3315e",
@@ -38,7 +38,7 @@
     "ArmadaLean/Nitro/TakeOut.lean": "c63a0b875b243dc3ec2ac332b795af0d5368c376608b0adaca1545dd84cd56fd",
     "ArmadaLean/Nitro/Value.lean": "29d2ceb145f0798ecfaccb0db1bc7dfc12a885266edbed570015d758fac4ca80",
     "ArmadaLean/Nullifier.lean": "ea93d1068421e70f3b803f77edfb48c8d9773344a8f056fb488cb39fb7124e9b",
-    "ArmadaLean/Pool.lean": "7e28aeb84bec369fc545d685ee126af1e062ded3974f882cedc1abe516236d33",
+    "ArmadaLean/Pool.lean": "f8280e3553ab6809603cc3857074288ef3b3311d5bac6bddad5e5ffe69a62206",
     "ArmadaLean/PoolMachine.lean": "1657af878af084f5ee1453a15fb90c094842f2f03281c6f15e58fb964fbd435d",
     "ArmadaLean/PoolNonVacuity.lean": "3aa5afbd5a4145c223e0f77dccc897bdb8559d4271ebf80409c0b85c56c4e9a2",
     "ArmadaLean/PoolOwned.lean": "ebdf8cc4ba8d1891c54079ba7611a14af081d27bcab9229a3a014742b7ae593c",
@@ -68,7 +68,7 @@
     "ArmadaLean/Spec/Transact.lean": "77734b5046b3fedd24aa7317853d2c26236fcd5cf49cbb1fc2fc046744b070ef",
     "ArmadaLean/Spec/TransactOwned.lean": "4ed95bb141a4f0dd1ab8391711499aa20cb28ee9a9d97de1d8657023dba94248",
     "ArmadaLean/Spec/ValueConservation.lean": "1fa922c9fa2655aa1ad22834f503102855f1cc2132e4d19a7f189b41266ff0df",
-    "ArmadaLean/Spec/Yield/Vault.lean": "4c08e4402216d02f53a6da89a3ca887743457e0900b52994b5a1ee148ef5726c",
+    "ArmadaLean/Spec/Yield/Vault.lean": "c6d49017a0b5eddc5003513cc0fffa5d36e70e126e0dcc1e20bb4672b9701c89",
     "ArmadaLean/SpecTools.lean": "791c4db41f736e62acf327c440477c4a673b937a49d609aaf66099c88e9cac5d",
     "ArmadaLean/Token.lean": "5d478d93a7fdf5e264ae7df750c1f3938ed91897beb8f898adc42c962ba8b990",
     "ArmadaLean/Transact.lean": "458172c5d50d42f96b3fe1560ac1ea5a359b500ae64f050c0f058eb90326ca6a",
@@ -104,6 +104,6 @@
     "ArmadaLean/Witness/TransactOwned.lean": "4f68131ad1b4429391200515d6a87dccdd07df09742cda8e67aa1620ae6c639d",
     "ArmadaLean/Witness/ValueConservation.lean": "439222d7c380782a3eaae9b12e64cf4c480e4e1d13534b7c61d2d8bb85c80ef9",
     "ArmadaLean/Witness/Yield/Vault.lean": "7028b0012e07f8f3790b7033973dff9066ed09ba56b6a999f2a49837cd8442dd",
-    "ArmadaLean/Yield/Vault.lean": "8842187b938a99a504d1646a20c655eb0df27851d8ce7742730f1d2463e4b967"
+    "ArmadaLean/Yield/Vault.lean": "2a3a93428b2b3f1b80af1e3d6b4285a3738830cb4e1039d42fc74f65abb01f57"
   }
 }

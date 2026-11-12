@@ -19,13 +19,13 @@ Lean and proved the properties that the internal security review
 |---|---|
 | `rangeCheck120_sound` | The circuit's 120-bit range check really does bound every note value below 2¹²⁰. |
 | `no_wraparound_minting` | Because all values are < 2¹²⁰ and a transaction has ≤ 8 inputs / ≤ 4 outputs, "sum of inputs equals sum of outputs" holds as ordinary integers — not just modulo the field prime. **Value cannot be created by wrapping around the field modulus.** (Formalizes the fix for Finding 1.) |
-| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions (commit `e79919d`, branch `feat/public-ceremony`; upstream `main` lacks it) makes all nullifiers in one proof distinct (Poseidon is modeled symbolically, so collision resistance holds by construction — see below). **One proof cannot list the same note twice.** The circuit has no input that holds earlier spends, so it cannot stop a note spent in an earlier transaction. Only the contract's spent map does (`pool_no_double_spend`). |
+| `distinct_leaves_distinct_nullifiers` | The circuit's pairwise-distinctness check on leaf positions (armada-circuits `main`, merged PR #5) makes all nullifiers in one proof distinct (Poseidon is modeled symbolically, so collision resistance holds by construction — see below). **One proof cannot list the same note twice.** The circuit has no input that holds earlier spends, so it cannot stop a note spent in an earlier transaction. Only the contract's spent map does (`pool_no_double_spend`). |
 | `merkleRoot_inj_leaf` | A Merkle membership proof binds exactly *one* leaf to the tree root — a proof for one commitment cannot be repurposed for another. |
 | `transact_public_outputs_determined` | Given the private witness, the public outputs (nullifiers, output commitments) are fully determined — no hidden degrees of freedom in the security-critical signals. |
 | `transact_inputs_distinct_nullifiers` / `transact_value_conserved` | The two properties above, proven end-to-end against the full constraint model of `Transact.circom`. The first is about one proof only; it is not a no-double-spend theorem. |
 | `locked_shares_set_at_first_deposit` / `locked_shares_supply_invariant` | The deployed yield vault **already carries the first-depositor inflation fix** (issue #365, PR #631): the first deposit locks `LOCKED_SHARES` shares to a dead address, and total supply never drops below `LOCKED_SHARES` afterward. |
 | `round_trip_loss_le` / `donation_loss_bound` | The exact rounding loss a depositor can suffer from a donation, as a closed integer bound — sharper than the contract's own `~donation / LOCKED_SHARES` NatSpec estimate. |
-| `donation_attack_unprofitable_post_fix` | With the fix in place, the donation (first-depositor inflation) attack **cannot profit**, for any donation or victim deposit. |
+| `donation_attack_unprofitable_post_fix` | With the fix in place, starting from a state where total supply equals the vault's claimable assets (no pending protocol fee yet owed), the donation (first-depositor inflation) attack **cannot profit**, for any donation or victim deposit. |
 | `fee_*` | The shield fee, a ratio with floor division that the deployment sets and only the fee admin changes (operator ruling 2026-11-06), conserves value (`net + fee = gross`), is bounded by the amount, and is monotone — a reference spec for the contract↔SDK↔spec mismatch (audit C-3). |
 
 ## The trust base — what you are trusting when you trust these proofs
@@ -57,15 +57,13 @@ Lean and proved the properties that the internal security review
 - The trusted-setup ceremony (toxic-waste hygiene is operational, not mathematical).
 - All Solidity contract logic beyond the modeled fee/vault formulas, the relayer,
   the SDK, and liveness/DoS concerns.
-- The two contract-side **verification bypasses** (`testingMode`,
-  `VERIFICATION_BYPASS`) — these must be *removed*; no proof can help while
-  proof-checking can be switched off.
+- armada-poc PR #633 removed the two contract-side **verification bypasses**
+  (`testingMode`, the `tx.origin` bypass); the pinned commit `64436c14` has neither.
 
 ## Reproduce
 
 ```bash
-git clone https://github.com/AFDudley/armada-lean && cd armada-lean
-# ship-armada's own main is the older 2026-09-14 tree; AFDudley's fork is current.
+git clone https://github.com/ship-armada/armada-lean && cd armada-lean
 lake exe cache get   # downloads the prebuilt Mathlib
 lake build           # needs an elan-managed Lean toolchain (see lean-toolchain)
 scripts/check.sh     # PASS on every check; one `SORRY <name>` line per theorem

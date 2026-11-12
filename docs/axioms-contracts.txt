@@ -43,7 +43,8 @@ holding s < S shares out of total supply S recovers at most X + s.)
 == donation_attack_unprofitable_post_fix ==
 (ArmadaYieldVault.sol:74-85, origin/main 64436c14, PR #631 04753139:
 donation_attack_unprofitable specialized to the fixed contract's own invariant
-s ≤ S - LOCKED_SHARES — the donation attack cannot profit, unconditionally, after
+s ≤ S - LOCKED_SHARES — from a 1:1 share price (no pending protocol fee), the
+donation attack cannot profit, after
 the fix.)
 'donation_attack_unprofitable_post_fix' depends on axioms: [propext, Classical.choice, Quot.sound]
 

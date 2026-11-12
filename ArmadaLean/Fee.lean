@@ -9,9 +9,13 @@
 
   with floor division. The contract writes the rate in basis points
   (`BASIS_POINTS = 10000`). That is one encoding of a ratio. This file states the rule
-  over a ratio `num / den` that the deployment fixes once (labbook
-  `2026-10-18-contract-owned-notes-and-zk-channel-apps.md`, decision 7: the pool "sets
-  verifying keys and fees once at deployment"). The contract's rate is the case
+  over a ratio `num / den`. The early labbook decision
+  (`2026-10-18-contract-owned-notes-and-zk-channel-apps.md`, decision 7) read the pool
+  as one that "sets verifying keys and fees once at deployment". The pinned contract does
+  not hold to that for the fee: `PrivacyPool.setShieldFee`/`setFeeModule`
+  (PrivacyPool.sol:404-410, 478-482) let the owner change the fee rate after deployment,
+  and `step_feeRatio_frame` models that the fee admin can change `PoolState.feeRatio`
+  (operator ruling 2026-11-06, see `docs/departures.md`). The contract's rate is the case
   `den = 10000`.
 
   The pool applies the fee in the shield step (`ArmadaLean.Step.shield`, with the

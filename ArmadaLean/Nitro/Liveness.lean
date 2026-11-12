@@ -1,10 +1,10 @@
 /-
   Nitro protocol theorems: unbeatable strategies, finalizability, value
   algorithms, ledger and virtual channel constructions, and the SATP
-  protocol guarantees. Every proof is `sorry`, except the theorems that read
-  no game definition. Each doc comment cites the source lines and the
-  property ids of `docs/nitro-theorems.md`. The repair of 2026-10-27 (every
-  changed type, with its reason) is `docs/nitro-repair-2026-10-27.md`.
+  protocol guarantees. Not every proof is `sorry`; `docs/nitro-repair-2026-10-27.md`
+  §3 and the README give each theorem's current proof status. Each doc comment cites
+  the source lines and the property ids of `docs/nitro-theorems.md`. The repair of
+  2026-10-27 (every changed type, with its reason) is `docs/nitro-repair-2026-10-27.md`.
 -/
 import ArmadaLean.Nitro.Safety
 import ArmadaLean.Nitro.Reachable

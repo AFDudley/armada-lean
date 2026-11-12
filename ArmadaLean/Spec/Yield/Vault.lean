@@ -100,8 +100,12 @@ def Spec.donation_attack_unprofitable : Prop :=
 invariant: supply `S ≥ LOCKED_SHARES` and an attacker whose shares `s`
 satisfy `s ≤ S - LOCKED_SHARES` (`ArmadaYieldVault.sol:74-85` — the dead
 holder's `LOCKED_SHARES` is never the attacker's, so this is every reachable
-state after the fix). The donation attack cannot profit, unconditionally,
-for any donation `X` and any victim deposit `Y`. -/
+state after the fix). `S` and `S + X` stand for the supply and claimable assets
+before and after the donation: this states the attack from a 1:1 share price
+(`claimable = supply`, no pending protocol fee owed), the state `c2s`/`c2a` take as
+their starting `claimable` argument; it does not model `pendingProtocolFee()`
+(`ArmadaYieldVault.sol`). Under that start, the donation attack cannot profit, for any
+donation `X` and any victim deposit `Y`. -/
 def Spec.donation_attack_unprofitable_post_fix : Prop :=
   ∀ (S X Y s : Nat) (hS : LOCKED_SHARES ≤ S) (hs : s ≤ S - LOCKED_SHARES),
     Claim <|

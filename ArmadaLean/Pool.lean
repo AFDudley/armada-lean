@@ -73,11 +73,13 @@
   (PrivacyPoolStorage.sol:280-285) recognizes ANY output whose `npk` equals the
   governance `feeRecipient`, against labbook T9.
 
-  DEPARTURE (contract, `testingMode`): `PrivacyPool.verify`/`verifyOwned`
-  (PrivacyPool.sol:506-601) return `true` with no witness when `testingMode` is on.
-  `Step.transact`/`Step.transactOwned` always require a genuine
-  `Constrained`/`OwnedConstrained` witness, so they model the pool with `testingMode`
-  off. This mirrors ABDK finding CVF-58 (Critical, Fixed) on Railgun's `Snark.sol`.
+  HISTORICAL (contract, `testingMode`, now removed): earlier builds of
+  `PrivacyPool.verify`/`verifyOwned` returned `true` with no witness when `testingMode`
+  was on (ABDK finding CVF-58, Critical, Fixed, on Railgun's `Snark.sol`). armada-poc
+  PR #633 removed `testingMode` and the `tx.origin` verification bypass; the pinned
+  commit `64436c14` has neither. `Step.transact`/`Step.transactOwned` require a genuine
+  `Constrained`/`OwnedConstrained` witness, matching the pinned contract directly; this
+  is no longer a departure.
 
   DEPARTURE (contract → design, no pause and no admin): the merged contract lets the
   owner install a pause controller (`PrivacyPool.setShieldPauseContract`,

@@ -176,7 +176,10 @@ Changes:
   conclusion `∃ s', Step s s'`; after `(bp) (hAdapt) (recipient value) (hU : bp.unshield
   = some ⟨recipient, value⟩)`, no unused `hValuePos`, conclusion adds
   `s'.payouts = s.payouts ++ [⟨token, recipient, value⟩]`. `sorry`.
-- `REDIRECT` unshields (payout to `msg.sender`) are not modeled.
+- `REDIRECT` unshields are not modeled. The hash binds the submitting
+  `msg.sender` into the unshield preimage (TransactModule.sol:346-352), but the
+  payout reads the recipient from `unshieldPreimage.npk` (TransactModule.sol:424),
+  not from `msg.sender`.
 
 ### P-8. `Term.val 0` and lookups with a default
 

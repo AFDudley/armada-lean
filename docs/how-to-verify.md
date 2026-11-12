@@ -20,7 +20,7 @@ downloads it automatically on first use.
 ## 2. Clone and build
 
 ```bash
-git clone https://github.com/AFDudley/armada-lean
+git clone https://github.com/ship-armada/armada-lean
 cd armada-lean
 lake exe cache get   # downloads the prebuilt Mathlib
 lake build
@@ -45,9 +45,10 @@ A proof can be faked with `sorry` ("trust me"). Verify none exist:
 grep -rn "sorry\|admit" ArmadaLean/
 ```
 
-Expected result: no spec theorem proof uses `sorry` (since 2026-11-02, `main`
-`8b3f0928`). The matches are comments, counterexample notes, and the non-vacuity
-witnesses of `ArmadaLean/Witness/` that are still open.
+Expected result: the matches are comments, counterexample notes, the
+non-vacuity witnesses of `ArmadaLean/Witness/` that are still open, the
+`Liveness.lean` theorems not yet proved, and any pool spec theorem still open
+(step 4 below lists the current count; it is not always zero).
 
 The acceptance check computes the same set from Lean itself, with no stored list:
 

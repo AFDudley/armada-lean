@@ -30,7 +30,9 @@ scripts/check.sh                   # lists each open proof as a `SORRY <name>` l
 Every theorem type is approved, tag `pool-symbolic-approved-2026-10-28`
 (armada-laconic `labbook/2026-10-28-pool-symbolic-types-approval.md`). Every pool
 theorem is proved (2026-10-29). `docs/pool-symbolic-changes.md` lists every
-change and every changed type.
+change and every changed type. Contract paths the model does not model —
+a changeable verification key, an owner-adjustable fee, CCTP, and batched
+shields/transacts — are **[docs/departures.md](docs/departures.md)**.
 
 **The Nitro model** (`ArmadaLean/Nitro/`) covers ledger and virtual channels.
 Every theorem type is approved, tag `nitro-proofs-approved-2026-10-28`, with the
@@ -125,7 +127,7 @@ The model follows the fixed contract: `armada-poc` `origin/main` `64436c14`
 | `round_trip_loss_le` | `Yield.Vault` | a deposit-then-redeem round trip loses at most `C / S + 1`, the exact floor-division bound | `ArmadaYieldVault.sol:491-514` |
 | `donation_loss_bound` | `Yield.Vault` | a depositor's rounding loss from a donation `X` is at most `X / LOCKED_SHARES + 2`, sharper than the NatSpec's `~` estimate | `ArmadaYieldVault.sol:74-81, 491-514` |
 | `donation_attack_unprofitable` | `Yield.Vault` | a donation attacker holding `s < S` shares out of supply `S` recovers at most `X + s` | `ArmadaYieldVault.sol:74-81, 491-514` |
-| `donation_attack_unprofitable_post_fix` | `Yield.Vault` | `donation_attack_unprofitable`, specialized to the fixed contract's own invariant `s ≤ S - LOCKED_SHARES`; the donation attack cannot profit, unconditionally | `ArmadaYieldVault.sol:74-85` |
+| `donation_attack_unprofitable_post_fix` | `Yield.Vault` | `donation_attack_unprofitable`, specialized to the fixed contract's own invariant `s ≤ S - LOCKED_SHARES`; starting from a 1:1 share price (`claimable = supply`, no pending protocol fee), the donation attack cannot profit | `ArmadaYieldVault.sol:74-85` |
 
 ### Shield fee (`armada-poc/contracts/privacy-pool/modules/ShieldModule.sol`, audit C-3)
 
@@ -216,6 +218,7 @@ docs/
   axioms-circuit.txt    #print axioms audit output (circuit theorems)
   axioms-contracts.txt    #print axioms audit output (vault/fee theorems)
   pool-symbolic-changes.md  the P-1..P-11 changes, the new theorems, the changed types
+  departures.md          contract paths the pool model does not model, and why
   nitro-theorems.md       the Nitro/SATP/ForceMove theorem-to-source map
   nitro-repair-2026-10-27.md  the approved corrections to the Safety statements
 ```

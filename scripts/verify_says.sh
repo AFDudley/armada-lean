@@ -20,7 +20,7 @@ fi
 
 fail=0
 for f in "${files[@]}"; do
-    out=$(/home/rix/bin/lean-run lake env lean --json -Dweak.says.verify=true "$f" 2>&1) || true
+    out=$(lake env lean --json -Dweak.says.verify=true "$f" 2>&1) || true
     errs=$(printf '%s\n' "$out" | python3 -c '
 import json, sys
 n = 0
