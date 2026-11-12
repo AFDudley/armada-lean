@@ -115,40 +115,34 @@ and `_isPrivilegedShieldCaller` (`ShieldModule.sol:258-263`, an adapter
 registry gate) waives the fee to zero for a trusted caller.
 
 **Effect on the theorems.** `shield_creates_exactly`
-(`ArmadaLean.PoolSafety`) states that a shield of gross `x` creates a note of
-exactly `shieldBase s.feeRatio x` and pays `shieldFee s.feeRatio x` to the
-treasury, for every reachable state `s`. Its only state input is
-`s.feeRatio`; nothing hypothesizes `feeModule = address(0)` or that no
-adapter is privileged. So the theorem is stated as if it held in every
-reachable state, but at a real state with a fee module installed, the
-contract computes the note value from `IArmadaFeeModule.calculateShieldFee`
-(an external call this project does not model) under a 15% cap, and can pay
-part of the fee to an integrator the model's `PoolState` has no field for —
-not from `s.feeRatio` under a 10% cap paid wholly to `s.treasury`. The
-privileged-caller branch similarly creates a note of the full gross `x`
-(zero fee), which `shield_creates_exactly` also does not state as a case.
-`core_invariant`'s custody bookkeeping stays sound for the fee-module
-branch specifically (the pool's own balance only ever gains
-`amount - totalFee`, since `armadaTake` and `integratorFee` are pulled
-`safeTransferFrom(msg.sender, ...)` directly, never through the pool's
-balance), but `shield_creates_exactly`'s claimed note VALUE is wrong
-whenever a fee module is installed, because the model's only fee formula is
-`shieldBase`/`shieldFee` over `s.feeRatio`.
+(`ArmadaLean.PoolSafety`) states that a shield of gross `x` creates a note
+of exactly `shieldBase s.feeRatio x` and pays `shieldFee s.feeRatio x` to
+the treasury, for every reachable state `s`, where `s.feeRatio` is the
+model's only fee input. The model has no `feeModule` field and no notion
+of a privileged caller, so this theorem is a true statement about the
+model as it stands; it says nothing about a fee module or a privileged
+caller because the model has no way to say it. `core_invariant`'s custody
+side stays sound regardless (the pool's own balance only ever gains
+`amount - totalFee` on the fee-module branch too, since `armadaTake` and
+`integratorFee` are pulled `safeTransferFrom(msg.sender, ...)` directly,
+never through the pool's balance).
 
-**Not modeled.** `ArmadaLean.Fee` and `PoolState` have no fee-module field,
-no integrator fee, no 15% cap, and no privileged-caller zero-fee case.
+**Not modeled.** The contract's fee-module split
+(`armadaTake`/`integratorFee`, the 15% cap
+`MAX_FEE_MODULE_SHIELD_FEE_BPS`, `ShieldModule.sol:42, 303-385`) and the
+privileged-caller fee waiver (`ShieldModule.sol:258-263`) are departures:
+contract paths this project's shield theorems do not cover.
 `shield_creates_exactly` and the `can_happen` theorem built on it
-(`shield_can_happen`) hold only for the flat-fee branch (`feeModule =
-address(0)` and no privileged adapter); this project's statements do not
-say so. Modeling the fee-module branch needs: a `PoolState` field for
+(`shield_can_happen`) describe a deployment with no fee module and no
+privileged adapter. They do not describe, and make no claim about, a
+deployment with a fee module installed or with a privileged caller
+registered. Modeling either path needs new work: a `PoolState` field for
 whether a fee module is active, an opaque `calculateShieldFee`-shaped
 function (parameterized like `VerifyAccepts`, since the fee module is an
-external, upgradable contract), a `treasuryFees`-shaped ledger entry for the
-integrator leg, and a restated `shield_creates_exactly` split into the two
-(or three) cases. This is new work; no statement change is proposed here,
-since fixing `shield_creates_exactly`'s hypotheses (adding `feeModule =
-address(0)` and "no privileged adapter" as explicit hypotheses) is a change
-to a `Spec` statement and needs the operator's approval under rule 8.3.
+external, upgradable contract), a `treasuryFees`-shaped ledger entry for
+the integrator leg, a privileged-caller predicate, and new theorems
+alongside `shield_creates_exactly` for each new case. This is new work for
+the operator to scope, not a correction to a current statement.
 
 ## 3. CCTP cross-chain shield and unshield
 
@@ -217,22 +211,13 @@ modeled (`FeeRatio`, `step_feeRatio_frame`), and the fix in this branch is to
 `ArmadaLean/Fee.lean`'s doc comment (a false claim about the fee half of a
 "sets once" sentence), not to a `Spec` definition.
 
-Item 2's fee-module half is a false claim, not a silent gap:
-`shield_creates_exactly` (`ArmadaLean.Spec.PoolSafety`) is stated for every
-reachable state `s`, with no hypothesis ruling out a fee module or a
-privileged adapter. The exact proposed text, for the operator (rule 8.3):
-add two hypotheses, `(hNoFeeModule : s.feeModule = none)` and `(hNoPrivileged
-: ¬ s.PrivilegedShieldCaller caller)` (new `PoolState` fields this change
-does not add), to `Spec.shield_creates_exactly` and every theorem built on
-it (`shield_can_happen`). Counterexample without the fix: a reachable state
-with a fee module installed and `armadaTake + integratorFee = 15% * x >
-shieldFee s.feeRatio x` (the fee-module cap exceeds the flat-rate cap);
-the real contract creates a note of `x - 0.15x`, not `shieldBase s.feeRatio
-x`, so the theorem's conclusion is false at that state as currently stated.
-Items 1, 3 and 4 are gaps this project never claimed to close (so no
-existing theorem is false); closing them needs new `Step` constructors and
-new theorems — new work, proposed to the operator separately, not a
-correction to a current statement.
+Items 1, 2's fee-module half, 3 and 4 are gaps this project never claimed
+to close, not false claims against the model as it stands: `PoolState` has
+no fee-module or privileged-caller field for item 2's second half to even
+hypothesize about, and items 1, 3 and 4 have no corresponding `Step` at
+all. Closing any of them needs new `PoolState` fields, new `Step`
+constructors, or both, plus new theorems — new work, proposed to the
+operator separately, not a correction to a current statement.
 
 ## Related, separately owned cleanup
 
