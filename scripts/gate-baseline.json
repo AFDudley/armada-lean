@@ -26,7 +26,7 @@
     "ArmadaLean/PoolMachine.lean": "f298e71e150fedd3eb52338ccd18c12208b3333ab31dd6a6aee2f15954141aa7",
     "ArmadaLean/PoolNonVacuity.lean": "500a63721d76bdb28d826de889fd73615058986842d1bafd7734948e8586840e",
     "ArmadaLean/PoolOwned.lean": "85e123a07f0c49ec8a20fbbf4592e8a29d0d0799092cc106c011af1996713e93",
-    "ArmadaLean/PoolSafety.lean": "a3886afa8d665ada2a837b67bd107e31ff1dc29f99223d5109c92227e1862878",
+    "ArmadaLean/PoolSafety.lean": "ff0938c21200946bd9d6c06957a73fd407ffc6c0d68f278947ec9ce9b4f5feba",
     "ArmadaLean/Poseidon.lean": "dacfde9a42ffa6585b04402ed1844ebb05a350f42a546db88461885d65dee80d",
     "ArmadaLean/RangeCheck.lean": "c003fc8f61936b52a7d67a838e0899d14587790084025e02676b96ae45e0595a",
     "ArmadaLean/Spec.lean": "039ee83163deb921c14bdbb0234498d64d6f287852e6686a01fdef6b048e1467",
