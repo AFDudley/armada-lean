@@ -8,14 +8,10 @@ the yield-vault share math, and the shield fee formula.
 `armada-circuits/docs/SECURITY_REVIEW.md` and the shielded-pool launch track
 (armada-poc #381).
 
-## Build & verify
+## Build
 
-**→ Step-by-step independent verification guide: [docs/how-to-verify.md](docs/how-to-verify.md)**
-(no Lean experience needed; ~5 min)
-
-Short version — requires an [elan](https://elan.lean-lang.org)-managed Lean
-toolchain (the exact version is pinned in `lean-toolchain`; elan installs it
-automatically):
+Requires an [elan](https://elan.lean-lang.org)-managed Lean toolchain (the
+exact version is pinned in `lean-toolchain`; elan installs it automatically).
 
 ```bash
 lake build                        # checks every proof
@@ -81,7 +77,6 @@ ArmadaLean/
   Fee.lean                shield-fee reference spec
 docs/
   what-the-proofs-mean.md one-page explainer
-  how-to-verify.md      step-by-step independent verification guide
-  axioms-circuit.txt    #print axioms audit output (circuit theorems)
+  axioms-circuit.txt      #print axioms audit output (circuit theorems)
   axioms-contracts.txt    #print axioms audit output (vault/fee theorems)
 ```

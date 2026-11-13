@@ -8,6 +8,8 @@
   equality modulo `p`.
 -/
 
+namespace ArmadaLean
+
 /-- The BN254 scalar field prime (a.k.a. the alt_bn128 / BabyJubJub scalar field order). -/
 def p : Nat :=
   21888242871839275222246405745257275088548364400416034343698204186575808495617
@@ -39,3 +41,5 @@ theorem sum_bound_lt_p : 8 * 2 ^ 120 < p := by decide
 /-- Closed arithmetic fact: `8 * (2^120 - 1) < p`, the exact worst-case sum bound
     used to prevent wraparound minting (see ValueConservation.no_wraparound_minting). -/
 theorem sum_bound_sub_one_lt_p : 8 * (2 ^ 120 - 1) < p := by decide
+
+end ArmadaLean

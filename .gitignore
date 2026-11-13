@@ -1,3 +1,8 @@
 .lake/
+# A full toolchain directory; never repo content.
+.elan/
 *.olean
 *.trace
+__pycache__/
+# scripts/spec_check.py's own transient build-log/report output.
+.scratch/

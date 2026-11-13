@@ -12,6 +12,9 @@
   `sumOut = sumIn + p` — minting value out of nothing.
 -/
 import ArmadaLean.Field
+import Mathlib.Tactic.Says
+
+namespace ArmadaLean
 
 /-- Sum of a list of naturals (the circuit's `accIn`/`accOut` accumulators,
     Transact.circom:133-140). -/
@@ -19,11 +22,29 @@ def listSum : List Nat → Nat
   | [] => 0
   | x :: xs => x + listSum xs
 
+/-- `listSum` distributes over `++` (ArmadaLean.Pool uses this to split a batch's total
+    into the part carried by new notes and the part carried by notes already live). -/
+theorem listSum_append (l1 l2 : List Nat) : listSum (l1 ++ l2) = listSum l1 + listSum l2 := by
+  induction l1 with
+  | nil => (simp? [listSum] says simp only [List.nil_append, listSum, Nat.zero_add])
+  | cons x xs ih => simp only [List.cons_append, listSum, ih]; omega
+
+/-- `listSum` is invariant under reordering (ArmadaLean.Pool uses this together with
+    `List.Perm.map` to show that removing a sub-multiset of live notes and reinserting
+    it changes the total value by exactly the sub-multiset's value, regardless of where
+    in the list the removed notes sat). -/
+theorem listSum_perm {l1 l2 : List Nat} (h : l1.Perm l2) : listSum l1 = listSum l2 := by
+  induction h with
+  | nil => rfl
+  | cons x _ ih => (simp? [listSum, ih] says simp only [listSum, ih, Nat.add_left_cancel_iff])
+  | swap x y l => (simp? [listSum] says simp only [listSum]); omega
+  | trans _ _ ih1 ih2 => rw [ih1, ih2]
+
 /-- A list whose elements are all below `c` sums to at most `length * (c - 1)`. -/
 theorem listSum_le_length_mul_sub_one (vs : List Nat) (c : Nat)
     (h : ∀ v ∈ vs, v < c) : listSum vs ≤ vs.length * (c - 1) := by
   induction vs with
-  | nil => simp [listSum]
+  | nil => (simp? [listSum] says simp only [listSum, List.length_nil, Nat.zero_mul, Std.le_refl])
   | cons x xs ih =>
     have hx : x < c := h x (List.mem_cons_self)
     have hxs : ∀ v ∈ xs, v < c := fun v hv => h v (List.mem_cons_of_mem x hv)
@@ -59,3 +80,5 @@ theorem no_wraparound_minting (ins outs : List Nat)
   apply eq_of_fieldEq_of_lt _ _ hsum
   · exact listSum_lt_p ins hN hin
   · exact listSum_lt_p outs (Nat.le_trans hM (by decide)) hout
+
+end ArmadaLean
