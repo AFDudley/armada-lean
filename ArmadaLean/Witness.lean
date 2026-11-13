@@ -5,6 +5,14 @@
 import ArmadaLean.Witness.BoundParams
 import ArmadaLean.Witness.Fee
 import ArmadaLean.Witness.Merkle
+import ArmadaLean.Witness.Nitro.Lemmas
+import ArmadaLean.Witness.Nitro.Liveness
+import ArmadaLean.Witness.Nitro.Reachable
+import ArmadaLean.Witness.Nitro.SATP
+import ArmadaLean.Witness.Nitro.Safety
+import ArmadaLean.Witness.Nitro.Strategy
+import ArmadaLean.Witness.Nitro.TakeOut
+import ArmadaLean.Witness.Nitro.Value
 import ArmadaLean.Witness.Nullifier
 import ArmadaLean.Witness.Pool
 import ArmadaLean.Witness.PoolOwned

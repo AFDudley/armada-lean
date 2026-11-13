@@ -6,6 +6,16 @@ import ArmadaLean.Spec.BoundParams
 import ArmadaLean.Spec.Fee
 import ArmadaLean.Spec.Field
 import ArmadaLean.Spec.Merkle
+import ArmadaLean.Spec.Nitro.Channel
+import ArmadaLean.Spec.Nitro.Lemmas
+import ArmadaLean.Spec.Nitro.Liveness
+import ArmadaLean.Spec.Nitro.OpEquations
+import ArmadaLean.Spec.Nitro.Reachable
+import ArmadaLean.Spec.Nitro.SATP
+import ArmadaLean.Spec.Nitro.Safety
+import ArmadaLean.Spec.Nitro.Strategy
+import ArmadaLean.Spec.Nitro.TakeOut
+import ArmadaLean.Spec.Nitro.Value
 import ArmadaLean.Spec.Nullifier
 import ArmadaLean.Spec.Pool
 import ArmadaLean.Spec.PoolOwned
