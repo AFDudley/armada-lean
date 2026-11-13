@@ -29,7 +29,7 @@ from pathlib import Path
 # maps `docs/nitro-theorems.md` and `docs/pool-symbolic-changes.md`.
 _PAPER = re.compile(r"\b(?:ForceMove|Nitro|SATP)(?::\s*\d|\s*§\s*\d)")
 _CONTRACT = re.compile(r"\b[A-Za-z]\w*\.(?:sol|circom)\s*:\s*\d")
-_RULING = re.compile(r"\boperator\s+ruling,?\s*\d{4}-\d{2}-\d{2}", re.IGNORECASE)
+_RULING = re.compile(r"\bdesign\s+decision,?\s*\d{4}-\d{2}-\d{2}", re.IGNORECASE)
 _PROPERTY_ID = re.compile(
     r"\b(?:ForceMove|Nitro|SATP)-[A-Z]?\d+\b|\bdocs-\d{4}-\d{2}\b|\bP-\d+\b|\bS-RG\b"
 )

@@ -54,7 +54,7 @@ complexity criteria of `armada-laconic/docs/lean/verification.md` §6a.
 - A Bend2 specification: no shorter route. Bend2 can still be an
   implementation language: EquiVM checks bytecode from any source.
 
-## Rulings of 2026-10-28
+## Design decisions of 2026-10-28
 
 Findings on this chain, decided during the specification's review.
 
@@ -62,7 +62,7 @@ Findings on this chain, decided during the specification's review.
   does not refine the Groth16 verifier. The specification keeps
   `VerifyAccepts`, `VerifyOwnedAccepts` and `EdDSAVerify` as the trusted
   primitives.
-- **Poseidon stays a trusted primitive.** The operator approved this ruling.
+- **Poseidon stays a trusted primitive.** This is the project's design decision.
 - **The new pool comes from the armada-poc pool.** The new pool removes
   features from the armada-poc pool.
 - **An EquiVM certificate is a one-way inclusion.** Every bytecode run matches

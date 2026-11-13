@@ -144,10 +144,10 @@ def TreeDepth : Nat := 16
     constant ZERO_VALUE = 0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc`,
     on `fork/main`, last changed in commit `4081579b`). It fills every unused leaf slot
     of a tree. The value is `keccak256("Railgun") mod p` over the BN254 scalar field,
-    RAILGUN's derivation of its zero value; w3:p5 recomputed it on 2026-11-08. Operator
-    ruling 2026-11-08: the model states the contract's real constant. An earlier version
-    kept it `opaque`. A `Term.val`, so it is never a hash term (`emptyLeaf_ne_hash`): no
-    note commitment is the empty leaf. -/
+    RAILGUN's derivation of its zero value, recomputed against the pin on 2026-11-08.
+    Design decision 2026-11-08: the model states the contract's real constant. An
+    earlier version kept it `opaque`. A `Term.val`, so it is never a hash term
+    (`emptyLeaf_ne_hash`): no note commitment is the empty leaf. -/
 def emptyLeaf : Term :=
   Term.val 0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc
 

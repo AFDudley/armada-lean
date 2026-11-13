@@ -134,7 +134,7 @@ spec theorem.
 binder says "Every state: REASON" in the doc comment of its spec definition. The conversion
 takes the reason from `scripts/reach-exempt.tsv` at cutover. A proved theorem with no row gets
 a generated reason that says so. An open theorem with no row stops the conversion: it needs a
-ruling. After cutover the reason lives only in the spec definition.
+design decision. After cutover the reason lives only in the spec definition.
 
 ## 5. Non-vacuity by construction
 

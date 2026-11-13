@@ -1,6 +1,6 @@
 # The pool as an executable operation
 
-Status: design, 2026-11-03. Owner: the armada-laconic session in pane w3:p5, by operator order of 2026-11-03.
+Status: design, 2026-11-03.
 
 The rules below are the rules that the pool-execution pebbles cite. Each rule is one sentence, so that a filing can
 quote it exactly.
@@ -49,8 +49,8 @@ inputs that a witness satisfies.
 has a witness that satisfies the circuit.
 
 **Rule PE6 (no statement change).** The pool-execution work changes no approved statement, adds no axiom, and raises no
-type-doctrine linter count above `scripts/gate-baseline.json`. The one exception is the fee-admin setter of operator
-ruling 2026-11-06 (see the notes).
+type-doctrine linter count above `scripts/gate-baseline.json`. The one exception is the fee-admin setter of design
+decision 2026-11-06 (see the notes).
 
 **Rule PE7 (run refinement).** For every list of calls that `Pool.apply verify` accepts in order from
 `(genesis r feeAdmin treasury).contract`, the last contract state is `s.contract` for some reachable `s`, under the

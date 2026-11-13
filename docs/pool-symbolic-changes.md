@@ -221,7 +221,7 @@ Changes:
   from the caller to the treasury; on the cross-chain path `_applyShieldFee`
   (ShieldModule.sol:209-218) pays the fee from the pool's balance. The first version of
   this branch said the fee leg never passes through the pool and took the net amount;
-  that was wrong for the cross-chain path, and the ruling puts the fee in the step on
+  that was wrong for the cross-chain path, and the design decision puts the fee in the step on
   both paths.
 - `PoolState.feeRatio : FeeRatio` is set at genesis. `PoolState.treasuryFees : Token → Nat`
   is the ghost record of fees paid to the treasury. A later change added the
@@ -305,7 +305,7 @@ Changes:
   `hNotPaused`, `grossAmount`, `feeBP`, `hFeeBP`, `hRange`; after, `∃ tn pos` with
   `(s.leavesAt' tn)[pos]? = none` (fresh), `(s'.leavesAt' tn)[pos]? = some
   (hashCommitment note)`, and the same `live`/`held` facts; hypotheses `hValue`,
-  `hSpendable`. After the P-9 ruling (2026-10-27) the type is:
+  `hSpendable`. After the P-9 design decision (2026-10-27) the type is:
 
   ```lean
   theorem shield_creates_exactly {s : PoolState} (token : Token) (x : Nat) (npk : Term)
@@ -329,7 +329,7 @@ Changes:
 ## Other changed types (can-happen theorems)
 
 - `shield_can_happen`: before `(token grossAmount feeBP : Nat) (hNotPaused) (hValue :
-  0 < grossAmount) (hFeeBP) (hRange)`; after (P-9 ruling, 2026-10-27) `(token : Token)
+  0 < grossAmount) (hFeeBP) (hRange)`; after (P-9 design decision, 2026-10-27) `(token : Token)
   (x : Nat) (npk : Term) (hValue : 0 < x) (hSpendable : Spendable (shieldBase s.feeRatio
   x)) : ∃ s', Step s s'`, with `x` the gross amount. Proved (1 line).
 - `transact_can_happen`: added `(caller) (bp) (hAdapt) (hNoUnshield : bp.unshield =

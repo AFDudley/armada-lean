@@ -3,8 +3,8 @@
 Formal verification (Lean 4) of the core security properties of the **Armada
 shielded pool** — the `Transact` ZK circuit, its Merkle membership verifier,
 the `PrivacyPool` contract's bookkeeping (notes, nullifiers, roots, token
-custody), the yield-vault share math, the shield fee formula — and of the
-**Nitro state-channel adjudicator** (ledger and virtual channels).
+custody), the yield-vault share math, and the shield fee formula. The
+**Nitro state-channel adjudicator** model is a separate pull request.
 
 **Status:** pre-audit assurance artifact. Companion to
 `armada-circuits/docs/SECURITY_REVIEW.md` and the shielded-pool launch track
@@ -26,23 +26,11 @@ scripts/check.sh                   # lists each open proof as a `SORRY <name>` l
 ```
 
 **The pool model** (`ArmadaLean/*.lean`) has no contract layout or encoding
-(findings P-1 to P-11 of the pool-layout audit). Every theorem type is
-approved, tag `pool-symbolic-approved-2026-10-28`. Every pool
-theorem is proved (2026-10-29). `docs/pool-symbolic-changes.md` lists every
-change and every changed type. Contract paths the model does not model —
-a changeable verification key, an owner-adjustable fee, CCTP, and batched
-shields/transacts — are **[docs/departures.md](docs/departures.md)**.
-
-**The Nitro model** (`ArmadaLean/Nitro/`) covers ledger and virtual channels.
-Every theorem type is approved, tag `nitro-proofs-approved-2026-10-28`, with the
-later rulings in `docs/nitro-repair-2026-10-27.md`. `Safety.lean`'s 63 theorems
-are proved. Of `Liveness.lean`'s 34 theorems, 16 are proved; `scripts/check.sh`
-lists the open ones. `docs/nitro-repair-2026-10-27.md` §3 gives the status of each.
-`docs/nitro-theorems.md` maps every theorem to its source.
-
-Both models came from the branches `pool-symbolic` and `nitro-proofs`, now
-merged into this trunk. The branches no longer exist; their content survives
-as the tags `archive/pool-symbolic` and `archive/nitro-proofs`.
+(findings P-1 to P-11 of the pool-layout audit). Every pool theorem is
+proved. `docs/pool-symbolic-changes.md` lists every change and every changed
+type. Contract paths the model does not model — a changeable verification
+key, an owner-adjustable fee, CCTP, and batched shields/transacts — are
+**[docs/departures.md](docs/departures.md)**.
 
 Dependency: Mathlib `v4.35.0`. Run
 `lake exe cache get` before the first `lake build`.
@@ -154,15 +142,8 @@ amount.
 | `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) (type changed: P-9; proved) | same |
 | `shieldBase_pos` | `Fee` | a shield of a positive gross amount creates a note of positive value, under the fee cap `maxFeePercent` (new; proved) | `_getFee`, `ShieldModule.sol:353-371` (fee cap) |
 
-### State channels (`ArmadaLean/Nitro/`, go-nitro and the SATP/Nitro/ForceMove papers)
-
-The adjudicator model covers ledger and virtual channels: deposit, transfer,
-reclaim, challenge, checkpoint and conclude. `Safety.lean` proves 63 on-chain
-safety and conservation theorems. `Liveness.lean` states 34 theorems on
-unbeatable strategies and the Turbo Value Algorithm; 16 are proved, and
-`docs/nitro-repair-2026-10-27.md` §3 gives the status of the others.
-`docs/nitro-theorems.md` maps every theorem to its source paper and to go-nitro.
-`docs/nitro-repair-2026-10-27.md` records the approved changes to the statements.
+The Nitro state-channel adjudicator model is not in this pull request; see
+the separate Nitro PR.
 
 ## Trust base & scope
 
@@ -211,19 +192,6 @@ ArmadaLean/
   Yield/
     Vault.lean             #365 fix (LOCKED_SHARES lock) conversion model + proofs
   Fee.lean                shield-fee reference spec
-  Nitro/
-    Address.lean          coins, time, participants, fixed part, destinations, balances
-    Outcome.lean          items, allocations, priority payout, afford, outcomes
-    Channel.lean           states, signed states, ForceMove and consensus rules
-    Adjudicator.lean       adjudicator state, deposit/transfer/reclaim/challenge/checkpoint/conclude
-    Strategy.lean           network states, moves, threat model, unbeatable strategies
-    Value.lean              outcome network, DAG, Turbo Value Algorithm
-    Constructions.lean      ledger channels with sub-channels
-    SATP.lean               vouchers, virtual channel rules, routes
-    Lemmas.lean             reading lemmas and the coins-held invariant
-    Safety.lean             63 proved on-chain safety theorems
-    Liveness.lean           34 liveness theorems (16 proved)
-    NonVacuity.lean         one proved witness per theorem with hypotheses
 docs/
   what-the-proofs-mean.md one-page explainer
   how-to-verify.md      step-by-step independent verification guide
@@ -231,6 +199,4 @@ docs/
   axioms-contracts.txt    #print axioms audit output (vault/fee theorems)
   pool-symbolic-changes.md  the P-1..P-11 changes, the new theorems, the changed types
   departures.md          contract paths the pool model does not model, and why
-  nitro-theorems.md       the Nitro/SATP/ForceMove theorem-to-source map
-  nitro-repair-2026-10-27.md  the approved corrections to the Safety statements
 ```

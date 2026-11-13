@@ -176,9 +176,9 @@ theorem Term.val_ne_hash (n : Nat) (fn : HashFn) (l : List Term) : Term.val n â‰
 
 /-- **A Poseidon output is never a Keccak output, whatever either hash's arguments
     are.** Domain separation across hash functions, by construction
-    (`HashFn.noConfusion`, via `Term.hash`'s own tag argument). Before the operator
-    ruling of 2026-11-08, `ArmadaLean.TransactOwned.user_npk_ne_contract_npk` rested on
-    this fact; it now rests on `Term.val_ne_hash`, because `ownerField` is a
+    (`HashFn.noConfusion`, via `Term.hash`'s own tag argument). Before the
+    2026-11-08 design decision, `ArmadaLean.TransactOwned.user_npk_ne_contract_npk`
+    rested on this fact; it now rests on `Term.val_ne_hash`, because `ownerField` is a
     160-bit address (`ArmadaLean.Types.Address`). -/
 theorem Term.poseidon_ne_keccak {l1 l2 : List Term} :
     Term.hash .poseidon l1 â‰  Term.hash .keccak l2 :=

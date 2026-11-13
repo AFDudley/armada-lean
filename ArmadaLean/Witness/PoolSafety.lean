@@ -147,3 +147,28 @@ theorem ArmadaLean.Spec.spend_bound_to_adapt.witness : spec_premise% ArmadaLean.
     `ArmadaLean.PoolNonVacuity.owned_merge_can_happen.nonvacuity`. -/
 theorem ArmadaLean.Spec.owned_merge_can_happen.witness : spec_premise% ArmadaLean.Spec.owned_merge_can_happen := by
   spec_witness ArmadaLean.PoolNonVacuity.owned_merge_can_happen.nonvacuity
+
+/-- The witness of `Pool.Spec.apply_forward_refinement`: open. Its hypotheses `hReal :
+    verify.Realizes` and `hT : TransactProofCompleteness` each need a concrete instance:
+    `hReal.transact` is a proof of `∀ pub, VerifyAccepts pub ↔ ∃ proof, verify.transact
+    pub proof = true`, and `hT.complete` is a proof of `∀ w pub, Constrained w pub →
+    VerifyAccepts pub`. `VerifyAccepts` is an opaque axiom with no defining equation, so
+    neither universal statement is provable; see this file's module comment. -/
+theorem ArmadaLean.Pool.Spec.apply_forward_refinement.witness : spec_premise% ArmadaLean.Pool.Spec.apply_forward_refinement := by
+  sorry
+
+/-- The witness of `Pool.Spec.apply_backward_refinement`: open. Its hypotheses `hReal :
+    verify.Realizes` and `hTS : TransactProofSoundness` each need a concrete instance:
+    `hTS.sound` is a proof of `∀ pub, VerifyAccepts pub → ∃ w, Constrained w pub`.
+    `VerifyAccepts` is an opaque axiom with no defining equation, so this universal
+    statement is not provable, the same as `owned_spend_can_happen`'s
+    `OwnedProofCompleteness`; see this file's module comment. -/
+theorem ArmadaLean.Pool.Spec.apply_backward_refinement.witness : spec_premise% ArmadaLean.Pool.Spec.apply_backward_refinement := by
+  sorry
+
+/-- The witness of `Pool.Spec.apply_backward_refinement_run`: open. Its hypotheses `hReal :
+    verify.Realizes`, `hTS : TransactProofSoundness` and `hOS : OwnedProofSoundness` are the
+    same as `Pool.Spec.apply_backward_refinement`'s; see this file's module comment and
+    `apply_backward_refinement.witness` above. -/
+theorem ArmadaLean.Pool.Spec.apply_backward_refinement_run.witness : spec_premise% ArmadaLean.Pool.Spec.apply_backward_refinement_run := by
+  sorry

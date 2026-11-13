@@ -793,7 +793,7 @@ theorem shield_can_happen (s : ReachableState Pool.machine) (token : Token)
 
 /-- **Can happen: the fee admin changes the fee rate.** From every reachable state, the
     fee admin's setter call with any rate `r` is a step to a state with fee rate `r`
-    (item (d)). The one check is the caller: the fee admin
+    (design decision 2026-11-06, item (d)). The one check is the caller: the fee admin
     `s.feeAdmin` passes it. -/
 theorem setFeeRatio_can_happen (s : ReachableState Pool.machine) (r : FeeRatio) :
     ∃ s', Step s.state s' ∧ s'.feeRatio = r :=
@@ -2659,7 +2659,7 @@ verifier: `TransactProofCompleteness`/`OwnedProofCompleteness` give that a `Cons
 `Step.transactOwned`'s `Constrained`/`OwnedConstrained` witness to pick the call's proof,
 unshield token and disclosed records.
 
-Source: docs/pool-executable.md rule PE4. -/
+Source: docs/pool-executable.md rule PE4 (design decision 2026-11-04). -/
 theorem Pool.apply_forward_refinement (verify : Pool.Verifier) (hReal : verify.Realizes)
     (hT : TransactProofCompleteness) (hO : OwnedProofCompleteness)
     (rs : ReachableState Pool.machine) {s' : PoolState} (h : Step rs.state s') :
@@ -2953,7 +2953,7 @@ over to `verify` itself. Reachability is needed: the contract checks nullifier f
 and the Merkle root, while `Step.transact` checks that the spent positions are live
 (`hRemove`); `live_note_unspent` and `live_leaf_matches` tie the two on reachable states.
 
-Source: docs/pool-executable.md rule PE5. -/
+Source: docs/pool-executable.md rule PE5 (design decision 2026-11-04). -/
 theorem Pool.apply_backward_refinement (verify : Pool.Verifier) (hReal : verify.Realizes)
     (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
     (s : ReachableState Pool.machine) {c : Pool.Call} {t : Pool.ContractState}
@@ -3130,7 +3130,7 @@ witness that satisfies the circuit. Proved by induction on the list
 (`Pool.applyRun_reaches_contract`), applying `Pool.apply_backward_refinement` at each call; the
 base case is `genesis`'s own reachability (`Reachable.genesis`).
 
-Source: docs/pool-executable.md rule PE7. -/
+Source: docs/pool-executable.md rule PE7 (design decision 2026-11-09). -/
 theorem Pool.apply_backward_refinement_run (verify : Pool.Verifier) (hReal : verify.Realizes)
     (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
     (r : FeeRatio) (feeAdmin treasury : Term) (cs : List Pool.Call) {t : Pool.ContractState}

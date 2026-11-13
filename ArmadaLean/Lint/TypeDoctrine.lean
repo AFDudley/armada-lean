@@ -555,10 +555,10 @@ def nitroCitation (doc : String) : Bool :=
   hasMarkerDigit doc "Nitro:" || hasMarkerDigit doc "SATP:" || hasMarkerDigit doc "ForceMove:"
 
 /-- A Pool spec-level theorem's doc comment cites a contract/circuit line
-    or an operator ruling. -/
+    or a dated design decision. -/
 def poolCitation (doc : String) : Bool :=
   hasMarkerDigit doc ".sol:" || hasMarkerDigit doc ".circom:" ||
-    (doc.splitOn "operator ruling").length > 1
+    (doc.splitOn "design decision").length > 1
 
 /-- The reflexivity and congruence constants (`Eq.refl a : a = a`,
     `congrArg f h : f a₁ = f a₂`, the motive of every `rw` step). Lean

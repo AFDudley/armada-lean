@@ -1331,7 +1331,7 @@ inductive Reachable : PoolState → Prop where
 /-- **The fee admin's setter changes only the fee rate.** The setter call of the fee admin
     `s.feeAdmin` with rate `r` is a step from `s` to `{ s with feeRatio := r }`: every
     other field, the fee admin and the treasury address included, keeps its value
-    (operator-approved; item (a)). The caller is `s.feeAdmin` itself, not a
+    (design decision 2026-11-06, item (a)). The caller is `s.feeAdmin` itself, not a
     caller binder with an equation (`docs/lean/type-doctrine.md` §3,
     rule 3). -/
 theorem step_setFeeRatio_frame {s : PoolState} (r : FeeRatio) : Step s { s with feeRatio := r } :=
@@ -1339,7 +1339,7 @@ theorem step_setFeeRatio_frame {s : PoolState} (r : FeeRatio) : Step s { s with 
 
 /-- **No other step changes the fee rate.** For every step, the fee rate stays the same,
     or the post-state is the pre-state with only the fee rate replaced. Only
-    `Step.setFeeRatio` gives the second case (item (c)). -/
+    `Step.setFeeRatio` gives the second case (design decision 2026-11-06, item (c)). -/
 theorem step_feeRatio_frame {s s' : PoolState} (h : Step s s') :
     s'.feeRatio = s.feeRatio ∨ s' = { s with feeRatio := s'.feeRatio } := by
   cases h with
@@ -1348,12 +1348,13 @@ theorem step_feeRatio_frame {s s' : PoolState} (h : Step s s') :
   | transactOwned => exact Or.inl rfl
   | setFeeRatio => exact Or.inr rfl
 
-/-- **The deployment fixes the fee admin.** No step changes `feeAdmin`. -/
+/-- **The deployment fixes the fee admin.** No step changes `feeAdmin` (design decision
+    2026-11-06). -/
 theorem step_feeAdmin {s s' : PoolState} (h : Step s s') : s'.feeAdmin = s.feeAdmin := by
   cases h <;> rfl
 
-/-- **The deployment fixes the treasury address.** No step changes `treasury` (operator
-    ruling 2026-11-06). -/
+/-- **The deployment fixes the treasury address.** No step changes `treasury`
+    (design decision 2026-11-06). -/
 theorem step_treasury {s s' : PoolState} (h : Step s s') : s'.treasury = s.treasury := by
   cases h <;> rfl
 
@@ -1600,7 +1601,7 @@ theorem Pool.apply_setFeeRatio_equation (verify : Pool.Verifier) (s : Pool.Contr
 /-- **An accepted fee-admin call changes only the fee rate.** If `Pool.apply` accepts the
     call `setFeeRatio caller r`, the result is `{ s with feeRatio := r }`: every other
     contract field, the fee admin and the treasury address included, keeps its value
-    (operator-approved; item (a)). -/
+    (design decision 2026-11-06, item (a)). -/
 theorem Pool.apply_setFeeRatio_frame (verify : Pool.Verifier) (s : Pool.ContractState)
     (caller : Term) (r : FeeRatio) {t : Pool.ContractState}
     (h : Pool.apply verify s (.setFeeRatio caller r) = some t) :
@@ -1613,8 +1614,8 @@ theorem Pool.apply_setFeeRatio_frame (verify : Pool.Verifier) (s : Pool.Contract
     exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
 /-- **No other caller can change the fee rate.** If the caller is not the fee admin
-    `s.feeAdmin`, `Pool.apply` rejects the call `setFeeRatio caller r`
-    (item (b)). The model `Step` keeps no caller identity in its states, so
+    `s.feeAdmin`, `Pool.apply` rejects the call `setFeeRatio caller r` (design decision
+    2026-11-06, item (b)). The model `Step` keeps no caller identity in its states, so
     this contract-level statement is where item (b) has content: at the model level,
     `Step.setFeeRatio` takes `caller = s.feeAdmin` as its hypothesis. -/
 theorem Pool.apply_setFeeRatio_not_admin (verify : Pool.Verifier) (s : Pool.ContractState)

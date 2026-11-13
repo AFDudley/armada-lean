@@ -333,6 +333,15 @@ def Spec.shield_can_happen : Prop :=
     Claim <|
     ∃ s', Step s.state s'
 
+/-- **Can happen: the fee admin changes the fee rate.** From every reachable state, the
+    fee admin's setter call with any rate `r` is a step to a state with fee rate `r`
+    (design decision 2026-11-06, item (d)). The one check is the caller: the fee admin
+    `s.feeAdmin` passes it. -/
+def Spec.setFeeRatio_can_happen : Prop :=
+  ∀ (s : ReachableState Pool.machine) (r : FeeRatio),
+    Claim <|
+    ∃ s', Step s.state s' ∧ s'.feeRatio = r
+
 /-- **Can happen: a transact (private transfer, no unshield) succeeds.** A real key
     holder with `N` live notes in tree `bp.treeNumber`, re-minting them into `M` new
     notes of equal total value, clears every check of `Step.transact`: the witness is
@@ -661,6 +670,70 @@ def Spec.owned_merge_can_happen : Prop :=
         (⟨npkOut, token, listSum (List.ofFn fun i => (pre i).value)⟩ : CommitmentPreimage))
           ∈ s'.live token) ∧
       s'.held token = s.state.held token
+
+/-- **Forward refinement** (rule PE4): `Pool.apply` simulates
+every `Step`.
+
+For every reachable state and every model transition, some call makes `Pool.apply`
+compute the contract state the transition reaches. The hypothesis — `verify` accepts
+every proof for public inputs a witness satisfies — is the completeness of the trusted
+verifier: `TransactProofCompleteness`/`OwnedProofCompleteness` give that a `Constrained`/
+`OwnedConstrained` witness's public input is accepted by the model's own
+`VerifyAccepts`/`VerifyOwnedAccepts`, and `Pool.Verifier.Realizes` carries that over to
+`verify` itself. The shield case reuses `Step.shield`'s own hypotheses directly
+(`ShieldPre` is stated to match them exactly); the transact cases reuse `Step.transact`'s/
+`Step.transactOwned`'s `Constrained`/`OwnedConstrained` witness to pick the call's proof,
+unshield token and disclosed records.
+
+Source: docs/pool-executable.md rule PE4 (design decision 2026-11-04). -/
+def Pool.Spec.apply_forward_refinement : Prop :=
+  ∀ (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hT : TransactProofCompleteness) (hO : OwnedProofCompleteness)
+    (rs : ReachableState Pool.machine) {s' : PoolState} (h : Step rs.state s'),
+    Claim <|
+    ∃ c : Pool.Call, Pool.apply verify rs.state.contract c = some s'.contract
+
+/-- **Backward refinement** (rule PE5): every call that
+`Pool.apply` accepts is the contract image of some `Step`.
+
+For every reachable state, when `Pool.apply` accepts a call and computes `t`, some model
+transition from that state reaches a state whose contract image is `t`. The hypothesis —
+every public input that `verify` accepts has a witness that satisfies the circuit — is
+the soundness of the trusted verifier: `TransactProofSoundness`/`OwnedProofSoundness`
+give a `Constrained`/`OwnedConstrained` witness for every public input the model's own
+`VerifyAccepts`/`VerifyOwnedAccepts` accepts, and `Pool.Verifier.Realizes` carries that
+over to `verify` itself. Reachability is needed: the contract checks nullifier freshness
+and the Merkle root, while `Step.transact` checks that the spent positions are live
+(`hRemove`); `live_note_unspent` and `live_leaf_matches` tie the two on reachable states.
+
+Source: docs/pool-executable.md rule PE5 (design decision 2026-11-04). -/
+def Pool.Spec.apply_backward_refinement : Prop :=
+  ∀ (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
+    (s : ReachableState Pool.machine) {c : Pool.Call} {t : Pool.ContractState}
+    (h : Pool.apply verify s.state.contract c = some t),
+    Claim <|
+    ∃ s' : PoolState, Step s.state s' ∧ s'.contract = t
+
+/-- **Run refinement** (rule PE7): every list of calls that
+`Pool.apply verify` accepts in order from the genesis contract reaches the contract of some
+reachable state.
+
+For every list of calls, when `Pool.apply verify` accepts them one after another starting from
+`(genesis r feeAdmin treasury).contract`, the state the run leaves is `s.contract` for some
+reachable `s`, under the same hypothesis as PE5: every public input `verify` accepts has a
+witness that satisfies the circuit. Proved by induction on the list
+(`Pool.applyRun_reaches_contract`), applying `Pool.apply_backward_refinement` at each call; the
+base case is `genesis`'s own reachability (`Reachable.genesis`).
+
+Source: docs/pool-executable.md rule PE7 (design decision 2026-11-09). -/
+def Pool.Spec.apply_backward_refinement_run : Prop :=
+  ∀ (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
+    (r : FeeRatio) (feeAdmin treasury : Term) (cs : List Pool.Call) {t : Pool.ContractState}
+    (h : Pool.applyRun verify (genesis r feeAdmin treasury).contract cs = some t),
+    Claim <|
+    ∃ s : PoolState, Reachable s ∧ s.contract = t
 
 end ArmadaLean
 
