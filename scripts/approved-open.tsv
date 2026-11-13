@@ -9,4 +9,3 @@
 #
 # Add a row only with the operator's approval of that date; removing a row re-opens
 # the gate's sorry check on that theorem's current proof.
-ArmadaLean.Pool.apply_backward_refinement_run	2026-11-12	PE7 (run refinement over Pool.applyRun, docs/pool-executable.md rule PE7; operator ruling 2026-11-09 for the statement). Open pending proof; approved to stay open 2026-11-12.

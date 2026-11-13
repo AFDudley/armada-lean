@@ -17,8 +17,8 @@ JSON shape `scripts/spec_report.lean` produces for a `theorem`'s `axioms` list
 2. `scripts/check.sh` used to exit 0 on any spec theorem with `sorryAx` in its
    axioms. `test_sorry_gate_rejects_an_unlisted_theorem` checks that
    `unapproved_sorry` now rejects one, and
-   `test_sorry_gate_accepts_the_approved_pe7_theorem` checks that the one
-   theorem `scripts/approved-open.tsv` names today still passes.
+   `test_sorry_gate_accepts_a_listed_theorem` checks that a theorem with its own
+   row in `scripts/approved-open.tsv` still passes.
 """
 from __future__ import annotations
 
@@ -67,17 +67,17 @@ def test_sorry_gate_rejects_an_unlisted_theorem() -> None:
           rejected == ["ArmadaLean.Pool.unlisted_sorry_theorem"], f"got {rejected!r}")
 
 
-def test_sorry_gate_accepts_the_approved_pe7_theorem() -> None:
-    """The one theorem `scripts/approved-open.tsv` names today
-    (`ArmadaLean.Pool.apply_backward_refinement_run`, PE7) keeps passing."""
-    name = "ArmadaLean.Pool.apply_backward_refinement_run"
+def test_sorry_gate_accepts_a_listed_theorem() -> None:
+    """A spec theorem with `sorryAx` and its own row in
+    `scripts/approved-open.tsv` passes."""
+    name = "ArmadaLean.Pool.listed_open_theorem"
     members = [{"name": name, "axioms": [
         "propext", "Quot.sound", "sorryAx",
         "ArmadaLean.EdDSAVerify", "ArmadaLean.VerifyAccepts", "ArmadaLean.VerifyOwnedAccepts",
     ]}]
-    approved = {name: {"approved": "2026-11-12", "reason": "PE7"}}
+    approved = {name: {"approved": "2026-11-12", "reason": "listed"}}
     rejected = spec_check.unapproved_sorry(members, approved_open=approved)
-    check("sorry_gate_accepts_the_approved_pe7_theorem", rejected == [], f"got {rejected!r}")
+    check("sorry_gate_accepts_a_listed_theorem", rejected == [], f"got {rejected!r}")
 
 
 def test_sorry_gate_rejects_the_approved_name_on_a_different_theorem() -> None:
@@ -98,7 +98,7 @@ def main() -> int:
     test_axiom_allowlist_accepts_the_six()
     test_axiom_allowlist_rejects_an_unlisted_axiom()
     test_sorry_gate_rejects_an_unlisted_theorem()
-    test_sorry_gate_accepts_the_approved_pe7_theorem()
+    test_sorry_gate_accepts_a_listed_theorem()
     test_sorry_gate_rejects_the_approved_name_on_a_different_theorem()
     if FAILURES:
         print(f"FAILED {len(FAILURES)}: {', '.join(FAILURES)}")

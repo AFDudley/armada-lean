@@ -3099,6 +3099,28 @@ theorem Pool.apply_backward_refinement (verify : Pool.Verifier) (hReal : verify.
     · rw [dif_neg hPre] at h
       exact absurd h (by (simp? says simp only [reduceCtorEq, not_false_eq_true]))
 
+/-- The induction step of `Pool.apply_backward_refinement_run` (rule PE7): `Pool.applyRun`
+applies `Pool.apply_backward_refinement` (rule PE5) at each call of the list, from any reachable
+state rather than only `genesis`, carrying reachability one `Step` forward at a time. -/
+theorem Pool.applyRun_reaches_contract (verify : Pool.Verifier) (hReal : verify.Realizes)
+    (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness) :
+    ∀ (cs : List Pool.Call) (s : ReachableState Pool.machine) {t : Pool.ContractState},
+      Pool.applyRun verify s.state.contract cs = some t →
+      ∃ s' : PoolState, Reachable s' ∧ s'.contract = t
+  | [], s, t, h => ⟨s.state, Pool.machine_reachable_iff.mp s.reachable, Option.some.inj h⟩
+  | c :: cs, s, t, h => by
+      rw [Pool.applyRun_cons] at h
+      cases hb : Pool.apply verify s.state.contract c with
+      | none => rw [hb] at h; exact absurd h (by simp)
+      | some t1 =>
+        rw [hb] at h
+        have hRest : Pool.applyRun verify t1 cs = some t := h
+        obtain ⟨s1, hStep, hContract⟩ := Pool.apply_backward_refinement verify hReal hTS hOS s hb
+        have hReach1 : Pool.machine.Reachable s1 :=
+          Pool.machine_reachable_iff.mpr ((Pool.machine_reachable_iff.mp s.reachable).step hStep)
+        rw [← hContract] at hRest
+        exact Pool.applyRun_reaches_contract verify hReal hTS hOS cs ⟨s1, hReach1⟩ hRest
+
 /-- **Run refinement** (rule PE7, operator ruling 2026-11-09): every list of calls that
 `Pool.apply verify` accepts in order from the genesis contract reaches the contract of some
 reachable state.
@@ -3106,13 +3128,19 @@ reachable state.
 For every list of calls, when `Pool.apply verify` accepts them one after another starting from
 `(genesis r feeAdmin treasury).contract`, the state the run leaves is `s.contract` for some
 reachable `s`, under the same hypothesis as PE5: every public input `verify` accepts has a
-witness that satisfies the circuit.
+witness that satisfies the circuit. Proved by induction on the list
+(`Pool.applyRun_reaches_contract`), applying `Pool.apply_backward_refinement` at each call; the
+base case is `genesis`'s own reachability (`Reachable.genesis`).
 
 Source: docs/pool-executable.md rule PE7 (operator ruling 2026-11-09). -/
 theorem Pool.apply_backward_refinement_run (verify : Pool.Verifier) (hReal : verify.Realizes)
     (hTS : TransactProofSoundness) (hOS : OwnedProofSoundness)
     (r : FeeRatio) (feeAdmin treasury : Term) (cs : List Pool.Call) {t : Pool.ContractState}
     (h : Pool.applyRun verify (genesis r feeAdmin treasury).contract cs = some t) :
-    ∃ s : PoolState, Reachable s ∧ s.contract = t := by sorry
+    ∃ s : PoolState, Reachable s ∧ s.contract = t :=
+  Pool.applyRun_reaches_contract verify hReal hTS hOS cs
+    ⟨genesis r feeAdmin treasury, Pool.machine_reachable_iff.mpr (Reachable.genesis r feeAdmin treasury)⟩
+    h
+
 
 end ArmadaLean
