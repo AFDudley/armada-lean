@@ -57,19 +57,20 @@ WORKDIR /gate
 # Dockerfile applies the same tail-on-failure discipline here). Each heavy
 # step writes to a log file and prints the log tail only on failure.
 
-# --- The Mathlib download cache, from the dependency manifest only
-#     (lean-toolchain, lakefile.lean, lake-manifest.json: the three files
-#     lake needs to resolve and fetch every pinned package -- mathlib,
-#     plausible, LeanSearchClient, importGraph, proofwidgets, aesop, Qq,
-#     batteries, Cli). A commit that does not touch these three keeps this
-#     layer's cache hit, so it never re-fetches Mathlib. `lake exe cache
-#     get` needs no project source: `lake build` of the project itself runs
-#     after the full tree is copied, below. ---
-COPY lean-toolchain lakefile.lean lake-manifest.json ./
+# --- The full judged tree, then the Mathlib download cache. A local-path
+#     lake dependency (vendor/exophial_core, Stage ML exo-748) needs its own
+#     source tree present before `lake exe cache get` resolves it -- not
+#     only lean-toolchain/lakefile.lean/lake-manifest.json, which sufficed
+#     when every dependency was git/registry-pinned (mathlib, plausible,
+#     LeanSearchClient, importGraph, proofwidgets, aesop, Qq, batteries,
+#     Cli). Moving the tree copy ahead of the cache-get step means a
+#     source-only commit no longer keeps a narrower cache-only layer hit;
+#     `lake exe cache get` itself skips re-downloading content whose hash
+#     already matches, so the repeated cost is a local hash check, not a
+#     re-fetch. `lake build` of the project itself runs after. ---
+COPY . .
 RUN lake exe cache get \
         > /tmp/lake-cache.log 2>&1 || { tail -c 40000 /tmp/lake-cache.log; exit 1; }
-
-COPY . .
 
 # --- The project build, now that the full tree is present. Depends on the
 #     cache layer above; a source-only commit re-runs only this step. ---
