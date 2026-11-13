@@ -1,5 +1,6 @@
 /-
-  Armada Lean — formal verification of shielded-pool security properties.
+  Armada Lean — formal verification of shielded-pool security properties
+  and of the Nitro/ForceMove/SATP state-channel papers.
   Root module: imports all verified components.
 -/
 import ArmadaLean.Machine
@@ -23,5 +24,20 @@ import ArmadaLean.PoolSafety
 import ArmadaLean.PoolNonVacuity
 import ArmadaLean.Yield.Vault
 import ArmadaLean.Fee
+-- Nitro protocol specification (S1 ForceMove, S2 Nitro, S3 SATP); see docs/nitro-theorems.md
+import ArmadaLean.Nitro.Address
+import ArmadaLean.Nitro.Outcome
+import ArmadaLean.Nitro.Channel
+import ArmadaLean.Nitro.Adjudicator
+import ArmadaLean.Nitro.Strategy
+import ArmadaLean.Nitro.Reachable
+import ArmadaLean.Nitro.Value
+import ArmadaLean.Nitro.Constructions
+import ArmadaLean.Nitro.SATP
+import ArmadaLean.Nitro.Safety
+import ArmadaLean.Nitro.Liveness
+import ArmadaLean.Nitro.TakeOut
+import ArmadaLean.Nitro.NonVacuity
+import ArmadaLean.Nitro.OpEquations
 import ArmadaLean.Spec
 import ArmadaLean.Witness

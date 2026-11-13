@@ -38,6 +38,8 @@ open Lean Elab Meta
 
 namespace ArmadaLean
 
+open ArmadaLean.Nitro
+
 /-- Strip a `Expr`'s leading `∀` binders without opening them (no `MetaM`
     needed): the cheap, non-meta half of the scan, run once per candidate
     `def` before the expensive `forallTelescope` + pretty-print is tried only
