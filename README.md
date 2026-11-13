@@ -3,8 +3,8 @@
 Formal verification (Lean 4) of the core security properties of the **Armada
 shielded pool** — the `Transact` ZK circuit, its Merkle membership verifier,
 the `PrivacyPool` contract's bookkeeping (notes, nullifiers, roots, token
-custody), the yield-vault share math, and the shield fee formula. The
-**Nitro state-channel adjudicator** model is a separate pull request.
+custody), the yield-vault share math, the shield fee formula — and of the
+**Nitro state-channel adjudicator** (ledger and virtual channels).
 
 **Status:** pre-audit assurance artifact. Companion to
 `armada-circuits/docs/SECURITY_REVIEW.md` and the shielded-pool launch track
@@ -142,8 +142,15 @@ amount.
 | `fee_zero_below_threshold` | `Fee` | `amount * num < den` pays zero fee (amounts `< 200` at 50/10000) (type changed: P-9; proved) | same |
 | `shieldBase_pos` | `Fee` | a shield of a positive gross amount creates a note of positive value, under the fee cap `maxFeePercent` (new; proved) | `_getFee`, `ShieldModule.sol:353-371` (fee cap) |
 
-The Nitro state-channel adjudicator model is not in this pull request; see
-the separate Nitro PR.
+### State channels (`ArmadaLean/Nitro/`, go-nitro and the SATP/Nitro/ForceMove papers)
+
+See **[docs/nitro-theorems.md](docs/nitro-theorems.md)** for the full
+theorem-to-source map, and **[docs/nitro-scope.md](docs/nitro-scope.md)** for
+the three points a reader must check before relying on any Nitro theorem as a
+claim about go-nitro. `Safety.lean` proves 63 on-chain safety and
+conservation theorems. `Liveness.lean` states 34 theorems on unbeatable
+strategies and the Turbo Value Algorithm; `docs/nitro-repair-2026-10-27.md`
+§3 gives each one's current proof status.
 
 ## Trust base & scope
 
@@ -168,9 +175,11 @@ can-happen theorems mention them. The empty leaf `ZERO_VALUE` is the opaque cons
 What is and isn't covered, in plain English: **[docs/what-the-proofs-mean.md](docs/what-the-proofs-mean.md)**.
 
 Out of scope: Groth16, the circom compiler, Poseidon's concrete parameters,
-the trusted-setup ceremony, and all contract/relayer/SDK code beyond the
-modeled formulas. This project complements (does not replace) static analysis
-(Ecne/circomspect/Picus) and an external circuit audit.
+the trusted-setup ceremony, the go-nitro Solidity contracts themselves (this
+project models their behavior; it does not verify their bytecode), and all
+contract/relayer/SDK code beyond the modeled formulas. This project
+complements (does not replace) static analysis (Ecne/circomspect/Picus) and
+an external circuit audit.
 
 ## Layout
 
@@ -192,6 +201,19 @@ ArmadaLean/
   Yield/
     Vault.lean             #365 fix (LOCKED_SHARES lock) conversion model + proofs
   Fee.lean                shield-fee reference spec
+  Nitro/
+    Address.lean          coins, time, participants, fixed part, destinations, balances
+    Outcome.lean          items, allocations, priority payout, afford, outcomes
+    Channel.lean           states, signed states, ForceMove and consensus rules
+    Adjudicator.lean       adjudicator state, deposit/transfer/reclaim/challenge/checkpoint/conclude
+    Strategy.lean           network states, moves, threat model, unbeatable strategies
+    Value.lean              outcome network, DAG, Turbo Value Algorithm
+    Constructions.lean      ledger channels with sub-channels
+    SATP.lean               vouchers, virtual channel rules, routes
+    Lemmas.lean             reading lemmas and the coins-held invariant
+    Safety.lean             63 proved on-chain safety theorems
+    Liveness.lean           34 liveness theorems (status in docs/nitro-repair-2026-10-27.md §3)
+    NonVacuity.lean         one proved witness per theorem with hypotheses
 docs/
   what-the-proofs-mean.md one-page explainer
   how-to-verify.md      step-by-step independent verification guide
@@ -199,4 +221,7 @@ docs/
   axioms-contracts.txt    #print axioms audit output (vault/fee theorems)
   pool-symbolic-changes.md  the P-1..P-11 changes, the new theorems, the changed types
   departures.md          contract paths the pool model does not model, and why
+  nitro-scope.md         what the Nitro theorems cover, and what they do not
+  nitro-theorems.md       the Nitro/SATP/ForceMove theorem-to-source map
+  nitro-repair-2026-10-27.md  the review-driven corrections to the Safety statements
 ```
