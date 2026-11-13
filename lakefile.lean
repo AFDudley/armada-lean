@@ -21,6 +21,23 @@ package «armada-lean» where
 require mathlib from git
   "https://github.com/leanprover-community/mathlib4.git" @ "v4.35.0"
 
+-- The Lean half of exophial's Lean spec-checking procedure
+-- (#check_spec_bindings, spec_premise%, #spec_report), vendored at
+-- vendor/exophial_core/ (docs/merge_plan.md Stage ML, "Where each part
+-- belongs": "A Lean package that exophial ships"). A git dependency does
+-- not work here: the commit-boundary gate container builds with no
+-- bind mount and no inherited host environment (exophial
+-- docs/decisions/2026-10-14-gate-runs-in-a-container-built-from-the-judged-commit.md
+-- D49.5/D49.6), and exophial's own GitHub repository needs a credential
+-- the gate build never carries (exo-??? -- filed). exophial's README/
+-- CLAUDE.md names subtree-vendoring, not only a lake git dependency, as
+-- the sanctioned distribution route for a consuming repository; this
+-- follows that route for the Lean half. The vendored copy is
+-- exophial_core/ unchanged from exophial commit
+-- 21517119daa04c9cce6eb32c77479ecc194afdcb (exo-218, exo-748 family
+-- ships the package; re-vendor once exo-2439/exo-6d7a merge there).
+require exophial_core from "vendor/exophial_core"
+
 @[default_target]
 lean_lib «ArmadaLean» where
   -- `ArmadaLean.Machines` (`ArmadaLean/Machines.lean`) is a second root, not

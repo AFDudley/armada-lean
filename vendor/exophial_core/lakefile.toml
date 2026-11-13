@@ -1,0 +1,17 @@
+# The exophial Lean package's implementation (docs/merge_plan.md Stage ML,
+# exo-748 family).
+#
+# This package ships the Lean half of the spec-checking machinery that
+# docs/merge_plan.md Stage ML's "Where each part belongs" table assigns to
+# exophial: the `#check_spec_bindings` command, the `spec_premise%`
+# elaborator, and the spec report (`Exophial/spec_report.lean`). The
+# repository's top-level `/lakefile.toml` -- the package consumers
+# actually depend on, named "exophial" -- requires this package by its
+# local path; this package is independently buildable too (every
+# acceptance entrypoint under scripts/ builds it directly, by that
+# shorter path).
+name = "exophial_core"
+defaultTargets = ["Exophial"]
+
+[[lean_lib]]
+name = "Exophial"
