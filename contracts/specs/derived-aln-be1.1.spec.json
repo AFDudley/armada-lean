@@ -1,0 +1,415 @@
+{
+  "id": "derived-aln-be1.1",
+  "original_statement": "What must hold? State the invariant or expectation this concerns. A codemod program in armada-lean moves proofs as docs/repair-pass.md R.4 states: it applies one rewrite rule across the model code, keeps an edit only if Lean accepts it, and reports every edit. Its rewrite rules produce the forms sections 2 and 3 require: a refined type that carries the data together with its fact, with its API (rule 5: a coercion, a decidable smart constructor where the predicate is decidable, projection lemmas); a value used directly in place of a value-plus-equation pair (rule 3); and, for each changed approved statement in ArmadaLean/Spec/, the edit of the Spec definition with an equivalence proof to the statement it replaces (R.3).\nWhat holds now? Describe the current, observed state. At integrated 1f50184, armada-lean has no program that rewrites Lean source: scripts/ holds gate, spec and lint scripts only, and no tracked file is a codemod. armada-laconic tools/lean_def_to_structure (commit a4551d1, a Lean program over lake serve with 46 tests) converts def P : Prop into a one-field structure with a holds field, the form section 2 excludes; it was never merged into armada-lean.\nHow do you see it? Describe exactly how to observe this for yourself \u2014 the steps to reproduce, or how you would demo it. In armada-lean, git ls-tree -r --name-only integrated, and look for a program that edits files under ArmadaLean/.\nWhat constraints apply? State them in plain prose. Three reports consume this codemod, one per doctrine rule: 'integrated has 232 repeatedPremise and premiseVariant findings where docs/repair-pass.md rule 1 requires 0', 'integrated has 219 looseHypothesis findings where docs/repair-pass.md rule 2 requires 0', and 'integrated has 53 aliasHypothesis findings where docs/repair-pass.md rule 3 requires 0'. The net line change of the model code (ArmadaLean/ outside ArmadaLean/Lint/) is at most 0 for every step (GATE). A one-field Prop structure that only removes a finding does not count (section 2).\nWhere does this apply? (e.g. gateway route, mobile screen, CLI verb) armada-lean; the program edits ArmadaLean/ outside ArmadaLean/Lint/\n\nDecomposed child: In armada-lean, add a tracked program that rewrites Lean source files under ArmadaLean/ outside ArmadaLean/Lint/, as docs/repair-pass.md R.4 states: it applies one rewrite rule across the model code, it keeps an edit only if Lean accepts it (an edit Lean rejects is discarded, leaving the file as it was), and it reports every edit it made. Today at integrated 1f50184 armada-lean has no program that rewrites Lean source \u2014 scripts/ holds gate, spec and lint scripts only, and no tracked file is a codemod; observe this with `git ls-tree -r --name-only integrated` in armada-lean and look for a program that edits files under ArmadaLean/. The armada-laconic program tools/lean_def_to_structure (commit a4551d1, a Lean program over lake serve with 46 tests) was never merged into armada-lean and converts `def P : Prop` into a one-field structure with a `holds` field, which is the form section 2 excludes, so it is not the deliverable here. GATE: the net line change of the model code (ArmadaLean/ outside ArmadaLean/Lint/) is at most 0 for every step the driver performs. The driver selects which rewrite to run by the codemod rule identifiers: rule 1 (repeatedPremise and premiseVariant), rule 2 (looseHypothesis), rule 3 (aliasHypothesis).",
+  "restatement": "armada-lean must gain a tracked, repository-committed program (a codemod) that automatically edits the project's Lean model source \u2014 the files under ArmadaLean/ but NOT those under ArmadaLean/Lint/ \u2014 in the manner docs/repair-pass.md R.4 describes. Each run of the program applies exactly ONE rewrite rule across the model code. After each candidate edit the program checks the edited code with Lean: if Lean accepts the edited file the edit is kept, and if Lean rejects it the edit is discarded so the file is left exactly as it was before that edit. The program reports every edit it actually made. A driver chooses which rewrite to run using the codemod rule identifiers: rule 1 covers repeatedPremise and premiseVariant, rule 2 covers looseHypothesis, rule 3 covers aliasHypothesis. A hard gate constrains the result: for every step the driver performs, the net line change of the model code (ArmadaLean/ outside ArmadaLean/Lint/) is at most 0 \u2014 the rewrites must never grow the model code overall. This is NOT the already-existing armada-laconic program tools/lean_def_to_structure (commit a4551d1), which converts `def P : Prop` into a one-field structure with a `holds` field \u2014 that output form is excluded by section 2 and must not be what this program produces. Today, at integrated 1f50184, armada-lean contains no such program at all: scripts/ holds only gate, spec and lint scripts and no tracked file edits files under ArmadaLean/.",
+  "restatement_clauses": [
+    {
+      "id": "C1",
+      "text": "armada-lean contains a tracked program that rewrites Lean source files under ArmadaLean/ outside ArmadaLean/Lint/; running it modifies files under ArmadaLean/ and never modifies any file under ArmadaLean/Lint/."
+    },
+    {
+      "id": "C2",
+      "text": "A single run of the program applies exactly one rewrite rule across the model code (ArmadaLean/ outside ArmadaLean/Lint/)."
+    },
+    {
+      "id": "C3",
+      "text": "An edit is kept only if Lean accepts the result; an edit Lean rejects is discarded, leaving the file exactly as it was before that edit."
+    },
+    {
+      "id": "C4",
+      "text": "The program reports every edit it made."
+    },
+    {
+      "id": "C5",
+      "text": "The driver selects which rewrite to run by the codemod rule identifiers: rule 1 (repeatedPremise and premiseVariant), rule 2 (looseHypothesis), rule 3 (aliasHypothesis)."
+    },
+    {
+      "id": "C6",
+      "text": "GATE: the net line change of the model code (ArmadaLean/ outside ArmadaLean/Lint/) is at most 0 for every step the driver performs."
+    },
+    {
+      "id": "C7",
+      "text": "The program does not perform the excluded rewrite of converting `def P : Prop` into a one-field structure with a `holds` field (the form armada-laconic tools/lean_def_to_structure produces, which section 2 excludes)."
+    }
+  ],
+  "goal": "Give the armada-lean project a committed tool that can tidy up its own Lean model files automatically: you pick one of three named clean-up rules, run it, and it goes through the model files (skipping the Lint folder), tries each change, keeps a change only when Lean still accepts the file and silently puts the file back the way it was when Lean does not, prints a list of every change it kept, and never ends up making the model code longer than it started.",
+  "acceptance_criteria": [
+    "The repository ships a checked-in tool that edits Lean source files in the ArmadaLean folder. A helper routine first puts the Lean files in that folder \u2014 including files in the ArmadaLean/Lint subfolder \u2014 into the kind of state the tool is meant to repair, records the exact contents of every file, runs the tool, and then reports how many files changed in each area before restoring the folder to its original contents. The report shows at least one changed file outside ArmadaLean/Lint/, and zero changed files inside ArmadaLean/Lint/, and confirms the tool itself is a file tracked in version control and that at least one Lint file was put into the repairable state so the no-touch result is meaningful.",
+    "Starting from a working copy of the model files (everything under ArmadaLean/ except the ArmadaLean/Lint/ folder) that has been seeded with two different kinds of fixable problems in several files, one run of the tool is observed to clean up only one kind: the report shows exactly one rewrite rule produced changes, no remaining instance of that rule's problem is left anywhere in the model files, at least two separate model files were updated, and nothing inside ArmadaLean/Lint/ was touched.",
+    "Running a prepared check against the tool shows that when the tool tries a change that Lean refuses to compile, the Lean file is left byte-for-byte identical to how it was before that change, while a change Lean does compile is actually saved into the file and the file still compiles afterwards.",
+    "After the tool changes files, the list of changes it prints back to the user matches exactly what actually changed on disk: a helper run sets up a sample folder with several files that the tool will modify, runs the tool, then compares the tool's printed list of changes against the real before/after contents of every file in the folder. It reports how many files really changed, how many changes the tool announced, how many real changes went unannounced, and how many announced changes never actually happened.",
+    "Running the codemod driver and asking it to apply rule \"1\", then \"2\", then \"3\" shows that each number triggers exactly its own named rewrites: number 1 runs the repeated-premise and premise-variant rewrites, number 2 runs only the loose-hypothesis rewrite, and number 3 runs only the alias-hypothesis rewrite, with no rewrite from another rule number sneaking in. A helper script reports, for each number, the sorted list of rewrite names that actually ran.",
+    "A checker script runs the automated cleanup driver from start to finish and, for each step it performs, counts the total number of lines in the model files (everything under ArmadaLean/ except the ArmadaLean/Lint/ folder) immediately before and immediately after that step. It then reports how many steps it watched and the largest increase in total line count seen for any single step. The reported largest increase must be zero or negative (i.e. no step ever makes the model code longer), and at least one step must have been observed.",
+    "When the tool is run over Lean source that contains a plain `def P : Prop := ...` declaration, the resulting output never replaces that declaration with a one-field record/structure carrying a field named `holds` (the shape the armada-laconic def-to-structure tool emits). A helper script runs the tool on such input, counts how many `holds`-style one-field structures appear in the output, and reports that count along with whether the original Prop definition survived."
+  ],
+  "request_clauses": [
+    {
+      "id": "c1",
+      "text": "The repository ships a checked-in tool that edits Lean source files in the ArmadaLean folder. A helper routine first puts the Lean files in that folder \u2014 including files in the ArmadaLean/Lint subfolder \u2014 into the kind of state the tool is meant to repair, records the exact contents of every file, runs the tool, and then reports how many files changed in each area before restoring the folder to its original contents. The report shows at least one changed file outside ArmadaLean/Lint/, and zero changed files inside ArmadaLean/Lint/, and confirms the tool itself is a file tracked in version control and that at least one Lint file was put into the repairable state so the no-touch result is meaningful."
+    },
+    {
+      "id": "c2",
+      "text": "Starting from a working copy of the model files (everything under ArmadaLean/ except the ArmadaLean/Lint/ folder) that has been seeded with two different kinds of fixable problems in several files, one run of the tool is observed to clean up only one kind: the report shows exactly one rewrite rule produced changes, no remaining instance of that rule's problem is left anywhere in the model files, at least two separate model files were updated, and nothing inside ArmadaLean/Lint/ was touched."
+    },
+    {
+      "id": "c3",
+      "text": "Running a prepared check against the tool shows that when the tool tries a change that Lean refuses to compile, the Lean file is left byte-for-byte identical to how it was before that change, while a change Lean does compile is actually saved into the file and the file still compiles afterwards."
+    },
+    {
+      "id": "c4",
+      "text": "After the tool changes files, the list of changes it prints back to the user matches exactly what actually changed on disk: a helper run sets up a sample folder with several files that the tool will modify, runs the tool, then compares the tool's printed list of changes against the real before/after contents of every file in the folder. It reports how many files really changed, how many changes the tool announced, how many real changes went unannounced, and how many announced changes never actually happened."
+    },
+    {
+      "id": "c5",
+      "text": "Running the codemod driver and asking it to apply rule \"1\", then \"2\", then \"3\" shows that each number triggers exactly its own named rewrites: number 1 runs the repeated-premise and premise-variant rewrites, number 2 runs only the loose-hypothesis rewrite, and number 3 runs only the alias-hypothesis rewrite, with no rewrite from another rule number sneaking in. A helper script reports, for each number, the sorted list of rewrite names that actually ran."
+    },
+    {
+      "id": "c6",
+      "text": "A checker script runs the automated cleanup driver from start to finish and, for each step it performs, counts the total number of lines in the model files (everything under ArmadaLean/ except the ArmadaLean/Lint/ folder) immediately before and immediately after that step. It then reports how many steps it watched and the largest increase in total line count seen for any single step. The reported largest increase must be zero or negative (i.e. no step ever makes the model code longer), and at least one step must have been observed."
+    },
+    {
+      "id": "c7",
+      "text": "When the tool is run over Lean source that contains a plain `def P : Prop := ...` declaration, the resulting output never replaces that declaration with a one-field record/structure carrying a field named `holds` (the shape the armada-laconic def-to-structure tool emits). A helper script runs the tool on such input, counts how many `holds`-style one-field structures appear in the output, and reports that count along with whether the original Prop definition survived."
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "description": "The repository ships a checked-in tool that edits Lean source files in the ArmadaLean folder. A helper routine first puts the Lean files in that folder \u2014 including files in the ArmadaLean/Lint subfolder \u2014 into the kind of state the tool is meant to repair, records the exact contents of every file, runs the tool, and then reports how many files changed in each area before restoring the folder to its original contents. The report shows at least one changed file outside ArmadaLean/Lint/, and zero changed files inside ArmadaLean/Lint/, and confirms the tool itself is a file tracked in version control and that at least one Lint file was put into the repairable state so the no-touch result is meaningful.",
+      "max_runs": 1,
+      "proves": "Proves that armada-lean really contains a tracked, runnable rewriter for Lean sources under ArmadaLean/, that running it actually changes files under ArmadaLean/ outside the Lint subfolder, and that it leaves every file under ArmadaLean/Lint/ completely untouched.",
+      "restatement_clause_id": "C1",
+      "then": [
+        {
+          "field": "program_tracked",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "perturbed_lint_count",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "field": "changed_non_lint_count",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "field": "changed_lint_count",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "restored",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "",
+          "observe": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "timeout_seconds": 900,
+      "type": "behavior",
+      "when": {
+        "args": [],
+        "interpreter": "python3",
+        "script": "scripts/oracles/check_rewriter_scope.py",
+        "stdin": ""
+      },
+      "clause_id": "c1"
+    },
+    {
+      "description": "Starting from a working copy of the model files (everything under ArmadaLean/ except the ArmadaLean/Lint/ folder) that has been seeded with two different kinds of fixable problems in several files, one run of the tool is observed to clean up only one kind: the report shows exactly one rewrite rule produced changes, no remaining instance of that rule's problem is left anywhere in the model files, at least two separate model files were updated, and nothing inside ArmadaLean/Lint/ was touched.",
+      "max_runs": 2,
+      "proves": "Proves that a single invocation of the program performs exactly one rewrite rule, and that it performs that one rule everywhere in the model code (ArmadaLean/ outside ArmadaLean/Lint/) rather than stopping at a single file or spilling into the lint tooling directory.",
+      "restatement_clause_id": "C2",
+      "then": [
+        {
+          "field": "distinct_rules_applied",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "field": "remaining_violations_of_applied_rule",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "model_files_changed",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 2
+        },
+        {
+          "field": "lint_directory_files_changed",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "",
+          "observe": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "timeout_seconds": 900,
+      "type": "behavior",
+      "when": {
+        "args": [
+          "--seed-two-rule-violations",
+          "--files",
+          "3",
+          "--report-json"
+        ],
+        "interpreter": "python3",
+        "script": "scripts/oracle_single_rule_per_run.py",
+        "stdin": ""
+      },
+      "clause_id": "c2"
+    },
+    {
+      "description": "Running a prepared check against the tool shows that when the tool tries a change that Lean refuses to compile, the Lean file is left byte-for-byte identical to how it was before that change, while a change Lean does compile is actually saved into the file and the file still compiles afterwards.",
+      "max_runs": 1,
+      "proves": "Shows that only Lean-approved edits survive: a rejected edit is fully undone (file content and checksum unchanged), and an accepted edit is retained, exactly as the clause requires.",
+      "restatement_clause_id": "C3",
+      "then": [
+        {
+          "field": "rejected_edit_attempted",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "file_bytes_identical_after_rejected_edit",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "accepted_edit_persisted",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "final_file_accepted_by_lean",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "",
+          "observe": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "timeout_seconds": 1800,
+      "type": "behavior",
+      "when": {
+        "args": [
+          "--workdir",
+          ".oracle_tmp/edit_rollback"
+        ],
+        "interpreter": "python3",
+        "script": "scripts/check_edit_rollback.py",
+        "stdin": ""
+      },
+      "clause_id": "c3"
+    },
+    {
+      "description": "After the tool changes files, the list of changes it prints back to the user matches exactly what actually changed on disk: a helper run sets up a sample folder with several files that the tool will modify, runs the tool, then compares the tool's printed list of changes against the real before/after contents of every file in the folder. It reports how many files really changed, how many changes the tool announced, how many real changes went unannounced, and how many announced changes never actually happened.",
+      "max_runs": 1,
+      "proves": "Proves that the program tells the user about every edit it made - nothing is changed silently and nothing is claimed that was not changed.",
+      "restatement_clause_id": "C4",
+      "then": [
+        {
+          "field": "actual_changed_count",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 3
+        },
+        {
+          "field": "unreported_change_count",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "phantom_report_count",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "reported_change_count",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": "actual_changed_count"
+        },
+        {
+          "field": "",
+          "observe": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "timeout_seconds": 120,
+      "type": "behavior",
+      "when": {
+        "args": [
+          "--files",
+          "4"
+        ],
+        "interpreter": "python3",
+        "script": "scripts/check_edit_report.py",
+        "stdin": ""
+      },
+      "clause_id": "c4"
+    },
+    {
+      "description": "Running the codemod driver and asking it to apply rule \"1\", then \"2\", then \"3\" shows that each number triggers exactly its own named rewrites: number 1 runs the repeated-premise and premise-variant rewrites, number 2 runs only the loose-hypothesis rewrite, and number 3 runs only the alias-hypothesis rewrite, with no rewrite from another rule number sneaking in. A helper script reports, for each number, the sorted list of rewrite names that actually ran.",
+      "max_runs": 1,
+      "proves": "Proves the driver maps codemod rule identifier 1 to repeatedPremise plus premiseVariant, 2 to looseHypothesis, and 3 to aliasHypothesis, and that selecting one rule does not run the rewrites belonging to another.",
+      "restatement_clause_id": "C5",
+      "then": [
+        {
+          "field": "rule_1_rewrites",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": "premiseVariant,repeatedPremise"
+        },
+        {
+          "field": "rule_2_rewrites",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": "looseHypothesis"
+        },
+        {
+          "field": "rule_3_rewrites",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": "aliasHypothesis"
+        },
+        {
+          "field": "rules_invoked",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 3
+        },
+        {
+          "field": "",
+          "observe": "exit_code",
+          "op": "eq",
+          "value": 0
+        }
+      ],
+      "timeout_seconds": 180,
+      "type": "behavior",
+      "when": {
+        "args": [
+          "--rules",
+          "1,2,3"
+        ],
+        "interpreter": "python3",
+        "script": "scripts/check_rule_selection.py",
+        "stdin": ""
+      },
+      "clause_id": "c5"
+    },
+    {
+      "description": "A checker script runs the automated cleanup driver from start to finish and, for each step it performs, counts the total number of lines in the model files (everything under ArmadaLean/ except the ArmadaLean/Lint/ folder) immediately before and immediately after that step. It then reports how many steps it watched and the largest increase in total line count seen for any single step. The reported largest increase must be zero or negative (i.e. no step ever makes the model code longer), and at least one step must have been observed.",
+      "max_runs": 1,
+      "proves": "Proves that every action the driver takes leaves the model code the same size or smaller, so the tool never grows the codebase it is supposed to tidy, and that this was actually exercised on at least one real step rather than on an empty run.",
+      "restatement_clause_id": "C6",
+      "then": [
+        {
+          "field": "steps_observed",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "field": "max_net_line_delta",
+          "observe": "stdout_json",
+          "op": "le",
+          "value": 0
+        }
+      ],
+      "timeout_seconds": 1800,
+      "type": "behavior",
+      "when": {
+        "args": [
+          "--report-json"
+        ],
+        "interpreter": "python3",
+        "script": "scripts/check_driver_net_line_change.py",
+        "stdin": ""
+      },
+      "clause_id": "c6"
+    },
+    {
+      "description": "When the tool is run over Lean source that contains a plain `def P : Prop := ...` declaration, the resulting output never replaces that declaration with a one-field record/structure carrying a field named `holds` (the shape the armada-laconic def-to-structure tool emits). A helper script runs the tool on such input, counts how many `holds`-style one-field structures appear in the output, and reports that count along with whether the original Prop definition survived.",
+      "max_runs": 2,
+      "proves": "Proves the program leaves `def P : Prop` declarations alone instead of rewriting them into a one-field structure with a `holds` field, which is the rewrite explicitly excluded by section 2.",
+      "restatement_clause_id": "C7",
+      "then": [
+        {
+          "field": "tool_ran",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "prop_defs_in_input",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 1
+        },
+        {
+          "field": "holds_structures_in_output",
+          "observe": "stdout_json",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "prop_defs_still_defs_in_output",
+          "observe": "stdout_json",
+          "op": "ge",
+          "value": 1
+        }
+      ],
+      "timeout_seconds": 600,
+      "type": "behavior",
+      "when": {
+        "args": [],
+        "interpreter": "python3",
+        "script": "scripts/check_no_holds_structure.py",
+        "stdin": ""
+      },
+      "clause_id": "c7"
+    }
+  ],
+  "criticality": "marginal",
+  "verification_level": "bounded_model_check",
+  "declared_new_entrypoints": [
+    "scripts/check_driver_net_line_change.py",
+    "scripts/check_edit_report.py",
+    "scripts/check_edit_rollback.py",
+    "scripts/check_no_holds_structure.py",
+    "scripts/check_rule_selection.py",
+    "scripts/oracle_single_rule_per_run.py",
+    "scripts/oracles/check_rewriter_scope.py"
+  ]
+}
