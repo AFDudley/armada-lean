@@ -1,4 +1,6 @@
 coordination_repo: "/home/rix/code/git_puller/repos/armada-lean"
+# Law L1 (INV-001): the one declared integration branch. Readers never fall back.
+integration_branch: integrated
 poll_interval: 5
 inspect_interval: 5
 
@@ -38,6 +40,15 @@ credential:
 
 # Where `exophial spec generate` writes unified spec instances (repo-relative).
 spec_dir: "contracts/specs"
+
+# The scripts a derived acceptance test may run (exophial design I1,
+# docs/plans/i1-closed-entrypoints.md). With this key, intake can name only a
+# script the repository already tracks, so a worker cannot write the measure
+# of its own work. Operator order 2026-11-16: all 57 tests of the first
+# type-doctrine filings (aln-be1, aln-b28, aln-3c46, aln-393, aln-44c) were
+# new scripts that the worker would write. scripts/check.sh --json is the gate.
+oracle_entrypoints:
+  - "scripts/check.sh"
 
 # Config-owned model-routing policy for the intake spec derivation (exo-beb /
 # worker-model ADR D3). `exophial intake` / `exophial specify`
