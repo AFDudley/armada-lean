@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """The acceptance check of armada-lean. Design record: `docs/spec-module-design.md`.
 
-Usage: python3 scripts/spec_check.py [--json [THEOREM_NAME]]
+Usage: python3 scripts/spec_check.py [--base REF] [--json [THEOREM_NAME]]
 Run from the repo root. Exit 0 means every check passed.
+`--base REF` sets the base commit of the repair measures below (default: the merge
+base with `integrated`).
 
 The check is `lake build` plus one computed report (`scripts/spec_report.lean`), plus
 two committed facts: `ALLOWED_AXIOMS` below, and `scripts/approved-open.tsv`
@@ -41,6 +43,9 @@ environment on each run.
 - sorry: the spec theorems whose axioms include `sorryAx` (approved or not;
   `sorry_ok` reports the ones that are not).
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
+- model_net_lines, spec_changed, measure_base: the repair-pass measures
+  (`scripts/repair_measure.py`, `docs/repair-pass.md` GATE, R.3). They only report;
+  the verdict above does not use them.
 """
 from __future__ import annotations
 
@@ -54,6 +59,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import spec_lib  # noqa: E402
 import gate_extra  # noqa: E402
+import repair_measure  # noqa: E402
 
 ROOT = Path.cwd()
 
@@ -104,6 +110,12 @@ def unapproved_sorry(members: list[dict], approved_open: dict[str, dict]) -> lis
 def main() -> int:
     t0 = time.monotonic()
     argv = sys.argv[1:]
+    base: str | None = None
+    if "--base" in argv:
+        i = argv.index("--base")
+        assert i + 1 < len(argv), "--base needs a commit"
+        base = argv[i + 1]
+        del argv[i:i + 2]
     json_mode = bool(argv) and argv[0] == "--json"
     theorem = argv[1] if json_mode and len(argv) > 1 else ""
 
@@ -251,6 +263,10 @@ def main() -> int:
         say(json_mode, f"WITNESS_OPEN {n}")
     for n in sorted(witness_blocked):
         say(json_mode, f"WITNESS_BLOCKED {n} on {', '.join(witness_blocked[n])}")
+    measures = repair_measure.measure(ROOT, base)
+    say(json_mode, f"MODEL_NET_LINES {measures['model_net_lines']} (base {measures['measure_base']})")
+    for n in measures["spec_changed"]:
+        say(json_mode, f"SPEC_CHANGED {n}")
     runtime = round(time.monotonic() - t0, 1)
     say(json_mode, f"RUNTIME {runtime}s")
 
@@ -298,6 +314,7 @@ def main() -> int:
             "counterexamples": counterexamples_result.get("counterexamples", []),
             "counterexamples_seconds": counterexamples_result.get("counterexamples_seconds"),
             "runtime_seconds": runtime,
+            **measures,
         }))
     return 0 if passed else 1
 
