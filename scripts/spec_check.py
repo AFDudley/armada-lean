@@ -3,8 +3,8 @@
 
 Usage: python3 scripts/spec_check.py [--base REF] [--json [THEOREM_NAME]]
 Run from the repo root. Exit 0 means every check passed.
-`--base REF` sets the base commit of the repair measures below (default: the merge
-base with `integrated`).
+`--base REF` adds the repair measures below, measured from REF. Without it, the
+check computes no measure and runs no git command.
 
 The check is `lake build` plus one computed report (`scripts/spec_report.lean`), plus
 two committed facts: `ALLOWED_AXIOMS` below, and `scripts/approved-open.tsv`
@@ -263,10 +263,11 @@ def main() -> int:
         say(json_mode, f"WITNESS_OPEN {n}")
     for n in sorted(witness_blocked):
         say(json_mode, f"WITNESS_BLOCKED {n} on {', '.join(witness_blocked[n])}")
-    measures = repair_measure.measure(ROOT, base)
-    say(json_mode, f"MODEL_NET_LINES {measures['model_net_lines']} (base {measures['measure_base']})")
-    for n in measures["spec_changed"]:
-        say(json_mode, f"SPEC_CHANGED {n}")
+    measures = repair_measure.measure(ROOT, base) if base is not None else {}
+    if measures:
+        say(json_mode, f"MODEL_NET_LINES {measures['model_net_lines']} (base {base})")
+        for n in measures["spec_changed"]:
+            say(json_mode, f"SPEC_CHANGED {n}")
     runtime = round(time.monotonic() - t0, 1)
     say(json_mode, f"RUNTIME {runtime}s")
 

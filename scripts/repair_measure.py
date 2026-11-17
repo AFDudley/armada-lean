@@ -1,8 +1,9 @@
 """The two measures of the repair pass that `scripts/check.sh --json` reports.
 
 Design record: `docs/repair-pass.md` (the GATE; R.3 and R.5). Both measures compare
-the working tree with a base commit REF (`--base REF`, default: the merge base with
-`integrated`).
+the working tree with a base commit REF, given as `--base REF`. Without `--base`,
+`spec_check.py` does not compute them: the gate container's copy of the repository
+has no `integrated` branch, so no default base exists there.
 
 - model_net_lines: the added lines minus the deleted lines of `ArmadaLean/` outside
   `ArmadaLean/Lint/`, from REF to the working tree. Untracked files count as added.
@@ -24,7 +25,6 @@ from pathlib import Path
 MODEL_DIR = "ArmadaLean"
 LINT_DIR = "ArmadaLean/Lint"
 SPEC_DIR = "ArmadaLean/Spec"
-INTEGRATION_BRANCH = "integrated"
 
 _DECL = re.compile(
     r"^(?:@\[[^\]]*\]\s*)?(?:(?:noncomputable|private|protected|partial|unsafe)\s+)*"
@@ -38,11 +38,6 @@ def _git(root: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=root, capture_output=True, text=True, check=True
     ).stdout
-
-
-def default_base(root: Path) -> str:
-    """The merge base of HEAD with the integration branch."""
-    return _git(root, "merge-base", "HEAD", INTEGRATION_BRANCH).strip()
 
 
 def model_net_lines(root: Path, base: str) -> int:
@@ -115,11 +110,10 @@ def spec_changed(root: Path, base: str) -> list[str]:
     return sorted(n for n, t in before.items() if after.get(n) != t)
 
 
-def measure(root: Path, base: str | None) -> dict[str, object]:
+def measure(root: Path, base: str) -> dict[str, object]:
     """The `--json` fields: the base used, model_net_lines, spec_changed."""
-    ref = base or default_base(root)
     return {
-        "measure_base": ref,
-        "model_net_lines": model_net_lines(root, ref),
-        "spec_changed": spec_changed(root, ref),
+        "measure_base": base,
+        "model_net_lines": model_net_lines(root, base),
+        "spec_changed": spec_changed(root, base),
     }
