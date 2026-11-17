@@ -626,25 +626,25 @@ theorem getElem?_append_cons_right {α : Type} (l1 : List α) (x : α) (l2 : Lis
   | cons h t ih => (simp? says simp only [List.cons_append, List.length_cons, List.length_append, add_lt_add_iff_right, lt_add_iff_pos_right, add_pos_iff, zero_lt_one, or_true, getElem?_pos, List.getElem_cons_succ, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero])
 
 theorem not_edge_of_before_split {α : Type} [DecidableEq α] (Edge : α → α → Prop)
-    (l : List α) (hnd : l.Nodup)
-    (hvalid : ∀ m d, m ∈ l → d ∈ l → Edge m d →
-      ∃ i j : Nat, l[i]? = some m ∧ l[j]? = some d ∧ i < j)
-    (pre1 pre2 post : List α) (a p : α) (heq : l = pre1 ++ p :: (pre2 ++ a :: post)) :
+    (pre1 pre2 post : List α) (a p : α) (hnd : (pre1 ++ p :: (pre2 ++ a :: post)).Nodup)
+    (hvalid : ∀ m d, m ∈ (pre1 ++ p :: (pre2 ++ a :: post)) → d ∈ (pre1 ++ p :: (pre2 ++ a :: post)) → Edge m d →
+      ∃ i j : Nat, (pre1 ++ p :: (pre2 ++ a :: post))[i]? = some m ∧ (pre1 ++ p :: (pre2 ++ a :: post))[j]? = some d ∧ i < j)
+    :
     ¬ Edge a p := by
   intro hep
-  have hpmem : p ∈ l := heq ▸ (List.mem_append.mpr (Or.inr List.mem_cons_self))
-  have hamem : a ∈ l := heq ▸ (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem p
+  have hpmem : p ∈ (pre1 ++ p :: (pre2 ++ a :: post)) := (List.mem_append.mpr (Or.inr List.mem_cons_self))
+  have hamem : a ∈ (pre1 ++ p :: (pre2 ++ a :: post)) := (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem p
     (List.mem_append.mpr (Or.inr List.mem_cons_self)))))
   obtain ⟨i, j, hi, hj, hij⟩ := hvalid a p hamem hpmem hep
-  have hp_idx : l[pre1.length]? = some p := heq ▸ getElem?_append_cons_right pre1 p (pre2 ++ a :: post)
-  have ha_idx : l[pre1.length + 1 + pre2.length]? = some a := by
+  have hp_idx : (pre1 ++ p :: (pre2 ++ a :: post))[pre1.length]? = some p := getElem?_append_cons_right pre1 p (pre2 ++ a :: post)
+  have ha_idx : (pre1 ++ p :: (pre2 ++ a :: post))[pre1.length + 1 + pre2.length]? = some a := by
     have hraw := getElem?_append_cons_right (pre1 ++ p :: pre2) a post
     rw [List.append_assoc, List.cons_append] at hraw
-    rw [heq, show pre1.length + 1 + pre2.length = (pre1 ++ p :: pre2).length from by
+    rw [show pre1.length + 1 + pre2.length = (pre1 ++ p :: pre2).length from by
       (simp? [List.length_append, List.length_cons] says simp only [List.length_append, List.length_cons]); omega]
     exact hraw
-  have hilt : i < l.length := (List.getElem?_eq_some_iff.mp hi).1
-  have hjlt : j < l.length := (List.getElem?_eq_some_iff.mp hj).1
+  have hilt : i < (pre1 ++ p :: (pre2 ++ a :: post)).length := (List.getElem?_eq_some_iff.mp hi).1
+  have hjlt : j < (pre1 ++ p :: (pre2 ++ a :: post)).length := (List.getElem?_eq_some_iff.mp hj).1
   have hieq : i = pre1.length + 1 + pre2.length :=
     (List.getElem?_inj hilt hnd).mp (hi.trans ha_idx.symm)
   have hjeq : j = pre1.length := (List.getElem?_inj hjlt hnd).mp (hj.trans hp_idx.symm)
@@ -876,12 +876,12 @@ theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
       have hnoout1 : ∀ p ∈ pre1, ¬ s.Edge a p := by
         intro p hp
         obtain ⟨prepre, postpre, hpeq, -⟩ := List.eq_append_cons_of_mem hp
-        refine not_edge_of_before_split s.Edge (w :: ws) hnd1 hvalid1 prepre postpre post1 a p ?_
+        refine ((fun (hAliasEq0 : (w :: ws) = (prepre ++ p :: (postpre ++ a :: post1))) => not_edge_of_before_split s.Edge prepre postpre post1 a p (by rewrite [← hAliasEq0]; exact hnd1) (by rewrite [← hAliasEq0]; exact hvalid1)) ?_)
         rw [heq1, hpeq]; (simp? [List.append_assoc] says simp only [List.append_assoc, List.cons_append])
       have hnoout2 : ∀ p ∈ pre2, ¬ s.Edge a p := by
         intro p hp
         obtain ⟨prepre, postpre, hpeq, -⟩ := List.eq_append_cons_of_mem hp
-        refine not_edge_of_before_split s.Edge L2 hnd2 hvalid2 prepre postpre post2 a p ?_
+        refine ((fun (hAliasEq0 : L2 = (prepre ++ p :: (postpre ++ a :: post2))) => not_edge_of_before_split s.Edge prepre postpre post2 a p (by rewrite [← hAliasEq0]; exact hnd2) (by rewrite [← hAliasEq0]; exact hvalid2)) ?_)
         rw [heq2, hpeq]; (simp? [List.append_assoc] says simp only [List.append_assoc, List.cons_append])
       have hext1 : ∀ x, x = a ∨ x ∈ pre1 ∨ x ∈ post1 → x.isExternal = false := by
         intro x hx
@@ -1146,7 +1146,7 @@ theorem turboValues_get_eq_takeWhile (s : Adjudicator E) (order : List (Address 
     have hvalid' : ∀ m d, m ∈ order → d ∈ order → s.Edge m d →
         ∃ i j : Nat, order[i]? = some m ∧ order[j]? = some d ∧ i < j :=
       fun m d _ _ hed => hord.2.1 m d hed
-    exact not_edge_of_before_split s.Edge order hord.1 hvalid' pre post1 post2 m c hle
+    exact not_edge_of_before_split s.Edge pre post1 post2 m c (by rewrite [← hle]; exact hord.1) (by rewrite [← hle]; exact hvalid')
       ⟨hcext, e, he, hec⟩
   rw [turboValues_get_ne s post c hnopost]
   exact payoutValues_get_ne (s.turboValues pre vals) ((s.turboValues pre vals).get c)
