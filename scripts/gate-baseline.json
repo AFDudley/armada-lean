@@ -27,7 +27,7 @@
     "ArmadaLean/Nitro/Constructions.lean": "ffe5a3b8bbb36574a9c402191b0301646b3ff90ae467af2b12db69528bf9884f",
     "ArmadaLean/Nitro/Invariant.lean": "2674c61bdf465c78f113de9764bd7ddb8eea6a7a8e2132071ebc9564876da7e6",
     "ArmadaLean/Nitro/Lemmas.lean": "4ae729dac65caa2fe9791f8b527a19c353378ff6a01bd3f27184a4ae077d27d2",
-    "ArmadaLean/Nitro/Liveness.lean": "f9224a7b3083dd7cafb455ff53404e0e49276eea86fe896643c10630e0d8c5d1",
+    "ArmadaLean/Nitro/Liveness.lean": "5f6107c240aa00de021be09ddf13b20e453a729cd5e7989076bdc226fddfa589",
     "ArmadaLean/Nitro/NonVacuity.lean": "2dd8ba878ce3d8c1d112dc16366d67e8a125dfb226a2a314d61fd5268999502b",
     "ArmadaLean/Nitro/OpEquations.lean": "2a96c15618c1bff87efd4af4ace4e02ecc7f143ddba40e0c0901b6e64ec700eb",
     "ArmadaLean/Nitro/Outcome.lean": "e8c8abdd924d79b677ad98b120ac4a20e3d048bc5c4b77265c33f8da0cd3315e",
