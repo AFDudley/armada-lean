@@ -1902,7 +1902,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
         simp only at htn'
         have hleaf := withTreePositionsFrom_leaf_matches hashCommitment base
           (insertTree s.trees newNotes.length)
-          (insertStart s.trees newNotes.length) newNotes hbaselen emptyLeaf ((tn, pos), pre) hnew
+          newNotes emptyLeaf ((tn, pos), pre) (hbaselen ▸ hnew)
         dsimp only [PoolState.leavesAt']
         rw [htn', hbase]
         exact hleaf
@@ -1940,8 +1940,8 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
         simp only at htn'
         have hleaf := withTreePositionsFrom_leaf_matches hashCommitment base
           (insertTree s.trees (ownedNewNotes w).length)
-          (insertStart s.trees (ownedNewNotes w).length) (ownedNewNotes w) hbaselen emptyLeaf
-          ((tn, pos), pre) hnew
+          (ownedNewNotes w) emptyLeaf
+          ((tn, pos), pre) (hbaselen ▸ hnew)
         dsimp only [PoolState.leavesAt']
         rw [htn', hbase]
         exact hleaf

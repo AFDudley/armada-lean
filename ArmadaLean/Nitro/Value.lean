@@ -462,11 +462,11 @@ theorem exists_source {α : Type} (r : α → α → Prop) [IsTrans α r]
 -- acyclic relation.
 theorem exists_topo_list {α : Type} [DecidableEq α] (Edge : α → α → Prop)
     (hdag : Std.Irrefl (Relation.TransGen Edge)) :
-    ∀ n (W : List α), W.length = n → W.Nodup →
+    ∀ (W : List α), W.Nodup →
       ∃ order : List α, order.Nodup ∧ (∀ x, x ∈ order ↔ x ∈ W) ∧
         ∀ a b, a ∈ W → b ∈ W → Edge a b →
           ∃ i j : Nat, order[i]? = some a ∧ order[j]? = some b ∧ i < j := by
-  intro n
+  suffices hAlias : ∀ n (W : List α), W.length = n → W.Nodup → ∃ order : List α, order.Nodup ∧ (∀ x, x ∈ order ↔ x ∈ W) ∧ ∀ a b, a ∈ W → b ∈ W → Edge a b → ∃ i j : Nat, order[i]? = some a ∧ order[j]? = some b ∧ i < j from (by intro hAlias_1; exact hAlias _ hAlias_1 rfl); intro n
   induction n using Nat.strong_induction_on with
   | _ n ih =>
     intro W hlen hW
@@ -589,7 +589,7 @@ theorem edge_mem_requiredNodes (s : Adjudicator E) (n d : Address E) (h : s.Edge
 theorem exists_valid_topo_order (s : Adjudicator E) (hdag : s.IsDAG) :
     ∃ order : List (Address E), s.IsTopologicalOrder order := by
   obtain ⟨order, hnd, hmem, hedge⟩ :=
-    exists_topo_list s.Edge hdag (requiredNodes s).dedup.length (requiredNodes s).dedup rfl
+    exists_topo_list s.Edge hdag (requiredNodes s).dedup
       (List.nodup_dedup _)
   refine ⟨order, hnd, ?_, ?_⟩
   · intro n d hed
@@ -783,22 +783,22 @@ theorem turboValues_move_source_front (s : Adjudicator E) (a : Address E)
 
 -- Piece 4f: removing one non-endpoint element from a Nodup list preserves
 -- the relative "before" order of every surviving pair.
-theorem before_remove_mid {α : Type} {l pre post : List α} {a m d : α} (heq : l = pre ++ a :: post)
-    (_hnd : l.Nodup) {im id : Nat} (him : l[im]? = some m) (hid : l[id]? = some d) (hij : im < id)
+theorem before_remove_mid {α : Type} {pre post : List α} {a m d : α}
+    (_hnd : (pre ++ a :: post).Nodup) {im id : Nat} (him : (pre ++ a :: post)[im]? = some m) (hid : (pre ++ a :: post)[id]? = some d) (hij : im < id)
     (hma : m ≠ a) (hda : d ≠ a) :
     ∃ i j : Nat, (pre ++ post)[i]? = some m ∧ (pre ++ post)[j]? = some d ∧ i < j := by
-  have hia : l[pre.length]? = some a := heq ▸ getElem?_append_cons_right pre a post
+  have hia : (pre ++ a :: post)[pre.length]? = some a := getElem?_append_cons_right pre a post
   have hima : im ≠ pre.length := by
     intro h; rw [h] at him; rw [hia] at him; exact hma (Option.some.inj him).symm
   have hida : id ≠ pre.length := by
     intro h; rw [h] at hid; rw [hia] at hid; exact hda (Option.some.inj hid).symm
-  have key : ∀ i : Nat, i ≠ pre.length → l[i]? = (pre ++ post)[(if i < pre.length then i else i - 1)]? := by
+  have key : ∀ i : Nat, i ≠ pre.length → (pre ++ a :: post)[i]? = (pre ++ post)[(if i < pre.length then i else i - 1)]? := by
     intro i hine
     rcases Nat.lt_or_ge i pre.length with hlt | hge
-    · rw [if_pos hlt, heq, List.getElem?_append_left hlt, List.getElem?_append_left hlt]
+    · rw [if_pos hlt, List.getElem?_append_left hlt, List.getElem?_append_left hlt]
     · have hgt : pre.length < i := lt_of_le_of_ne hge (Ne.symm hine)
       obtain ⟨k, hk⟩ : ∃ k, i = pre.length + 1 + k := ⟨i - pre.length - 1, by omega⟩
-      rw [if_neg (Nat.not_lt.mpr hge), heq, hk]
+      rw [if_neg (Nat.not_lt.mpr hge), hk]
       rw [show pre.length + 1 + k - 1 = pre.length + k from by omega]
       rw [List.getElem?_append_right (show pre.length ≤ pre.length + 1 + k from by omega)]
       rw [List.getElem?_append_right (show pre.length ≤ pre.length + k from by omega)]
@@ -813,7 +813,7 @@ theorem before_remove_mid {α : Type} {l pre post : List α} {a m d : α} (heq :
 -- the same elements, each respecting `s.Edge`'s before-order, give the same
 -- `turboValues` result.
 theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
-    ∀ (n : Nat) (L1 : List (Address E)), L1.length = n → L1.Nodup →
+    ∀ (L1 : List (Address E)), L1.Nodup →
     ∀ (L2 : List (Address E)), L2.Nodup → (∀ x, x ∈ L1 ↔ x ∈ L2) →
     (∀ x ∈ L1, x.isExternal = false) →
     (∀ m d, m ∈ L1 → d ∈ L1 → s.Edge m d →
@@ -822,7 +822,7 @@ theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
       ∃ i j : Nat, L2[i]? = some m ∧ L2[j]? = some d ∧ i < j) →
     ∀ (vals : Balances E) (n' : Address E),
       (s.turboValues L1 vals).get n' = (s.turboValues L2 vals).get n' := by
-  intro n
+  suffices hAlias : ∀ (n : Nat) (L1 : List (Address E)), L1.length = n → L1.Nodup → ∀ (L2 : List (Address E)), L2.Nodup → (∀ x, x ∈ L1 ↔ x ∈ L2) → (∀ x ∈ L1, x.isExternal = false) → (∀ m d, m ∈ L1 → d ∈ L1 → s.Edge m d → ∃ i j : Nat, L1[i]? = some m ∧ L1[j]? = some d ∧ i < j) → (∀ m d, m ∈ L2 → d ∈ L2 → s.Edge m d → ∃ i j : Nat, L2[i]? = some m ∧ L2[j]? = some d ∧ i < j) → ∀ (vals : Balances E) (n' : Address E), (s.turboValues L1 vals).get n' = (s.turboValues L2 vals).get n' from (by intro hAlias_1; exact hAlias _ hAlias_1 rfl); intro n
   induction n using Nat.strong_induction_on with
   | _ n ih =>
     intro L1 hlen hnd1 L2 hnd2 hmem hext hvalid1 hvalid2 vals n'
@@ -927,14 +927,14 @@ theorem turboValues_order_indep (s : Adjudicator E) (hdag : s.IsDAG) :
         have hmL : m ∈ w :: ws := ((hmemW1 m).mp hm).1
         have hdL : d ∈ w :: ws := ((hmemW1 d).mp hd).1
         obtain ⟨i, j, hi, hj, hij⟩ := hvalid1 m d hmL hdL hedge
-        exact before_remove_mid heq1 hnd1 hi hj hij ((hmemW1 m).mp hm).2 ((hmemW1 d).mp hd).2
+        exact before_remove_mid (heq1 ▸ hnd1) (heq1 ▸ hi) (heq1 ▸ hj) hij ((hmemW1 m).mp hm).2 ((hmemW1 d).mp hd).2
       have hvalid2' : ∀ m d, m ∈ pre2 ++ post2 → d ∈ pre2 ++ post2 → s.Edge m d →
           ∃ i j : Nat, (pre2 ++ post2)[i]? = some m ∧ (pre2 ++ post2)[j]? = some d ∧ i < j := by
         intro m d hm hd hedge
         have hmL : m ∈ L2 := ((hmemW2 m).mp hm).1
         have hdL : d ∈ L2 := ((hmemW2 d).mp hd).1
         obtain ⟨i, j, hi, hj, hij⟩ := hvalid2 m d hmL hdL hedge
-        exact before_remove_mid heq2 hnd2 hi hj hij ((hmemW2 m).mp hm).2 ((hmemW2 d).mp hd).2
+        exact before_remove_mid (heq2 ▸ hnd2) (heq2 ▸ hi) (heq2 ▸ hj) hij ((hmemW2 m).mp hm).2 ((hmemW2 d).mp hd).2
       have hlt : (pre1 ++ post1).length < n := by
         have h1 : (pre1 ++ a :: post1).length = (pre1 ++ post1).length + 1 := by
           (simp? [List.length_append, List.length_cons] says simp only [List.length_append, List.length_cons]); omega

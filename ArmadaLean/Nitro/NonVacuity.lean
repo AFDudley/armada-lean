@@ -499,16 +499,16 @@ theorem concludeInv_apply {apps : Apps E} {caller p : Participant} {op : Op E}
     known `ConclusionProof` needs no `Bounds.unforgeable` detour: `op` is
     `p`'s own known call, not a claim that could be forged). -/
 theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
-    (B : Bounds apps p T) {c : FixedPart} {ss : SignedState E} {Ω : Outcome E}
-    (hp : p ∈ c.participants) (hproof : ConclusionProof c ss) (hΩ : ss.state.outcome = Ω)
-    (hdur : T.ε ≤ c.challengeDuration) (t : Time) (sent0 : List (SignedState E))
+    (B : Bounds apps p T) {c : FixedPart} {ss : SignedState E}
+    (hp : p ∈ c.participants) (hproof : ConclusionProof c ss)
+    (hdur : T.ε ≤ c.challengeDuration) (t : Time)
     {net net' : NetworkState E p} (hseq : Threat.RoundSeq apps T t [Op.conclude c ss] net net')
-    (ht0 : t ≤ net.chain.now) (hsent0 : net.sent = sent0) :
+    (ht0 : t ≤ net.chain.now) :
     net'.chain.now < t + T.ε →
-    (∀ t0 ∈ sent0, t0.state.channel = c → t0.state.isFinal = true → t0.state.outcome = Ω) →
-    ConcludeInv c Ω (t + T.ε) net.chain →
-    net'.chain.finalizedWith c.address = some Ω := by
-  generalize heq : ([Op.conclude c ss] : List (Op E)) = pending at hseq
+    (∀ t0 ∈ net.sent, t0.state.channel = c → t0.state.isFinal = true → t0.state.outcome = ss.state.outcome) →
+    ConcludeInv c ss.state.outcome (t + T.ε) net.chain →
+    net'.chain.finalizedWith c.address = some ss.state.outcome := by
+  suffices hAlias : ∀ (Ω : Outcome E) (hΩ : ss.state.outcome = Ω) (sent0 : List (SignedState E)) (hsent0 : net.sent = sent0), net'.chain.now < t + T.ε → (∀ t0 ∈ sent0, t0.state.channel = c → t0.state.isFinal = true → t0.state.outcome = Ω) → ConcludeInv c Ω (t + T.ε) net.chain → net'.chain.finalizedWith c.address = some Ω from hAlias _ rfl _ rfl; intro Ω hΩ sent0 hsent0; generalize heq : ([Op.conclude c ss] : List (Op E)) = pending at hseq
   induction hseq with
   | nil => cases heq
   | @land pending net1 net2 op l1 l2 hsplit hrest ih =>
@@ -599,14 +599,14 @@ theorem concludeRound {apps : Apps E} {p : Participant} {T : Threat E p}
     signed, and no challenge ends within `ε`. -/
 theorem conclude_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
     (B : Bounds apps p T) (allowed : HonestMove E → Prop) (net : NetworkState E p)
-    (c : FixedPart) (ss : SignedState E) (Ω : Outcome E)
+    (c : FixedPart) (ss : SignedState E)
     (hal : allowed (.chain (.conclude c ss))) (hp : p ∈ c.participants) (hh : net.Holds ss)
-    (hproof : ConclusionProof c ss) (hΩ : ss.state.outcome = Ω)
-    (hsent : ∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = Ω)
-    (hchain : net.chain.finalizedWith c.address = none ∨ net.Finalized c Ω)
+    (hproof : ConclusionProof c ss)
+    (hsent : ∀ t ∈ net.sent, t.state.channel = c → t.state.isFinal = true → t.state.outcome = ss.state.outcome)
+    (hchain : net.chain.finalizedWith c.address = none ∨ net.Finalized c ss.state.outcome)
     (hdur : T.ε ≤ c.challengeDuration) (hpend : net.DeadlineAfter c T.ε) :
-    UnbeatableIn apps T allowed (fun n => n.Finalized c Ω) net := by
-  have hK0 : ConcludeInv c Ω (net.chain.now + T.ε) net.chain := by
+    UnbeatableIn apps T allowed (fun n => n.Finalized c ss.state.outcome) net := by
+  have hK0 : ConcludeInv c ss.state.outcome (net.chain.now + T.ε) net.chain := by
     rcases hchain with hn | hn
     · simp only [FixedPart.address_eq, Adjudicator.finalizedWith_channel] at hn
       cases hs : net.chain.statusOf c with
@@ -618,12 +618,12 @@ theorem conclude_strategy (apps : Apps E) {p : Participant} (T : Threat E p)
     (by (simpa? [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates] using hh says simpa only [HonestMove.Feasible_chain, Op.HonestFeasible, Op.proofStates, List.mem_cons, List.not_mem_nil, or_false, forall_eq] using hh)) ?_
   intro n' hround
   apply UnbeatableIn.done
-  show (n'.applyHonest (.chain (.conclude c ss))).Finalized c Ω
+  show (n'.applyHonest (.chain (.conclude c ss))).Finalized c ss.state.outcome
   rw [NetworkState.applyHonest_chain]
-  show n'.chain.finalizedWith c.address = some Ω
+  show n'.chain.finalizedWith c.address = some ss.state.outcome
   obtain ⟨hseq, htime⟩ := hround
   simp only [HonestMove.calls_chain] at hseq
-  exact concludeRound B hp hproof hΩ hdur net.chain.now net.sent hseq (le_refl _) rfl htime hsent
+  exact concludeRound B hp hproof hdur net.chain.now hseq (le_refl _) htime hsent
     hK0
 
 /-- Appending one more `RoundSeq` derivation (from whatever state the first
@@ -1572,8 +1572,8 @@ theorem nOneCh_finalizable {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat}
   have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
-      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
+      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ trivial (by rw [hcp]; decide) ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) ?_
       (.inl (by rw [nOneCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nOneCh_views_chain]; exact hopen) _)
     · rw [nOneCh_views_p0 hcp hsp0 hrp0]
@@ -1584,8 +1584,8 @@ theorem nOneCh_finalizable {n0 : Network Nat} {c : FixedPart} {Ω : Outcome Nat}
       · exact .inr ⟨_, List.mem_singleton_self _, rfl, List.mem_singleton_self _⟩
     · rw [nOneCh_views_p0 hcp hsp0 hrp0]; intro t ht _ _; (simp? at ht says simp only [List.mem_cons, List.not_mem_nil, or_false] at ht); subst ht; rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
-      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
+      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ trivial (by rw [hcp]; decide) ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) ?_
       (.inl (by rw [nOneCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nOneCh_views_chain]; exact hopen) _)
     · rw [nOneCh_views_q0 hcp hsq0 hrq0]
@@ -1692,8 +1692,8 @@ theorem nTwoCh_finalizable_fst {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
   have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
-      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
+      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ trivial (by rw [hcp]; decide) ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_p0 hcp hst2p hsp0 hrp0]
@@ -1710,8 +1710,8 @@ theorem nTwoCh_finalizable_fst {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
       · exact absurd hcc hne
       · rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
-      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
+      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ trivial (by rw [hcp]; decide) ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_q0 hcp hst2p hsq0 hrq0]
@@ -1744,8 +1744,8 @@ theorem nTwoCh_finalizable_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
   have hr' : r = p0 ∨ r = q0 := by (simpa? using hr says simpa only [List.mem_cons, List.not_mem_nil, or_false] using hr)
   rcases hr' with rfl | rfl
   · refine conclude_strategy apps0 _ (canon_ok apps0 p0).toBounds _ _ c
-      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
+      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ trivial (by rw [hcp]; decide) ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_p0 hst1p hcp hsp0 hrp0]
@@ -1761,8 +1761,8 @@ theorem nTwoCh_finalizable_snd {n0 : Network Nat} {c : FixedPart} {Ω : Outcome 
       · rfl
       · exact absurd hcc hne
   · refine conclude_strategy apps0 _ (canon_ok apps0 q0).toBounds _ _ c
-      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ Ω trivial (by rw [hcp]; decide) ?_
-      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) rfl ?_
+      ⟨(⟨c, 0, Ω, true, .opaque 0⟩ : State Nat), [p0, q0]⟩ trivial (by rw [hcp]; decide) ?_
+      (by (simp? [ConclusionProof, SignedState.ByAll, hcp] says simp only [ConclusionProof, SignedState.ByAll, hcp, List.mem_cons, List.not_mem_nil, or_false, imp_self, implies_true, and_self])) ?_
       (.inl (by rw [nTwoCh_views_chain]; exact hnone)) (by rw [hdur]; decide)
       (deadlineAfter_open (by rw [nTwoCh_views_chain]; exact hopen) _)
     · rw [nTwoCh_views_q0 hst1p hcp hsq0 hrq0]

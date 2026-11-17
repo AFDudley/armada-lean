@@ -997,11 +997,11 @@ theorem List.getElem?_eq_some_of_getD {α : Type} (l : List α) (i : Nat) (d : �
     `base` is whatever already sat before the batch (the target tree's prior leaves,
     empty for a new tree); `hstart` pins `base`'s length to the batch's own starting
     position, matching `insertStart`. -/
-theorem withPositionsFrom_leaf_matches {α β : Type} (f : α → β) (base : List β) (start : Nat)
-    (l : List α) (hstart : base.length = start) (d : β)
-    (p : Nat × α) (hp : p ∈ withPositionsFrom start l) :
+theorem withPositionsFrom_leaf_matches {α β : Type} (f : α → β) (base : List β)
+    (l : List α) (d : β)
+    (p : Nat × α) (hp : p ∈ withPositionsFrom base.length l) :
     (base ++ l.map f).getD p.1 d = f p.2 := by
-  induction l generalizing start base with
+  generalize hstart : base.length = start at hp ⊢; induction l generalizing start base with
   | nil => (simp? [withPositionsFrom] at hp says simp only [withPositionsFrom, List.not_mem_nil] at hp)
   | cons a rest ih =>
     simp only [withPositionsFrom, List.mem_cons] at hp
@@ -1019,13 +1019,13 @@ theorem withPositionsFrom_leaf_matches {α β : Type} (f : α → β) (base : Li
 
 /-- The tree-tagged counterpart of `withPositionsFrom_leaf_matches`. -/
 theorem withTreePositionsFrom_leaf_matches {α : Type} (f : α → Term) (base : List Term)
-    (treeNumber start : Nat) (l : List α) (hstart : base.length = start) (d : Term)
-    (p : (Nat × Nat) × α) (hp : p ∈ withTreePositionsFrom treeNumber start l) :
+    (treeNumber : Nat) (l : List α) (d : Term)
+    (p : (Nat × Nat) × α) (hp : p ∈ withTreePositionsFrom treeNumber base.length l) :
     (base ++ l.map f).getD p.1.2 d = f p.2 := by
   unfold withTreePositionsFrom at hp
   obtain ⟨q, hq, heq⟩ := List.mem_map.mp hp
   rw [← heq]
-  exact withPositionsFrom_leaf_matches f base start l hstart d q hq
+  exact withPositionsFrom_leaf_matches f base l d q hq
 
 /-! ### Pool state -/
 
