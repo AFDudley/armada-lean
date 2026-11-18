@@ -539,8 +539,8 @@ theorem applyRecords_preserves_consistency {reg : PreimageRegistry}
   | cons cp rest ih =>
     obtain ⟨c, p⟩ := cp
     apply ih
-    · exact recordStep_preserves_consistency hreg
-        (hvalid (c, p) List.mem_cons_self)
+    · exact (by have hAlias := recordStep_preserves_consistency hreg
+                    (preimage := p); rewrite [(show (hashCommitment p) = c from (hvalid (c, p) List.mem_cons_self))] at hAlias; exact hAlias)
     · intro cp' hcp'
       exact hvalid cp' (List.mem_cons_of_mem (c, p) hcp')
 

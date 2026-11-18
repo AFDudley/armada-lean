@@ -604,7 +604,7 @@ theorem step_preimageOf_consistent {s s' : PoolState} (hstep : Step s s')
     (h : RegistryConsistent s.preimageOf) : RegistryConsistent s'.preimageOf := by
   cases hstep with
   | setFeeRatio => exact h
-  | shield => exact recordStep_preserves_consistency h rfl
+  | shield => exact recordStep_preserves_consistency h
   | transact _ _ _ _ _ _ hC _ _ _ _ _ _ _ _ _ _ _ hRecords =>
     exact applyRecords_preserves_consistency h fun cp hcp => transactOutputRecords_valid hC cp (hRecords.subset hcp)
   | transactOwned _ _ _ _ _ hC => exact applyRecords_preserves_consistency h (ownedOutputRecords_valid hC)

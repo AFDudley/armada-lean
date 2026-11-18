@@ -289,9 +289,9 @@ theorem foldl_preserves {α β : Type} (f : α → β → α) (P : α → Prop)
   | b :: bs, a, ha => foldl_preserves f P hstep bs (f a b) (hstep a b ha)
 
 theorem recordStep_preserves_consistency {reg : PreimageRegistry} (hreg : RegistryConsistent reg)
-    {c : Term} {preimage : CommitmentPreimage} (hvalid : hashCommitment preimage = c) :
-    RegistryConsistent (recordStep reg c preimage) := by
-  intro c' pre' hc'
+    {preimage : CommitmentPreimage} :
+    RegistryConsistent (recordStep reg (hashCommitment preimage) preimage) := by
+  suffices hAlias : ∀ (c : Term) (hvalid : hashCommitment preimage = c), RegistryConsistent (recordStep reg c preimage) from hAlias _ rfl; intro c hvalid; intro c' pre' hc'
   unfold recordStep at hc'
   by_cases heq : c' = c
   · rw [if_pos heq] at hc'
@@ -308,7 +308,7 @@ theorem recordPreimages_preserves_consistency {K : Nat} (commitments : Fin K →
     RegistryConsistent (recordPreimages commitments publicOutputs reg) := by
   unfold recordPreimages
   exact foldl_preserves (fun r i => recordStep r (commitments i) (publicOutputs i)) RegistryConsistent
-    (fun r i hr => recordStep_preserves_consistency hr (hvalid i)) (List.finRange K) reg hreg
+    (fun r i hr => (by have hAlias := recordStep_preserves_consistency hr (preimage := (publicOutputs i)); rewrite [(hvalid i)] at hAlias; exact hAlias)) (List.finRange K) reg hreg
 
 /--
 **Preimage consistency**: every preimage the pool records hashes to the
