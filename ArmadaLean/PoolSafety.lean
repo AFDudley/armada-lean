@@ -1859,8 +1859,7 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
     · subst t
       simp only at hmem
       rcases List.eq_or_mem_of_mem_cons hmem with heq | hmem
-      · obtain ⟨base, hbaselen, hbase⟩ := insertLeaves_leavesAt_new_matches s.trees [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)]
-            (insertTree s.trees 1) rfl
+      · obtain ⟨base, hbaselen, hbase⟩ := (by have hAlias := insertLeaves_leavesAt_new_matches s.trees [hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)]; rewrite [← (show (insertTree s.trees 1) = (insertTree s.trees ([hashCommitment (⟨npk, token, shieldBase s.feeRatio x⟩ : CommitmentPreimage)]).length) from rfl)] at hAlias; exact hAlias)
         injection heq with h1 h2
         injection h1 with h1a h1b
         simp only [List.length_singleton] at hbaselen
@@ -1895,7 +1894,6 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
             insertTree s.trees (newNotes.map hashCommitment).length := by
           rw [hlenEq]
         obtain ⟨base, hbaselen, hbase⟩ := insertLeaves_leavesAt_new_matches s.trees (newNotes.map hashCommitment)
-            (insertTree s.trees (newNotes.map hashCommitment).length) rfl
         rw [← htn] at hbase
         rw [hlenEq] at hbaselen
         have htn' := withTreePositionsFrom_treeNumber _ _ _ _ hnew
@@ -1933,7 +1931,6 @@ theorem step_live_leaf_matches {s s' : PoolState} (hstep : Step s s')
             insertTree s.trees ((ownedNewNotes w).map hashCommitment).length := by
           rw [hlenEq]
         obtain ⟨base, hbaselen, hbase⟩ := insertLeaves_leavesAt_new_matches s.trees ((ownedNewNotes w).map hashCommitment)
-            (insertTree s.trees ((ownedNewNotes w).map hashCommitment).length) rfl
         rw [← htn] at hbase
         rw [hlenEq] at hbaselen
         have htn' := withTreePositionsFrom_treeNumber _ _ _ _ hnew

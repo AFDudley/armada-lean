@@ -959,11 +959,10 @@ theorem insertLeaves_leavesAt_length_ge (trees : List TreeState) (newLeaves : Li
 
 /-- **The target tree's leaves after an insertion are `base ++ newLeaves`, with `base` of
     length `insertStart`.** Connects a step's reported position to the leaf it stores. -/
-theorem insertLeaves_leavesAt_new_matches (trees : List TreeState) (newLeaves : List Term)
-    (tn : Nat) (htn : tn = insertTree trees newLeaves.length) :
+theorem insertLeaves_leavesAt_new_matches (trees : List TreeState) (newLeaves : List Term) :
     ∃ base : List Term, base.length = insertStart trees newLeaves.length ∧
-      leavesAt (insertLeaves trees newLeaves) tn = base ++ newLeaves := by
-  refine ⟨leavesAt trees tn, by rw [htn]; rfl, ?_⟩
+      leavesAt (insertLeaves trees newLeaves) (insertTree trees newLeaves.length) = base ++ newLeaves := by
+  suffices hAlias : ∀ (tn : Nat) (htn : tn = insertTree trees newLeaves.length), ∃ base : List Term, base.length = insertStart trees newLeaves.length ∧ leavesAt (insertLeaves trees newLeaves) tn = base ++ newLeaves from hAlias _ rfl; intro tn htn; refine ⟨leavesAt trees tn, by rw [htn]; rfl, ?_⟩
   rw [insertLeaves_leavesAt, if_pos htn]
 
 /-- The target tree's leaf count after an insertion is `insertStart` plus the batch
