@@ -36,7 +36,7 @@
     "ArmadaLean/Nitro/Safety.lean": "ce934e30ff2b5e3f43b1200b1cbeb0e4a40569b2703235c15aaf71951db279d0",
     "ArmadaLean/Nitro/Strategy.lean": "55c2f927880c809e9533d8b1da4abd9e2a95230fe21b6b4363c573c8a3987511",
     "ArmadaLean/Nitro/TakeOut.lean": "c63a0b875b243dc3ec2ac332b795af0d5368c376608b0adaca1545dd84cd56fd",
-    "ArmadaLean/Nitro/Value.lean": "a343ab129639715ba1b637271bb5ff1cf5e379c9c06e1dd10de9efc28a3fdf5c",
+    "ArmadaLean/Nitro/Value.lean": "6adee13c1a2c6126225cb83718ad0cf513d2320935bcb74d36c26578105dfc4b",
     "ArmadaLean/Nullifier.lean": "dd2164cbbceb426b0950e2c19eae218353e44b04837bdbee876e9ebc9e629651",
     "ArmadaLean/Pool.lean": "03dad614691753b49ea7a32ab3cb8f903186c123905b4318ecb3335d6e3c711f",
     "ArmadaLean/PoolMachine.lean": "1657af878af084f5ee1453a15fb90c094842f2f03281c6f15e58fb964fbd435d",

@@ -1360,14 +1360,13 @@ theorem Adjudicator.turboValueAlong_transfer {s s' : Adjudicator E} {a : FixedPa
 def Adjudicator.CreditsTo (s : Adjudicator E) (c d : Address E) : Bool :=
   ((s.allocationOf c).find d).elim false (fun e => !e.item.isGuarantee)
 
-theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E) (order : List (Address E))
-    (hord : s.IsTopologicalOrder order) (d : Address E) :
-    ∀ suf pre : List (Address E), order = pre ++ suf →
+theorem turboValueAlong_eq_add_credits_aux (s : Adjudicator E)
+    (suf pre : List (Address E)) (hord : s.IsTopologicalOrder (pre ++ suf)) (d : Address E) :
       (s.turboValues suf (s.turboValues pre s.balances)).get d =
         (s.turboValues pre s.balances).get d +
           ((suf.filter (s.CreditsTo · d)).map
-            (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
-  intro suf
+            (fun c => (s.allocationOf c).paidTo (s.turboValueAlong (pre ++ suf) c) d)).sum := by
+  suffices hAlias : ∀ (order : List (Address E)) (hord : s.IsTopologicalOrder order), order = pre ++ suf → (s.turboValues suf (s.turboValues pre s.balances)).get d = (s.turboValues pre s.balances).get d + ((suf.filter (s.CreditsTo · d)).map (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum from (hAlias _ hord rfl); intro order hord; suffices hHoist : ∀ suf pre : List (Address E), order = pre ++ suf → (s.turboValues suf (s.turboValues pre s.balances)).get d = (s.turboValues pre s.balances).get d + ((suf.filter (s.CreditsTo · d)).map (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum from hHoist suf pre; intro suf
   induction suf with
   | nil => intro pre _; (simp? [Adjudicator.turboValues] says simp only [Adjudicator.turboValues, List.filter_nil, List.map_nil, List.sum_nil, add_zero])
   | cons c rest ih =>
@@ -1427,7 +1426,7 @@ theorem turboValueAlong_eq_add_credits (s : Adjudicator E) (hdag : s.IsDAG)
       s.balances.get d +
         ((order.filter (s.CreditsTo · d)).map
           (fun c => (s.allocationOf c).paidTo (s.turboValueAlong order c) d)).sum := by
-  have h := turboValueAlong_eq_add_credits_aux s order hord d order [] (by (simp? says simp only [List.nil_append]))
+  have h := (by have hAlias := turboValueAlong_eq_add_credits_aux s order [] hord d; rewrite [← (show order = (([]) ++ order) from (by (simp? says simp only [List.nil_append])))] at hAlias; exact hAlias)
   (simpa? [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h says simpa only [Adjudicator.turboValueAlong, Adjudicator.turboValues] using h)
 
 
