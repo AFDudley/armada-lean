@@ -117,4 +117,4 @@ in `witness_open`. A witness in `witness_blocked` waits on a trusted
 primitive (`EdDSAVerify`, `VerifyAccepts`, `VerifyOwnedAccepts`), not
 on work: its theorem is finished as far as the model can go.
 ## Repair pass
-A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.6, in the order R.6 gives; each operation equation is proved against its Spec statement.
+A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.5. lean-temper does the repair pass, and a merge of its output passes gates GRa, GRb and GRc (`docs/repair-pass.md`); each operation equation is proved against its Spec statement.

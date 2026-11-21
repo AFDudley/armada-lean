@@ -17,13 +17,13 @@ environment on each run.
   theorem's type is definitionally equal to it; every spec definition belongs to a
   spec theorem.
 - axioms_ok: every axiom of every spec theorem and witness is in `ALLOWED_AXIOMS`, or
-  is `sorryAx` (an open proof, gated by `sorry_ok` below, not here). Review
+  is `sorryAx` (an open proof, checked by `sorry_ok` below, not here). Review
   ship-armada/armada-lean#1, finding 3: the earlier rule passed any axiom whose type
   was not a proposition, so `axiom x : Empty` would have passed and proved anything
   (`Empty : Type`, not a `Prop`). `ALLOWED_AXIOMS` is an exact name list instead.
 - sorry_ok: every spec theorem whose axioms include `sorryAx` is named in
   `scripts/approved-open.tsv`, with the operator's approval date
-  (`docs/process.md` rule 8.3). Review finding 3: the gate used to exit 0 on any
+  (`docs/process.md` rule 8.3). Review finding 3: `scripts/check.sh` used to exit 0 on any
   `sorry` spec theorem; this is the one committed exception list, reported in
   `--json` as `approved_open`.
 - reach_ok: a spec entry with a binder of a machine state type also has a
@@ -44,7 +44,7 @@ environment on each run.
   `sorry_ok` reports the ones that are not).
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
 - model_net_lines, spec_changed, measure_base: the repair-pass measures
-  (`scripts/repair_measure.py`, `docs/repair-pass.md` GATE, R.3). They only report;
+  (`scripts/repair_measure.py`, `docs/repair-pass.md` §4, R.3). They only report;
   the verdict above does not use them.
 """
 from __future__ import annotations
@@ -82,7 +82,7 @@ PRIMITIVE_AXIOMS = frozenset({
 # The exact allowlist (review ship-armada/armada-lean#1, finding 3). Checked against
 # the built environment on 2026-11-12: no spec theorem's or witness's axioms ever
 # name a seventh. `sorryAx` is not here; `bad_axioms` below excludes it by name, and
-# `sorry_ok` gates it separately against `scripts/approved-open.tsv`.
+# `sorry_ok` checks it separately against `scripts/approved-open.tsv`.
 ALLOWED_AXIOMS = CORE_AXIOMS | PRIMITIVE_AXIOMS
 
 
@@ -92,7 +92,7 @@ def say(json_mode: bool, msg: str) -> None:
 
 def bad_axioms(axs: list[str]) -> list[str]:
     """The axioms in `axs` that assert a property: not `sorryAx` (an open proof,
-    gated separately by `sorry_ok`) and not in `ALLOWED_AXIOMS`. Before this
+    checked separately by `sorry_ok`) and not in `ALLOWED_AXIOMS`. Before this
     allowlist, an axiom passed whenever its type was not a `Prop`, so a declared
     `axiom x : Empty` passed unconditionally and proved anything."""
     return [a for a in axs if a != "sorryAx" and a not in ALLOWED_AXIOMS]
@@ -101,7 +101,7 @@ def bad_axioms(axs: list[str]) -> list[str]:
 def unapproved_sorry(members: list[dict], approved_open: dict[str, dict]) -> list[str]:
     """The names, from `members`, of spec theorems whose own axioms include
     `sorryAx` and whose name is not a key of `approved_open`
-    (`spec_lib.load_approved_open`). Before this gate, a `sorry` spec theorem
+    (`spec_lib.load_approved_open`). Before this check, a `sorry` spec theorem
     passed unconditionally (review ship-armada/armada-lean#1, finding 3)."""
     return [m["name"] for m in members
             if "sorryAx" in m["axioms"] and m["name"] not in approved_open]

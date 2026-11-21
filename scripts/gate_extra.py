@@ -1,4 +1,4 @@
-"""The gate-quality checks beyond the spec check: the type-doctrine linter
+"""The checks of `scripts/check.sh` beyond the spec check: the type-doctrine linter
 count, the `decisionScope` bound, and the counterexample build. Design
 record: this module's own doc comments. Used by `spec_check.py`. Run
 standalone with `python3 scripts/gate_extra.py --json` (see `main`, at
@@ -11,7 +11,7 @@ A merge must not raise a linter count, and must not add or enlarge a
 `decisionScope` finding, past what the baseline already carries.
 
 This replaces an earlier `git merge-base HEAD integrated` design.
-exophial's commit-boundary gate container ships the judged tree as a
+The container that runs `gate.command` at the commit boundary ships the judged tree as a
 single orphan commit with no other ref
 (`.exophial/gate/Dockerfile`: `git init -q -b gate-tree`, one commit,
 built only so `pre-commit` has a repo to work in) and passes neither the
@@ -19,15 +19,15 @@ host git history nor the host environment into the container
 (exophial `completion.run_gate_container`'s own documented constraint,
 D49.5: "never a bind mount, never the calling process's own
 environment"). `integrated` never resolves there, so a live
-`git merge-base` query can never work inside the real gate. A committed
+`git merge-base` query can never work inside that container. A committed
 baseline file needs no git history at all: it travels with the tree
 itself, the one thing the container does carry.
 
 The `decisionScope` check scans only the `ArmadaLean/**/*.lean` files
 whose sha256 differs from `BASELINE_REL`'s recorded hash (plus any file
 the baseline does not name at all) — not the whole 78-file source tree.
-A full-tree scan re-elaborated all 78 files on every gate run, 235s on
-an idle host and up to 1,328s under load, against the gate's 1,800s
+A full-tree scan re-elaborated all 78 files on every run of `gate.command`, 235s on
+an idle host and up to 1,328s under load, against its 1,800s
 timeout. A hash-scoped scan costs the size of the change instead. A file
 whose hash matches the baseline is not scanned: its content is byte
 identical to what the baseline already measured, so it can carry no new
@@ -38,7 +38,7 @@ tree: the full type-lint summary, every `decisionScope` finding over
 every `ArmadaLean/**/*.lean` file outside `ArmadaLean/Lint/`, and the
 sha256 of each such file. Run it in the same branch that lowers a linter
 count or fixes a `decisionScope` finding, and commit the result; never
-run it to raise a count or add a finding — the gate compares the tree
+run it to raise a count or add a finding — `lint_ok` and `decision_ok` compare the tree
 against the committed file, so a baseline raised without a matching fix
 shows up in the branch's own diff for review (`AGENTS.md`).
 """
@@ -171,7 +171,7 @@ def write_baseline(root: Path, baseline: dict) -> None:
 def compute_baseline(root: Path) -> dict:
     """The full baseline for the CURRENT tree: the type-lint summary, every
     `decisionScope` finding over every `ArmadaLean` source file (the full
-    scan `check_decision_scope` no longer runs on every gate call), and
+    scan `check_decision_scope` no longer runs on every run of `scripts/check.sh`), and
     the sha256 of each such file. `scripts/update_gate_baseline.py`'s own
     implementation; also used directly by its test harness."""
     lint_summary = run_type_lint(root)
@@ -322,8 +322,8 @@ def check_decision_scope(root: Path) -> dict:
     `BASELINE_REL`'s `file_hashes` (plus any file the baseline does not
     name at all): a file whose hash matches is byte-identical to what
     the baseline already measured, so it is not rescanned. The
-    whole-tree scan this replaced took 235-1,328s against the gate's
-    1,800s timeout."""
+    whole-tree scan this replaced took 235-1,328s against the 1,800s
+    timeout of `gate.command`."""
     t0 = time.monotonic()
     baseline = load_baseline(root)
     base_hashes: dict[str, str] = baseline["file_hashes"]
@@ -407,7 +407,7 @@ def check_counterexamples(root: Path) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    """Run the three gate-quality checks against the current directory
+    """Run the three checks against the current directory
     and report. `--json` prints one JSON line to stdout and exit 0 means
     every `_ok` field is `true`; without it, a short PASS/FAIL line per
     check goes to stdout. A worker runs `python3 scripts/gate_extra.py
