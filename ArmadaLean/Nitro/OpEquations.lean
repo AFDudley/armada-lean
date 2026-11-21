@@ -1,6 +1,5 @@
 /-
-  The operation equations: repair pass step R.2 (armada-laconic `docs/process.md`, "The
-  repair pass"). One equation per `Op` constructor states `Adjudicator.apply` in the
+  The operation equations. One equation per `Op` constructor states `Adjudicator.apply` in the
   dependent-`if` form: `if h : Pre then some (Effect ⟨_, h⟩) else none`. The preconditions
   and the effects are in `Adjudicator.lean`, section "One precondition and one effect per
   operation". The statements are in `ArmadaLean/Spec/Nitro/OpEquations.lean`.

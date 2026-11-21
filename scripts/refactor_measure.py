@@ -1,13 +1,13 @@
-"""The two measures of the repair pass that `scripts/check.sh --json` reports.
+"""The two measures that `scripts/check.sh --json --base REF` reports for a rewrite of the model.
 
-Design record: `docs/repair-pass.md` (the GATE; R.3 and R.5). Both measures compare
+Design record: armada-laconic `docs/process.md`, R.3 and R.5. Both measures compare
 the working tree with a base commit REF, given as `--base REF`. Without `--base`,
 `spec_check.py` does not compute them: the gate container's copy of the repository
 has no `integrated` branch, so no default base exists there.
 
 - model_net_lines: the added lines minus the deleted lines of `ArmadaLean/` outside
   `ArmadaLean/Lint/`, from REF to the working tree. Untracked files count as added.
-  The GATE requires it to be at most 0 for a repair step.
+  It is a measurement, not a gate (armada-laconic `docs/process.md`).
 - spec_changed: the sorted names of the definitions in `ArmadaLean/Spec/` whose text
   differs from REF, or that REF has and the working tree does not. A definition's
   text is its declaration from the keyword to the next line in column 0; the

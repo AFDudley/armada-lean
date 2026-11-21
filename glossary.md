@@ -46,14 +46,14 @@ The linters are in `ArmadaLean/Lint/`. armada-laconic `docs/lean/type-doctrine.m
 - **aliasHypothesis** (n) — a hypothesis `x = f …` where `x` is a binder of the same declaration (`aliasFindings`).
   lean-temper calls the binder and its equation an alias (lean-temper `glossary.md`, "Alias").
 - **layerDiscipline** (n) — a spec-level declaration whose proof uses a base operation of its own layer that its
-  statement does not name (`layerFindings`; armada-laconic `docs/process.md`, repair-pass lessons).
+  statement does not name (`layerFindings`; armada-laconic `docs/process.md`, the lessons of the manual passes).
 - **decisionScope** (n) — an `omega` call that consumes more hypotheses than a limit, a `decide` call on a goal with a
   free variable or above a size limit, or any `decide +kernel` or `native_decide` (`ArmadaLean/Lint/DecisionScope.lean`).
 - **Lint baseline** (n) — the committed counts of the findings, in `scripts/gate-baseline.json`. `lint_ok` is true when
   no count on the working tree is higher than the baseline (`scripts/gate_extra.py`). This comparison is a ratchet:
   an equal or a lower count passes.
 - **Model code** (n) — the files under `ArmadaLean/` outside `ArmadaLean/Lint/`. `scripts/check.sh --json --base REF`
-  reports its net line change from `REF` as `model_net_lines` (`scripts/repair_measure.py`).
+  reports its net line change from `REF` as `model_net_lines` (`scripts/refactor_measure.py`).
 
 ## Checks
 

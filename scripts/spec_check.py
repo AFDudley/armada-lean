@@ -3,7 +3,7 @@
 
 Usage: python3 scripts/spec_check.py [--base REF] [--json [THEOREM_NAME]]
 Run from the repo root. Exit 0 means every check passed.
-`--base REF` adds the repair measures below, measured from REF. Without it, the
+`--base REF` adds the measures below (`scripts/refactor_measure.py`), measured from REF. Without it, the
 check computes no measure and runs no git command.
 
 The check is `lake build` plus one computed report (`scripts/spec_report.lean`), plus
@@ -43,8 +43,8 @@ environment on each run.
 - sorry: the spec theorems whose axioms include `sorryAx` (approved or not;
   `sorry_ok` reports the ones that are not).
 - vacuous_defs: no `def … := True` / `:= False` body (`verification.md` §5).
-- model_net_lines, spec_changed, measure_base: the repair-pass measures
-  (`scripts/repair_measure.py`, `docs/repair-pass.md` §4, R.3). They only report;
+- model_net_lines, spec_changed, measure_base: the measures of a rewrite of the model
+  (`scripts/refactor_measure.py`; armada-laconic `docs/process.md`, R.3). They only report;
   the verdict above does not use them.
 """
 from __future__ import annotations
@@ -59,7 +59,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import spec_lib  # noqa: E402
 import gate_extra  # noqa: E402
-import repair_measure  # noqa: E402
+import refactor_measure  # noqa: E402
 
 ROOT = Path.cwd()
 
@@ -263,7 +263,7 @@ def main() -> int:
         say(json_mode, f"WITNESS_OPEN {n}")
     for n in sorted(witness_blocked):
         say(json_mode, f"WITNESS_BLOCKED {n} on {', '.join(witness_blocked[n])}")
-    measures = repair_measure.measure(ROOT, base) if base is not None else {}
+    measures = refactor_measure.measure(ROOT, base) if base is not None else {}
     if measures:
         say(json_mode, f"MODEL_NET_LINES {measures['model_net_lines']} (base {base})")
         for n in measures["spec_changed"]:

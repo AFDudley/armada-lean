@@ -6,7 +6,7 @@
   `Adjudicator.inv_step` give `Adjudicator.inv_reachable`. The
   reachable-state theorems of `Safety.lean` are projections of its fields.
   Design record: armada-laconic `docs/process.md`, rule 2.1 (one invariant
-  with one step lemma) and the repair pass R.2.
+  with one step lemma).
 -/
 import ArmadaLean.Nitro.Lemmas
 import Mathlib.Tactic.Says

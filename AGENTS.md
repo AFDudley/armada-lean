@@ -116,5 +116,5 @@ prints both `theorem_in_sorry` false and `theorem_witness_open` false.
 in `witness_open`. A witness in `witness_blocked` waits on a trusted
 primitive (`EdDSAVerify`, `VerifyAccepts`, `VerifyOwnedAccepts`), not
 on work: its theorem is finished as far as the model can go.
-## Repair pass
-A proved model that does not follow the strata of armada-laconic docs/process.md is brought to them by the repair pass in that file, steps R.1 to R.5. lean-temper does the repair pass, and a merge of its output passes gates GRa, GRb and GRc (`docs/repair-pass.md`); each operation equation is proved against its Spec statement.
+## Type-doctrine findings
+The type-doctrine check of `scripts/check.sh` (`lint_ok`) must fail if any type-doctrine linter reports any finding; it must not compare the number of findings with a stored number (operator ruling, 2026-11-14). A fix is a refined type that carries the data together with its fact; a one-field `Prop` structure that only removes a finding is not a fix (operator ruling, 2026-11-15). lean-temper (`AFDudley/lean-temper`) rewrites the model to remove the findings, under armada-laconic `docs/process.md`. Each operation equation is proved against its Spec statement.

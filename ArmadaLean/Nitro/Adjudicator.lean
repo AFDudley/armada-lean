@@ -300,12 +300,11 @@ def Adjudicator.apply (apps : Apps E) (caller : Participant) (op : Op E) (s : Ad
 
 /-! ## One precondition and one effect per operation
 
-Repair pass step R.2 (armada-laconic `docs/process.md`, "The repair pass"). Each `Op`
-constructor has a decidable precondition `…Pre` and an effect `…Effect`. The effect takes
-the argument that the precondition checks as a subtype value that carries the proof, so a
-lemma about an effect needs no precondition hypothesis. `ArmadaLean/Nitro/OpEquations.lean`
+Each `Op` constructor has a decidable precondition `…Pre` and an effect `…Effect`. The effect
+takes the argument that the precondition checks as a subtype value that carries the proof, so
+a lemma about an effect needs no precondition hypothesis. `ArmadaLean/Nitro/OpEquations.lean`
 states `apply` in the form `if h : Pre then some (Effect ⟨_, h⟩) else none`. The bodies are
-the bodies of the operations above. `apply` does not change in this step.
+the bodies of the operations above.
 
 The go-nitro line numbers are those of the go-nitro contracts as armada-nitro vendored them
 unmodified, armada-nitro commit `8edacc10`, `src/nitro/`. -/
