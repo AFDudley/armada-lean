@@ -23,7 +23,7 @@ environment on each run.
   (`Empty : Type`, not a `Prop`). `ALLOWED_AXIOMS` is an exact name list instead.
 - sorry_ok: every spec theorem whose axioms include `sorryAx` is named in
   `scripts/approved-open.tsv`, with the operator's approval date
-  (`docs/process.md` rule 8.3). Review finding 3: `scripts/check.sh` used to exit 0 on any
+  (`docs/process.md` rule 8.3). `scripts/check.sh` fails on any
   `sorry` spec theorem; this is the one committed exception list, reported in
   `--json` as `approved_open`.
 - reach_ok: a spec entry with a binder of a machine state type also has a

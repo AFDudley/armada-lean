@@ -26,8 +26,8 @@ itself, the one thing the container does carry.
 The `decisionScope` check scans only the `ArmadaLean/**/*.lean` files
 whose sha256 differs from `BASELINE_REL`'s recorded hash (plus any file
 the baseline does not name at all) — not the whole 78-file source tree.
-A full-tree scan re-elaborated all 78 files on every run of `gate.command`, 235s on
-an idle host and up to 1,328s under load, against its 1,800s
+A full-tree scan re-elaborates all 78 files on every run of `gate.command`, which costs far
+more time than the change needs, and risks its 1,800s
 timeout. A hash-scoped scan costs the size of the change instead. A file
 whose hash matches the baseline is not scanned: its content is byte
 identical to what the baseline already measured, so it can carry no new
@@ -171,7 +171,7 @@ def write_baseline(root: Path, baseline: dict) -> None:
 def compute_baseline(root: Path) -> dict:
     """The full baseline for the CURRENT tree: the type-lint summary, every
     `decisionScope` finding over every `ArmadaLean` source file (the full
-    scan `check_decision_scope` no longer runs on every run of `scripts/check.sh`), and
+    scan that `check_decision_scope` normally skips in favor of the hash-scoped scan), and
     the sha256 of each such file. `scripts/update_gate_baseline.py`'s own
     implementation; also used directly by its test harness."""
     lint_summary = run_type_lint(root)
@@ -322,7 +322,7 @@ def check_decision_scope(root: Path) -> dict:
     `BASELINE_REL`'s `file_hashes` (plus any file the baseline does not
     name at all): a file whose hash matches is byte-identical to what
     the baseline already measured, so it is not rescanned. The
-    whole-tree scan this replaced took 235-1,328s against the 1,800s
+    whole-tree scan would re-elaborate every source file on each run, risking the 1,800s
     timeout of `gate.command`."""
     t0 = time.monotonic()
     baseline = load_baseline(root)
