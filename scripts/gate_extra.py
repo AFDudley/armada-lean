@@ -10,7 +10,6 @@ a file tracked in the repository (`BASELINE_REL`), not a live git query.
 A merge must not raise a linter count, and must not add or enlarge a
 `decisionScope` finding, past what the baseline already carries.
 
-This replaces an earlier `git merge-base HEAD integrated` design.
 The container that runs `gate.command` at the commit boundary ships the judged tree as a
 single orphan commit with no other ref
 (`.exophial/gate/Dockerfile`: `git init -q -b gate-tree`, one commit,

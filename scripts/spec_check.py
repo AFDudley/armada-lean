@@ -17,10 +17,10 @@ environment on each run.
   theorem's type is definitionally equal to it; every spec definition belongs to a
   spec theorem.
 - axioms_ok: every axiom of every spec theorem and witness is in `ALLOWED_AXIOMS`, or
-  is `sorryAx` (an open proof, checked by `sorry_ok` below, not here). Review
-  ship-armada/armada-lean#1, finding 3: the earlier rule passed any axiom whose type
-  was not a proposition, so `axiom x : Empty` would have passed and proved anything
-  (`Empty : Type`, not a `Prop`). `ALLOWED_AXIOMS` is an exact name list instead.
+  is `sorryAx` (an open proof, checked by `sorry_ok` below, not here).
+  `ALLOWED_AXIOMS` is an exact name list, not a rule on the axiom's type: a rule that
+  passes every axiom whose type is not a proposition passes `axiom x : Empty`
+  (`Empty : Type`, not a `Prop`), which proves anything.
 - sorry_ok: every spec theorem whose axioms include `sorryAx` is named in
   `scripts/approved-open.tsv`, with the operator's approval date
   (`docs/process.md` rule 8.3). `scripts/check.sh` fails on each unnamed
@@ -79,9 +79,8 @@ PRIMITIVE_AXIOMS = frozenset({
     "ArmadaLean.VerifyAccepts",      # the plain-circuit Groth16 verifier (Transact.circom)
     "ArmadaLean.VerifyOwnedAccepts", # the owned-circuit Groth16 verifier (TransactOwned.circom)
 })
-# The exact allowlist (review ship-armada/armada-lean#1, finding 3). Checked against
-# the built environment on 2026-11-12: no spec theorem's or witness's axioms ever
-# name a seventh. `sorryAx` is not here; `bad_axioms` below excludes it by name, and
+# The exact allowlist. On the built environment of 2026-11-12, no spec theorem's or
+# witness's axioms name a seventh. `sorryAx` is not here; `bad_axioms` below excludes it by name, and
 # `sorry_ok` checks it separately against `scripts/approved-open.tsv`.
 ALLOWED_AXIOMS = CORE_AXIOMS | PRIMITIVE_AXIOMS
 
@@ -92,17 +91,16 @@ def say(json_mode: bool, msg: str) -> None:
 
 def bad_axioms(axs: list[str]) -> list[str]:
     """The axioms in `axs` that assert a property: not `sorryAx` (an open proof,
-    checked separately by `sorry_ok`) and not in `ALLOWED_AXIOMS`. Before this
-    allowlist, an axiom passed whenever its type was not a `Prop`, so a declared
-    `axiom x : Empty` passed unconditionally and proved anything."""
+    checked separately by `sorry_ok`) and not in `ALLOWED_AXIOMS`. A rule on the
+    axiom's type is not enough: `axiom x : Empty` has a type that is not a `Prop`,
+    and it proves anything."""
     return [a for a in axs if a != "sorryAx" and a not in ALLOWED_AXIOMS]
 
 
 def unapproved_sorry(members: list[dict], approved_open: dict[str, dict]) -> list[str]:
     """The names, from `members`, of spec theorems whose own axioms include
     `sorryAx` and whose name is not a key of `approved_open`
-    (`spec_lib.load_approved_open`). Before this check, a `sorry` spec theorem
-    passed unconditionally (review ship-armada/armada-lean#1, finding 3)."""
+    (`spec_lib.load_approved_open`)."""
     return [m["name"] for m in members
             if "sorryAx" in m["axioms"] and m["name"] not in approved_open]
 
