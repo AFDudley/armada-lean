@@ -47,7 +47,16 @@ RUN curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-ini
     && elan toolchain install leanprover/lean4:v4.33.1
 
 # --- pre-commit 4.5.1 (the host's version) ---
+# --- pre-commit-hooks 4.6.0 (D6, docs/plans/nix-images.md): the former
+#     `repo: https://github.com/pre-commit/pre-commit-hooks` block in
+#     .pre-commit-config.yaml is now `repo: local`/`language: system`,
+#     naming these console scripts (trailing-whitespace-fixer,
+#     end-of-file-fixer, check-yaml, check-added-large-files,
+#     check-merge-conflict, check-case-conflict, mixed-line-ending)
+#     directly -- `uv tool install` exposes every console_script the
+#     package declares, same pattern as exophial-check-claude-md above.
 RUN uv tool install pre-commit==4.5.1 \
+    && uv tool install pre-commit-hooks==4.6.0 \
     && ln -sf /root/.local/bin/pre-commit /usr/local/bin/pre-commit
 
 WORKDIR /gate
