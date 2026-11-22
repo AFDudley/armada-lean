@@ -25,24 +25,42 @@
       (Lake's own manifest filenames are content hashes, not module
       names, so there is no other way to single out "the new one").
 
-  Nix's own store is the cache: a commit that changes one file gives a
-  new derivation only for that module and the modules that (transitively)
-  import it; every other module's derivation, and the merged
-  `LAKE_CACHE_DIR` the gate image ships (nix/gate.nix), is unchanged.
+  Every file this module needs is taken as its OWN path literal
+  (`armadaLeanDir`, `exophialCoreDir`, `armadaLeanRootFile`,
+  `lakefileFile`, `lakeManifestFile`, `leanToolchainFile` -- never a
+  single aggregated `gateSrc`). A Nix path literal gets its own
+  independent store path, hashed by only that path's own content
+  (nix/lean-deps.nix already relies on exactly this for its own 4
+  inputs). Routing every file through one aggregate tree instead
+  (measured 2026-11-22: every module rebuilt after an UNRELATED edit to
+  nix/gate.nix) collapses every module's own derivation onto the whole
+  repository's hash, since Nix tracks a referenced subpath's CONTAINING
+  store path as the dependency, not the subpath alone -- exactly the
+  coupling this design exists to avoid.
+
+  Nix's own store is the cache: a commit that changes one ArmadaLean file
+  gives a new derivation only for that module and the modules that
+  (transitively) import it; every other module's derivation, and the
+  merged `LAKE_CACHE_DIR` the gate image ships (nix/gate.nix), is
+  unchanged -- and a commit that touches no ArmadaLean or exophial_core
+  file (a flake-infrastructure-only change) leaves EVERY module
+  derivation unchanged too.
 */
 {
   pkgs,
   lib,
   lean,
-  gateSrc,
   leanDeps,
+  armadaLeanRootFile,
+  armadaLeanDir,
+  exophialCoreDir,
+  lakefileFile,
+  lakeManifestFile,
+  leanToolchainFile,
 }:
 let
-  leanRoot = gateSrc + "/ArmadaLean";
-  exophialCoreRoot = gateSrc + "/vendor/exophial_core";
-
   walk =
-    root: dir: prefix:
+    dir: prefix:
     let
       entries = builtins.readDir dir;
     in
@@ -54,11 +72,11 @@ let
         relPath = if prefix == "" then name else "${prefix}/${name}";
       in
       if entryType == "directory" then
-        walk root path relPath
+        walk path relPath
       else if entryType == "regular" && lib.hasSuffix ".lean" name then
         [
           {
-            inherit path relPath root;
+            inherit path relPath;
           }
         ]
       else
@@ -67,11 +85,10 @@ let
 
   leanFiles = [
     {
-      path = gateSrc + "/ArmadaLean.lean";
+      path = armadaLeanRootFile;
       relPath = "ArmadaLean.lean";
-      root = gateSrc;
     }
-  ] ++ walk gateSrc leanRoot "ArmadaLean" ++ walk exophialCoreRoot exophialCoreRoot "";
+  ] ++ walk armadaLeanDir "ArmadaLean" ++ walk exophialCoreDir "";
 
   moduleNameOf = relPath: lib.replaceStrings [ "/" ] [ "." ] (lib.removeSuffix ".lean" relPath);
 
@@ -156,10 +173,10 @@ let
 
         mkdir -p build/.lake/packages build/vendor
         cp -r --no-preserve=mode,ownership ${leanDeps.mathlibCache}/. build/.lake/packages/
-        cp ${gateSrc}/lean-toolchain build/lean-toolchain
-        cp ${gateSrc}/lakefile.lean build/lakefile.lean
-        cp ${gateSrc}/lake-manifest.json build/lake-manifest.json
-        cp -r ${gateSrc}/vendor/exophial_core build/vendor/exophial_core
+        cp ${leanToolchainFile} build/lean-toolchain
+        cp ${lakefileFile} build/lakefile.lean
+        cp ${lakeManifestFile} build/lake-manifest.json
+        cp -r ${exophialCoreDir} build/vendor/exophial_core
         chmod -R u+w build/vendor
         cp -r ${srcTree}/. build/
 

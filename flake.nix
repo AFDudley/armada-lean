@@ -60,8 +60,14 @@
         exophialCoreDir = ./vendor/exophial_core;
       };
       leanBuild = import ./nix/lean-build.nix {
-        inherit pkgs lib leanDeps gateSrc;
+        inherit pkgs lib leanDeps;
         lean = leanToolchains.lean4350;
+        armadaLeanRootFile = ./ArmadaLean.lean;
+        armadaLeanDir = ./ArmadaLean;
+        exophialCoreDir = ./vendor/exophial_core;
+        lakefileFile = ./lakefile.lean;
+        lakeManifestFile = ./lake-manifest.json;
+        leanToolchainFile = ./lean-toolchain;
       };
       exophialGate = import ./nix/gate.nix {
         inherit

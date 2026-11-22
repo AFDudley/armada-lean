@@ -83,8 +83,9 @@ let
   # own run (D11: no network at container run time; Lean's own binaries
   # and `lake build` against an already-warm `.lake/packages` need none).
   fhsRoot = pkgs.runCommand "armada-lean-gate-fhs-root" { } ''
-    mkdir -p $out/etc/ssl/certs
+    mkdir -p $out/etc/ssl/certs $out/tmp $out/usr/bin
     ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
+    ln -s ${pkgs.coreutils}/bin/env $out/usr/bin/env
   '';
 
   # armada-lean's own Lake dependency tree and Mathlib build cache
