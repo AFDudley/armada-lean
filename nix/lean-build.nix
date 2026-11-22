@@ -1,25 +1,34 @@
 /*
-  armada-lean's own ArmadaLean modules, ONE NIX DERIVATION PER LEAN MODULE
-  (operator decision, 2026-11-22, superseding an earlier committed-cache
-  design): a module's derivation takes its own source FILE and the
-  derivations of the modules it imports as inputs, on top of `leanDeps`'s
-  shared store path. Nix's own content-addressing is the cache -- a
-  commit that changes one file gives ONLY that file's derivation, and
-  every derivation that (transitively) imports it, a new store path;
-  every other module's derivation is unchanged, so the host Nix daemon
-  (which keeps its store between gate builds, `gate_container.
-  run_host_nix_build`) never rebuilds it. No committed cache directory,
-  no podman volume: this is the same pattern Lean 4's own retired
-  `buildLeanPackage` and the `lean4-nix` flake use for a Lake package.
+  armada-lean's own ArmadaLean modules, ONE NIX DERIVATION PER LEAN MODULE,
+  each running `lake build <Module>` -- not `lean` directly (operator
+  decision, 2026-11-22, second revision). lakefile.lean already sets
+  `enableArtifactCache := true` and `restoreAllArtifacts := true`
+  (commit e919b4c): Lake itself puts a compiled module into its own
+  content-addressed artifact-cache layout (`LAKE_CACHE_DIR`'s
+  `outputs/<package>/*.json` manifests plus the `artifacts/` blobs they
+  name) and writes the matching trace files no hand-written code needs
+  to reproduce.
 
-  Import parsing is pure Nix text processing, not an `import`-from-
-  derivation step: every `ArmadaLean/**.lean` file lists its own imports
-  as plain `import Foo.Bar` lines (Lean's own syntax), read with
-  `builtins.readFile` + `builtins.match`. Only imports inside this
-  package's own `ArmadaLean.` namespace become a module-to-module Nix
-  edge; everything else (Mathlib, Lean core, the other Lake
-  dependencies) is satisfied once, by `leanDeps`'s own shared LEAN_PATH,
-  the same way every module already depends on it.
+  A module's derivation:
+    - seeds `LAKE_CACHE_DIR` from the MERGED artifact-cache entries of
+      every module it transitively imports (each already its own Nix
+      derivation output, below);
+    - assembles a project tree carrying only the module's own source
+      file and its transitive imports' source files (never the whole
+      judged tree), on top of `leanDeps`'s shared Lake dependency tree;
+    - runs `lake build <Module>`, which restores every imported entry
+      from the seed (0 compiles for those) and compiles only the module
+      itself;
+    - its OWN output is whatever `lake build` added to `LAKE_CACHE_DIR`
+      that was not already in the seed -- that module's own
+      artifact-cache entry, found by a before/after file-list diff
+      (Lake's own manifest filenames are content hashes, not module
+      names, so there is no other way to single out "the new one").
+
+  Nix's own store is the cache: a commit that changes one file gives a
+  new derivation only for that module and the modules that (transitively)
+  import it; every other module's derivation, and the merged
+  `LAKE_CACHE_DIR` the gate image ships (nix/gate.nix), is unchanged.
 */
 {
   pkgs,
@@ -32,9 +41,6 @@ let
   leanRoot = gateSrc + "/ArmadaLean";
   exophialCoreRoot = gateSrc + "/vendor/exophial_core";
 
-  # Every `.lean` file under ArmadaLean/, as { relPath, path }. relPath is
-  # repo-relative with the `ArmadaLean/` prefix, e.g.
-  # "ArmadaLean/Nitro/Liveness.lean".
   walk =
     root: dir: prefix:
     let
@@ -59,12 +65,6 @@ let
         [ ]
     ) (builtins.attrNames entries);
 
-  # `vendor/exophial_core`'s own Lean files are in scope too (its
-  # `Exophial` namespace, root AT the package directory -- its own
-  # `lakefile.toml` names the library `Exophial`, rooted so that
-  # `Exophial.lean` itself is the module `Exophial`): ArmadaLean imports
-  # it as a normal dependency, and it is small enough to build the same
-  # one-derivation-per-module way, never a separate FOD.
   leanFiles = [
     {
       path = gateSrc + "/ArmadaLean.lean";
@@ -73,17 +73,8 @@ let
     }
   ] ++ walk gateSrc leanRoot "ArmadaLean" ++ walk exophialCoreRoot exophialCoreRoot "";
 
-  # "ArmadaLean/Nitro/Liveness.lean" -> "ArmadaLean.Nitro.Liveness"
   moduleNameOf = relPath: lib.replaceStrings [ "/" ] [ "." ] (lib.removeSuffix ".lean" relPath);
 
-  # Every `import Foo.Bar` line in a file, in source order. Lean requires
-  # the import block to precede all other code, but a line-based scan
-  # over the WHOLE file (rather than stopping at the first non-import
-  # line) tolerates the rare non-import line this scan would otherwise
-  # need to detect as the block's end; a literal `import ` line inside a
-  # string or comment is not idiomatic Lean 4 and none occurs in this
-  # package (confirmed: every matched line, across all ~93 files, names
-  # a real module this package or a Lake dependency actually provides).
   importsOf =
     path:
     let
@@ -104,22 +95,13 @@ let
   isInternal =
     name: (lib.hasPrefix "ArmadaLean" name || lib.hasPrefix "Exophial" name) && modulesByName ? ${name};
 
-  # `weak.says.no_verify_in_CI` (lakefile.lean's own `leanOptions`): a
-  # recorded `says` search is not re-verified in a normal build. Mathlib's
-  # `Says.lean` only re-verifies when `CI` is set, which this build does
-  # not set, but the project's own lakefile states the option explicitly
-  # rather than relying on an absent environment variable.
-  leanOptionArgs = [
-    "-D"
-    "weak.says.no_verify_in_CI=true"
-  ];
-  # Lean must resolve a TRANSITIVE import too when it loads a module's
-  # own `.olean` (loading `Exophial.CheckSpecBindings` also loads
-  # `Exophial.SpecBindings`, which it itself imports) -- a module's own
-  # `LEAN_PATH` needs every internal module reachable, not only its
-  # direct imports. `transitiveInternal` is the same lazy,
-  # self-referential recursive-attrset trick as `moduleDrvs` below, over
-  # module NAMES rather than derivations.
+  # The package name EACH internal module belongs to, for Lake's own
+  # `outputs/<package>/` cache layout: everything under `ArmadaLean/` (and
+  # the root `ArmadaLean.lean`) is the `armada-lean` package; everything
+  # from `vendor/exophial_core` is the `exophial_core` package (its own
+  # `lakefile.toml`'s `name`).
+  packageOf = name: if lib.hasPrefix "Exophial" name then "exophial_core" else "armada-lean";
+
   transitiveInternal = lib.mapAttrs (
     _name: entry:
     let
@@ -128,65 +110,109 @@ let
     lib.unique (internalImports ++ lib.concatMap (d: transitiveInternal.${d}) internalImports)
   ) modulesByName;
 
-  # One derivation per module, built lazily and self-referentially: each
-  # module's own derivation looks up `moduleDrvs.${dep}` for its internal
-  # imports, so Nix evaluates and builds each module's derivation exactly
-  # once, however many other modules import it.
-  moduleDrvs = lib.mapAttrs (
+  # One derivation per module: its own artifact-cache entry.
+  moduleCacheEntry = lib.mapAttrs (
     name: entry:
     let
-      depDrvs = map (d: moduleDrvs.${d}) transitiveInternal.${name};
-      # `symlinkJoin` only merges at the TOP level: two internal
-      # dependencies that share a leading namespace component (e.g.
-      # `Exophial.CheckSpecBindings` and `Exophial.SpecBindings`, both
-      # under `Exophial/`) collide there instead of merging their
-      # nested `.olean` files -- measured 2026-11-22: Lean resolved
-      # `Exophial.SpecBindings` against the FIRST `Exophial/`-rooted
-      # LEAN_PATH entry it found and reported it missing there, never
-      # falling through to the entry that actually has it. A plain
-      # recursive `cp` merge (every input is a disjoint file within its
-      # own dotted-name path, so no two inputs ever name the same file)
-      # merges nested directories correctly.
-      mergedDeps = pkgs.runCommand "armada-lean-deps-${lib.replaceStrings [ "." ] [ "-" ] name}" { } (
+      depNames = transitiveInternal.${name};
+      depEntries = map (d: moduleCacheEntry.${d}) depNames;
+      allEntries = [ name ] ++ depNames;
+      allSourceEntries = map (n: modulesByName.${n}) allEntries;
+
+      # The merged artifact-cache seed: every transitively-imported
+      # module's own cache entry, recursively merged (plain `cp`, not
+      # `symlinkJoin`: two entries can share a package-name top
+      # directory, e.g. `outputs/armada-lean/`, the same collision
+      # nix/lean-deps.nix's own dependency merge hit).
+      seedCache = pkgs.runCommand "armada-lean-cache-seed-${lib.replaceStrings [ "." ] [ "-" ] name}" { } (
         "mkdir -p $out\n"
-        + lib.concatMapStringsSep "\n" (d: "cp -r --no-preserve=mode,ownership ${d}/. $out/") depDrvs
+        + lib.concatMapStringsSep "\n" (d: "cp -r --no-preserve=mode,ownership ${d}/. $out/") depEntries
       );
-      leanPath = lib.concatStringsSep ":" (
-        [ "${leanDeps.mathlibCacheLeanPath}" ] ++ lib.optional (depDrvs != [ ]) "${mergedDeps}"
+
+      # The project tree this module's own `lake build` needs: only its
+      # own source file and its transitive imports' own source files,
+      # each at its real repo-relative path.
+      srcTree = pkgs.runCommand "armada-lean-src-${lib.replaceStrings [ "." ] [ "-" ] name}" { } (
+        "mkdir -p $out\n"
+        + lib.concatMapStringsSep "\n" (
+          e: "mkdir -p \"$out/$(dirname '${e.relPath}')\" && cp '${e.path}' \"$out/${e.relPath}\""
+        ) allSourceEntries
       );
-      outPath = "${entry.relPath}";
-      olean = lib.removeSuffix ".lean" outPath + ".olean";
     in
     pkgs.stdenv.mkDerivation {
-      pname = "armada-lean-module-${lib.replaceStrings [ "." ] [ "-" ] name}";
+      pname = "armada-lean-cache-entry-${lib.replaceStrings [ "." ] [ "-" ] name}";
       version = "0";
       dontUnpack = true;
-      nativeBuildInputs = [ lean ];
+      nativeBuildInputs = [
+        lean
+        pkgs.gcc
+        pkgs.gitMinimal
+      ];
       buildPhase = ''
         runHook preBuild
-        mkdir -p "$(dirname "${olean}")"
-        LEAN_PATH="${leanPath}" ${lean}/bin/lean ${lib.concatStringsSep " " leanOptionArgs} \
-          --root="${entry.root}" -o "${olean}" "${entry.path}"
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME"
+        export LEAN_CC=${pkgs.gcc}/bin/cc
+
+        mkdir -p build/.lake/packages build/vendor
+        cp -r --no-preserve=mode,ownership ${leanDeps.mathlibCache}/. build/.lake/packages/
+        cp ${gateSrc}/lean-toolchain build/lean-toolchain
+        cp ${gateSrc}/lakefile.lean build/lakefile.lean
+        cp ${gateSrc}/lake-manifest.json build/lake-manifest.json
+        cp -r ${gateSrc}/vendor/exophial_core build/vendor/exophial_core
+        chmod -R u+w build/vendor
+        cp -r ${srcTree}/. build/
+
+        export LAKE_CACHE_DIR="$TMPDIR/lake-cache"
+        mkdir -p "$LAKE_CACHE_DIR"
+        cp -r ${seedCache}/. "$LAKE_CACHE_DIR"/
+        chmod -R u+w "$LAKE_CACHE_DIR"
+        ( cd "$LAKE_CACHE_DIR" && find . -type f | sort ) > "$TMPDIR/cache-before.txt"
+
+        cd build
+        # `+<module>` forces Lake to resolve the argument as a MODULE
+        # name, never a declared library/exe TARGET. Without it, `lake
+        # build ArmadaLean` resolves to the `lean_lib «ArmadaLean»`
+        # TARGET instead of the one module named `ArmadaLean` (same
+        # name, by construction -- `lakefile.lean`'s root aggregator
+        # module and its library share one name), and a target build
+        # compiles every declared root of that library, including
+        # `ArmadaLean.Machines` -- which this module's own srcTree does
+        # not carry, since `ArmadaLean.lean` does not import it
+        # (measured 2026-11-22: "no such file or directory …
+        # ArmadaLean/Machines.lean" after ~1,100 modules had already
+        # compiled, meaning the whole library built before failing).
+        lake build +${name}
+        cd ..
+
+        ( cd "$LAKE_CACHE_DIR" && find . -type f | sort ) > "$TMPDIR/cache-after.txt"
+        comm -13 "$TMPDIR/cache-before.txt" "$TMPDIR/cache-after.txt" > "$TMPDIR/cache-new.txt"
         runHook postBuild
       '';
       installPhase = ''
         runHook preInstall
-        mkdir -p "$out/$(dirname "${olean}")"
-        cp "${olean}" "$out/${olean}"
+        mkdir -p $out
+        while IFS= read -r f; do
+          mkdir -p "$out/$(dirname "$f")"
+          cp "$LAKE_CACHE_DIR/$f" "$out/$f"
+        done < "$TMPDIR/cache-new.txt"
+        # A fixed point (nothing new -- every import, and this module
+        # itself, was already in the seed) still ships a valid, if
+        # empty, cache-entry tree.
+        mkdir -p "$out/outputs/${packageOf name}"
+        mkdir -p "$out/artifacts"
         runHook postInstall
       '';
     }
   ) modulesByName;
 
-  # The union of every module's own derivation output, assembled at the
-  # layout `lean`/`LEAN_PATH` expects (one tree, every `.olean` at its
-  # dotted-name path) -- what the gate image ships as the project's own
-  # pre-built half of `.lake/build`'s search path.
-  allModulesUnion = pkgs.symlinkJoin {
-    name = "armada-lean-modules";
-    paths = lib.attrValues moduleDrvs;
-  };
+  allEntriesUnion = pkgs.runCommand "armada-lean-cache-entries-merged" { } (
+    "mkdir -p $out\n"
+    + lib.concatMapStringsSep "\n" (d: "cp -r --no-preserve=mode,ownership ${d}/. $out/") (
+      lib.attrValues moduleCacheEntry
+    )
+  );
 in
 {
-  inherit moduleDrvs allModulesUnion;
+  inherit moduleCacheEntry allEntriesUnion;
 }

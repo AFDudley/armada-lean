@@ -87,7 +87,7 @@
         # repository's flake can take as a flake input and import
         # directly, with no second copy of this build.
         lake-deps = leanDeps.mathlibCache;
-        armada-lean-build = leanBuild.allModulesUnion;
+        armada-lean-build = leanBuild.allEntriesUnion;
       };
     };
 }

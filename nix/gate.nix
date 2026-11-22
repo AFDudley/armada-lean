@@ -95,16 +95,14 @@ let
     cp -r ${leanDeps.mathlibCache} $out/gate/.lake/packages
   '';
 
-  # armada-lean's own already-compiled modules (nix/lean-build.nix),
-  # the per-module derivation union, placed on a LEAN_PATH entry under
-  # `/gate`. NOT YET assembled into Lake's own `.lake/build/lib/lean`
-  # layout with matching trace files -- `gate.command`'s own `lake
-  # build` does not yet recognize this as already built (follow-up
-  # work; nix/lean-build.nix's own moduleDrvs already give the per-
-  # module Nix-level incrementality this migration's design requires).
+  # armada-lean's own complete Lake artifact-cache (nix/lean-build.nix):
+  # every module's own cache entry, merged into one `LAKE_CACHE_DIR`.
+  # `gate.command`'s own `lake build` (unchanged) restores every entry
+  # from it and compiles nothing, as long as a worker's commit did not
+  # change a module this cache has no entry for.
   buildRoot = pkgs.runCommand "armada-lean-gate-build-root" { } ''
-    mkdir -p $out/gate/.lake
-    cp -r ${leanBuild.allModulesUnion} $out/gate/.lake/armada-lean-modules
+    mkdir -p $out/gate
+    cp -r ${leanBuild.allEntriesUnion} $out/gate/.lake-cache-seed
   '';
 
   # The judged tree, placed AT /gate: `copyToRoot` merges a listed
@@ -152,6 +150,15 @@ n2c.buildImage {
       "PATH=/bin"
       "HOME=/root"
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+      # Without this, `lake build` (gate.command, run at container start)
+      # falls back to its own default cache dir under the toolchain's own
+      # install path (elan-less here, so there is no `~/.elan/...`
+      # default to fall into either) and never sees buildLayer's seeded
+      # entries at all -- `lake build` would then recompile every
+      # ArmadaLean module from scratch, defeating the per-module Nix
+      # build graph above (nix/lean-build.nix) even though its own
+      # output is correct.
+      "LAKE_CACHE_DIR=/gate/.lake-cache-seed"
     ];
   };
 }
