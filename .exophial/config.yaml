@@ -100,8 +100,20 @@ worker_model:
     default: "anthropic/claude-sonnet-5"
     frontier: "anthropic/claude-opus-5"
     gpu5090: "pool/5090"
+    hydrogen: "gemini-4-hydrogen-high"
+    flash: "gemini-3.8-flash-high"
   routing:
     default: default
+
+# Per-tier worker/judge backend overrides so `hydrogen`/`flash` run on AgyBackend
+# alongside `gpu5090` on OmpBackend.
+workers:
+  hydrogen:
+    backend: agy
+    model: "gemini-4-hydrogen-high"
+  flash:
+    backend: agy
+    model: "gemini-3.8-flash-high"
 
 # The ONE LLM transport this deployment reaches a model through (exo-698c / ADR
 # docs/decisions/2026-07-16-llm-transport-seam.md). Config-selected, fail-loud: a
